@@ -1,0 +1,481 @@
+"""
+Servicio de Citas y Turnos.
+Maneja la creación, modificación y cancelación de citas para visitas a propiedades.
+"""
+from datetime import datetime, timezone as tz, timedelta
+from uuid import UUID, uuid4
+from typing import Optional
+from loguru import logger
+
+from app.db.models import Appointment
+from app.db.models import User
+from app.db.models import Property
+from sqlalchemy import select, and_
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config import get_settings
+from app.services.calendar_service import calendar_service
+
+
+class AppointmentService:
+    """
+    Servicio asíncrono para gestionar citas y turnos de visitas.
+    
+    Funcionalidades:
+    - Crear citas para visitas a propiedades
+    - Obtener citas por ID o usuario
+    - Reprogramar citas
+    - Cancelar citas
+    - Prevenir doble reserva en mismo horario
+    - Actualizar lead_score al agendar
+    
+    TODO: Integración futura con Google Calendar
+    """
+    
+    DEFAULT_VISIT_DURATION = timedelta(hours=1)
+    
+    def __init__(self):
+        settings = get_settings()
+        self._engine = None
+        self._session_factory = None
+    
+    @property
+    def engine(self):
+        if self._engine is None:
+            settings = get_settings()
+            self._engine = create_async_engine(settings.DATABASE_URL, echo=False)
+        return self._engine
+    
+    @property
+    def session_factory(self):
+        if self._session_factory is None:
+            self._session_factory = sessionmaker(
+                self.engine, class_=AsyncSession, expire_on_commit=False
+            )
+        return self._session_factory
+    
+    def _get_session(self) -> AsyncSession:
+        return self.session_factory()
+    
+    async def create_appointment(
+        self,
+        user_id: UUID,
+        property_id: UUID,
+        start_time: datetime,
+        type: str = "visit",
+        notes: str = None,
+        user_phone: str = None,
+        check_calendar: bool = True
+    ) -> Appointment:
+        """
+        Crea una nueva cita para visitar una propiedad.
+        
+        Args:
+            user_id: ID del usuario que agenda
+            property_id: ID de la propiedad a visitar
+            start_time: Fecha y hora de la visita (timezone-aware)
+            type: Tipo de cita (visit, signing, meeting)
+            notes: Notas adicionales opcionales
+            user_phone: Teléfono del usuario (para Google Calendar)
+            check_calendar: Verificar disponibilidad en Google Calendar
+            
+        Returns:
+            Appointment creada
+        
+        Raises:
+            ValueError: Si la fecha ya pasó o hay conflicto de horario
+        """
+        db: AsyncSession = self._get_session()
+        
+        try:
+            start_time = self._ensure_timezone(start_time)
+            
+            if start_time < datetime.now(tz.utc):
+                raise ValueError("La fecha y hora ya pasaron. Por favor selecciona una fecha futura.")
+            
+            # Check local database conflict
+            conflict = await self._check_conflict(db, property_id, start_time)
+            if conflict:
+                raise ValueError("Ya existe una cita programada para esta propiedad en ese horario. Por favor elige otro momento.")
+            
+            # Check Google Calendar availability if configured
+            calendar_event_id = None
+            if check_calendar and calendar_service.is_configured:
+                property_uuid = UUID(str(property_id)) if isinstance(property_id, str) else property_id
+                result = await db.execute(select(Property).where(Property.id == property_uuid))
+                property_obj = result.scalar_one_or_none()
+                property_title = property_obj.title if property_obj else f"Propiedad {property_id}"
+                
+                cal_check = await calendar_service.check_availability(
+                    property_id=int(property_id) if isinstance(property_id, UUID) else property_id,
+                    date_str=start_time.strftime("%Y-%m-%d"),
+                    time_str=start_time.strftime("%H:%M"),
+                    duration_hours=1
+                )
+                
+                if not cal_check.get("available", True):
+                    conflicting = cal_check.get("conflicting_events", [])
+                    event_names = [e.get("summary", "Evento") for e in conflicting]
+                    raise ValueError(f"Horario ocupado en Google Calendar: {', '.join(event_names)}")
+                
+                # Create Google Calendar event
+                end_time = start_time + self.DEFAULT_VISIT_DURATION
+                cal_result = await calendar_service.create_visit_event(
+                    user_phone=user_phone or "Unknown",
+                    property_id=int(property_id) if isinstance(property_id, UUID) else property_id,
+                    property_title=property_title,
+                    start_time=start_time,
+                    end_time=end_time,
+                    notes=notes
+                )
+                
+                if cal_result.get("success"):
+                    calendar_event_id = cal_result.get("event_id")
+                    logger.info(f"[Appointment] Created Google Calendar event: {calendar_event_id}")
+            
+            end_time = start_time + self.DEFAULT_VISIT_DURATION
+            
+            appointment = Appointment(
+                id=uuid4(),
+                user_id=user_id,
+                property_id=property_id,
+                start_time=start_time,
+                end_time=end_time,
+                type=type,
+                status="confirmed",
+                notes=notes,
+                calendar_event_id=calendar_event_id
+            )
+            
+            db.add(appointment)
+            await db.commit()
+            await db.refresh(appointment)
+            
+            await self._update_user_score(user_id, db)
+            
+            logger.info(f"Cita creada: {appointment.id} calendar_event_id={calendar_event_id}")
+            
+            return appointment
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error al crear cita: {e}")
+            raise
+        finally:
+            await db.close()
+    
+    async def get_appointment(self, appointment_id: UUID) -> Optional[Appointment]:
+        """Obtiene una cita por su ID."""
+        db: AsyncSession = self._get_session()
+        try:
+            result = await db.execute(
+                select(Appointment).where(Appointment.id == appointment_id)
+            )
+            return result.scalar_one_or_none()
+        finally:
+            await db.close()
+    
+    async def reschedule_appointment(
+        self,
+        appointment_id: UUID,
+        new_start_time: datetime,
+        sync_calendar: bool = True
+    ) -> Appointment:
+        """
+        Reprograma una cita existente.
+        
+        Args:
+            appointment_id: ID de la cita a reprogramar
+            new_start_time: Nueva fecha y hora
+            sync_calendar: Sincronizar con Google Calendar
+        
+        Returns:
+            Cita actualizada
+        
+        Raises:
+            ValueError: Si la cita no existe, la fecha ya pasó, o hay conflicto
+        """
+        db: AsyncSession = self._get_session()
+        
+        try:
+            result = await db.execute(
+                select(Appointment).where(Appointment.id == appointment_id)
+            )
+            appointment = result.scalar_one_or_none()
+            
+            if not appointment:
+                raise ValueError("No encontré esa cita. ¿Podrías verificar el ID?")
+            
+            if appointment.status == "cancelled":
+                raise ValueError("No se puede reprogramar una cita cancelada.")
+            
+            new_start_time = self._ensure_timezone(new_start_time)
+            
+            if new_start_time < datetime.now(tz.utc):
+                raise ValueError("La nueva fecha y hora ya pasaron. Por favor selecciona una fecha futura.")
+            
+            conflict = await self._check_conflict(
+                db, appointment.property_id, new_start_time, exclude_appointment_id=appointment_id
+            )
+            if conflict:
+                raise ValueError("Ya existe otra cita en ese horario. Por favor elige otro momento.")
+            
+            new_end_time = new_start_time + self.DEFAULT_VISIT_DURATION
+            
+            # Sync with Google Calendar if configured
+            if sync_calendar and calendar_service.is_configured and appointment.calendar_event_id:
+                cal_result = await calendar_service.reschedule_visit(
+                    event_id=appointment.calendar_event_id,
+                    new_start_time=new_start_time,
+                    new_end_time=new_end_time,
+                    notes=f"Reprogramada el {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                )
+                
+                if cal_result.get("success"):
+                    logger.info(f"[Appointment] Rescheduled Google Calendar event: {appointment.calendar_event_id}")
+                else:
+                    logger.warning(f"[Appointment] Failed to reschedule calendar event: {cal_result.get('error')}")
+            
+            appointment.start_time = new_start_time
+            appointment.end_time = new_end_time
+            appointment.updated_at = datetime.now(tz.utc)
+            
+            await db.commit()
+            await db.refresh(appointment)
+            
+            logger.info(f"Cita reprogramada: {appointment.id} para {new_start_time}")
+            
+            return appointment
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error al reprogramar cita: {e}")
+            raise
+        finally:
+            await db.close()
+    
+    async def cancel_appointment(
+        self,
+        appointment_id: UUID,
+        reason: str = None,
+        sync_calendar: bool = True
+    ) -> bool:
+        """
+        Cancela una cita existente.
+        
+        Args:
+            appointment_id: ID de la cita a cancelar
+            reason: Razón opcional de cancelación
+            sync_calendar: Sincronizar con Google Calendar
+        
+        Returns:
+            True si se canceló correctamente
+        
+        Raises:
+            ValueError: Si la cita no existe o ya está cancelada
+        """
+        db: AsyncSession = self._get_session()
+        
+        try:
+            result = await db.execute(
+                select(Appointment).where(Appointment.id == appointment_id)
+            )
+            appointment = result.scalar_one_or_none()
+            
+            if not appointment:
+                raise ValueError("No encontré esa cita. ¿Podrías verificar el ID?")
+            
+            if appointment.status == "cancelled":
+                raise ValueError("Esta cita ya está cancelada.")
+            
+            # Sync with Google Calendar if configured
+            if sync_calendar and calendar_service.is_configured and appointment.calendar_event_id:
+                cal_result = await calendar_service.cancel_visit(
+                    event_id=appointment.calendar_event_id,
+                    reason=reason or "Cancelada por el cliente"
+                )
+                
+                if cal_result.get("success"):
+                    logger.info(f"[Appointment] Cancelled Google Calendar event: {appointment.calendar_event_id}")
+                else:
+                    logger.warning(f"[Appointment] Failed to cancel calendar event: {cal_result.get('error')}")
+            
+            appointment.status = "cancelled"
+            appointment.notes = f"{appointment.notes}\nCancelación: {reason}" if reason else appointment.notes
+            appointment.updated_at = datetime.now(tz.utc)
+            
+            await db.commit()
+            
+            logger.info(f"Cita cancelada: {appointment_id}")
+            
+            return True
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error al cancelar cita: {e}")
+            raise
+        finally:
+            await db.close()
+    
+    async def get_user_appointments(
+        self,
+        user_id: UUID,
+        upcoming: bool = True
+    ) -> list[Appointment]:
+        """
+        Obtiene las citas de un usuario.
+        
+        Args:
+            user_id: ID del usuario
+            upcoming: Si True, solo retorna citas futuras
+        
+        Returns:
+            Lista de citas
+        """
+        db: AsyncSession = self._get_session()
+        
+        try:
+            query = select(Appointment).where(Appointment.user_id == user_id)
+            
+            if upcoming:
+                query = query.where(
+                    and_(
+                        Appointment.start_time >= datetime.now(tz.utc),
+                        Appointment.status == "confirmed"
+                    )
+                )
+            else:
+                query = query.order_by(Appointment.start_time.desc())
+            
+            result = await db.execute(query)
+            return list(result.scalars().all())
+            
+        finally:
+            await db.close()
+    
+    async def _check_conflict(
+        self,
+        db: AsyncSession,
+        property_id: UUID,
+        start_time: datetime,
+        exclude_appointment_id: UUID = None
+    ) -> Optional[Appointment]:
+        """Verifica si hay conflicto de horario."""
+        end_time = start_time + self.DEFAULT_VISIT_DURATION
+        
+        query = select(Appointment).where(
+            and_(
+                Appointment.property_id == property_id,
+                Appointment.status == "confirmed",
+                Appointment.start_time < end_time,
+                Appointment.end_time > start_time
+            )
+        )
+        
+        if exclude_appointment_id:
+            query = query.where(Appointment.id != exclude_appointment_id)
+        
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    
+    async def _update_user_score(self, user_id: UUID, db: AsyncSession) -> None:
+        """Actualiza el lead_score del usuario (+30 puntos por cita agendada)."""
+        try:
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            
+            if user:
+                user.lead_score = (user.lead_score or 0) + 30
+                user.last_interaction = datetime.now(tz.utc)
+                await db.commit()
+                logger.info(f"Lead score actualizado para usuario {user_id}: +30 puntos")
+        except Exception as e:
+            logger.error(f"Error actualizando lead score: {e}")
+    
+    def _ensure_timezone(self, dt: datetime) -> datetime:
+        """Asegura que el datetime tenga timezone."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=tz.utc)
+        return dt
+
+
+def format_appointment_confirmation(appointment: Appointment, property_title: str = None) -> str:
+    """
+    Formatea un mensaje de confirmación de cita para WhatsApp.
+    
+    Args:
+        appointment: Cita a formatear
+        property_title: Título de la propiedad (opcional)
+    
+    Returns:
+        Mensaje formateado listo para enviar
+    """
+    start = appointment.start_time
+    date_str = start.strftime("%d/%m/%Y")
+    time_str = start.strftime("%H:%M")
+    
+    type_labels = {
+        "visit": "visita",
+        "signing": "firma de contrato",
+        "meeting": "reunión"
+    }
+    type_label = type_labels.get(appointment.type, "cita")
+    
+    lines = [
+        "📅 *¡Cita Agendada!*",
+        "",
+        f"✅ *Tipo:* {type_label}",
+        f"📆 *Fecha:* {date_str}",
+        f"⏰ *Hora:* {time_str}",
+    ]
+    
+    if property_title:
+        lines.append(f"🏠 *Propiedad:* {property_title}")
+    
+    lines.extend([
+        "",
+        "📝 *Nota:* Un agente te contactará para confirmar los detalles.",
+        "",
+        "¿Necesitas hacer algún cambio? Solo dime."
+    ])
+    
+    return "\n".join(lines)
+
+
+def format_appointment_list(appointments: list[Appointment], property_titles: dict = None) -> str:
+    """
+    Formatea una lista de citas para WhatsApp.
+    
+    Args:
+        appointments: Lista de citas
+        property_titles: Dict {property_id: title} opcional
+    
+    Returns:
+        Mensaje formateado
+    """
+    if not appointments:
+        return "No tienes citas programadas upcoming."
+    
+    lines = ["📅 *Tus próximas citas:*", ""]
+    
+    for i, apt in enumerate(appointments, 1):
+        start = apt.start_time
+        date_str = start.strftime("%d/%m")
+        time_str = start.strftime("%H:%M")
+        
+        prop_title = "Propiedad"
+        if property_titles and apt.property_id in property_titles:
+            prop_title = property_titles[apt.property_id]
+        
+        type_label = "visita" if apt.type == "visit" else apt.type
+        
+        lines.append(f"{i}. 📆 {date_str} a las {time_str}")
+        lines.append(f"   🏠 {prop_title} ({type_label})")
+        lines.append(f"   🔍 ID: `{apt.id}`")
+        lines.append("")
+    
+    return "\n".join(lines)
+
+
+appointment_service = AppointmentService()

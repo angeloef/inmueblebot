@@ -1,0 +1,233 @@
+INMUEBLEBOT CONVERSATION TESTS
+Generated: 2026-04-18 09:37:37
+Total Scenarios: 10
+==================================================
+
+==================================================
+CONVERSATION #1 - SCENARIO: Simple greeting + property search (budget + location)
+Phone: +59598100001
+Personality: Pareja joven
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola
+
+[Bot]: ¡Hola! 👋 Soy InmuebleBot, tu asistente inmobiliario profesional en Paraguay.
+
+Estoy aquí para ayudarte a encontrar la propiedad perfecta, ya sea para comprar o alquilar. 🏡🏢 Terrenos, casas, departamentos, oficinas o locales... ¡lo que necesites!
+
+¿Qué tipo de propiedad estás buscando hoy? Cuéntame t...
+
+[User]: Busco una casa en Asuncion
+
+[Bot]: ¡Hola! 👋 Con gusto te ayudo a buscar casas en Asunción. ¿Estás buscando para comprar o para alquilar? Así puedo afinar mi búsqueda. 😊
+
+[User]: Tengo 180 mil de presupuesto
+
+[Bot]: ¡Excelente! Con 180 mil (asumo que dólares 💵), podemos encontrar algo interesante.
+
+Para poder ayudarte mejor, ¿qué tipo de propiedad estás buscando (casa, departamento, terreno, oficina, local) y en qué zona de Paraguay te gustaría? 🤔
+
+¿Es para comprar o para alquilar? 🏠🔑
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #2 - SCENARIO: Detailed search with multiple filters
+Phone: +59598100002
+Personality: Profesional ocupado
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola
+
+[Bot]: ¡Hola! 👋 Soy **InmuebleBot**, tu asistente inmobiliario en Paraguay. Estoy aquí para ayudarte a encontrar la propiedad perfecta, ya sea para comprar o alquilar. 🏠🏢 Terreno, casa, departamento, oficina o local, ¡lo que necesites!
+
+¿Qué tipo de propiedad estás buscando hoy? Cuéntame un poco más para q...
+
+[User]: Departamento en alquiler
+
+[Bot]: ¡Hola! 👋 Entendido, buscas un departamento en alquiler.
+
+Para poder ayudarte mejor, ¿en qué zona o barrio de Paraguay te gustaría que busquemos? 📍 Y si tenés un presupuesto en mente, ¡también me ayuda mucho! 💰
+
+[User]: 2 dormitorios
+
+[Bot]: ¡Hola! Soy InmuebleBot, tu asistente inmobiliario en Paraguay. 🇵🇾 ¡Estoy aquí para ayudarte a encontrar la propiedad perfecta!
+
+¿Qué estás buscando hoy? ¿Una casa, departamento, terreno, oficina o local? ¿Para comprar o alquilar? Cuéntame un poco más para que pueda empezar a buscar. 🏡✨
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #3 - SCENARIO: Property search -> book appointment
+Phone: +59598100003
+Personality: Primera vez comprador
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola me interesa comprar una casa
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: En Posadas
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: Quiero agendar una visita
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #4 - SCENARIO: User wants to rent instead of buy
+Phone: +59598100004
+Personality: Inversionista
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Buenas
+
+[Bot]: ¡Hola! 👋 Soy InmuebleBot, tu asistente inmobiliario profesional en Paraguay.
+
+Estoy aquí para ayudarte a encontrar la propiedad perfecta, ya sea para comprar o alquilar. ¿Qué tipo de propiedad estás buscando hoy? 😊
+
+[User]: Alquilan propiedades
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #5 - SCENARIO: User is a seller
+Phone: +59598100005
+Personality: Vendedor
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola quiero vender mi casa
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #6 - SCENARIO: Appointment reschedule
+Phone: +59598100006
+Personality: Usuario con cita
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola tengo una cita
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: Quiero cambiar el horario
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #7 - SCENARIO: User asks financing questions (FAQ)
+Phone: +59598100007
+Personality: Consultante
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hola tengo una pregunta
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: Que documentos necesito para comprar
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #8 - SCENARIO: Human handoff request
+Phone: +59598100008
+Personality: Usuario frustrado
+Final Lead Score: 0
+Final State: human_assistance
+==================================================
+
+[User]: Hola necesito ayuda
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: Quiero hablar con un agente humano
+
+[Bot]: Disculpa, tuve un problema al procesar tu mensaje. ¿Podrías intentar de nuevo?
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #9 - SCENARIO: Inactive user
+Phone: +59598100009
+Personality: Usuario inactivo
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Buenas
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+[User]: Tengo una casa en venta
+
+[Bot]: El servicio de IA tiene mucho tráfico. Por favor intenta en unos momentos.
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+
+==================================================
+CONVERSATION #10 - SCENARIO: Mixed language
+Phone: +59598100010
+Personality: Usuario bilingue
+Final Lead Score: 0
+Final State: idle
+==================================================
+
+[User]: Hi looking for property
+
+[Bot]: ¡Hola! 👋 ¡Claro, con gusto te ayudo a encontrar la propiedad perfecta!
+
+Para empezar, ¿qué tipo de propiedad estás buscando? Por ejemplo, una casa 🏠, un departamento 🏢, un terreno 🌳, una oficina 🏢 o un local comercial 🏪.
+
+¿Y sería para comprar o para alquilar? 🤝
+
+[User]: Casa en Asuncion
+
+[Bot]: ¡Hola! 👋 ¡Claro que sí! Para empezar, ¿estás buscando comprar o alquilar una casa en Asunción? Así puedo afinar la búsqueda. 🏡
+
+Summary: Sin preferencias guardadas
+
+Tools Used: None
+

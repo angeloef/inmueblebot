@@ -1,0 +1,88 @@
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Ruff
+.ruff_cache/
+
+# MyPy
+.mypy_cache/
+.pytest_cache/
+
+# pytest
+.coverage
+htmlcov/
+.tox/
+
+# Alembic
+alembic/versions/*.py
+!alembic/versions/.gitkeep
+
+# =============================================================================
+# Entorno y secrets
+# =============================================================================
+.env
+.env.local
+.env.*.local
+
+# Credenciales
+*.pem
+*.key
+*.crt
+credentials/
+*.json
+!credentials/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# =============================================================================
+# Docker
+# =============================================================================
+.docker/
+
+# =============================================================================
+# OS
+# =============================================================================
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# Base de datos
+# =============================================================================
+*.db
+*.sqlite
+*.sqlite3
