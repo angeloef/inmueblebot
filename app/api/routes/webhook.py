@@ -11,26 +11,30 @@ Meta Webhook Format:
 """
 
 from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from typing import Optional, List, Dict, Any
+from dataclasses import dataclass, field
 import logging
 import hashlib
 import hmac
 
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+@dataclass
 class WhatsAppIncomingMessage:
     """Parsed incoming WhatsApp message from Meta."""
     phone: str           # User's phone number
-    message_id: str    # Meta message ID
-    timestamp: str    # Message timestamp
-    message_type: str  # text, image, audio, video, button, etc.
-    text: str         # Message text or button ID
+    message_id: str      # Meta message ID
+    timestamp: str       # Message timestamp
+    message_type: str    # text, image, audio, video, button, etc.
+    text: str            # Message text or button ID
     media_url: Optional[str] = None  # Media URL if present
     media_caption: Optional[str] = None
 
@@ -53,11 +57,10 @@ def verify_webhook_signature(payload: str, signature: str, secret: str) -> bool:
 async def verify_webhook(request: Request):
     """
     Meta webhook verification endpoint.
-    
+
     Accepts ALL query parameters and extracts what we need manually.
     Handles both underscore (hub_verify_token) AND dot (hub.verify_token) formats.
     """
-    from config.settings import get_settings
     settings = get_settings()
     
     # Get ALL query params as dict
@@ -98,13 +101,12 @@ async def verify_webhook(request: Request):
         raise HTTPException(status_code=403, detail="Invalid verify token")
     
     logger.info(f"[Webhook] ✅ SUCCESS! returning: {challenge}")
-    return challenge
+    return PlainTextResponse(content=challenge)
 
 
 @router.get("/webhook/verify")
 async def simple_verify():
     """Simple verification check - just validates token without challenge."""
-    from config.settings import get_settings
     settings = get_settings()
     
     token = settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN
@@ -119,7 +121,6 @@ async def simple_verify():
 @router.get("/webhook/debug")
 async def debug_webhook():
     """Debug endpoint - returns the configured verify token."""
-    from config.settings import get_settings
     settings = get_settings()
     token = settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN
     
@@ -134,7 +135,7 @@ async def debug_webhook():
 async def receive_webhook(request: Request):
     """
     Receive incoming WhatsApp messages from Meta.
-    
+
     Meta sends POST with JSON body:
     {
         "object": "whatsapp_business_account",
@@ -155,7 +156,6 @@ async def receive_webhook(request: Request):
         }]
     }
     """
-    from config.settings import get_settings
     settings = get_settings()
     
     # Get request body
