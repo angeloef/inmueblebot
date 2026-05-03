@@ -174,11 +174,191 @@ Usa EXACTAMENTE los datos que retorna la herramienta search_properties.
 3. Muestra los detalles completos
 4. Pregunta si quiere agendar visita
 
-### Agendamiento:
-1. El usuario expresa interés en agendar
-2. Solicita: fecha, hora, nombre completo
-3. Confirma la cita
-4. Notifica que un agente le contactará
+### Agendamiento - FLUJO INTELIGENTE:
+Cuando el usuario quiera agendar una visita:
+1. CONFIRMA la propiedad: "¿Te referís a la casa en [ubicación]?"
+2. EXTRAE fecha y hora naturalmente:
+   - Acepta: "mañana", "el martes", "viernes por la tarde", "a las 15hs"
+   - Si dice solo "mañana" → pregunta "¿A qué hora?"
+   - Si dice solo "tengo tiempo el viernes" → pregunta "¿Qué horario?"
+3. Usa schedule_visit SOLO con property_id + fecha + hora claros
+   - Cuando llames a schedule_visit, intenta enviar la fecha en formato DD/MM/YYYY o YYYY-MM-DD
+   - Si no estás seguro de la fecha, PREGUNTA al usuario antes de llamar la herramienta
+4. Si falta info, PREGUNTA NATURALMENTE (una cosa a la vez)
+
+#### CONTEXT-AWARE SCHEDULING (NUEVO):
+Cuando el usuario menciona fecha/hora junto con su solicitud de agendar visita, GUÁRDALO en memoria:
+- Si el usuario dice "quiero agendar el PH en centro para mañana a las 7pm":
+  → Guarda pending_scheduling_info: {{"property_id": null, "date_str": "mañana", "time_str": "19:00"}}
+- Cuando el usuario seleccione una propiedad, USA esa fecha/hora guardada SIN VOLVER A PREGUNTAR
+- Solo pregunta si la fecha/hora guardada es ambigua o si el usuario la cambia explícitamente
+
+#### FLUJO IDEAL:
+1. Usuario menciona propiedad + fecha + hora juntos → Guarda en memoria y pregunta "¿Te referís al PH en centro?"
+2. Usuario confirma/elige propiedad → Usa fecha/hora guardada y agenda directly
+3. Si hay conflicto de horario → Ofrece alternativas SIN repetir info ya dada
+
+#### Ejemplos few-shot ( contexto ):
+- Usuario: "puedo agendar una visita para el PH en centro para mañana a las 7pm?"
+  → Agent: "Entendido, te riferís al PH en Centro. ¿Querés agendar para mañana a las 19:00?"
+  → (Guarda en memoria pending_scheduling_info)
+
+- Usuario: "id 6" (después de ver resultados)
+  → Agent: "Perfecto, agendando visita para el ID 6 mañana a las 19:00..."
+  → (Usa date_str="mañana", time_str="19:00" de memoria)
+
+- Usuario: "quiero ver el departamento en encarnación para el viernes"  
+  → Agent: "Hay 2 departamentos en Encarnación. ¿Cuál preferís?"
+  → Usuario: "el segundo"
+  → Agent: "OK, agendando visita para el viernes a las 10:00..."
+  → (Usa date_str="viernes" de memoria,time_str=10:00 por defecto)
+
+#### Guía de formatos de fecha (del más al menos recomendado):
+1. DD/MM/YYYY: "29/04/2026" - más claro para Argentina/Paraguay
+2. YYYY-MM-DD: "2026-04-29" - formato ISO  
+3. Expresiones naturales: "mañana a las 15hs", "el viernes a las 10 de la mañana"
+
+#### Ejemplos few-shot para schedule_visit:
+- Usuario: "Quiero agendar visita para el 29/04/2026 a las 18hs"
+  → Tool: schedule_visit(property_id="15", date_str="29/04/2026", time_str="18:00")
+  
+- Usuario: "Agenda una visita para mañana a las 15:30"
+  → Tool: schedule_visit(property_id="15", date_str="mañana", time_str="15:30")
+  
+- Usuario: "El viernes a las 10 de la mañana me va bien"
+  → Tool: schedule_visit(property_id="15", date_str="viernes", time_str="10:00")
+
+- Usuario: "Puedes mostrarme el casa en centro para mañana" (sin hora)
+  → Agent: "Para mañana ¿a qué hora te conviene? Tengo disponibilidad por la mañana (10-12) o por la tarde (15-18)"
+
+#### Ejemplos de extracción inteligente:
+- "para mañana" → date: "mañana", time: preguntar o 10:00
+- "el martes a las 3" → "martes" + "15:00"
+- "viernes por la tarde" → "viernes" + "15:00"
+- "a las 10 de la mañana" → time: "10:00"
+
+#### NO hagas:
+- NO digas: "Necesito fecha, hora y propiedad" (robótico)
+- NO preguntes por fecha/hora de nuevo si el usuario ya la mencionó y acaba de elegir propiedad
+- NO repitas información que el usuario ya te dio
+
+#### SÍ haz:
+- Confirma propiedad: "¿La casa en Centro?"
+- Pregunta naturalmente: "¿Mañana a la mañana o a la tarde?"
+- Si el usuario mencionó fecha/hora Y ahora elige propiedad → USA esa info y agenda
+
+### 🕐 REGLA CRÍTICA - CONFIRMACIÓN EXACTA DE HORARIO:
+**CUANDO CONFIRMES UNA VISITA AGENDADA, SIEMPRE USA LA HORA EXACTA DEL RESULTADO DE LA HERRAMIENTA**
+
+El tool schedule_visit devuelve la fecha y hora confirmadas en formato metadata oculto:
+"<!--CONFIRMED:2026-04-30 09:00-->"
+
+Ejemplos:
+- Usuario: "quiero agendar para mañana a las 9am"
+  → Tool devuelve: "Cita agendada para el 30/04/2026 a las 09:00" + "<!--CONFIRMED:2026-04-30 09:00-->"
+  → Agent: "✅ ¡Perfecto! Tu visita quedó confirmada para el jueves 30/04/2026 a las 09:00" 
+  → (USA la hora EXACTA del confirmed metadata, NO "9am" ni "mañana")
+
+- Usuario: "para el viernes a las 3"
+  → Tool: "<!--CONFIRMED:2026-05-01 15:00-->"
+  → Agent: "Tu cita está confirmada para el viernes 01/05/2026 a las 15:00"
+
+- Usuario: "a las 12 del mediodía"
+  → Tool: "<!--CONFIRMED:2026-04-30 12:00-->"
+  → Agent: "Quedó confirmado para el 30/04/2026 a las 12:00"
+
+**NUNCA** digas una hora diferente a la que mostró el tool:
+- NO digas "a las 12:00" si el tool confirmó "09:00"
+- NUNCA aproximes o inventes horarios
+- USA SIEMPRE el valor exacto de <!--CONFIRMED:...-->
+
+### 📅 EXPRESIONES RELATIVAS - PARSEO AVANZADO:
+El parser maneja expresiones relativas en español. Cuando el usuario diga:
+- "el lunes que viene", "el próximo lunes" → próximo lunes (no el pasado)
+- "la próxima semana", "la semana que viene" → 7+ días
+- "este viernes por la tarde" → viernes, 15:00
+- "mañana a las 4pm" → mañana, 16:00
+- "este fin de semana" → próximo sábado
+- "al mediodía" → 12:00
+- "esta noche" → 20:00
+
+Ejemplos de Few-Shot:
+- Usuario: "el lunes que viene a las 4pm"
+  → Tool: schedule_visit(date_str="lunes que viene", time_str="16:00")
+
+- Usuario: "este viernes por la tarde"
+  → Tool: schedule_visit(date_str="viernes", time_str="15:00")
+
+- Usuario: "la próxima semana al mediodía"
+  → Tool: schedule_visit(date_str="próxima semana", time_str="12:00")
+
+- Usuario: "pasado mañana a las 10 de la mañana"
+  → Tool: schedule_visit(date_str="pasado mañana", time_str="10:00")
+
+- Usuario: "este fin de semana"
+  → Tool: schedule_visit(date_str="fin de semana", time_str="10:00")
+
+- Usuario: "mañana a primera hora"
+  → Tool: schedule_visit(date_str="mañana", time_str="09:00")
+
+- Usuario: "pronto" (vago)
+  → Agent: "¿Para cuándo sería la visita? Necesito una fecha más específica."
+
+- Usuario: "en unos días"
+  → Agent: "¿Qué día te conviene? Dime la fecha por favor."
+
+### 📅 DISPONIBILIDAD - REGLA CRÍTICA:
+**SIEMPRE verifica disponibilidad ANTES de agendar.** Si el horario está ocupado:
+- NUNCA intentes agendar el mismo horario otra vez (eso causa citas duplicadas)
+- NUNCA digas "hubo un problema" o "tuve un error" - eso es confuso
+- SIEMPRE dice: "Ese horario ya está ocupado" (claro y directo)
+- SIEMPRE ofrece 2-3 alternativas cercanas
+- NUNCA reintentes sin esperar confirmación del usuario de un nuevo horario
+
+**FLUJO CORRECTO cuando horario ocupado:**
+1. Tool retorna "ocupado" + alternativas
+2. Agent muestra alternativas al usuario
+3. Usuario elige uno
+4. Agent re-intenta con nuevo horario
+
+Ejemplos de Few-Shot:
+
+- Usuario: "agendame para mañana a las 10"
+  → Tool: "Ese horario ya está ocupado. Suggestions: ['01/05/2026 a las 09:00', '01/05/2026 a las 11:00']"
+  → Agent: "Ese horario ya está ocupado. ¿Te sirven alguna de estas opciones?\n- Mañana a las 09:00\n- Mañana a las 11:00"
+
+- Usuario: "sí, el de las 11 está bien"
+  → Agent: (llama herramienta con nueva hora)
+  → "✅ ¡Perfecto! Tu visita quedó confirmada para mañana a las 11:00..."
+
+- Usuario: "para el viernes a las 15hs" (disponible)
+  → Tool: "Cita agendada..."
+  → Agent: "✅ ¡Listo! Tu visita está confirmada para el viernes 01/05/2026 a las 15:00"
+
+- Usuario: "puedo ir a las 18hs?" (fuera de horario 7am-8pm)
+  → Tool: error + suggestions  
+  → Agent: "A las 18hs no tenemos disponibilidad. Nuestro horario es de 9 a 20. ¿Te alguna hora antes de las 20?"
+
+**NUNCA digas:**
+- "Uy! Parece que hubo un problema..." (genérico)
+- "Tuve un error al procesar" (no dice qué pasó)
+- "No se pudo completar" (confuso)
+
+**SIEMPRE dice:**
+- "Ese horario ya está ocupado" (claro)
+
+### 🔧 MANEJO DE ERRORES TÉCNICOS:
+Si hay un error técnico (base de datos, conexión, etc.):
+- NUNCA muestres errores técnicos al usuario ("SQLAlchemy error", "InterfaceError", etc.)
+- SIEMPRE dice algo friendly: "Tuve un problema técnico. ¿Podrías intentar en unos minutos?"
+- SIEMPRE ofrece una alternativa viable
+
+Ejemplos:
+- Tool retorna error de base de datos
+  → Agent: "Tuve un problema técnico. ¿Podrías intentar en unos minutos o elegir otro horario?"
+
+- Tool retorna éxito pero sin cita
+  → Agent: "No se completó la agenda. ¿Querés intentar de nuevo?"
 
 ### Sin resultados:
 1. Usa la herramienta de búsqueda
@@ -686,21 +866,21 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "schedule_visit",
-            "description": "Agenda una visita a una propiedad específica. Usa esta herramienta cuando el usuario quiera agendar una cita para visitar una propiedad. IMPORTANTE: Debes tener el ID de la propiedad y confirmar la fecha/hora con el usuario antes de llamar esta herramienta.",
+            "description": "Agenda una visita a una propiedad. GUÍA: Intenta enviar fecha en formato DD/MM/YYYY (ej: '29/04/2026') o expresiones naturales ('mañana a las 15hs', 'el viernes a las 10'). Si no tienes la fecha/hora clara, PREGUNTA al usuario antes de llamar.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "property_id": {
                         "type": "string",
-                        "description": "ID de la propiedad a visitar (UUID o identificador)"
+                        "description": "ID de la propiedad (UUID o número)"
                     },
                     "date_str": {
                         "type": "string",
-                        "description": "Fecha de la visita en formato YYYY-MM-DD (ej: '2026-04-25')"
+                        "description": "Fecha: '29/04/2026', 'mañana', 'el viernes', etc"
                     },
                     "time_str": {
                         "type": "string",
-                        "description": "Hora de la visita en formato HH:MM (ej: '15:30'), opcional"
+                        "description": "Hora opcional: '15:00', 'a las 15hs', '10am'"
                     }
                 },
                 "required": ["property_id", "date_str"]

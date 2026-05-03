@@ -61,7 +61,13 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = Field(default=0.5, description="Temperatura por defecto para LLM")
     LLM_MAX_TOKENS: int = Field(default=1000, description="Máximo de tokens en respuesta")
 
-    # === WhatsApp (Meta) ===
+    # === WhatsApp (Twilio) ===
+    TWILIO_ACCOUNT_SID: Optional[str] = Field(default=None, description="Twilio Account SID")
+    TWILIO_AUTH_TOKEN: Optional[str] = Field(default=None, description="Twilio Auth Token")
+    TWILIO_WHATSAPP_NUMBER: Optional[str] = Field(default=None, description="Twilio WhatsApp number (e.g. +14155238886)")
+    TWILIO_WEBHOOK_VERIFY_TOKEN: Optional[str] = Field(default=None, description="Optional webhook verification")
+    
+    # === WhatsApp (Meta) - Legacy ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = Field(default=None, description="Phone Number ID de Meta")
     WHATSAPP_ACCESS_TOKEN: Optional[str] = Field(default=None, description="Access Token de Meta")
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(

@@ -266,6 +266,15 @@ class RealEstateAgent:
                     
                     if "get_property_images" in tool_name:
                         rich_content = self._extract_rich_content(tool_args, tool_result)
+                    
+                    # Log confirmed datetime for schedule_visit
+                    if "schedule_visit" in tool_name and "Cita Agendada" in str(tool_result):
+                        import re
+                        match = re.search(r'<!--CONFIRMED:(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-->', str(tool_result))
+                        if match:
+                            confirmed_time = match.group(1)
+                            logger.info(f"[Agent] Tool confirmed datetime: {confirmed_time}")
+                            logger.info(f"[Agent] Final confirmation message using time: {confirmed_time}")
             
             if not response_text:
                 response_text = "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"

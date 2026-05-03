@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     META_TOKEN: str = ""
     META_PHONE_NUMBER_ID: str = ""
     META_WEBHOOK_VERIFY_TOKEN: str = "change-me"
+    
+    # WhatsApp / Meta (alt names)
+    WHATSAPP_ACCESS_TOKEN: str = ""
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = "change-me"
 
     # LLM
     OPENAI_API_KEY: str = ""

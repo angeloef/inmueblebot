@@ -5,14 +5,26 @@ from config.settings import get_settings
 
 settings = get_settings()
 
+logger = logging.getLogger(__name__)
+
 
 class WhatsAppClient:
     def __init__(self):
-        self.token = settings.META_TOKEN
-        self.phone_number_id = settings.META_PHONE_NUMBER_ID
+        self.token = settings.WHATSAPP_ACCESS_TOKEN or settings.META_TOKEN or ""
+        self.phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID or settings.META_PHONE_NUMBER_ID or ""
         self.base_url = "https://graph.facebook.com/v18.0"
-
+        self._is_configured = bool(self.token and self.phone_number_id)
+    
+    @property
+    def is_configured(self) -> bool:
+        return self._is_configured
+    
     async def send_message(self, to: str, message: str) -> dict:
+        """Send a text message via WhatsApp."""
+        if not self.is_configured:
+            logger.warning("WhatsApp not configured - message not sent")
+            return {"error": "WhatsApp not configured"}
+        
         url = f"{self.base_url}/{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -26,10 +38,17 @@ class WhatsAppClient:
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
-            return response.json()
+            result = response.json()
+            if response.status_code >= 400:
+                logger.error(f"WhatsApp send error: {result}")
+            return result
 
     async def send_image(self, to: str, image_url: str, caption: str = "") -> dict:
         """Send a single image via WhatsApp using image message type."""
+        if not self.is_configured:
+            logger.warning("WhatsApp not configured - image not sent")
+            return {"error": "WhatsApp not configured"}
+        
         url = f"{self.base_url}/{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -48,7 +67,37 @@ class WhatsAppClient:
             response = await client.post(url, json=payload, headers=headers)
             return response.json()
 
+    async def send_interactive_buttons(self, to: str, body_text: str, buttons: List[dict]) -> dict:
+        """Send interactive buttons message."""
+        if not self.is_configured:
+            logger.warning("WhatsApp not configured - buttons not sent")
+            return {"error": "WhatsApp not configured"}
+        
+        url = f"{self.base_url}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": body_text},
+                "action": {"buttons": buttons}
+            }
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers)
+            return response.json()
+
     async def send_template(self, to: str, template_name: str, components: Optional[list] = None) -> dict:
+        """Send a template message."""
+        if not self.is_configured:
+            logger.warning("WhatsApp not configured - template not sent")
+            return {"error": "WhatsApp not configured"}
+        
         url = f"{self.base_url}/{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -72,15 +121,24 @@ class WhatsAppClient:
 whatsapp_client = WhatsAppClient()
 
 
+async def send_whatsapp_message(phone: str, message: str) -> bool:
+    """Send a text message. Returns True if successful."""
+    try:
+        result = await whatsapp_client.send_message(to=phone, message=message)
+        return "error" not in result
+    except Exception as e:
+        logger.error(f"WhatsApp send failed: {e}")
+        return False
+
+
 async def send_whatsapp_images(phone: str, image_urls: List[str], caption: str = "") -> bool:
-    """Placeholder: send up to 3 images via WhatsApp. Uses send_image under the hood."""
+    """Send up to 3 images via WhatsApp."""
     if not image_urls:
         return True
     try:
-        # Send up to 3 images to avoid spam
-        for idx, url in enumerate(image_urls[:3]):
+        for url in image_urls[:3]:
             await whatsapp_client.send_image(to=phone, image_url=url, caption=caption)
         return True
     except Exception as e:
-        logging.getLogger(__name__).error(f"WhatsApp image send failed: {e}")
+        logger.error(f"WhatsApp image send failed: {e}")
         return False

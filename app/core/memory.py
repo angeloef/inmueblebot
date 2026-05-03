@@ -150,10 +150,11 @@ class MemoryManager:
                 "last_search_criteria": None,
                 "selected_property_id": None,
                 "conversation_stage": "new",
+                "pending_scheduling_info": None,
             }
         except Exception as e:
             logger.debug(f"[Memory] Redis unavailable, using default context: {e}")
-            return {"current_state": "idle", "last_search_criteria": None, "conversation_stage": "new"}
+            return {"current_state": "idle", "last_search_criteria": None, "conversation_stage": "new", "pending_scheduling_info": None}
     
     async def save_user_context(self, phone: str, context: dict) -> bool:
         """
@@ -178,6 +179,46 @@ class MemoryManager:
         """
         context = await self.get_user_context(phone)
         context[field] = value
+        return await self.save_user_context(phone, context)
+    
+    # =========================================================================
+    # MÉTODOS DE SCHEDULING (CONTEXT-AWARE)
+    # =========================================================================
+    
+    async def save_pending_scheduling(self, phone: str, property_id: str, date_str: str = None, time_str: str = None) -> bool:
+        """
+        Guarda información de scheduling pendiente cuando el usuario menciona:
+        - "quiero agendar para mañana a las 7pm"
+        - "puedo ver el PH en centro para el viernes"
+        
+        El agente debe guardar esto y usarlo cuando el usuario seleccione una propiedad.
+        """
+        context = await self.get_user_context(phone)
+        
+        context["pending_scheduling_info"] = {
+            "property_id": property_id,
+            "date_str": date_str,
+            "time_str": time_str,
+            "saved_at": datetime.utcnow().isoformat(),
+        }
+        
+        logger.info(f"[Memory] Pending scheduling saved for {phone}: property={property_id}, date={date_str}, time={time_str}")
+        return await self.save_user_context(phone, context)
+    
+    async def get_pending_scheduling(self, phone: str) -> Optional[dict]:
+        """
+        Obtiene información de scheduling pendiente.
+        Returns None si no hay información guardada.
+        """
+        context = await self.get_user_context(phone)
+        return context.get("pending_scheduling_info")
+    
+    async def clear_pending_scheduling(self, phone: str) -> bool:
+        """
+        Limpia la información de scheduling pendiente (después de agendar exitosamente).
+        """
+        context = await self.get_user_context(phone)
+        context["pending_scheduling_info"] = None
         return await self.save_user_context(phone, context)
     
     # =========================================================================

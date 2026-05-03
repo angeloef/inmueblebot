@@ -6,6 +6,7 @@ from datetime import datetime, timezone as tz, timedelta
 from uuid import UUID, uuid4
 from typing import Optional
 from loguru import logger
+import pytz
 
 from app.db.models import Appointment
 from app.db.models import User
@@ -67,40 +68,42 @@ class AppointmentService:
         notes: str = None,
         user_phone: str = None,
         check_calendar: bool = True
-    ) -> Appointment:
+    ) -> dict:
         """
         Crea una nueva cita para visitar una propiedad.
         
-        Args:
-            user_id: ID del usuario que agenda
-            property_id: ID de la propiedad a visitar
-            start_time: Fecha y hora de la visita (timezone-aware)
-            type: Tipo de cita (visit, signing, meeting)
-            notes: Notas adicionales opcionales
-            user_phone: Teléfono del usuario (para Google Calendar)
-            check_calendar: Verificar disponibilidad en Google Calendar
-            
-        Returns:
-            Appointment creada
-        
-        Raises:
-            ValueError: Si la fecha ya pasó o hay conflicto de horario
+        Returns dict with:
+        - success: bool
+        - message: str (confirmation or error)
+        - appointment: Appointment if success
+        - confirmed_datetime: str (ISO format) if success
+        - suggested_times: list of dicts if busy {datetime, formatted}
         """
-        db: AsyncSession = self._get_session()
-        
+        db = self._get_session()
         try:
             start_time = self._ensure_timezone(start_time)
             
             if start_time < datetime.now(tz.utc):
-                raise ValueError("La fecha y hora ya pasaron. Por favor selecciona una fecha futura.")
+                return {
+                    "success": False,
+                    "message": "La fecha y hora ya pasaron. Por favor selecciona una fecha futura.",
+                    "suggested_times": []
+                }
             
             # Check local database conflict
             conflict = await self._check_conflict(db, property_id, start_time)
             if conflict:
-                raise ValueError("Ya existe una cita programada para esta propiedad en ese horario. Por favor elige otro momento.")
+                logger.warning(f"[Create Appointment] Slot occupied: property={property_id}, time={start_time}")
+                suggestions = await self._get_suggested_times(property_id, start_time, db)
+                return {
+                    "success": False,
+                    "message": "Ese horario ya está ocupado. ¿Te alguna de estas opciones?",
+                    "suggested_times": suggestions
+                }
             
             # Check Google Calendar availability if configured
             calendar_event_id = None
+            logger.info(f"[Create Appointment] check_calendar={check_calendar}, calendar_service.is_configured={calendar_service.is_configured}")
             if check_calendar and calendar_service.is_configured:
                 property_uuid = UUID(str(property_id)) if isinstance(property_id, str) else property_id
                 result = await db.execute(select(Property).where(Property.id == property_uuid))
@@ -113,11 +116,15 @@ class AppointmentService:
                     time_str=start_time.strftime("%H:%M"),
                     duration_hours=1
                 )
+                logger.info(f"[Create Appointment] Calendar check: available={cal_check.get('available')}, error={cal_check.get('error')}")
                 
                 if not cal_check.get("available", True):
-                    conflicting = cal_check.get("conflicting_events", [])
-                    event_names = [e.get("summary", "Evento") for e in conflicting]
-                    raise ValueError(f"Horario ocupado en Google Calendar: {', '.join(event_names)}")
+                    suggestions = await self._get_suggested_times(property_id, start_time, db)
+                    return {
+                        "success": False,
+                        "message": f"Horario ocupado en Google Calendar por otro evento.",
+                        "suggested_times": suggestions
+                    }
                 
                 # Create Google Calendar event
                 end_time = start_time + self.DEFAULT_VISIT_DURATION
@@ -156,14 +163,67 @@ class AppointmentService:
             
             logger.info(f"Cita creada: {appointment.id} calendar_event_id={calendar_event_id}")
             
-            return appointment
-            
+            return {
+                "success": True,
+                "message": "Cita agendada exitosamente",
+                "appointment": appointment,
+                "confirmed_datetime": start_time.isoformat()
+            }
         except Exception as e:
             await db.rollback()
             logger.error(f"Error al crear cita: {e}")
-            raise
+            return {
+                "success": False,
+                "message": str(e),
+                "suggested_times": []
+            }
         finally:
             await db.close()
+    
+    async def _get_suggested_times(
+        self,
+        property_id,
+        requested_time: datetime,
+        db: AsyncSession,
+        num_suggestions: int = 3
+    ) -> list:
+        """Generate suggested alternative times (timezone-aware)."""
+        suggestions = []
+        arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+        
+        # Ensure requested_time is timezone-aware
+        if requested_time.tzinfo is None:
+            requested_time = arg_tz.localize(requested_time)
+        
+        # Try: same day -1 hour, +1 hour, next day same hour
+        test_times_local = [
+            requested_time - timedelta(hours=1),
+            requested_time + timedelta(hours=1),
+            requested_time + timedelta(days=1),
+        ]
+        
+        now = datetime.now(arg_tz)
+        
+        for test_time in test_times_local[:num_suggestions]:
+            # Skip if in the past (compare in Argentina timezone)
+            if test_time < now:
+                continue
+            
+            # Check local DB conflict
+            conflict = await self._check_conflict(db, property_id, test_time)
+            if conflict:
+                continue
+            
+            # Check if reasonable hours (7am-8pm Argentina)
+            if test_time.hour < 7 or test_time.hour > 20:
+                continue
+            
+            suggestions.append({
+                "datetime": test_time.isoformat(),
+                "formatted": test_time.strftime("%d/%m/%Y a las %H:%M")
+            })
+        
+        return suggestions
     
     async def get_appointment(self, appointment_id: UUID) -> Optional[Appointment]:
         """Obtiene una cita por su ID."""
@@ -357,19 +417,32 @@ class AppointmentService:
     async def _check_conflict(
         self,
         db: AsyncSession,
-        property_id: UUID,
+        property_id,
         start_time: datetime,
         exclude_appointment_id: UUID = None
     ) -> Optional[Appointment]:
-        """Verifica si hay conflicto de horario."""
-        end_time = start_time + self.DEFAULT_VISIT_DURATION
+        """Verifica si hay conflicto de horario (timezone-aware)."""
+        # Ensure start_time is in UTC for comparison
+        if start_time.tzinfo is not None:
+            start_time_utc = start_time.astimezone(tz.utc)
+        else:
+            # If naive, assume it's Argentina time and convert
+            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+            start_time_utc = arg_tz.localize(start_time).astimezone(tz.utc)
+        
+        end_time_utc = start_time_utc + self.DEFAULT_VISIT_DURATION
+        
+        # Handle both int and UUID property_id
+        prop_id = property_id if isinstance(property_id, int) else int(property_id)
+        
+        logger.info(f"[Conflict Check] property={prop_id}, start={start_time_utc} to {end_time_utc} (UTC)")
         
         query = select(Appointment).where(
             and_(
-                Appointment.property_id == property_id,
+                Appointment.property_id == prop_id,
                 Appointment.status == "confirmed",
-                Appointment.start_time < end_time,
-                Appointment.end_time > start_time
+                Appointment.start_time < end_time_utc,
+                Appointment.end_time > start_time_utc
             )
         )
         
@@ -377,7 +450,12 @@ class AppointmentService:
             query = query.where(Appointment.id != exclude_appointment_id)
         
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        conflict = result.scalar_one_or_none()
+        
+        if conflict:
+            logger.info(f"[Conflict Check] CONFLICT found: {conflict.start_time} to {conflict.end_time}")
+        
+        return conflict
     
     async def _update_user_score(self, user_id: UUID, db: AsyncSession) -> None:
         """Actualiza el lead_score del usuario (+30 puntos por cita agendada)."""
@@ -409,11 +487,12 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
         property_title: Título de la propiedad (opcional)
     
     Returns:
-        Mensaje formateado listo para enviar
+        Mensaje formateado listo para enviar (incluye metadata estructurada para el LLM)
     """
     start = appointment.start_time
     date_str = start.strftime("%d/%m/%Y")
     time_str = start.strftime("%H:%M")
+    iso_datetime = start.strftime("%Y-%m-%d %H:%M")
     
     type_labels = {
         "visit": "visita",
@@ -440,7 +519,13 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
         "¿Necesitas hacer algún cambio? Solo dime."
     ])
     
-    return "\n".join(lines)
+    message = "\n".join(lines)
+    
+    # Append structured metadata for LLM consumption (hidden from user)
+    # Format: <!--CONFIRMED:{datetime}--> where datetime is YYYY-MM-DD HH:MM
+    message += f"\n\n<!--CONFIRMED:{iso_datetime}-->"
+    
+    return message
 
 
 def format_appointment_list(appointments: list[Appointment], property_titles: dict = None) -> str:

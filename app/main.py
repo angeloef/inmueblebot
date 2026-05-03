@@ -117,6 +117,7 @@ def root():
         "message": "InmuebleBot API",
         "version": "0.1.0",
         "docs": "/docs",
+        "health": "/health"
     }
 
 
@@ -148,13 +149,14 @@ async def health_redis():
     return result
 
 
-# Importar y registrar routers (descomentar cuando estén implementados)
-# from app.api.routes import webhook, admin, internal
-# app.include_router(webhook.router, prefix="/api")
-# app.include_router(admin.router, prefix="/api")
-# app.include_router(internal.router, prefix="/api")
+# Importar y registrar routers
+from app.api.routes.webhook import router
+logger.info(f"Registering WhatsApp webhook router")
+app.include_router(router)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", reload=True)
+    print("🏠 Starting InmuebleBot on http://0.0.0.0:8000")
+    logger.info("FastAPI starting on http://0.0.0.0:8000")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

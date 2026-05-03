@@ -515,25 +515,33 @@ async def schedule_visit(
     phone: str = None
 ) -> str:
     """
-    Agenda una visita a una propiedad específica.
+    Agenda una visita a una propiedad.
     
-    Args:
-        property_id: ID de la propiedad a visitar
-        date_str: Fecha en formato YYYY-MM-DD (ej: "2026-04-25")
-        time_str: Hora en formato HH:MM (ej: "15:30"), opcional
-        phone: Número de teléfono del usuario
+    GUÍA PARA EL LLM:
+    - Intenta enviar la fecha en formato DD/MM/YYYY cuando sea posible (ej: "29/04/2026")
+    - También soporta expresiones naturales: "mañana a las 15hs", "el viernes a las 10 de la mañana"
+    - Si date_str o time_str viene vacío pero hay contexto previo, úsalo
+    - Si no puedes determinar la fecha/hora, PREGUNTA al usuário antes de llamar
+    
+    Esta función puede receber:
+    - property_id: ID de la propiedad (número o UUID)
+    - date_str: "29/04/2026", "mañana", "el viernes", etc
+    - time_str: "15:00", "a las 15hs", "10am", etc (opcional)
+    - phone: Número de teléfono del usuario
     
     Returns:
-        Mensaje de confirmación o error
+        Mensaje de confirmación ou mensaje de erro/ambigüedad
+        
+    NOTA: Esta función verifica disponibilidad en Google Calendar antes de agendar.
     """
-    from datetime import datetime, timezone as tz
+    from datetime import datetime, timezone as tz, timedelta
     from uuid import UUID
     from app.services.appointment_service import appointment_service, format_appointment_confirmation
     from app.services.property_service import property_service
     from app.db.repository import UserRepository
     from app.db.models import User
     from app.db.session import async_session_factory
-
+    
     try:
         if not phone:
             return "No tengo tu información de contacto. ¿Podrías identificarte?"
@@ -542,9 +550,9 @@ async def schedule_visit(
             return "Necesito saber qué propiedad quieres visitar."
         
         if not date_str:
-            return "Necesito saber qué fecha te conviene para la visita."
+            return "¿Para qué fecha te conviene la visita? Dime algo como 'mañana a las 15', 'el viernes a las 10', o 'el 28 de abril'."
         
-        # Try integer ID first (like "15"), then UUID
+        # Resolve property_id BEFORE parsing datetime
         prop_uuid = None
         prop_int_id = None
         try:
@@ -553,53 +561,96 @@ async def schedule_visit(
                 prop = await property_service.get_property_details(str(int_id))
                 if prop:
                     prop_uuid = prop.id
-                    prop_int_id = prop.id  # Use as integer for appointments
+                    prop_int_id = prop.id
+                    property_obj = prop
         except (ValueError, TypeError):
             pass
         
-        # If not found by integer, try UUID
         if not prop_uuid:
             try:
                 prop_uuid = UUID(property_id)
             except ValueError:
                 return f"El ID de propiedad '{property_id}' no es válido."
+            prop = await property_service.get_property_details(prop_uuid)
+            if not prop:
+                return f"No encontré la propiedad con ID '{property_id}'."
+            prop_int_id = prop.id
+            property_obj = prop
         
-        property_obj = await property_service.get_property_details(prop_uuid)
-        if not property_obj:
-            return f"No encontré la propiedad con ID '{property_id}'."
+        # Combine date_str and time_str for parsing
+        combined_input = f"{date_str} {time_str or ''}".strip()
         
-        # Get integer ID for appointment table
-        if prop_int_id is None:
-            prop_int_id = property_obj.id
+        # Use robust Argentine timezone parser
+        from app.utils.date_parser import parse_spanish_datetime, format_datetime_argentina, validate_future
+        logger.info(f"[schedule_visit] Input: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
         
+        parsed_dt, parse_error = parse_spanish_datetime(combined_input)
+        
+        if parse_error:
+            # If parsing failed, ask user for clarification
+            logger.warning(f"[schedule_visit] Parse error: {parse_error}")
+            return parse_error
+        
+        # Validate it's in the future
+        is_valid, validation_error = validate_future(parsed_dt, min_minutes=30)
+        if not is_valid:
+            logger.warning(f"[schedule_visit] Validation error: {validation_error}")
+            return validation_error
+        
+        start_datetime = parsed_dt
+        logger.info(f"[schedule_visit] Parsed datetime: {format_datetime_argentina(start_datetime)}")
+        
+        logger.info(f"[schedule_visit] Parsed date: {date_str} + {time_str} -> {start_datetime.strftime('%Y-%m-%d %H:%M')}")
+        
+        # Get user in separate session
+        user = None
         async with async_session_factory() as session:
-            user_repo = UserRepository(User, session)
-            user = await user_repo.get_by_phone(phone)
+            try:
+                user_repo = UserRepository(User, session)
+                user = await user_repo.get_by_phone(phone)
+                if not user:
+                    return "No te encontré en el sistema. ¿Podrías darme tu nombre?"
+                logger.info(f"[schedule_visit] User found: {user.id}")
+            except Exception as e:
+                logger.error(f"[schedule_visit] Error getting user: {e}")
+                return f"Tuve un problema al buscarte en el sistema. ¿Podrías intentar de nuevo?"
+        
+        # Create appointment in separate session
+        if user:
+            try:
+                logger.info(f"[schedule_visit] Calling create_appointment with check_calendar=True")
+                result = await appointment_service.create_appointment(
+                    user_id=user.id,
+                    property_id=prop_int_id,
+                    start_time=start_datetime,
+                    type="visit"
+                )
+            except Exception as e:
+                logger.error(f"[schedule_visit] Error creating appointment: {e}")
+                return "Tuve un problema técnico al agendar. ¿Podrías intentar en unos minutos?"
             
-            if not user:
-                return "No te encontré en el sistema. ¿Podrías darme tu nombre?"
             
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            logger.info(f"[schedule_visit] result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+            logger.info(f"[schedule_visit] result.get('success'): {result.get('success') if isinstance(result, dict) else 'N/A'}")
             
-            if time_str:
-                time_obj = datetime.strptime(time_str, "%H:%M").time()
-                start_datetime = datetime.combine(date_obj, time_obj, tzinfo=tz.utc)
-            else:
-                start_datetime = datetime.combine(date_obj, datetime.min.time(), tzinfo=tz.utc)
+            if not isinstance(result, dict) or not result.get("success"):
+                # Either error dict or unexpected type - handle gracefully
+                if isinstance(result, dict):
+                    msg = result.get("message", "Horario no disponible")
+                    suggestions = result.get("suggested_times", [])
+                    if suggestions:
+                        lines = [f"- {s.get('formatted') or s.get('datetime', '')}" for s in suggestions[:3]]
+                        return f"⚠️ {msg}\n\n🎯 Horarios disponibles:\n" + "\n".join(lines) + "\n\n¿Alguna?"
+                    return f"⚠️ {msg}\n\n¿Qué otro horario te conviene?"
+                return f"⚠️ No se pudo completar la agenda.\n\n¿Qué otro horario te conviene?"
             
-            if start_datetime < datetime.now(tz.utc):
-                return "Lo siento, esa fecha y hora ya pasaron. Por favor selecciona una fecha futura."
+            # Success - format confirmation
+            appointment = result.get("appointment")
+            if appointment:
+                property_title = getattr(property_obj, "title", "Propiedad") if hasattr(property_obj, "title") else "Propiedad"
+                return format_appointment_confirmation(appointment, property_title)
             
-            appointment = await appointment_service.create_appointment(
-                user_id=user.id,
-                property_id=prop_int_id,
-                start_time=start_datetime,
-                type="visit"
-            )
-            
-            property_title = getattr(property_obj, "title", "Propiedad") if hasattr(property_obj, "title") else "Propiedad"
-            
-            return format_appointment_confirmation(appointment, property_title)
+            return "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
             
     except ValueError as e:
         logger.error(f"ValueError en agendar visita: {e}", exc_info=True)
