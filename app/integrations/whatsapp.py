@@ -1,19 +1,20 @@
 import httpx
 from typing import Optional, List
-import logging
-from config.settings import get_settings
+from loguru import logger
+from app.core.config import get_settings
 
 settings = get_settings()
-
-logger = logging.getLogger(__name__)
 
 
 class WhatsAppClient:
     def __init__(self):
-        self.token = settings.WHATSAPP_ACCESS_TOKEN or settings.META_TOKEN or ""
-        self.phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID or settings.META_PHONE_NUMBER_ID or ""
+        self.token = settings.WHATSAPP_ACCESS_TOKEN or ""
+        self.phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID or ""
         self.base_url = "https://graph.facebook.com/v18.0"
         self._is_configured = bool(self.token and self.phone_number_id)
+        logger.info(f"[WhatsApp] phone_number_id={self.phone_number_id or 'NO CONFIGURADO'}")
+        logger.info(f"[WhatsApp] token={'OK (' + str(len(self.token)) + ' chars)' if self.token else 'NO CONFIGURADO'}")
+        logger.info(f"[WhatsApp] is_configured={self._is_configured}")
     
     @property
     def is_configured(self) -> bool:
@@ -40,7 +41,10 @@ class WhatsAppClient:
             response = await client.post(url, json=payload, headers=headers)
             result = response.json()
             if response.status_code >= 400:
-                logger.error(f"WhatsApp send error: {result}")
+                logger.error(f"[WhatsApp] ❌ send_message FAILED ({response.status_code}): {result}")
+            else:
+                msg_id = result.get("messages", [{}])[0].get("id", "?")
+                logger.info(f"[WhatsApp] ✅ send_message OK → {to} | message_id={msg_id}")
             return result
 
     async def send_image(self, to: str, image_url: str, caption: str = "") -> dict:

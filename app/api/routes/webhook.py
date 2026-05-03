@@ -39,6 +39,33 @@ class WhatsAppIncomingMessage:
     media_caption: Optional[str] = None
 
 
+def format_phone_number(phone: str) -> str:
+    """
+    Normaliza números de teléfono argentinos para la API de Meta.
+
+    Ejemplos:
+      +543754532056   → 54375415532056
+      +5493754532056  → 54375415532056
+       5493754532056  → 54375415532056
+
+    Reglas:
+      1. Elimina el prefijo '+'
+      2. Elimina el '9' en la posición 3 (prefijo de celular argentino tras '54')
+      3. Inserta '15' después de los primeros 6 dígitos
+    """
+    phone = phone.lstrip("+").strip()
+
+    # Eliminar el '9' de celular si está en la posición índice 2 (ej: 54[9]3754...)
+    if len(phone) > 2 and phone[2] == "9":
+        phone = phone[:2] + phone[3:]
+
+    # Insertar '15' después del código de área (posición 6)
+    if len(phone) >= 6 and "15" not in phone[4:8]:
+        phone = phone[:6] + "15" + phone[6:]
+
+    return phone
+
+
 def verify_webhook_signature(payload: str, signature: str, secret: str) -> bool:
     """Verify that the request came from Meta."""
     if not signature or not secret:
@@ -185,11 +212,23 @@ async def receive_webhook(request: Request):
         changes = e.get("changes", [])
         for change in changes:
             value = change.get("value", {})
+
+            # Delivery status updates (sent, delivered, read, failed)
+            statuses = value.get("statuses", [])
+            for status in statuses:
+                msg_id = status.get("id", "?")
+                status_val = status.get("status", "?")
+                recipient = status.get("recipient_id", "?")
+                errors = status.get("errors", [])
+                if errors:
+                    logger.error(f"[WhatsApp] ❌ STATUS {status_val} | msg={msg_id} | to={recipient} | errors={errors}")
+                else:
+                    logger.info(f"[WhatsApp] 📬 STATUS {status_val} | msg={msg_id} | to={recipient}")
+
             messages = value.get("messages", [])
-            
             if messages:
                 await process_messages(messages)
-    
+
     return {"status": "ok"}
 
 
@@ -257,42 +296,42 @@ async def process_messages(messages: List[Dict[str, Any]]):
             media_caption=media_caption
         )
         
-        # Process with RealEstateAgent
-        logger.info(f"Processing from {phone}: {text[:30]}...")
+        # Normalizar número para envío (formato Meta Argentina)
+        phone_to = format_phone_number(phone)
+        logger.info(f"Processing from {phone} → sending to {phone_to}: {text[:30]}...")
         
         try:
             result = await real_estate_agent.process_turn(
                 phone=phone,
                 user_message=text
             )
-            
-            response_text = result.get("response_text", "")
-            rich_content = result.get("rich_content", {})
-            
+
+            if not result:
+                logger.warning(f"Agent returned None for {phone}, skipping")
+                continue
+
+            response_text = result.get("response_text", "") or ""
+            rich_content = result.get("rich_content") or {}
+
             # Send text response
             if response_text:
-                logger.info(f"Sending to {phone}: {response_text[:30]}...")
+                logger.info(f"Sending to {phone_to}: {response_text[:30]}...")
                 await whatsapp_client.send_message(
-                    to=phone,
+                    to=phone_to,
                     message=response_text
                 )
-            
+
             # Send images if any
-            images = rich_content.get("images", [])
+            images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
             for url in images[:3]:
                 await whatsapp_client.send_image(
-                    to=phone,
+                    to=phone_to,
                     image_url=url,
                     caption=rich_content.get("caption", "")
                 )
-            
+
         except Exception as e:
             logger.error(f"Error processing: {e}")
-            # Send error message
-            await whatsapp_client.send_message(
-                to=phone,
-                message="Disculpame, tuve un problema. ¿Podrías intentarlo de nuevo?"
-            )
 
 
 @router.get("/health")

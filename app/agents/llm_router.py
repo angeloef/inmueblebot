@@ -15,7 +15,7 @@ Providers:
 """
 import asyncio
 import time
-from typing import Optional
+from typing import Optional, Dict
 from loguru import logger
 
 from app.core.config import get_settings
@@ -110,10 +110,19 @@ class LLMRouter:
             "gemini": True,
             "minimax": True
         }
-        
+
+        # Cooldown por rate limit: guarda el timestamp hasta cuando NO usar el proveedor
+        self._rate_limit_until: Dict[str, float] = {
+            "openrouter": 0.0,
+            "gemini": 0.0,
+            "minimax": 0.0
+        }
+        # Segundos de espera tras un rate limit 429
+        self._rate_limit_cooldown = 60
+
         # Contador de uso
         self._request_count = {"openrouter": 0, "gemini": 0, "minimax": 0}
-        
+
         # Latencia por proveedor
         self._latency = {"openrouter": None, "gemini": None, "minimax": None}
         
@@ -158,10 +167,18 @@ class LLMRouter:
         error_category = "unknown"
         
         for provider in providers_to_try:
-            if not self._provider_health.get(provider, False):
-                logger.info(f"Saltando {provider} (marcado como no saludable)")
+            # Verificar cooldown de rate limit
+            now = time.time()
+            rate_limited_until = self._rate_limit_until.get(provider, 0.0)
+            if now < rate_limited_until:
+                remaining = int(rate_limited_until - now)
+                logger.info(f"[LLM] Saltando {provider} (rate limit cooldown: {remaining}s restantes)")
                 continue
-            
+
+            if not self._provider_health.get(provider, False):
+                logger.info(f"[LLM] Saltando {provider} (marcado como no saludable)")
+                continue
+
             # Mostrar qué proveedor se usa
             if provider == "gemini":
                 logger.info("[LLM] Using: Gemini 2.5 Flash (PRIMARY)")
@@ -169,11 +186,11 @@ class LLMRouter:
                 logger.info("[LLM] Using: OpenRouter (fallback)")
             elif provider == "minimax":
                 logger.info("[LLM] Using: MiniMax (last resort)")
-            
+
             for attempt in range(self._max_retries + 1):
                 try:
                     logger.debug(f"Intentando {provider} (attempt {attempt + 1}/{self._max_retries + 1})")
-                    
+
                     if provider == "openrouter":
                         response = await self._call_openrouter(
                             messages, tools, temperature, max_tokens
@@ -188,44 +205,41 @@ class LLMRouter:
                         )
                     else:
                         continue
-                    
+
                     # Verificar si la respuesta es válida
                     if self._is_valid_response(response):
                         self._request_count[provider] += 1
+                        # Restaurar salud si respondió bien
+                        self._provider_health[provider] = True
                         logger.info(f"✓ {provider.upper()} responded successfully")
                         return response
-                    
+
                     # Respuesta inválida → retry
                     last_error = f"Empty response from {provider}"
                     logger.warning(f"✗ {provider} returned empty content, retrying...")
-                    
+
                 except Exception as e:
                     last_error = str(e)
                     error_category = self._classify_error(last_error)
                     logger.warning(f"✗ Error with {provider}: {error_category} - {e}")
-                    
-                    # Rate limit específico
+
+                    # Rate limit → cooldown, no marcar como permanentemente unhealthy
                     if error_category == "rate_limit":
-                        logger.warning(f"Rate limit detected for {provider}")
-                    
-                    # Content filter
+                        self._rate_limit_until[provider] = time.time() + self._rate_limit_cooldown
+                        logger.warning(f"[LLM] ⏳ {provider} rate limited → cooldown {self._rate_limit_cooldown}s, pasando al siguiente proveedor")
+                        break  # No reintentar este proveedor, ir al siguiente
+
                     if error_category == "content_filter":
                         logger.warning(f"Content filter triggered for {provider}")
-                
-                # Exponential backoff antes de reintentar
+
+                # Exponential backoff antes de reintentar (solo 1 retry, no 3)
                 if attempt < self._max_retries:
-                    wait_time = (2 ** attempt) + 1  # +1 second minimum
+                    wait_time = 2
                     logger.debug(f"Waiting {wait_time}s before retry...")
                     await asyncio.sleep(wait_time)
-            
+
             # Si todos los intentos fallan para este proveedor
             logger.warning(f"⚠ {provider} failed after {self._max_retries + 1} attempts")
-            
-            # Delay before fallback
-            if provider == "gemini":
-                logger.info("Gemini failed → falling back to MiniMax M2.5")
-                await asyncio.sleep(1.5)  # Small delay before fallback
-            
             self._provider_health[provider] = False
             last_error = f"All attempts with {provider} failed"
         
@@ -448,8 +462,9 @@ class LLMRouter:
         return results
     
     def reset_health(self):
-        """Reinicia el estado de salud."""
-        self._provider_health = {"gemini": True, "minimax": True}
+        """Reinicia el estado de salud y cooldowns."""
+        self._provider_health = {"gemini": True, "openrouter": True, "minimax": True}
+        self._rate_limit_until = {"gemini": 0.0, "openrouter": 0.0, "minimax": 0.0}
         logger.info("Provider health status reset")
 
 
