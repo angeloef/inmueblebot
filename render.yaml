@@ -1,12 +1,11 @@
 version: 1
 
 # ==================== PostgreSQL Database ====================
-services:
-  - type: pgsql
+  - type: postgres
     name: inmueblebot-db
     plan: free
     databaseName: inmueblebot
-    region: frankfurt   # o la región más cercana a ti
+    region: frankfurt
 
 # ==================== Redis ====================
   - type: redis
@@ -35,8 +34,6 @@ services:
           property: connectionString
       - key: ENVIRONMENT
         value: production
-      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
-        sync: false
 
 # ==================== Celery Worker ====================
   - type: worker
@@ -47,7 +44,7 @@ services:
     region: frankfurt
     startCommand: celery -A app.celery_app worker --loglevel=info
 
-# ==================== Celery Beat (Scheduler) ====================
+# ==================== Celery Beat ====================
   - type: worker
     name: inmueblebot-celery-beat
     env: docker
