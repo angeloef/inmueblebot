@@ -1,0 +1,216 @@
+# =============================================================================
+# Render Blueprint for InmuebleBot
+# =============================================================================
+# 
+# Usage:
+# 1. Go to Render Dashboard > Blueprints > New Blueprint
+# 2. Connect your GitHub repository
+# 3. This render.yaml will be detected automatically
+# 4. Fill in the Environment Variables
+# 5. Click "Apply Blueprint"
+#
+# =============================================================================
+
+services:
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  - name: inmueblebot-db
+    type: pserv
+    # PostgreSQL 16
+    image: postgres:16-alpine
+    envVars:
+      - key: POSTGRES_DB
+        value: inmueblebot
+      - key: POSTGRES_USER
+        value: inmbot
+      # Generate a secure password and add as secret
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+
+  # =============================================================================
+  # Redis Cache
+  # =============================================================================
+  - name: inmueblebot-redis
+    type: redis
+    # Redis 7
+    ipAllowList: []  # Allow access only from this blueprint
+
+  # =============================================================================
+  # FastAPI Backend (Main Service)
+  # =============================================================================
+  - name: inmueblebot-api
+    type: web
+    # Use Docker for consistent environment
+    dockerfilePath: Dockerfile
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    buildFilter:
+      - .env
+      - requirements.txt
+      - app/
+      - config/
+      - alembic/
+    envVars:
+      # Application
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      
+      # Database (auto-connected via internal URL)
+      - key: DATABASE_URL
+        # Format: postgres://username:password@host:port/database
+        fromService:
+          name: inmueblebot-db
+          url: postgres://{{.User}}:{{.Password}}@{{.Host}}:5432/{{.Name}}
+      
+      # Redis (auto-connected via internal URL)
+      - key: REDIS_URL
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}
+      
+      # LLM Configuration
+      - key: GEMINI_API_KEY
+        sync: false  # Set in Render Dashboard
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      
+      # WhatsApp / Meta Configuration
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        sync: false
+        generateValue: true
+      
+      # Security
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_API_KEY
+        sync: false
+      
+    # Health check
+    healthCheckPath: /health
+    healthCheckMethod: GET
+    # Initial delay before first health check
+    startupDelaySeconds: 30
+    
+    # Auto-deploy on push to main
+    autoDeploy: true
+    
+    # Instance settings
+    plan: free  # Use 'starter' for production
+    
+    # Ports
+    ports:
+      - 8000
+
+  # =============================================================================
+  # Celery Worker (Background Tasks)
+  # =============================================================================
+  - name: inmueblebot-celery
+    type: worker
+    dockerfilePath: Dockerfile
+    dockerCommand: celery -A celery_app worker --loglevel=info
+    buildFilter:
+      - .env
+      - requirements.txt
+      - app/
+      - celery_app.py
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      
+      - key: DATABASE_URL
+        fromService:
+          name: inmueblebot-db
+          url: postgres://{{.User}}:{{.Password}}@{{.Host}}:5432/{{.Name}}
+      
+      - key: REDIS_URL
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}
+      
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}/0
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}/0
+    
+    autoDeploy: true
+    plan: free
+
+  # =============================================================================
+  # Celery Beat (Task Scheduler)
+  # =============================================================================
+  - name: inmueblebot-beat
+    type: worker
+    dockerfilePath: Dockerfile
+    dockerCommand: celery -A celery_app beat --loglevel=info
+    buildFilter:
+      - .env
+      - requirements.txt
+      - app/
+      - celery_app.py
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      
+      - key: DATABASE_URL
+        fromService:
+          name: inmueblebot-db
+          url: postgres://{{.User}}:{{.Password}}@{{.Host}}:5432/{{.Name}}
+      
+      - key: REDIS_URL
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}
+      
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}/0
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: inmueblebot-redis
+          url: redis://{{.Host}}:{{.Port}}/0
+    
+    autoDeploy: true
+    plan: free
+
+  # =============================================================================
+  # Streamlit UI (Optional - for testing)
+  # =============================================================================
+  # Uncomment to enable Streamlit testing UI
+  # - name: inmueblebot-streamlit
+  #   type: web
+  #   dockerfilePath: Dockerfile
+  #   dockerCommand: streamlit run frontend/chat_ui.py --server.port 8501 --server.address 0.0.0.0
+  #   buildFilter:
+  #     - .env
+  #     - requirements.txt
+  #     - frontend/
+  #   envVars:
+  #     - key: ENVIRONMENT
+  #       value: production
+  #     - key: DATABASE_URL
+  #       fromService:
+  #         name: inmueblebot-db
+  #         url: postgres://{{.User}}:{{.Password}}@{{.Host}}:5432/{{.Name}}
+  #     - key: REDIS_URL
+  #       fromService:
+  #         name: inmueblebot-redis
+  #         url: redis://{{.Host}}:{{.Port}}
+  #     - key: API_URL
+  #       fromService:
+  #         name: inmueblebot-api
+  #         url: http://{{.Host}}:{{.Port}}
+  #   healthCheckPath: /
+  #   healthCheckMethod: GET
+  #   plan: free
+  #   autoDeploy: true
