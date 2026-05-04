@@ -1,19 +1,20 @@
 version: 1
 
-# ==================== PostgreSQL Database ====================
+services:
+  # ==================== PostgreSQL ====================
   - type: postgres
     name: inmueblebot-db
     plan: free
     databaseName: inmueblebot
     region: frankfurt
 
-# ==================== Redis ====================
+  # ==================== Redis ====================
   - type: redis
     name: inmueblebot-redis
     plan: free
     region: frankfurt
 
-# ==================== FastAPI Backend ====================
+  # ==================== FastAPI Backend ====================
   - type: web
     name: inmueblebot-api
     env: docker
@@ -35,7 +36,7 @@ version: 1
       - key: ENVIRONMENT
         value: production
 
-# ==================== Celery Worker ====================
+  # ==================== Celery Worker ====================
   - type: worker
     name: inmueblebot-celery-worker
     env: docker
@@ -44,7 +45,7 @@ version: 1
     region: frankfurt
     startCommand: celery -A app.celery_app worker --loglevel=info
 
-# ==================== Celery Beat ====================
+  # ==================== Celery Beat ====================
   - type: worker
     name: inmueblebot-celery-beat
     env: docker
