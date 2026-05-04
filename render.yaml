@@ -5,26 +5,26 @@ databases:
   - name: inmueblebot-db
     plan: free
     databaseName: inmueblebot
-    region: frankfurt
+    region: oregon
 
-# ==================== REDIS ====================
+# ==================== SERVICES ====================
 services:
+  # Redis
   - type: redis
     name: inmueblebot-redis
     plan: free
-    region: frankfurt
+    region: oregon
     ipAllowList:
       - source: 0.0.0.0/0
-        description: Allow all
+        description: Allow all for development
 
-# ==================== FASTAPI BACKEND ====================
+  # FastAPI Backend
   - type: web
     name: inmueblebot-api
     env: docker
     plan: free
     dockerfilePath: Dockerfile
-    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    region: frankfurt
+    region: oregon
     healthCheckPath: /health
     autoDeploy: true
 
@@ -40,21 +40,21 @@ services:
           property: connectionString
       - key: ENVIRONMENT
         value: production
+      - key: PORT
+        value: "8000"
 
-# ==================== CELERY WORKER ====================
+  # Celery Worker
   - type: worker
     name: inmueblebot-celery-worker
     env: docker
     plan: free
     dockerfilePath: Dockerfile
-    dockerCommand: celery -A app.celery_app worker --loglevel=info
-    region: frankfurt
+    region: oregon
 
-# ==================== CELERY BEAT ====================
+  # Celery Beat
   - type: worker
     name: inmueblebot-celery-beat
     env: docker
     plan: free
     dockerfilePath: Dockerfile
-    dockerCommand: celery -A app.celery_app beat --loglevel=info
-    region: frankfurt
+    region: oregon
