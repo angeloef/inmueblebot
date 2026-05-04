@@ -13,6 +13,9 @@ services:
     name: inmueblebot-redis
     plan: free
     region: frankfurt
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Allow all
 
 # ==================== FASTAPI BACKEND ====================
   - type: web
@@ -20,6 +23,7 @@ services:
     env: docker
     plan: free
     dockerfilePath: Dockerfile
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
     region: frankfurt
     healthCheckPath: /health
     autoDeploy: true
@@ -32,6 +36,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: inmueblebot-redis
+          type: redis
           property: connectionString
       - key: ENVIRONMENT
         value: production
@@ -42,8 +47,8 @@ services:
     env: docker
     plan: free
     dockerfilePath: Dockerfile
+    dockerCommand: celery -A app.celery_app worker --loglevel=info
     region: frankfurt
-    startCommand: celery -A app.celery_app worker --loglevel=info
 
 # ==================== CELERY BEAT ====================
   - type: worker
@@ -51,5 +56,5 @@ services:
     env: docker
     plan: free
     dockerfilePath: Dockerfile
+    dockerCommand: celery -A app.celery_app beat --loglevel=info
     region: frankfurt
-    startCommand: celery -A app.celery_app beat --loglevel=info
