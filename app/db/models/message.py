@@ -3,6 +3,7 @@ Modelo de Mensaje.
 Representa un mensaje individual en una conversación.
 """
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 from sqlalchemy import String, Text, DateTime, ForeignKey, Index, Integer, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -48,7 +49,7 @@ class Message(Base):
     )
 
     # URL de media (imagen, audio, etc.) si aplica
-    media_url: Mapped[str | None] = mapped_column(
+    media_url: Mapped[Optional[str]] = mapped_column(
         String(500),
         nullable=True,
         comment="URL de archivo multimedia"

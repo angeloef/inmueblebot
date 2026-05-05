@@ -3,6 +3,7 @@ Modelo de Propiedad.
 Representa inmobiliarias disponibles (venta/alquiler).
 """
 from datetime import datetime
+from typing import Optional, List, Dict
 from sqlalchemy import String, Integer, Float, DateTime, Index, CheckConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,10 +20,10 @@ class Property(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, comment="Primary key (seeded integer)")
 
     # Original seed ID (integer) for compatibility
-    original_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True, comment="Original seed ID (integer)")
+    original_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True, comment="Original seed ID (integer)")
 
     # ID externo (de sistema externo como API de imobiliarias)
-    external_id: Mapped[str | None] = mapped_column(
+    external_id: Mapped[Optional[str]] = mapped_column(
         String(100),
         unique=True,
         nullable=True,
@@ -73,41 +74,41 @@ class Property(Base):
     )
 
     # Coordenadas geográficas (opcional)
-    lat: Mapped[float | None] = mapped_column(
+    lat: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         comment="Latitud"
     )
 
-    lng: Mapped[float | None] = mapped_column(
+    lng: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         comment="Longitud"
     )
 
     # Número de habitaciones
-    bedrooms: Mapped[int | None] = mapped_column(
+    bedrooms: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Cantidad de dormitorios"
     )
 
     # Número de baños
-    bathrooms: Mapped[int | None] = mapped_column(
+    bathrooms: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Cantidad de baños"
     )
 
     # Área en metros cuadrados
-    area_m2: Mapped[int | None] = mapped_column(
+    area_m2: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Área en metros cuadrados"
     )
 
     # Imágenes (URLs de S3)
-    images: Mapped[list[str] | None] = mapped_column(
+    images: Mapped[Optional[List[str]]] = mapped_column(
         ARRAY(String),
         nullable=True,
         comment="Lista de URLs de imágenes"
@@ -122,7 +123,7 @@ class Property(Base):
     )
 
     # Metadatos adicionales (features, amenities, etc.)
-    extra_data: Mapped[dict | None] = mapped_column(
+    extra_data: Mapped[Optional[Dict]] = mapped_column(
         JSONB,
         nullable=True,
         comment="Metadatos adicionales en formato JSON"
@@ -135,7 +136,7 @@ class Property(Base):
         comment="Fecha de creación"
     )
 
-    updated_at: Mapped[datetime | None] = mapped_column(
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         onupdate=func.now(),
@@ -147,7 +148,7 @@ class Property(Base):
     # =========================================================================
     
     # Citas asociadas a esta propiedad
-    appointments: Mapped[list["Appointment"]] = relationship(
+    appointments: Mapped[List["Appointment"]] = relationship(
         "Appointment",
         back_populates="property_rel",
         cascade="all, delete-orphan"

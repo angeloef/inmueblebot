@@ -3,6 +3,7 @@ Modelo de Usuario (Lead/Cliente).
 Representa un contacto de WhatsApp que interactúa con el bot.
 """
 from datetime import datetime
+from typing import Optional, List
 from uuid import uuid4
 from sqlalchemy import String, Integer, DateTime, Index, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
@@ -25,101 +26,76 @@ class User(Base):
         comment="Primary key UUID"
     )
 
-    # Número de WhatsApp único (sin código de país +)
     whatsapp_phone: Mapped[str] = mapped_column(
         String(20),
         unique=True,
-        nullable=False,
         index=True,
+        nullable=False,
         comment="Número de WhatsApp del usuario"
     )
 
-    # Nombre del usuario (opcional, se colecta durante conversación)
-    name: Mapped[str | None] = mapped_column(
+    name: Mapped[Optional[str]] = mapped_column(
         String(200),
         nullable=True,
         comment="Nombre del usuario"
     )
 
-    # Idioma preferido del usuario (es/en)
     preferred_language: Mapped[str] = mapped_column(
-        String(2),
+        String(10),
         default="es",
-        server_default="es",
-        comment="Idioma preferido del usuario"
+        comment="Idioma preferido (es/en)"
     )
 
-    # Rango de presupuesto mínimo
-    budget_min: Mapped[int | None] = mapped_column(
+    budget_min: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Presupuesto mínimo en USD"
     )
 
-    # Rango de presupuesto máximo
-    budget_max: Mapped[int | None] = mapped_column(
+    budget_max: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Presupuesto máximo en USD"
     )
 
-    # Preferencias de ubicación (array de strings)
-    location_preferences: Mapped[list[str] | None] = mapped_column(
-        JSONB,
-        nullable=True,
-        comment="Lista de ubicaciones preferidas"
-    )
-
-    # Tipos de propiedad buscados
-    property_type: Mapped[list[str] | None] = mapped_column(
+    location_preferences: Mapped[Optional[List[str]]] = mapped_column(
         ARRAY(String),
         nullable=True,
-        comment="Tipos de propiedad感兴趣: ['casa', 'departamento', 'terreno']"
+        comment="Lista de ubicaciones de interés"
     )
 
-    # Puntuación del lead (0-100) para priorización
+    property_type: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String),
+        nullable=True,
+        comment="Tipos de propiedad preferidos"
+    )
+
     lead_score: Mapped[int] = mapped_column(
         Integer,
         default=0,
-        server_default="0",
-        comment="Puntuación del lead (0-100)"
+        comment="Puntuación de lead (0-100)"
     )
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        comment="Fecha de creación del registro"
+        nullable=False
     )
 
-    last_interaction: Mapped[datetime | None] = mapped_column(
+    last_interaction: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        nullable=True,
-        comment="Última interacción del usuario"
+        nullable=True
     )
 
-    # =========================================================================
-    # RELACIONES
-    # =========================================================================
-    
-    # Conversaciones del usuario
-    conversations: Mapped[list["Conversation"]] = relationship(
-        "Conversation",
+    # Relationships
+    conversations: Mapped[List["Conversation"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan"
     )
 
-    # Citas del usuario
-    appointments: Mapped[list["Appointment"]] = relationship(
-        "Appointment",
+    appointments: Mapped[List["Appointment"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan"
-    )
-
-    # Índices para rendimiento
-    __table_args__ = (
-        Index("ix_users_lead_score", "lead_score"),  # Para ordenar leads por score
-        Index("ix_users_last_interaction", "last_interaction"),  # Para filtrar activos
     )
 
     def __repr__(self) -> str:

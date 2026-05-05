@@ -3,6 +3,7 @@ Modelo de Cita/Appointment.
 Representa una cita programada para visitar una propiedad.
 """
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Index, CheckConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -70,14 +71,14 @@ class Appointment(Base):
     )
 
     # ID del evento en calendario externo (Google Calendar, etc.)
-    calendar_event_id: Mapped[str | None] = mapped_column(
+    calendar_event_id: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
         comment="ID de evento en calendario externo"
     )
 
     # Notas adicionales
-    notes: Mapped[str | None] = mapped_column(
+    notes: Mapped[Optional[str]] = mapped_column(
         String(1000),
         nullable=True,
         comment="Notas adicionales de la cita"
@@ -90,7 +91,7 @@ class Appointment(Base):
         comment="Fecha de creación"
     )
 
-    updated_at: Mapped[datetime | None] = mapped_column(
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         onupdate=func.now(),

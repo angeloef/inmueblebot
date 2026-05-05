@@ -3,6 +3,7 @@ Modelo de Conversación.
 Representa una sesión de chat entre usuario y el bot.
 """
 from datetime import datetime
+from typing import Optional, Dict, List
 from uuid import uuid4
 from sqlalchemy import String, DateTime, ForeignKey, Index, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -50,7 +51,7 @@ class Conversation(Base):
     )
 
     # Contexto de la conversación (datos acumulados)
-    context: Mapped[dict | None] = mapped_column(
+    context: Mapped[Optional[Dict]] = mapped_column(
         JSONB,
         nullable=True,
         comment="Contexto de la conversación en JSON"
@@ -63,7 +64,7 @@ class Conversation(Base):
         comment="Fecha de creación"
     )
 
-    updated_at: Mapped[datetime | None] = mapped_column(
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         onupdate=func.now(),
@@ -81,7 +82,7 @@ class Conversation(Base):
     )
 
     # Mensajes de la conversación
-    messages: Mapped[list["Message"]] = relationship(
+    messages: Mapped[List["Message"]] = relationship(
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",
