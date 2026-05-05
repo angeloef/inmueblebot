@@ -24,7 +24,9 @@ async def lifespan(app: FastAPI):
     Lifecycle manager para startup/shutdown de la aplicación.
     Maneja la inicialización y limpieza de recursos.
     """
-    # Startup: inicializar conexiones, cargar configuración, etc.
+    # Startup: cargar configuración PRIMERO (esto juga el logging)
+    from app.core.config import get_settings
+    settings = get_settings()
     logger.info("🚀 Iniciando InmuebleBot...")
     
     # Check database tables on startup

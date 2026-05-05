@@ -1,10 +1,10 @@
 """
 Configuración centralizada de la aplicación usando Pydantic Settings.
-Carga variables de entorno desde sistema (Render) o .env (local).
+Carga variables de entorno desde el sistema (Render) o .env (local).
 """
 from functools import lru_cache
 from typing import Optional
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 import logging
@@ -12,22 +12,40 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _get_env_file() -> Optional[str]:
+    """
+    Returns .env file path only if it exists (for local dev).
+    Returns None for production (Render doesn't have .env file).
+    """
+    env_path = os.environ.get("ENV_FILE_PATH", ".env")
+    if os.path.isfile(env_path):
+        return env_path
+    # Check if we're in production (Render sets ENVIRONMENT=production)
+    if os.environ.get("ENVIRONMENT", "").lower() == "production":
+        return None
+    # Also check for docker indicator
+    if os.path.isfile("/app/.env"):
+        return "/app/.env"
+    return None
+
+
 class Settings(BaseSettings):
     """
     Configuración de la aplicación.
     
     Priority order:
-    1. Environment variables (system) - highest priority
-    2. .env file (for local development only)
+    1. Environment variables (system/Render) - HIGHEST priority
+    2. .env file (only if exists, for local development)
     3. Default values
     
-    On Render: Set all critical variables in Dashboard Environment Variables.
+    On Render: All variables come from Dashboard Environment Variables.
     """
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_get_env_file(),  # None if file doesn't exist
         env_file_encoding="utf-8",
-        env_file_priority=0,  # Environment variables take priority over .env file
+        env_file_priority=0,  # System env vars take priority
         extra="ignore",
+        case_sensitive=False,  # Allow MY_VAR and my_var
     )
 
     # === Server ===
@@ -152,18 +170,31 @@ def get_settings() -> Settings:
     """
     settings = Settings()
     
-    # Log de variables cargadas en startup
+    # Enhanced startup logging with source tracking
     log_level = logging.INFO
-    logger.log(log_level, "=== Configuration Loaded ===")
-    logger.log(log_level, f"ENVIRONMENT: {settings.ENVIRONMENT}")
-    logger.log(log_level, f"DEBUG: {settings.DEBUG}")
-    logger.log(log_level, f"DATABASE_URL: {'***' if settings.DATABASE_URL else 'NOT SET'}")
-    logger.log(log_level, f"REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
-    logger.log(log_level, f"GEMINI_API_KEY: {'***SET***' if settings.GEMINI_API_KEY else 'NOT SET'}")
-    logger.log(log_level, f"MINIMAX_API_KEY: {'***SET***' if settings.MINIMAX_API_KEY else 'NOT SET'}")
-    logger.log(log_level, f"WHATSAPP_PHONE_NUMBER_ID: {'***SET***' if settings.WHATSAPP_PHONE_NUMBER_ID else 'NOT SET'}")
-    logger.log(log_level, f"WHATSAPP_ACCESS_TOKEN: {'***SET***' if settings.WHATSAPP_ACCESS_TOKEN else 'NOT SET'}")
-    logger.log(log_level, f"ADMIN_API_KEY: {'***SET***' if settings.ADMIN_API_KEY else 'NOT SET'}")
-    logger.log(log_level, "===========================")
+    logger.info("=== Configuration Loaded ===")
+    logger.info(f"📦 ENVIRONMENT: {settings.ENVIRONMENT}")
+    logger.info(f"🔍 DEBUG: {settings.DEBUG}")
+    logger.info(f"🗄️  DATABASE_URL: {'***SET***' if settings.DATABASE_URL and 'postgres' in settings.DATABASE_URL else 'NOT SET'}")
+    logger.info(f"📡 REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
+    
+    # LLM Providers status
+    _gemini = "✅" if settings.GEMINI_API_KEY else "❌"
+    _minimax = "✅" if settings.MINIMAX_API_KEY else "❌"
+    logger.info(f"🤖 LLM Providers: Gemini: {settings.GEMINI_MODEL} [{_gemini}], MiniMax: [{_minimax}]")
+    
+    # WhatsApp status
+    _wa = "✅" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "❌"
+    logger.info(f"💬 WhatsApp (Meta): [{_wa}]")
+    
+    # Admin
+    _admin = "✅" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "⚠️ DEFAULT"
+    logger.info(f"🔑 ADMIN_API_KEY: [{_admin}]")
+    
+    # Check if running on Render
+    if os.environ.get("RENDER"):
+        logger.info("🌐 Running on Render.com")
+    
+    logger.info("====================================")
     
     return settings
