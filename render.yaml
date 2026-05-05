@@ -21,23 +21,17 @@ services:
   # FastAPI Backend
   - type: web
     name: inmueblebot-api
-    env: docker
+    env: python
     plan: free
-    dockerfilePath: Dockerfile
     region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
     healthCheckPath: /health
     autoDeploy: true
 
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: inmueblebot-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: inmueblebot-redis
-          type: redis
-          property: connectionString
+        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a:5432/inmueblebot"
       - key: ENVIRONMENT
         value: production
       - key: PORT
