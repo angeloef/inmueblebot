@@ -14,18 +14,24 @@ logger = logging.getLogger(__name__)
 
 def _get_env_file() -> Optional[str]:
     """
-    Returns .env file path only if it exists (for local dev).
-    Returns None for production (Render doesn't have .env file).
+    Returns .env file path if it exists.
+    Priority:
+    1. /app/.env (Render Secret File location)
+    2. .env in current directory (local development)
     """
-    env_path = os.environ.get("ENV_FILE_PATH", ".env")
-    if os.path.isfile(env_path):
-        return env_path
-    # Check if we're in production (Render sets ENVIRONMENT=production)
-    if os.environ.get("ENVIRONMENT", "").lower() == "production":
-        return None
-    # Also check for docker indicator
+    # Check Render Secret File location first (/app/.env)
     if os.path.isfile("/app/.env"):
+        logger.info("📄 Loading .env from /app/.env (Render Secret File)")
         return "/app/.env"
+    
+    # Check local .env file
+    env_path = ".env"
+    if os.path.isfile(env_path):
+        logger.info("📄 Loading .env from ./ .env (local development)")
+        return env_path
+    
+    # No .env file found - use system environment variables only
+    logger.info("📄 No .env file found - using system environment variables only")
     return None
 
 
