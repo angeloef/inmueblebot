@@ -11,7 +11,7 @@ WORKDIR /app
 
 # Copy package files first (Docker layer cache)
 COPY dashboard/package*.json ./dashboard/
-RUN cd dashboard && npm ci --silent
+RUN cd dashboard && npm install
 
 # Copy dashboard source and build
 COPY dashboard/ ./dashboard/
