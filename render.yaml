@@ -43,18 +43,18 @@ services:
       - key: PORT
         value: "8000"
 
-  # Celery Worker
-  - type: worker
-    name: inmueblebot-celery-worker
-    env: docker
-    plan: free
-    dockerfilePath: Dockerfile
-    region: oregon
+# Celery Worker (Not available on free plan - disabled)
+#   - type: worker
+#     name: inmueblebot-celery-worker
+#     env: docker
+#     plan: free
+#     dockerfilePath: Dockerfile
+#     region: oregon
 
-  # Celery Beat
-  - type: worker
-    name: inmueblebot-celery-beat
-    env: docker
-    plan: free
-    dockerfilePath: Dockerfile
-    region: oregon
+# Celery Beat (Not available on free plan - disabled)
+#   - type: worker
+#     name: inmueblebot-celery-beat
+#     env: docker
+#     plan: free
+#     dockerfilePath: Dockerfile
+#     region: oregon
