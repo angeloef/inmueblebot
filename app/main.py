@@ -102,13 +102,13 @@ app = FastAPI(
 
 # Serve local test images as static files on /static/imagenes
 app.mount("/static/imagenes", StaticFiles(directory="imagenes"), name="imagenes")
-# Middleware CORS - permitir solicitudes desde cualquier origen
+# Middleware CORS - solo permitir tu dominio específico
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: En producción, especificar dominios específicos
+    allow_origins=["https://inmueblebot-api.onrender.com"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 

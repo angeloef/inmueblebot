@@ -21,6 +21,7 @@ import hmac
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
 from app.core.config import get_settings
+from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +284,14 @@ async def process_messages(messages: List[Dict[str, Any]]):
         
         if not text:
             logger.info(f"Ignoring empty message from {phone}")
+            continue
+        
+        # SANITIZAR input del usuario
+        text = sanitize_text(text, max_length=5000)
+        phone = sanitize_phone(phone)
+        
+        if not text:
+            logger.warning(f"Empty message after sanitization from {phone}")
             continue
         
         # Create parsed message object

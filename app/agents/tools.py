@@ -9,6 +9,7 @@ from loguru import logger
 
 from app.services.property_service import property_service
 from app.core.memory import memory_manager
+from app.utils.sanitizer import sanitize_criteria, sanitize_property_id, sanitize_text
 
 
 def format_property(prop) -> str:
@@ -161,6 +162,9 @@ async def search_properties(criteria: Dict[str, Any]) -> str:
     logger.info("=" * 60)
     
     try:
+        # SANITIZAR criterios de búsqueda
+        criteria = sanitize_criteria(criteria)
+        
         search_criteria = {}
         
         # Normalize location
@@ -269,6 +273,9 @@ async def get_property_details(property_id: str) -> str:
     logger.info("=" * 60)
     
     try:
+        # SANITIZAR property_id
+        property_id = sanitize_property_id(property_id)
+        
         prop = None
         
         # Try integer ID first - use the integer 'id' field directly
@@ -523,28 +530,29 @@ async def schedule_visit(
     - Si date_str o time_str viene vacío pero hay contexto previo, úsalo
     - Si no puedes determinar la fecha/hora, PREGUNTA al usuário antes de llamar
     
-    Esta función puede receber:
+    Esta función pode receber:
     - property_id: ID de la propiedad (número o UUID)
     - date_str: "29/04/2026", "mañana", "el viernes", etc
     - time_str: "15:00", "a las 15hs", "10am", etc (opcional)
-    - phone: Número de teléfono del usuario
+    - phone: Número de teléfono del usuário
     
     Returns:
         Mensaje de confirmación ou mensaje de erro/ambigüedad
         
     NOTA: Esta función verifica disponibilidad en Google Calendar antes de agendar.
     """
-    from datetime import datetime, timezone as tz, timedelta
-    from uuid import UUID
-    from app.services.appointment_service import appointment_service, format_appointment_confirmation
-    from app.services.property_service import property_service
-    from app.db.repository import UserRepository
-    from app.db.models import User
-    from app.db.session import async_session_factory
+    logger.info("=" * 60)
+    logger.info(f"[schedule_visit] SOLICITADO")
+    logger.info(f"[schedule_visit] Input: property_id={property_id}, date_str={date_str}, time_str={time_str}")
+    logger.info("=" * 60)
     
     try:
-        if not phone:
-            return "No tengo tu información de contacto. ¿Podrías identificarte?"
+        # SANITIZAR property_id y inputs de fecha/hora
+        property_id = sanitize_property_id(property_id)
+        if date_str:
+            date_str = sanitize_date_input(date_str)
+        if time_str:
+            time_str = sanitize_time_input(time_str)
         
         if not property_id:
             return "Necesito saber qué propiedad quieres visitar."
