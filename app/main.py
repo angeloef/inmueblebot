@@ -158,7 +158,8 @@ async def debug_env():
     Requiere ADMIN_API_KEY en header X-Admin-Key.
     """
     from fastapi import Header, HTTPException
-    from app.core.config import get_settings
+    from app.core.config import get_settings, _get_env_files, _is_render
+    import os
     
     settings = get_settings()
     
@@ -167,20 +168,44 @@ async def debug_env():
     if admin_key != settings.ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
-    # Return non-sensitive config
+    # Helper to determine source
+    def get_var_status(key: str, default_val: str = None) -> dict:
+        """Returns status and source of a variable"""
+        # Check system env first (highest priority)
+        if key in os.environ:
+            return {"status": "SET", "source": "SYSTEM_ENV (Render Dashboard)"}
+        
+        # Check .env file values
+        field_value = getattr(settings, key.lower(), None)
+        if field_value and field_value != default_val:
+            return {"status": "SET", "source": ".env FILE"}
+        
+        return {"status": "NOT_SET", "source": "DEFAULT"}
+    
     return {
-        "ENVIRONMENT": settings.ENVIRONMENT,
-        "DEBUG": settings.DEBUG,
-        "is_production": settings.is_production,
-        "is_development": settings.is_development,
-        "GEMINI_API_KEY": "***SET***" if settings.GEMINI_API_KEY else "NOT SET",
-        "MINIMAX_API_KEY": "***SET***" if settings.MINIMAX_API_KEY else "NOT SET",
-        "WHATSAPP_PHONE_NUMBER_ID": "***SET***" if settings.WHATSAPP_PHONE_NUMBER_ID else "NOT SET",
-        "WHATSAPP_ACCESS_TOKEN": "***SET***" if settings.WHATSAPP_ACCESS_TOKEN else "NOT SET",
-        "WHATSAPP_WEBHOOK_VERIFY_TOKEN": "***SET***" if settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN and settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN != "change-me" else "NOT SET",
-        "DATABASE_URL": "***SET***" if settings.DATABASE_URL else "NOT SET",
-        "REDIS_URL": settings.resolve_redis_url()[:30] + "...",
-        "ADMIN_API_KEY": "***SET***" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "NOT SET/DEFAULT",
+        "platform": "RENDER.COM" if _is_render() else "LOCAL",
+        "env_files": _get_env_files(),
+        "variables": {
+            "ENVIRONMENT": {
+                "value": settings.ENVIRONMENT,
+                **get_var_status("ENVIRONMENT", "development")
+            },
+            "GEMINI_API_KEY": get_var_status("GEMINI_API_KEY"),
+            "MINIMAX_API_KEY": get_var_status("MINIMAX_API_KEY"),
+            "OPENROUTER_API_KEY": get_var_status("OPENROUTER_API_KEY"),
+            "WHATSAPP_PHONE_NUMBER_ID": get_var_status("WHATSAPP_PHONE_NUMBER_ID"),
+            "WHATSAPP_ACCESS_TOKEN": get_var_status("WHATSAPP_ACCESS_TOKEN"),
+            "WHATSAPP_WEBHOOK_VERIFY_TOKEN": get_var_status("WHATSAPP_WEBHOOK_VERIFY_TOKEN"),
+            "TWILIO_ACCOUNT_SID": get_var_status("TWILIO_ACCOUNT_SID"),
+            "DATABASE_URL": get_var_status("DATABASE_URL"),
+            "REDIS_URL": {
+                "status": "SET",
+                "value": settings.resolve_redis_url()[:40] + "...",
+                "source": "fromService (Render)"
+            },
+            "ADMIN_API_KEY": get_var_status("ADMIN_API_KEY", "admin-secret-key"),
+            "SECRET_KEY": get_var_status("SECRET_KEY", "change-me-in-production"),
+        }
     }
 
 

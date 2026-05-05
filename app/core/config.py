@@ -1,9 +1,13 @@
 """
 Configuración centralizada de la aplicación usando Pydantic Settings.
-Carga variables de entorno desde el sistema (Render) o .env (local).
+Carga variables de entorno desde múltiples fuentes:
+1. Sistema (Render Dashboard)
+2. /etc/secrets/.env (Render Secret Files)
+3. /app/.env (alternative)
+4. .env local (desarrollo)
 """
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Union, List
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
@@ -12,46 +16,60 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _get_env_file() -> Optional[str]:
+def _get_env_files() -> List[str]:
     """
-    Returns .env file path if it exists.
-    Priority:
-    1. /app/.env (Render Secret File location)
-    2. .env in current directory (local development)
+    Returns list of .env file paths to check.
+    Priority (first found is used):
+    1. /etc/secrets/.env (Render Secret Files - PRIMARY for production)
+    2. /app/.env (alternative Render location)
+    3. .env (local development)
     """
-    # Check Render Secret File location first (/app/.env)
-    if os.path.isfile("/app/.env"):
-        logger.info("📄 Loading .env from /app/.env (Render Secret File)")
-        return "/app/.env"
+    possible_paths = [
+        "/etc/secrets/.env",  # Render Secret Files mount here
+        "/app/.env",          # Alternative location
+        ".env",               # Local development
+    ]
     
-    # Check local .env file
-    env_path = ".env"
-    if os.path.isfile(env_path):
-        logger.info("📄 Loading .env from ./ .env (local development)")
-        return env_path
+    found_paths = []
+    for path in possible_paths:
+        if os.path.isfile(path):
+            found_paths.append(path)
+            logger.info(f"✅ Found .env at: {path}")
     
-    # No .env file found - use system environment variables only
-    logger.info("📄 No .env file found - using system environment variables only")
-    return None
+    if found_paths:
+        logger.info(f"📄 Using .env from: {found_paths[0]}")
+        return found_paths
+    else:
+        logger.info("📄 No .env file found - using system environment variables only")
+        return []
+
+
+def _is_render() -> bool:
+    """Check if running on Render.com"""
+    return bool(os.environ.get("RENDER"))
 
 
 class Settings(BaseSettings):
     """
     Configuración de la aplicación.
     
-    Priority order:
-    1. Environment variables (system/Render) - HIGHEST priority
-    2. .env file (only if exists, for local development)
-    3. Default values
+    Priority order (highest to lowest):
+    1. System environment variables (Render Dashboard)
+    2. .env files (Render Secret Files or local)
+    3. Default values in code
     
-    On Render: All variables come from Dashboard Environment Variables.
+    On Render: Variables come from:
+    - Environment Variables (Dashboard)
+    - Secret Files (.env mounted at /etc/secrets/.env)
     """
+    env_file: Union[str, List[str], None] = _get_env_files() if _get_env_files() else None
+    
     model_config = SettingsConfigDict(
-        env_file=_get_env_file(),  # None if file doesn't exist
+        env_file=env_file,
         env_file_encoding="utf-8",
-        env_file_priority=0,  # System env vars take priority
+        env_file_priority=0,  # System env vars take priority over .env file
         extra="ignore",
-        case_sensitive=False,  # Allow MY_VAR and my_var
+        case_sensitive=False,
     )
 
     # === Server ===
@@ -176,31 +194,61 @@ def get_settings() -> Settings:
     """
     settings = Settings()
     
+    # Detect source of key variables
+    def get_var_source(key: str, default: str = "NOT SET") -> str:
+        """Check if variable came from system env or .env file"""
+        if key in os.environ:
+            return "SYSTEM_ENV"
+        # Check if it's set to a non-default value
+        field_value = getattr(settings, key.lower(), None)
+        if field_value and field_value != default:
+            return ".env_FILE"
+        return "DEFAULT"
+    
     # Enhanced startup logging with source tracking
-    log_level = logging.INFO
-    logger.info("=== Configuration Loaded ===")
-    logger.info(f"📦 ENVIRONMENT: {settings.ENVIRONMENT}")
-    logger.info(f"🔍 DEBUG: {settings.DEBUG}")
+    logger.info("=" * 50)
+    logger.info("🚀 InmuebleBot Configuration")
+    logger.info("=" * 50)
+    
+    # Platform detection
+    if _is_render():
+        logger.info("🌐 Platform: RENDER.COM")
+    else:
+        logger.info("💻 Platform: LOCAL DEVELOPMENT")
+    
+    # Env file status
+    env_files = _get_env_files()
+    if env_files:
+        logger.info(f"📄 .env file: {env_files[0]}")
+    else:
+        logger.info("📄 .env file: NONE (using system env only)")
+    
+    logger.info("-" * 50)
+    logger.info(f"ENVIRONMENT: {settings.ENVIRONMENT} (source: {get_var_source('ENVIRONMENT', 'development')})")
+    logger.info(f"DEBUG: {settings.DEBUG}")
     logger.info(f"🗄️  DATABASE_URL: {'***SET***' if settings.DATABASE_URL and 'postgres' in settings.DATABASE_URL else 'NOT SET'}")
     logger.info(f"📡 REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
     
     # LLM Providers status
-    _gemini = "✅" if settings.GEMINI_API_KEY else "❌"
-    _minimax = "✅" if settings.MINIMAX_API_KEY else "❌"
-    logger.info(f"🤖 LLM Providers: Gemini: {settings.GEMINI_MODEL} [{_gemini}], MiniMax: [{_minimax}]")
+    _gemini = "✅ SET" if settings.GEMINI_API_KEY else "❌ NOT SET"
+    _minimax = "✅ SET" if settings.MINIMAX_API_KEY else "❌ NOT SET"
+    _openrouter = "✅ SET" if settings.OPENROUTER_API_KEY else "❌ NOT SET"
+    logger.info(f"🤖 LLM Providers:")
+    logger.info(f"   - Gemini: {settings.GEMINI_MODEL} [{_gemini}]")
+    logger.info(f"   - MiniMax: [{_minimax}]")
+    logger.info(f"   - OpenRouter: [{_openrouter}]")
     
     # WhatsApp status
-    _wa = "✅" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "❌"
-    logger.info(f"💬 WhatsApp (Meta): [{_wa}]")
+    _wa_meta = "✅ SET" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "❌ NOT SET"
+    _wa_twilio = "✅ SET" if settings.TWILIO_ACCOUNT_SID else "❌ NOT SET"
+    logger.info(f"💬 WhatsApp:")
+    logger.info(f"   - Meta Cloud API: [{_wa_meta}]")
+    logger.info(f"   - Twilio: [{_wa_twilio}]")
     
     # Admin
-    _admin = "✅" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "⚠️ DEFAULT"
+    _admin = "✅ SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "⚠️ DEFAULT"
     logger.info(f"🔑 ADMIN_API_KEY: [{_admin}]")
     
-    # Check if running on Render
-    if os.environ.get("RENDER"):
-        logger.info("🌐 Running on Render.com")
-    
-    logger.info("====================================")
+    logger.info("=" * 50)
     
     return settings
