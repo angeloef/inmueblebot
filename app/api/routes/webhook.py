@@ -81,7 +81,7 @@ def verify_webhook_signature(payload: str, signature: str, secret: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
-@router.get("/webhook/whatsapp")
+@router.get("/whatsapp")
 async def verify_webhook(request: Request):
     """
     Meta webhook verification endpoint.
@@ -132,7 +132,7 @@ async def verify_webhook(request: Request):
     return PlainTextResponse(content=challenge)
 
 
-@router.get("/webhook/verify")
+@router.get("/verify")
 async def simple_verify():
     """Simple verification check - just validates token without challenge."""
     settings = get_settings()
@@ -146,7 +146,7 @@ async def simple_verify():
     }
 
 
-@router.get("/webhook/debug")
+@router.get("/debug")
 async def debug_webhook():
     """Debug endpoint - returns the configured verify token."""
     settings = get_settings()
@@ -159,7 +159,7 @@ async def debug_webhook():
     }
 
 
-@router.post("/webhook/whatsapp")
+@router.post("/whatsapp")
 async def receive_webhook(request: Request):
     """
     Receive incoming WhatsApp messages from Meta.
@@ -341,12 +341,3 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
         except Exception as e:
             logger.error(f"Error processing: {e}")
-
-
-@router.get("/health")
-async def health_check():
-    """Health check."""
-    return {
-        "status": "healthy",
-        "whatsapp_configured": whatsapp_client.is_configured
-    }
