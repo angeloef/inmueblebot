@@ -13,7 +13,8 @@ def get_async_session_factory():
     Crea una factory de sesiones async.
     """
     settings = get_settings()
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    db_url = settings.resolved_database_url
+    engine = create_async_engine(db_url, echo=False)
     return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -181,9 +181,23 @@ class Settings(BaseSettings):
         return "redis://redis:6379/0"
 
     @property
-    def resolved_redis_url(self) -> str:
-        """Alias para resolve_redis_url() como propiedad."""
-        return self.resolve_redis_url()
+    def resolve_database_url(self) -> str:
+        """
+        Resuelve la URL de la base de datos.
+        - Agrega +asyncpg si usa postgresql:// (Render proporciona postgresql://)
+        - Mantiene postgresql+asyncpg:// si ya lo tiene
+        """
+        if not self.DATABASE_URL:
+            return ""
+        url = self.DATABASE_URL.strip()
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Alias para resolve_database_url() como propiedad."""
+        return self.resolve_database_url()
 
 
 @lru_cache
@@ -227,6 +241,7 @@ def get_settings() -> Settings:
     logger.info(f"ENVIRONMENT: {settings.ENVIRONMENT} (source: {get_var_source('ENVIRONMENT', 'development')})")
     logger.info(f"DEBUG: {settings.DEBUG}")
     logger.info(f"🗄️  DATABASE_URL: {'***SET***' if settings.DATABASE_URL and 'postgres' in settings.DATABASE_URL else 'NOT SET'}")
+    logger.info(f"   Resolved: {settings.resolve_database_url[:40]}...")
     logger.info(f"📡 REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
     
     # LLM Providers status
