@@ -1,0 +1,15 @@
+# Dependencias — se reinstalan dentro del container con npm ci
+node_modules/
+
+# Build anterior — se regenera en el build
+dist/
+
+# Archivos de entorno locales — los valores reales llegan como ARG en docker-compose
+.env
+.env.local
+.env.production
+
+# No hace falta enviar esto al daemon de Docker
+*.md
+.git/
+.gitignore

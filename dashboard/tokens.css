@@ -1,0 +1,179 @@
+/* InmuebleBot — Foundations
+   Sober admin aesthetic. Light surfaces, neutral grays, single institutional
+   accent (deep teal-blue). Inspired by Linear, Notion, Stripe Dashboard. */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+:root {
+  /* ───── Neutrals (warm-cool gray, slightly cool) ───── */
+  --gray-0:   #ffffff;
+  --gray-25:  #fafafa;   /* app bg */
+  --gray-50:  #f5f6f7;   /* subtle fills */
+  --gray-100: #eceef0;   /* borders, dividers, hover bg */
+  --gray-150: #e2e5e8;
+  --gray-200: #d4d8dc;   /* strong borders */
+  --gray-300: #b6bcc3;
+  --gray-400: #8b919a;   /* muted icons */
+  --gray-500: #6c727b;   /* tertiary text */
+  --gray-600: #4a5057;   /* secondary text */
+  --gray-700: #2f3337;   /* body text */
+  --gray-800: #1d2024;   /* headings */
+  --gray-900: #0f1114;   /* black-ish */
+
+  /* ───── Accent — Institutional Teal-Blue ───── */
+  --accent-50:  #eaf3f5;
+  --accent-100: #cfe3e8;
+  --accent-200: #9ec5cf;
+  --accent-300: #5d9aa9;
+  --accent-400: #2e7686;
+  --accent-500: #155f6f;   /* primary brand */
+  --accent-600: #0f4f5d;
+  --accent-700: #0a3e49;
+  --accent-800: #062a32;
+
+  /* ───── Semantic ───── */
+  --success-50:  #ecf6ee;
+  --success-100: #d4ead8;
+  --success-500: #3d8b4f;   /* "Disponible" */
+  --success-700: #275a33;
+
+  --warning-50:  #fdf5e6;
+  --warning-100: #f7e6bf;
+  --warning-500: #b07d12;   /* "Por vencer" */
+  --warning-700: #74510a;
+
+  --danger-50:   #fbecec;
+  --danger-100:  #f4d0d0;
+  --danger-500:  #b53b3b;   /* "Vencido", destructive */
+  --danger-700:  #7d2424;
+
+  --info-50:   #ecf0f8;
+  --info-100:  #d0dcee;
+  --info-500:  #3a5fa8;     /* "En venta" */
+  --info-700:  #25407a;
+
+  --purple-50: #f1eef7;
+  --purple-500: #6b4d99;    /* secondary tag color, optional */
+
+  /* ───── Surfaces ───── */
+  --bg-app:        var(--gray-25);
+  --bg-canvas:     var(--gray-0);
+  --bg-sidebar:    #fbfbfc;
+  --bg-subtle:     var(--gray-50);
+  --bg-hover:      var(--gray-100);
+  --bg-active:     var(--gray-150);
+  --bg-overlay:    rgba(15, 17, 20, 0.45);
+
+  /* ───── Foreground (text) ───── */
+  --fg-primary:    var(--gray-800);
+  --fg-secondary:  var(--gray-600);
+  --fg-tertiary:   var(--gray-500);
+  --fg-muted:      var(--gray-400);
+  --fg-inverse:    var(--gray-0);
+  --fg-accent:     var(--accent-500);
+  --fg-link:       var(--accent-500);
+
+  /* ───── Borders ───── */
+  --border-subtle: var(--gray-100);
+  --border-default: var(--gray-150);
+  --border-strong: var(--gray-200);
+  --border-focus:  var(--accent-400);
+
+  /* ───── Type ───── */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Inter", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Sizes — dense admin scale, 12 → 30 */
+  --text-2xs: 11px;
+  --text-xs:  12px;
+  --text-sm:  13px;
+  --text-md:  14px;   /* base body */
+  --text-lg:  15px;
+  --text-xl:  17px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+  --text-4xl: 30px;
+
+  /* Line height */
+  --lh-tight: 1.2;
+  --lh-snug:  1.35;
+  --lh-base:  1.5;
+  --lh-loose: 1.65;
+
+  /* Weights */
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold: 600;
+  --fw-bold:    700;
+
+  /* ───── Spacing scale (4px base) ───── */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ───── Radii ───── */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  /* ───── Shadows — soft, low-elevation ───── */
+  --shadow-xs: 0 1px 0 rgba(15, 17, 20, 0.04);
+  --shadow-sm: 0 1px 2px rgba(15, 17, 20, 0.06), 0 0 0 1px rgba(15, 17, 20, 0.04);
+  --shadow-md: 0 2px 4px rgba(15, 17, 20, 0.06), 0 4px 12px rgba(15, 17, 20, 0.05), 0 0 0 1px rgba(15, 17, 20, 0.04);
+  --shadow-lg: 0 4px 8px rgba(15, 17, 20, 0.06), 0 12px 32px rgba(15, 17, 20, 0.10), 0 0 0 1px rgba(15, 17, 20, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(21, 95, 111, 0.22);
+
+  /* ───── Motion ───── */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+
+  /* ───── Layout ───── */
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 56px;
+  --topbar-h: 52px;
+  --row-h: 40px;
+  --row-h-compact: 32px;
+}
+
+/* ───── Base ───── */
+html, body {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--lh-base);
+  color: var(--fg-primary);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* ───── Semantic typography ───── */
+.h1, h1 { font-size: var(--text-4xl); line-height: var(--lh-tight); font-weight: var(--fw-semibold); letter-spacing: -0.02em; color: var(--fg-primary); }
+.h2, h2 { font-size: var(--text-3xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.015em; color: var(--fg-primary); }
+.h3, h3 { font-size: var(--text-2xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.01em; color: var(--fg-primary); }
+.h4, h4 { font-size: var(--text-lg); line-height: var(--lh-snug); font-weight: var(--fw-semibold); color: var(--fg-primary); }
+.body, p { font-size: var(--text-md); line-height: var(--lh-base); color: var(--fg-primary); }
+.body-sm  { font-size: var(--text-sm); line-height: var(--lh-base); color: var(--fg-secondary); }
+.caption  { font-size: var(--text-xs); line-height: var(--lh-snug); color: var(--fg-tertiary); }
+.overline { font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; font-weight: var(--fw-semibold); color: var(--fg-tertiary); }
+.mono, code { font-family: var(--font-mono); font-feature-settings: "tnum", "cv11"; font-variant-numeric: tabular-nums; letter-spacing: 0.005em; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+a { color: var(--fg-link); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+::selection { background: var(--accent-100); color: var(--accent-700); }
