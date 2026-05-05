@@ -1,23 +1,38 @@
 """
 Configuración centralizada de la aplicación usando Pydantic Settings.
-Carga variables de entorno desde .env
+Carga variables de entorno desde sistema (Render) o .env (local).
 """
 from functools import lru_cache
 from typing import Optional
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
     """
     Configuración de la aplicación.
-    Todas las variables se cargan desde el archivo .env.
+    
+    Priority order:
+    1. Environment variables (system) - highest priority
+    2. .env file (for local development only)
+    3. Default values
+    
+    On Render: Set all critical variables in Dashboard Environment Variables.
     """
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_file_priority=0,  # Environment variables take priority over .env file
         extra="ignore",
     )
+
+    # === Server ===
+    PORT: int = Field(default=8000, description="Server port")
+    HOST: str = Field(default="0.0.0.0", description="Server host")
 
     # === Configuración General ===
     ENVIRONMENT: str = Field(default="development", description="Entorno de ejecución")
@@ -133,5 +148,22 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """
     Obtiene la configuración de forma cached.
+    Incluye logging de las variables críticas al iniciar.
     """
-    return Settings()
+    settings = Settings()
+    
+    # Log de variables cargadas en startup
+    log_level = logging.INFO
+    logger.log(log_level, "=== Configuration Loaded ===")
+    logger.log(log_level, f"ENVIRONMENT: {settings.ENVIRONMENT}")
+    logger.log(log_level, f"DEBUG: {settings.DEBUG}")
+    logger.log(log_level, f"DATABASE_URL: {'***' if settings.DATABASE_URL else 'NOT SET'}")
+    logger.log(log_level, f"REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
+    logger.log(log_level, f"GEMINI_API_KEY: {'***SET***' if settings.GEMINI_API_KEY else 'NOT SET'}")
+    logger.log(log_level, f"MINIMAX_API_KEY: {'***SET***' if settings.MINIMAX_API_KEY else 'NOT SET'}")
+    logger.log(log_level, f"WHATSAPP_PHONE_NUMBER_ID: {'***SET***' if settings.WHATSAPP_PHONE_NUMBER_ID else 'NOT SET'}")
+    logger.log(log_level, f"WHATSAPP_ACCESS_TOKEN: {'***SET***' if settings.WHATSAPP_ACCESS_TOKEN else 'NOT SET'}")
+    logger.log(log_level, f"ADMIN_API_KEY: {'***SET***' if settings.ADMIN_API_KEY else 'NOT SET'}")
+    logger.log(log_level, "===========================")
+    
+    return settings

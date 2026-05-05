@@ -149,6 +149,39 @@ async def health_redis():
     return result
 
 
+@app.get("/debug-env")
+async def debug_env():
+    """
+    Debug endpoint - muestra variables de entorno cargadas (sin secretos).
+    Requiere ADMIN_API_KEY en header X-Admin-Key.
+    """
+    from fastapi import Header, HTTPException
+    from app.core.config import get_settings
+    
+    settings = get_settings()
+    
+    # Check admin key
+    admin_key = Header(None, alias="X-Admin-Key")
+    if admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    # Return non-sensitive config
+    return {
+        "ENVIRONMENT": settings.ENVIRONMENT,
+        "DEBUG": settings.DEBUG,
+        "is_production": settings.is_production,
+        "is_development": settings.is_development,
+        "GEMINI_API_KEY": "***SET***" if settings.GEMINI_API_KEY else "NOT SET",
+        "MINIMAX_API_KEY": "***SET***" if settings.MINIMAX_API_KEY else "NOT SET",
+        "WHATSAPP_PHONE_NUMBER_ID": "***SET***" if settings.WHATSAPP_PHONE_NUMBER_ID else "NOT SET",
+        "WHATSAPP_ACCESS_TOKEN": "***SET***" if settings.WHATSAPP_ACCESS_TOKEN else "NOT SET",
+        "WHATSAPP_WEBHOOK_VERIFY_TOKEN": "***SET***" if settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN and settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN != "change-me" else "NOT SET",
+        "DATABASE_URL": "***SET***" if settings.DATABASE_URL else "NOT SET",
+        "REDIS_URL": settings.resolve_redis_url()[:30] + "...",
+        "ADMIN_API_KEY": "***SET***" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "NOT SET/DEFAULT",
+    }
+
+
 # Importar y registrar routers
 from app.api.routes.webhook import router
 logger.info(f"Registering WhatsApp webhook router")
