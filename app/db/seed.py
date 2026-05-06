@@ -36,11 +36,19 @@ try:
                     if item.get('city') and item.get('address'):
                         location = f"{item.get('address')}, {item.get('city')}"
                     
-                    # Parse price - handle "$XXX,XXX" format
+                    # Parse price - handle "$XXX,XXX" format with currency
                     price = item.get('price', 0)
+                    currency = "USD"  # default
                     if isinstance(price, str):
                         import re
-                        price_match = re.search(r'[\d,]+', price.replace('$', '').replace('ARS', ''))
+                        # Detect currency: ARS, USD, etc.
+                        currency_match = re.search(r'(ARS|USD|U\$S)', price, re.IGNORECASE)
+                        if currency_match:
+                            currency = currency_match.group(1).upper()
+                            if currency == "U$S":
+                                currency = "USD"
+                        # Extract numeric value
+                        price_match = re.search(r'[\d,]+', price.replace('$', '').replace('ARS', '').replace('USD', '').replace('U$S', ''))
                         if price_match:
                             price = int(price_match.group().replace(',', ''))
                     
@@ -49,6 +57,7 @@ try:
                         'title': item.get('title'),
                         'description': item.get('description'),
                         'type': item.get('operation'),
+                        'currency': currency,
                         'location': location,
                         'lat': item.get('lat'),
                         'lng': item.get('lng'),

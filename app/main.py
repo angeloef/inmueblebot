@@ -58,6 +58,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("DB check failed: {}", e)
 
+    # Auto-seed properties if none exist
+    try:
+        from app.db.seed import seed_properties
+        # Force re-seed on startup if in development or DEBUG environment
+        force_seed = os.environ.get("ENVIRONMENT", "production").lower() == "development"
+        await seed_properties(force=force_seed)
+    except Exception as e:
+        logger.warning("Seed failed: {}", e)
+
     yield
     # Graceful shutdown: close Redis connections before event loop closes
     logger.info("Shutting down")
