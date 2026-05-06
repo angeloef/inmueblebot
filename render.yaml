@@ -35,6 +35,8 @@ services:
         value: production
       - key: PORT
         value: "8000"
+      - key: REDIS_URL
+        value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0"
 
 # Celery Worker (Not available on free plan - disabled)
 #   - type: worker

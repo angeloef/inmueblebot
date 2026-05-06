@@ -61,33 +61,45 @@ class MemoryManager:
         Returns: {"status": "healthy"|"degraded", "redis": "connected"|"unavailable"}
         """
         try:
-            r = redis.Redis.from_url(
-                self._redis_url,
+            kwargs = dict(
                 decode_responses=True,
                 socket_connect_timeout=3,
-                socket_timeout=3
+                socket_timeout=3,
+            )
+            if self._redis_url.startswith("rediss://"):
+                kwargs["ssl_cert_reqs"] = None
+            r = redis.Redis.from_url(
+                self._redis_url,
+                **kwargs
             )
             await r.ping()
             await r.aclose()
             self._redis_available = True
+            self._connection_tested = True
             return {"status": "healthy", "redis": "connected"}
         except Exception as e:
             self._redis_available = False
+            self._connection_tested = True
             if not self._degraded_logged:
-                logger.warning(f"[Memory] ⚠️ REDIS DOWN: Using temporary local cache ({e})")
+                logger.warning(f"[Memory] REDIS DOWN: Using temporary local cache ({e})")
                 self._degraded_logged = True
             return {"status": "degraded", "redis": "unavailable", "error": str(e)[:100]}
     
     async def _get_connection_pool(self) -> redis.ConnectionPool:
         """Obtiene o crea el connection pool de Redis."""
         if self._pool is None:
-            self._pool = redis.ConnectionPool.from_url(
-                self._redis_url,
+            kwargs = dict(
                 decode_responses=True,
                 max_connections=10,
                 socket_timeout=5,
                 socket_connect_timeout=5,
-                retry_on_timeout=True
+                retry_on_timeout=True,
+            )
+            # TLS (rediss://) needs SSL cert verification disabled for self-signed certs
+            if self._redis_url.startswith("rediss://"):
+                kwargs["ssl_cert_reqs"] = None
+            self._pool = redis.ConnectionPool.from_url(
+                self._redis_url, **kwargs
             )
         return self._pool
     
