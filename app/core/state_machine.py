@@ -146,8 +146,8 @@ class ConversationState:
                     self._redis = redis.from_url(
                         self._redis_url,
                         decode_responses=True,
-                        socket_connect_timeout=5,
-                        socket_timeout=5,
+                        socket_connect_timeout=10,
+                        socket_timeout=15,
                     )
 
                 await self._redis.ping()

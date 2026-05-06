@@ -64,8 +64,8 @@ class MemoryManager:
             r = redis.Redis.from_url(
                 self._redis_url,
                 decode_responses=True,
-                socket_connect_timeout=3,
-                socket_timeout=3,
+                socket_connect_timeout=10,
+                socket_timeout=15,
             )
             await r.ping()
             await r.aclose()
@@ -87,8 +87,8 @@ class MemoryManager:
                 self._redis_url,
                 decode_responses=True,
                 max_connections=10,
-                socket_timeout=5,
-                socket_connect_timeout=5,
+                socket_connect_timeout=10,
+                socket_timeout=15,
                 retry_on_timeout=True,
             )
         return self._pool
