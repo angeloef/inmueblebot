@@ -30,7 +30,7 @@ services:
 
     envVars:
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a:5432/inmueblebot"
+        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a.frankfurt-postgres.render.com/inmueblebot?sslmode=require"
       - key: ENVIRONMENT
         value: production
       - key: PORT

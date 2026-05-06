@@ -28,6 +28,7 @@ Con soporte para:
 - Degradación graceful si Redis no está disponible
 """
 import asyncio
+import ssl
 from enum import Enum
 from typing import Optional, Callable
 from datetime import datetime, timedelta
@@ -116,6 +117,7 @@ class ConversationState:
         self._redis: Optional[redis.Redis] = None
         self._redis_url = settings.resolve_redis_url()
         self._redis_available = False
+        self._connection_tested = False
         self._max_retries = 5
         self._retry_delay = 0.5
     
@@ -125,36 +127,48 @@ class ConversationState:
             r = await self._get_redis_with_retry()
             await r.ping()
             self._redis_available = True
+            self._connection_tested = True
             return {"status": "healthy", "redis": "connected"}
         except Exception as e:
             self._redis_available = False
+            self._connection_tested = True
             return {"status": "unavailable", "error": str(e)[:100]}
     
     async def _get_redis_with_retry(self) -> redis.Redis:
-        """Obtiene cliente Redis con reintentos."""
+        """Obtiene cliente Redis con reintentos y fast-fail."""
+        if self._connection_tested and not self._redis_available:
+            raise ConnectionError("Redis previously marked unavailable")
+
         last_error = None
-        
+
         for attempt in range(self._max_retries):
             try:
                 if self._redis is None:
-                    self._redis = redis.from_url(
-                        self._redis_url,
+                    kwargs = dict(
                         decode_responses=True,
                         socket_connect_timeout=5,
-                        socket_timeout=5
+                        socket_timeout=5,
                     )
-                
+                    if self._redis_url.startswith("rediss://"):
+                        kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
+                    self._redis = redis.from_url(
+                        self._redis_url,
+                        **kwargs
+                    )
+
                 await self._redis.ping()
                 self._redis_available = True
+                self._connection_tested = True
                 return self._redis
-                
+
             except Exception as e:
                 last_error = e
                 self._redis_available = False
+                self._connection_tested = True
                 delay = self._retry_delay * (2 ** attempt)
-                logger.warning(f"[StateMachine] Intento {attempt + 1}/{self._max_retries}: {e}")
+                logger.warning(f"[StateMachine] Redis retry {attempt + 1}/{self._max_retries}: {e}")
                 await asyncio.sleep(delay)
-        
+
         logger.error(f"[StateMachine] Redis no disponible después de {self._max_retries} intentos")
         raise last_error
     

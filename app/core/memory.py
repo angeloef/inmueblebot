@@ -21,6 +21,7 @@ Con soporte para:
 """
 import asyncio
 import json
+import ssl
 from typing import Optional
 from datetime import datetime
 import redis.asyncio as redis
@@ -67,7 +68,7 @@ class MemoryManager:
                 socket_timeout=3,
             )
             if self._redis_url.startswith("rediss://"):
-                kwargs["ssl_cert_reqs"] = None
+                kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
             r = redis.Redis.from_url(
                 self._redis_url,
                 **kwargs
@@ -97,7 +98,7 @@ class MemoryManager:
             )
             # TLS (rediss://) needs SSL cert verification disabled for self-signed certs
             if self._redis_url.startswith("rediss://"):
-                kwargs["ssl_cert_reqs"] = None
+                kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
             self._pool = redis.ConnectionPool.from_url(
                 self._redis_url, **kwargs
             )
