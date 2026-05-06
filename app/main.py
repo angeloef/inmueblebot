@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting up")
 
+    # Auto-create tables if they don't exist
+    try:
+        from app.db.create_tables import create_tables
+        await create_tables(echo=False)
+        logger.info("DB tables ensured")
+    except Exception as e:
+        logger.warning("Table creation failed: {}", e)
+
     try:
         async with async_session_factory() as session:
             result = await session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
