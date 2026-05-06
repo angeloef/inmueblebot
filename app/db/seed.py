@@ -56,7 +56,7 @@ try:
                         'id': pid,
                         'title': item.get('title'),
                         'description': item.get('description'),
-                        'type': item.get('operation'),
+                        'type': item.get('operation') or 'alquiler',  # venta/alquiler mapped to Property.type
                         'currency': currency,
                         'location': location,
                         'lat': item.get('lat'),
@@ -66,7 +66,10 @@ try:
                         'area_m2': item.get('area_m2') or item.get('area', None),
                         'price': price,
                         'images': item.get('images'),
-                        'extra_data': item.get('extra_data') or {}
+                        'extra_data': {
+                            'kind': item.get('type'),  # property kind: casa, departamento, etc.
+                            **item.get('extra_data', {})
+                        }
                     })
 except Exception as e:
     print(f"[seed] Could not load JSON seed: {e}")
