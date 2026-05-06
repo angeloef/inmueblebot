@@ -21,7 +21,6 @@ Con soporte para:
 """
 import asyncio
 import json
-import ssl
 from typing import Optional
 from datetime import datetime
 import redis.asyncio as redis
@@ -62,16 +61,11 @@ class MemoryManager:
         Returns: {"status": "healthy"|"degraded", "redis": "connected"|"unavailable"}
         """
         try:
-            kwargs = dict(
+            r = redis.Redis.from_url(
+                self._redis_url,
                 decode_responses=True,
                 socket_connect_timeout=3,
                 socket_timeout=3,
-            )
-            if self._redis_url.startswith("rediss://"):
-                kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
-            r = redis.Redis.from_url(
-                self._redis_url,
-                **kwargs
             )
             await r.ping()
             await r.aclose()
@@ -89,18 +83,13 @@ class MemoryManager:
     async def _get_connection_pool(self) -> redis.ConnectionPool:
         """Obtiene o crea el connection pool de Redis."""
         if self._pool is None:
-            kwargs = dict(
+            self._pool = redis.ConnectionPool.from_url(
+                self._redis_url,
                 decode_responses=True,
                 max_connections=10,
                 socket_timeout=5,
                 socket_connect_timeout=5,
                 retry_on_timeout=True,
-            )
-            # TLS (rediss://) needs SSL cert verification disabled for self-signed certs
-            if self._redis_url.startswith("rediss://"):
-                kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
-            self._pool = redis.ConnectionPool.from_url(
-                self._redis_url, **kwargs
             )
         return self._pool
     

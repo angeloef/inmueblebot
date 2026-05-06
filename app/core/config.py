@@ -186,12 +186,15 @@ class Settings(BaseSettings):
         Resuelve la URL de la base de datos.
         - Agrega +asyncpg si usa postgresql:// (Render proporciona postgresql://)
         - Mantiene postgresql+asyncpg:// si ya lo tiene
+        - Reemplaza ?sslmode= por ?ssl= (asyncpg usa ?ssl=, psycopg2 usa ?sslmode=)
         """
         if not self.DATABASE_URL:
             return ""
         url = self.DATABASE_URL.strip()
         if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        url = url.replace("?sslmode=require", "?ssl=require")
+        url = url.replace("&sslmode=require", "&ssl=require")
         return url
 
 

@@ -30,13 +30,13 @@ services:
 
     envVars:
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a.frankfurt-postgres.render.com/inmueblebot?sslmode=require"
+        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a.frankfurt-postgres.render.com/inmueblebot?ssl=require"
       - key: ENVIRONMENT
         value: production
       - key: PORT
         value: "8000"
       - key: REDIS_URL
-        value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0"
+        value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0?ssl_cert_reqs=none"
 
 # Celery Worker (Not available on free plan - disabled)
 #   - type: worker

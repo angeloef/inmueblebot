@@ -28,7 +28,6 @@ Con soporte para:
 - Degradación graceful si Redis no está disponible
 """
 import asyncio
-import ssl
 from enum import Enum
 from typing import Optional, Callable
 from datetime import datetime, timedelta
@@ -144,16 +143,11 @@ class ConversationState:
         for attempt in range(self._max_retries):
             try:
                 if self._redis is None:
-                    kwargs = dict(
+                    self._redis = redis.from_url(
+                        self._redis_url,
                         decode_responses=True,
                         socket_connect_timeout=5,
                         socket_timeout=5,
-                    )
-                    if self._redis_url.startswith("rediss://"):
-                        kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
-                    self._redis = redis.from_url(
-                        self._redis_url,
-                        **kwargs
                     )
 
                 await self._redis.ping()
