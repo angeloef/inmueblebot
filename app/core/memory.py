@@ -97,9 +97,16 @@ class MemoryManager:
         return redis.Redis(connection_pool=pool)
     
     async def _get_redis_with_retry(self) -> redis.Redis:
-        """Obtiene cliente Redis con reintentos y exponential backoff."""
-        last_error = None
+        """Obtiene cliente Redis con reintentos y exponential backoff.
         
+        Once Redis is confirmed unreachable, subsequent calls fail instantly
+        to avoid adding latency on every message.
+        """
+        if self._connection_tested and not self._redis_available:
+            raise ConnectionError("Redis previously marked unavailable")
+
+        last_error = None
+
         for attempt in range(self.MAX_RETRIES):
             try:
                 r = await self._get_redis()
@@ -110,21 +117,21 @@ class MemoryManager:
                     self._connection_tested = True
                     self._degraded_logged = False
                 return r
-                
+
             except Exception as e:
                 last_error = e
                 self._redis_available = False
+                self._connection_tested = True
                 delay = self.RETRY_BASE_DELAY * (2 ** attempt)
-                
+
                 if attempt < self.MAX_RETRIES - 1:
                     logger.warning(f"[Memory] Redis retry {attempt + 1}/{self.MAX_RETRIES}: {e}")
                     await asyncio.sleep(delay)
                 else:
                     if not self._degraded_logged:
-                        logger.warning(f"[Memory] ⚠️ REDIS DOWN: Using temporary local cache")
+                        logger.warning(f"[Memory] REDIS DOWN: Using temporary local cache")
                         self._degraded_logged = True
-        
-        # Return a dummy client that will fail gracefully
+
         logger.error(f"[Memory] Redis unavailable after {self.MAX_RETRIES} attempts")
         raise last_error
     
@@ -558,7 +565,11 @@ class MemoryManager:
         
         Por ahora retorna un resumen básico desde Redis.
         """
-        r = await self._get_redis_with_retry()
+        try:
+            r = await self._get_redis_with_retry()
+        except Exception as e:
+            logger.debug(f"[Memory] Redis no disponible para summary: {e}")
+            return ""
         key = f"user:{phone}:summary"
         
         try:
@@ -572,7 +583,11 @@ class MemoryManager:
         """
         Guarda el resumen de conversación (generado por LLM).
         """
-        r = await self._get_redis_with_retry()
+        try:
+            r = await self._get_redis_with_retry()
+        except Exception as e:
+            logger.debug(f"[Memory] Redis no disponible para save summary: {e}")
+            return False
         key = f"user:{phone}:summary"
         
         try:
@@ -614,7 +629,11 @@ class MemoryManager:
         Limpia la memoria de corto plazo (Redis).
         Mantiene las preferencias en PostgreSQL.
         """
-        r = await self._get_redis_with_retry()
+        try:
+            r = await self._get_redis_with_retry()
+        except Exception as e:
+            logger.debug(f"[Memory] Redis no disponible para clear, skipping: {e}")
+            return False
         
         try:
             keys = [
