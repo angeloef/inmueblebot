@@ -7,6 +7,12 @@ import { EventPopover, EventEditor } from './EventPopover';
 const DOWS = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
 const KIND_LABEL = { visit: 'Visita', call: 'Llamada' };
 
+/** Devuelve true si fecha+hora ya pasaron (margen 1 min). */
+function isPast(dateISO, timeStr = '00:00') {
+  if (!dateISO) return false;
+  return new Date(`${dateISO}T${timeStr}:00`).getTime() < Date.now() - 60_000;
+}
+
 const ROW_H = 56;
 const GUTTER_W = 60;
 
@@ -50,8 +56,11 @@ function MonthView({ events, onEventClick, today, onDayClick, year, month }) {
       {cells.map((c, i) => {
         const dayEvents = events.filter(e => e.date === c.iso).sort((a, b) => a.start.localeCompare(b.start));
         const isToday = c.iso === today;
+        const isDayPast = c.iso < today;
         return (
-          <div key={i} className={`cal-day ${c.other ? 'other' : ''} ${isToday ? 'today' : ''}`} onClick={() => onDayClick && onDayClick(c.iso)}>
+          <div key={i} className={`cal-day ${c.other ? 'other' : ''} ${isToday ? 'today' : ''} ${isDayPast ? 'past' : ''}`}
+               style={isDayPast ? { cursor: 'default' } : undefined}
+               onClick={() => !isDayPast && onDayClick && onDayClick(c.iso)}>
             <span className="num">{c.d}</span>
             {dayEvents.slice(0, 4).map(e => {
               const label = KIND_LABEL[e.kind] ?? e.kind;
@@ -412,25 +421,26 @@ export default function Calendar() {
   const [editor, setEditor] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
 
-  // Navigation state
-  const now = new Date();
-  const [navYear, setNavYear] = useState(now.getFullYear());
-  const [navMonth, setNavMonth] = useState(now.getMonth()); // 0-indexed
-
   const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  const goBack = () => {
-    if (view === 'month') {
-      if (navMonth === 0) { setNavMonth(11); setNavYear(y => y - 1); }
-      else setNavMonth(m => m - 1);
-    }
-  };
-  const goForward = () => {
-    if (view === 'month') {
-      if (navMonth === 11) { setNavMonth(0); setNavYear(y => y + 1); }
-      else setNavMonth(m => m + 1);
-    }
-  };
+  // Single navigation cursor — all views derive from this date
+  const [navDate, setNavDate] = useState(() => new Date());
+
+  const goBack = () => setNavDate(d => {
+    const nd = new Date(d);
+    if (view === 'month') nd.setMonth(nd.getMonth() - 1);
+    else if (view === 'week') nd.setDate(nd.getDate() - 7);
+    else nd.setDate(nd.getDate() - 1);
+    return nd;
+  });
+
+  const goForward = () => setNavDate(d => {
+    const nd = new Date(d);
+    if (view === 'month') nd.setMonth(nd.getMonth() + 1);
+    else if (view === 'week') nd.setDate(nd.getDate() + 7);
+    else nd.setDate(nd.getDate() + 1);
+    return nd;
+  });
 
   const openEvent = (event, rect) => setPopover({ event, anchor: rect });
   const closePopover = () => setPopover(null);
@@ -465,6 +475,7 @@ export default function Calendar() {
   };
 
   const handleSlotInteract = (date, start, end) => {
+    if (isPast(date, start)) return;
     setEditor({
       mode: 'create',
       event: { title: 'Visita · ', kind: 'visit', date, start, end, agent: 'M. Pereyra', status: 'pending' },
@@ -472,23 +483,40 @@ export default function Calendar() {
   };
 
   const handleMoveEvent = React.useCallback((event, newDate, newStart, newEnd) => {
+    if (isPast(newDate, newStart)) {
+      pushToast({ text: 'No se puede mover un evento al pasado.', kind: 'danger' });
+      return;
+    }
     updateEventMut.mutate({ ...event, date: newDate, start: newStart, end: newEnd }, {
       onSuccess: () => pushToast({ text: 'Evento movido.' }),
     });
   }, [updateEventMut]);
 
-  const [yr, mo, dy] = today.split('-').map(Number);
-  const dt = new Date(yr, mo - 1, dy);
-  const weekStart = new Date(dt);
-  weekStart.setDate(dt.getDate() - dt.getDay());
+  // Derived values from navDate
+  const navYear  = navDate.getFullYear();
+  const navMonth = navDate.getMonth(); // 0-indexed
+
+  const weekStart = new Date(navDate);
+  weekStart.setDate(navDate.getDate() - navDate.getDay());
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const x = new Date(weekStart);
     x.setDate(weekStart.getDate() + i);
     return padDate(x.getFullYear(), x.getMonth() + 1, x.getDate());
   });
 
-  const navLabel = view === 'day' ? `${dy} de ${MONTH_NAMES[mo-1]}, ${yr}` :
-                   view === 'week' ? `${weekDays[0].slice(8)} – ${weekDays[6].slice(8)} ${MONTH_NAMES[mo-1]} ${yr}` :
+  const navDayISO = padDate(navDate.getFullYear(), navDate.getMonth() + 1, navDate.getDate());
+
+  // Week label handles cross-month ranges (e.g. "29 abr – 5 may 2026")
+  const weekLabelStart = weekDays[0];
+  const weekLabelEnd   = weekDays[6];
+  const wStartDate = new Date(weekLabelStart);
+  const wEndDate   = new Date(weekLabelEnd);
+  const weekLabel  = wStartDate.getMonth() === wEndDate.getMonth()
+    ? `${wStartDate.getDate()} – ${wEndDate.getDate()} ${MONTH_NAMES[wEndDate.getMonth()]} ${wEndDate.getFullYear()}`
+    : `${wStartDate.getDate()} ${MONTH_NAMES[wStartDate.getMonth()].slice(0,3)} – ${wEndDate.getDate()} ${MONTH_NAMES[wEndDate.getMonth()].slice(0,3)} ${wEndDate.getFullYear()}`;
+
+  const navLabel = view === 'day'  ? `${navDate.getDate()} de ${MONTH_NAMES[navMonth]}, ${navYear}` :
+                   view === 'week' ? weekLabel :
                    `${MONTH_NAMES[navMonth]} ${navYear}`;
 
   return (
@@ -505,7 +533,7 @@ export default function Calendar() {
 
       <div className="surface cal-surface">
         <div className="cal-toolbar">
-          <Button kind="secondary" size="sm" onClick={() => { setNavYear(now.getFullYear()); setNavMonth(now.getMonth()); }}>Hoy</Button>
+          <Button kind="secondary" size="sm" onClick={() => setNavDate(new Date())}>Hoy</Button>
           <div className="nav">
             <IconButton name="chevronLeft" onClick={goBack} />
             <IconButton name="chevronRight" onClick={goForward} />
@@ -525,15 +553,18 @@ export default function Calendar() {
             today={today}
             year={navYear}
             month={navMonth}
-            onDayClick={(iso) => setEditor({
-              mode: 'create',
-              event: { title: 'Visita · ', kind: 'visit', date: iso, start: '10:00', end: '11:00', agent: 'M. Pereyra', status: 'pending' },
-            })}
+            onDayClick={(iso) => {
+              setNavDate(new Date(iso + 'T12:00:00'));
+              setEditor({
+                mode: 'create',
+                event: { title: 'Visita · ', kind: 'visit', date: iso, start: '10:00', end: '11:00', agent: 'M. Pereyra', status: 'pending' },
+              });
+            }}
           />
         )}
         {view === 'week' && (
           <TimeGrid
-            key="week"
+            key={`week-${weekDays[0]}`}
             days={weekDays}
             events={events}
             onEventClick={openEvent}
@@ -545,8 +576,8 @@ export default function Calendar() {
         )}
         {view === 'day' && (
           <TimeGrid
-            key="day"
-            days={[today]}
+            key={`day-${navDayISO}`}
+            days={[navDayISO]}
             events={events}
             onEventClick={openEvent}
             today={today}

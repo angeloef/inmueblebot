@@ -146,10 +146,18 @@ function applyKindPrefix(title, newKind) {
   return newPfx + bare;
 }
 
+/** Devuelve true si la combinación fecha+hora ya pasó (margen de 1 min). */
+function isPastDateTime(dateISO, timeStr) {
+  if (!dateISO || !timeStr) return false;
+  const dt = new Date(`${dateISO}T${timeStr}:00`);
+  return dt.getTime() < Date.now() - 60_000;
+}
+
 export function EventEditor({ event, mode, onClose, onSave }) {
   const { data: clients = [] }    = useClients();
   const { data: properties = [] } = useProperties();
   const today = new Date().toISOString().slice(0, 10);
+  const [pastError, setPastError] = useState(false);
   const [form, setForm] = useState(() => {
     const base = event || {
       title: '', kind: 'visit', date: today, start: '10:00', end: '11:00',
@@ -161,7 +169,7 @@ export function EventEditor({ event, mode, onClose, onSave }) {
     }
     return base;
   });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => { setPastError(false); setForm(f => ({ ...f, [k]: v })); };
 
   // Kinds that auto-fill from client vs. property
   const CLIENT_KINDS = ['call'];
@@ -246,7 +254,7 @@ export function EventEditor({ event, mode, onClose, onSave }) {
           <div className="field-row">
             <div className="field">
               <label>Fecha</label>
-              <input type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+              <input type="date" value={form.date} min={mode !== 'edit' ? today : undefined} onChange={e => set('date', e.target.value)} />
             </div>
             <div className="field-row" style={{ gap: 8 }}>
               <div className="field">
@@ -290,8 +298,19 @@ export function EventEditor({ event, mode, onClose, onSave }) {
           )}
         </div>
         <div className="modal-foot">
+          {pastError && (
+            <span style={{ fontSize: 12, color: 'var(--danger-600)', flex: 1 }}>
+              ⚠ No se pueden crear eventos en el pasado.
+            </span>
+          )}
           <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button kind="primary" size="sm" icon="check" onClick={() => onSave(form)}>
+          <Button kind="primary" size="sm" icon="check" onClick={() => {
+            if (mode !== 'edit' && isPastDateTime(form.date, form.start)) {
+              setPastError(true);
+              return;
+            }
+            onSave(form);
+          }}>
             {mode === 'create' ? 'Crear evento' : mode === 'reschedule' ? 'Reprogramar' : 'Guardar cambios'}
           </Button>
         </div>

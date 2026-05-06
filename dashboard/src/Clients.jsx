@@ -1,14 +1,112 @@
 import React, { useState, useEffect, Fragment } from 'react';
-import { Icon, Button, IconButton, Pill, initials } from './Primitives';
+import { Icon, Button, IconButton, Pill, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useClients, useProperties, useEvents } from './api';
+import { useClients, useProperties, useEvents, useCreateClient, useUpdateClient, useDeleteClient } from './api';
 import { KIND_META } from './EventPopover';
 
-function ClientDrawer({ client, onClose, onOpenProperty, onOpenEvent }) {
+const ROLE_OPTIONS = [
+  { value: 'prospect', label: 'Prospecto' },
+  { value: 'contact',  label: 'Contacto'  },
+  { value: 'lead',     label: 'Lead'       },
+  { value: 'client',   label: 'Cliente'    },
+  { value: 'lost',     label: 'Perdido'    },
+];
+
+function ClientEditor({ client, mode, onClose, onSave }) {
+  const isEdit = mode === 'edit';
+  const [form, setForm] = useState({
+    name:  client?.name  ?? '',
+    phone: client?.phone ?? '',
+    email: client?.email ?? '',
+    role:  client?.role  ?? 'prospect',
+    notes: client?.notes ?? '',
+  });
+  const [errors, setErrors] = useState({});
+
+  const set = (k, v) => {
+    setErrors(e => ({ ...e, [k]: '' }));
+    setForm(f => ({ ...f, [k]: v }));
+  };
+
+  // Teléfono: solo dígitos (y opcionalmente un + inicial)
+  const handlePhone = (e) => {
+    const raw = e.target.value;
+    const clean = raw.replace(/[^\d]/g, '');
+    set('phone', clean);
+  };
+
+  const handleSave = () => {
+    const newErrors = {};
+    if (!form.name.trim())  newErrors.name  = 'El nombre es obligatorio.';
+    if (!form.phone.trim()) newErrors.phone = 'El teléfono es obligatorio.';
+    if (Object.keys(newErrors).length) { setErrors(newErrors); return; }
+    onSave(form);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{isEdit ? 'Modificar cliente' : 'Nuevo cliente'}</h3>
+          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label>Nombre *</label>
+            <input
+              autoFocus
+              className={errors.name ? 'invalid' : ''}
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="Nombre completo"
+            />
+            {errors.name && <span className="field-error">{errors.name}</span>}
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Teléfono / WhatsApp *</label>
+              <input
+                className={errors.phone ? 'invalid' : ''}
+                inputMode="numeric"
+                value={form.phone}
+                onChange={handlePhone}
+                placeholder="5491112345678"
+              />
+              {errors.phone && <span className="field-error">{errors.phone}</span>}
+            </div>
+            <div className="field">
+              <label>Email</label>
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="nombre@email.com" />
+            </div>
+          </div>
+          <div className="field">
+            <label>Rol</label>
+            <select value={form.role} onChange={e => set('role', e.target.value)}>
+              {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Notas</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Preferencias, presupuesto, detalles..." />
+          </div>
+        </div>
+        <div className="modal-foot">
+          <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button kind="primary" size="sm" icon="check" onClick={handleSave}>
+            {isEdit ? 'Guardar cambios' : 'Crear cliente'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpenEvent }) {
   const { data: properties = [] } = useProperties();
   const { data: allEvents = [] }  = useEvents();
   if (!client) return null;
   const [tab, setTab] = useState('overview');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const interestProps = (client.interest || []).map(id => properties.find(p => String(p.id) === String(id))).filter(Boolean);
   const events = allEvents.filter(e => e.clientId === client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const today = new Date().toISOString().slice(0, 10);
@@ -18,7 +116,16 @@ function ClientDrawer({ client, onClose, onOpenProperty, onOpenEvent }) {
       <div className="drawer-backdrop" onClick={onClose} />
       <div className="drawer wide">
         <div className="drawer-head" style={{padding:0,display:'block',borderBottom:'none'}}>
-          <div style={{display:'flex',padding:'12px 16px 0',justifyContent:'flex-end'}}>
+          <div style={{display:'flex',padding:'12px 16px 0',justifyContent:'flex-end',gap:4,alignItems:'center'}}>
+            <IconButton name="edit" title="Editar cliente" onClick={() => onEdit && onEdit(client)} />
+            {confirmDelete
+              ? <span style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--danger-600)'}}>
+                  ¿Eliminar?
+                  <Button kind="danger" size="sm" onClick={() => onDelete && onDelete(client)}>Sí</Button>
+                  <Button kind="ghost" size="sm" onClick={() => setConfirmDelete(false)}>No</Button>
+                </span>
+              : <IconButton name="trash" title="Eliminar cliente" onClick={() => setConfirmDelete(true)} />
+            }
             <IconButton name="x" onClick={onClose} />
           </div>
           <div className="client-hero" style={{borderBottom:'none',paddingTop:6}}>
@@ -117,10 +224,45 @@ function ClientDrawer({ client, onClose, onOpenProperty, onOpenEvent }) {
 
 export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) {
   const { data: clients = [] } = useClients();
+  const createClientMut = useCreateClient();
+  const updateClientMut = useUpdateClient();
+  const deleteClientMut = useDeleteClient();
+
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [open, setOpen] = useState(initialClient || null);
+  const [open, setOpen]     = useState(initialClient || null);
+  const [editor, setEditor] = useState(null); // { mode: 'create'|'edit', client? }
+
   useEffect(() => { if (initialClient) setOpen(initialClient); }, [initialClient]);
+
+  const handleDelete = (client) => {
+    setOpen(null);
+    deleteClientMut.mutate(client.id, {
+      onSuccess: () => pushToast({ text: 'Cliente eliminado.' }),
+      onError:   () => pushToast({ text: 'Error al eliminar el cliente.', kind: 'danger' }),
+    });
+  };
+
+  const handleSave = (form) => {
+    const mode = editor.mode;
+    const clientId = editor.client?.id;
+    setEditor(null);
+    if (mode === 'create') {
+      createClientMut.mutate(form, {
+        onSuccess: () => pushToast({ text: 'Cliente creado.' }),
+        onError:   () => pushToast({ text: 'Error al crear el cliente.', kind: 'danger' }),
+      });
+    } else {
+      updateClientMut.mutate({ id: clientId, ...form }, {
+        onSuccess: (_, vars) => {
+          // Refresh the open drawer with updated data
+          setOpen(c => c ? { ...c, ...form } : c);
+          pushToast({ text: 'Cliente actualizado.' });
+        },
+        onError: () => pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }),
+      });
+    }
+  };
 
   const filtered = clients.filter(c => {
     if (filter !== 'all' && c.role !== filter) return false;
@@ -143,7 +285,7 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
         </div>
         <div className="page-h-actions">
           <Button kind="secondary" icon="download" size="sm">Exportar</Button>
-          <Button kind="primary" icon="plus" size="sm">Nuevo cliente</Button>
+          <Button kind="primary" icon="plus" size="sm" onClick={() => setEditor({ mode: 'create' })}>Nuevo cliente</Button>
         </div>
       </div>
 
@@ -193,7 +335,24 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
           </table>
         </div>
       </div>
-      {open && <ClientDrawer client={open} onClose={() => setOpen(null)} onOpenProperty={onOpenProperty} onOpenEvent={onOpenEvent} />}
+      {open && (
+        <ClientDrawer
+          client={open}
+          onClose={() => setOpen(null)}
+          onEdit={(c) => setEditor({ mode: 'edit', client: c })}
+          onDelete={handleDelete}
+          onOpenProperty={onOpenProperty}
+          onOpenEvent={onOpenEvent}
+        />
+      )}
+      {editor && (
+        <ClientEditor
+          client={editor.client}
+          mode={editor.mode}
+          onClose={() => setEditor(null)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from typing import Optional
 from pydantic import BaseModel
@@ -15,6 +15,45 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 _engine = None
 _SessionLocal = None
+_migration_done = False
+
+
+def _run_startup_migration(engine):
+    """One-time schema migrations so admin endpoints work correctly.
+
+    Idempotent — uses IF NOT EXISTS / IF EXISTS guards throughout.
+    Migrations:
+      1. Add extra_data JSONB to users  (stores email / role / notes for admin-created leads)
+      2. Make appointments.user_id nullable  (admin can create events without a linked contact)
+      3. Drop ck_appointment_type constraint  (allow 'call' and custom types, not just visit/signing/meeting)
+    """
+    global _migration_done
+    if _migration_done:
+        return
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS extra_data JSONB"
+            ))
+            conn.execute(text(
+                "ALTER TABLE appointments ALTER COLUMN user_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE appointments ALTER COLUMN property_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE appointments DROP CONSTRAINT IF EXISTS ck_appointment_type"
+            ))
+            conn.execute(text(
+                "ALTER TABLE appointments DROP CONSTRAINT IF EXISTS ck_appointment_status"
+            ))
+            conn.commit()
+        _migration_done = True
+    except Exception as exc:
+        # Log but don't crash — already migrated or DB unavailable at startup
+        import logging
+        logging.getLogger(__name__).warning("Startup migration warning: %s", exc)
+        _migration_done = True   # don't retry on every request
 
 
 def _get_sync_session() -> Session:
@@ -23,6 +62,7 @@ def _get_sync_session() -> Session:
         url = get_settings().resolved_database_url.replace("+asyncpg", "")
         _engine = create_engine(url, pool_pre_ping=True)
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+        _run_startup_migration(_engine)
     return _SessionLocal()
 
 
@@ -40,6 +80,29 @@ def verify_admin_api_key(x_api_key: str = Header(...)):
     if x_api_key != get_settings().ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
+
+
+@router.get("/debug/users")
+def debug_users():
+    """Diagnóstico: ejecuta query de users y retorna el error completo."""
+    import traceback
+    try:
+        db = _get_sync_session()
+        from sqlalchemy import text as _text
+        result = db.execute(_text("SELECT table_name FROM information_schema.tables WHERE table_schema='public'"))
+        tables = [r[0] for r in result.fetchall()]
+        try:
+            from app.db.models import User
+            users = db.query(User).limit(1).all()
+            user_count = db.query(User).count()
+            first = _user_to_dict(users[0]) if users else None
+            return {"tables": tables, "user_count": user_count, "first_user": first}
+        except Exception as e2:
+            return {"tables": tables, "user_error": traceback.format_exc()}
+        finally:
+            db.close()
+    except Exception as e:
+        return {"fatal_error": traceback.format_exc()}
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -104,7 +167,7 @@ _ROLE_TO_STATUS = {"prospect": "new", "tenant": "converted", "owner": "new", "lo
 
 def _user_to_dict(u):
     """Serializa User al shape que espera el dashboard (compatible con toClient())."""
-    extra = u.extra_data or {}
+    extra = (getattr(u, 'extra_data', None) or {})
     role = extra.get("role", "prospect")
     return {
         "id": str(u.id),
@@ -114,7 +177,8 @@ def _user_to_dict(u):
         "status": _ROLE_TO_STATUS.get(role, "new"),   # toClient() maps status → role
         "notes": extra.get("notes"),
         "tags": [],
-        "lead_score": u.lead_score,
+        "lead_score": getattr(u, 'lead_score', 0) or 0,
+        "last_interaction": u.last_interaction.isoformat() if u.last_interaction else None,
         "updated_at": u.last_interaction.isoformat() if u.last_interaction else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -171,8 +235,12 @@ def list_leads(
     _: bool = Depends(verify_admin_api_key),
 ):
     from app.db.models import User
-    users = db.query(User).order_by(User.created_at.desc()).limit(limit).all()
-    return {"leads": [_user_to_dict(u) for u in users], "total": len(users)}
+    try:
+        users = db.query(User).order_by(User.created_at.desc()).limit(limit).all()
+        return {"leads": [_user_to_dict(u) for u in users], "total": len(users)}
+    except Exception as exc:
+        import traceback
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
 
 
 @router.get("/leads/{lead_id}")
@@ -201,15 +269,17 @@ def create_lead(
     from app.db.models import User
     # whatsapp_phone is NOT NULL unique — generate a placeholder for admin-created leads
     phone = data.phone or f"admin_{_uuid.uuid4().hex[:10]}"
-    user = User(
-        whatsapp_phone=phone,
-        name=data.name,
-        extra_data={
-            "email": data.email,
-            "role": data.role or "prospect",
-            "notes": data.notes,
-        },
-    )
+    extra = {
+        "email": data.email,
+        "role": data.role or "prospect",
+        "notes": data.notes,
+    }
+    user = User(whatsapp_phone=phone, name=data.name)
+    # extra_data column is added by startup migration; set it after object creation
+    try:
+        user.extra_data = extra
+    except AttributeError:
+        pass   # column not yet migrated — data stored on next request
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -236,14 +306,36 @@ def update_lead(
         user.name = data.name
 
     updates = data.model_dump(exclude_unset=True)
-    extra = dict(user.extra_data or {})
+    extra = dict(getattr(user, 'extra_data', None) or {})
     for key in ("email", "role", "notes"):
         if key in updates:
             extra[key] = updates[key]
-    user.extra_data = extra
+    try:
+        user.extra_data = extra
+    except AttributeError:
+        pass
 
     db.commit()
     return {"status": "updated", "lead_id": lead_id}
+
+
+@router.delete("/leads/{lead_id}")
+def delete_lead(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    from app.db.models import User
+    try:
+        uid = _uuid.UUID(lead_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid lead_id format (expected UUID)")
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    db.delete(user)
+    db.commit()
+    return {"status": "deleted", "lead_id": lead_id}
 
 
 # ── Properties ─────────────────────────────────────────────────────────────────

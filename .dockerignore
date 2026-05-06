@@ -1,4 +1,9 @@
 # Ignore patterns that could cause issues
+
+# Dashboard — node_modules de Windows pisarían los binarios Alpine instalados en el build
+dashboard/node_modules/
+dashboard/dist/
+
 __pycache__/
 *.pyc
 *.pyo
