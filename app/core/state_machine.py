@@ -265,5 +265,10 @@ class ConversationState:
             logger.warning(f"Redis no disponible para previous_state: {e}")
             return ConversationStateEnum.IDLE.value
 
+    async def close(self):
+        """Cierra conexión Redis."""
+        if self._redis:
+            await self._redis.close()
+
 
 state_machine = ConversationState()

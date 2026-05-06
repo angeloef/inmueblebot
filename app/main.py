@@ -59,7 +59,17 @@ async def lifespan(app: FastAPI):
         logger.warning("DB check failed: {}", e)
 
     yield
+    # Graceful shutdown: close Redis connections before event loop closes
     logger.info("Shutting down")
+    try:
+        from app.core.memory import memory_manager
+        from app.core.classifier import intent_classifier
+        from app.core.state_machine import state_machine
+        await memory_manager.close()
+        await intent_classifier.close()
+        await state_machine.close()
+    except Exception as e:
+        logger.warning("Redis shutdown error: {}", e)
 
 
 # ============================================================================

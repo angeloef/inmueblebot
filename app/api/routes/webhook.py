@@ -245,29 +245,29 @@ async def receive_webhook(request: Request):
     if not entry:
         return {"status": "ok"}
     
-        # Process each change
-        for e in entry:
-            changes = e.get("changes", [])
-            for change in changes:
-                value = change.get("value", {})
+    # Process each change
+    for e in entry:
+        changes = e.get("changes", [])
+        for change in changes:
+            value = change.get("value", {})
 
-                # Delivery status updates (sent, delivered, read, failed)
-                statuses = value.get("statuses", [])
-                for status in statuses:
-                    msg_id = status.get("id", "?")
-                    status_val = status.get("status", "?")
-                    recipient = status.get("recipient_id", "?")
-                    errors = status.get("errors", [])
-                    if errors:
-                        logger.error(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient} | errors={errors}")
-                    else:
-                        logger.info(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient}")
+            # Delivery status updates (sent, delivered, read, failed)
+            statuses = value.get("statuses", [])
+            for status in statuses:
+                msg_id = status.get("id", "?")
+                status_val = status.get("status", "?")
+                recipient = status.get("recipient_id", "?")
+                errors = status.get("errors", [])
+                if errors:
+                    logger.error(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient} | errors={errors}")
+                else:
+                    logger.info(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient}")
 
-                messages = value.get("messages", [])
-                if messages:
-                    # Return 200 OK immediately, process in background
-                    # to prevent Meta from timing out and retrying the webhook
-                    asyncio.ensure_future(process_messages(messages))
+            messages = value.get("messages", [])
+            if messages:
+                # Return 200 OK immediately, process in background
+                # to prevent Meta from timing out and retrying the webhook
+                asyncio.ensure_future(process_messages(messages))
 
     return {"status": "ok"}
 
