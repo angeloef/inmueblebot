@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 import logging
 import hashlib
 import hmac
+import time
+import asyncio
 
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
@@ -26,6 +28,41 @@ from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Production guards ──────────────────────────────────────────────────────────
+# Dedup cache: message_id → timestamp. Prevents processing the same message twice.
+_processed_ids: Dict[str, float] = {}
+_DEDUP_TTL = 300  # 5 minutes
+
+# Per-user rate limiter: phone → list of timestamps.
+# Limits concurrent processing to one message per user at a time.
+_user_locks: Dict[str, float] = {}
+_USER_RATE_LIMIT = 1.0  # seconds between messages from same user
+
+
+def _is_duplicate(message_id: str) -> bool:
+    """Check if a message_id was already processed (within TTL)."""
+    now = time.time()
+    ts = _processed_ids.get(message_id)
+    if ts and (now - ts) < _DEDUP_TTL:
+        return True
+    _processed_ids[message_id] = now
+    # Prune stale entries every 100 IDs
+    if len(_processed_ids) > 1000:
+        stale = [mid for mid, t in _processed_ids.items() if (now - t) > _DEDUP_TTL]
+        for mid in stale:
+            del _processed_ids[mid]
+    return False
+
+
+def _check_user_rate_limit(phone: str) -> bool:
+    """Return True if this user should be allowed through."""
+    now = time.time()
+    last = _user_locks.get(phone)
+    if last and (now - last) < _USER_RATE_LIMIT:
+        return False
+    _user_locks[phone] = now
+    return True
 
 
 @dataclass
@@ -208,27 +245,29 @@ async def receive_webhook(request: Request):
     if not entry:
         return {"status": "ok"}
     
-    # Process each change
-    for e in entry:
-        changes = e.get("changes", [])
-        for change in changes:
-            value = change.get("value", {})
+        # Process each change
+        for e in entry:
+            changes = e.get("changes", [])
+            for change in changes:
+                value = change.get("value", {})
 
-            # Delivery status updates (sent, delivered, read, failed)
-            statuses = value.get("statuses", [])
-            for status in statuses:
-                msg_id = status.get("id", "?")
-                status_val = status.get("status", "?")
-                recipient = status.get("recipient_id", "?")
-                errors = status.get("errors", [])
-                if errors:
-                    logger.error(f"[WhatsApp] ❌ STATUS {status_val} | msg={msg_id} | to={recipient} | errors={errors}")
-                else:
-                    logger.info(f"[WhatsApp] 📬 STATUS {status_val} | msg={msg_id} | to={recipient}")
+                # Delivery status updates (sent, delivered, read, failed)
+                statuses = value.get("statuses", [])
+                for status in statuses:
+                    msg_id = status.get("id", "?")
+                    status_val = status.get("status", "?")
+                    recipient = status.get("recipient_id", "?")
+                    errors = status.get("errors", [])
+                    if errors:
+                        logger.error(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient} | errors={errors}")
+                    else:
+                        logger.info(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient}")
 
-            messages = value.get("messages", [])
-            if messages:
-                await process_messages(messages)
+                messages = value.get("messages", [])
+                if messages:
+                    # Return 200 OK immediately, process in background
+                    # to prevent Meta from timing out and retrying the webhook
+                    asyncio.ensure_future(process_messages(messages))
 
     return {"status": "ok"}
 
@@ -236,9 +275,31 @@ async def receive_webhook(request: Request):
 async def process_messages(messages: List[Dict[str, Any]]):
     """Process incoming messages and send responses."""
     for msg in messages:
+        # ── Production Guards ───────────────────────────────────────────────
+        # 1. Skip echo messages (bot's own outgoing messages echoed back)
+        if msg.get("is_echo"):
+            logger.info(f"Skipping echo message: {msg.get('id', '?')}")
+            continue
+
+        # 2. Skip messages from the bot's own number (self-webhook loop)
+        from_phone = msg.get("from", "")
+        settings = get_settings()
+        bot_numbers = [
+            settings.WHATSAPP_PHONE_NUMBER_ID,
+        ]
+        if from_phone in bot_numbers:
+            logger.info(f"Skipping message from bot's own number: {from_phone}")
+            continue
+
+        # 3. Skip duplicates by message_id
+        msg_id = msg.get("id", "")
+        if msg_id and _is_duplicate(msg_id):
+            logger.info(f"Skipping duplicate message: {msg_id}")
+            continue
+
         msg_type = msg.get("type", "text")
-        phone = msg.get("from", "")
-        message_id = msg.get("id", "")
+        phone = from_phone
+        message_id = msg_id
         timestamp = msg.get("timestamp", "")
         
         if not phone:
@@ -310,6 +371,11 @@ async def process_messages(messages: List[Dict[str, Any]]):
         logger.info(f"Processing from {phone} → sending to {phone_to}: {text[:30]}...")
         
         try:
+            # Rate limit: skip if same user sends too fast
+            if not _check_user_rate_limit(phone):
+                logger.warning(f"Rate-limited {phone}, dropping message")
+                continue
+
             result = await real_estate_agent.process_turn(
                 phone=phone,
                 user_message=text
