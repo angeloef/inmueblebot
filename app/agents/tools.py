@@ -138,7 +138,7 @@ def _get_attr(obj, attr: str, default=None):
     return getattr(obj, attr, default)
 
 
-async def search_properties(criteria: Dict[str, Any]) -> str:
+async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
     """
     Busca propiedades según criterios específicos.
     
@@ -213,11 +213,29 @@ async def search_properties(criteria: Dict[str, Any]) -> str:
             logger.info(f"[TOOL]   {i}. {prop.title} | {prop.location} | {prop.bedrooms} hab | ${prop.price}")
         logger.info(f"[TOOL] =======================================")
         
+        # Save raw property objects to Redis so next turn knows which IDs were shown
+        if phone and properties:
+            try:
+                prop_list = []
+                for prop in properties:
+                    original_id = _get_attr(prop, "original_id", None)
+                    prop_list.append({
+                        "id": str(original_id) if original_id else str(_get_attr(prop, "id", "")),
+                        "title": _get_attr(prop, "title", ""),
+                        "price": _get_attr(prop, "price", 0),
+                        "bedrooms": _get_attr(prop, "bedrooms"),
+                        "location": _get_attr(prop, "location", ""),
+                    })
+                await memory_manager.update_context_field(phone, "last_shown_properties", prop_list)
+                logger.info(f"[TOOL] Saved {len(prop_list)} properties to last_shown_properties")
+            except Exception as e:
+                logger.warning(f"[TOOL] Could not save last_shown_properties: {e}")
+
         return format_property_list(properties)
         
     except Exception as e:
-        logger.error(f"Error en búsqueda de propiedades: {e}")
-        return "Tuve un problema al buscar propiedades. ¿Podrías intentar con otros criterios?"
+        logger.error(f"Error en busqueda de propiedades: {e}")
+        return "Tuve un problema al buscar propiedades. Podrias intentar con otros criterios?"
 
 
 async def refine_search(refinement: str = None, previous_criteria: Dict[str, Any] = None) -> str:
@@ -838,18 +856,12 @@ async def get_property_images(property_id: str) -> str:
             if 1 <= int_id <= 1000:
                 from app.db.repository import BaseRepository
                 from app.db.models import Property
-                from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-                from sqlalchemy.orm import sessionmaker
-                from app.core.config import get_settings
-                settings = get_settings()
-                engine = create_async_engine(settings.DATABASE_URL, echo=False)
-                async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-                async with async_session_factory() as session:
+                from app.db.session import async_session_factory as _sf
+                async with _sf() as session:
                     repo = BaseRepository(Property, session)
                     prop = await repo.get(int_id)
                     if prop and getattr(prop, "images", None):
                         return json.dumps({"images": prop.images})
-                await engine.dispose()
         except Exception:
             pass
         # Try UUID via service
@@ -925,7 +937,7 @@ async def execute_tool(tool_name: str, arguments: dict, phone: str = None) -> st
             arguments["phone"] = phone
         
         if tool_name == "search_properties":
-            result = await func(arguments)
+            result = await func(arguments, phone=phone)
         elif tool_name == "recommend_properties":
             result = await func(arguments)
         elif tool_name == "get_property_details":

@@ -324,7 +324,10 @@ class MemoryManager:
                 if "location_preferences" in preferences:
                     update_fields["location_preferences"] = preferences["location_preferences"]
                 if "property_type" in preferences:
-                    update_fields["property_type"] = preferences["property_type"]
+                    pt = preferences["property_type"]
+                    if isinstance(pt, str):
+                        pt = [pt]  # DB column is character varying[], needs a list
+                    update_fields["property_type"] = pt
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
@@ -422,7 +425,9 @@ class MemoryManager:
                     budget = int(float(budget_str))
                     if "mil" in message_lower and budget < 10000:
                         budget *= 1000
-                    new_prefs["budget_max"] = budget
+                    # Ignore implausibly small numbers (2 banos -> 2, 4 habitaciones -> 4)
+                    if budget >= 100:
+                        new_prefs["budget_max"] = budget
                 except:
                     pass
         
@@ -500,11 +505,16 @@ class MemoryManager:
         
         if new_prefs:
             await self.update_user_preferences(phone, new_prefs)
-            logger.info(f"Preferencias extraídas y guardadas para {phone}: {new_prefs}")
-        
+            logger.info(f"Preferencias guardadas para {phone}")
+
+        # Strip recursive/volatile fields before saving last_search_criteria
+        SKIP_FIELDS = {"last_search_criteria", "current_state", "conversation_stage",
+                       "last_shown_properties", "last_interaction"}
+        simple_prefs = {k: v for k, v in new_prefs.items() if k not in SKIP_FIELDS}
+
         last_criteria = {
             "search_text": message[:200],
-            "extracted_prefs": new_prefs,
+            "extracted_prefs": simple_prefs,
         }
         await self.update_context_field(phone, "last_search_criteria", last_criteria)
         
