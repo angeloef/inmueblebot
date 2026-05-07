@@ -84,12 +84,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Migration] varchar[] column check failed (non-fatal): {e}")
 
-    # Auto-seed properties if none exist
+    # Auto-seed properties only if the table is empty (never force on startup)
     try:
         from app.db.seed import seed_properties
-        # Force re-seed on startup if in development or DEBUG environment
-        force_seed = os.environ.get("ENVIRONMENT", "production").lower() == "development"
-        await seed_properties(force=force_seed)
+        await seed_properties(force=False)
     except Exception as e:
         logger.warning("Seed failed: {}", e)
 

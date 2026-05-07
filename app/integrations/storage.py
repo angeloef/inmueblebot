@@ -1,7 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 from typing import Optional
-from config.settings import get_settings
+from app.core.config import get_settings
 
 settings = get_settings()
 

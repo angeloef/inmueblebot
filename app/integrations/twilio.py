@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 
-from config.settings import get_settings
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
