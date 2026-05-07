@@ -305,19 +305,15 @@ class MemoryManager:
         Usa UserRepository para persistir en la tabla users.
         """
         try:
-            from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-            from sqlalchemy.orm import sessionmaker
-            
+            from app.db.session import async_session_factory
+
             if db_session is None:
-                settings = get_settings()
-                engine = create_async_engine(settings.DATABASE_URL, echo=False)
-                async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
                 db_session = async_session_factory()
-            
+
             async with db_session:
                 user_repo = UserRepository(User, db_session)
                 user = await user_repo.get_or_create(phone)
-                
+
                 update_fields = {}
                 if "name" in preferences:
                     update_fields["name"] = preferences["name"]
@@ -333,14 +329,14 @@ class MemoryManager:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
                     update_fields["lead_score"] = preferences["lead_score"]
-                
+
                 update_fields["last_interaction"] = datetime.utcnow()
-                
+
                 if update_fields:
                     await user_repo.update(user.id, **update_fields)
                     await db_session.commit()
                     logger.info(f"Preferencias actualizadas para {phone}")
-                
+
                 return True
         except Exception as e:
             logger.error(f"Error al actualizar preferencias de {phone}: {e}")
@@ -352,22 +348,15 @@ class MemoryManager:
         Con fallback silencioso si no hay BD.
         """
         try:
-            from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-            from sqlalchemy.orm import sessionmaker
-            
+            from app.db.session import async_session_factory
+
             if db_session is None:
-                settings = get_settings()
-                engine = create_async_engine(settings.DATABASE_URL, echo=False)
-                async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
                 db_session = async_session_factory()
-                should_close = True
-            else:
-                should_close = False
-            
+
             async with db_session:
                 user_repo = UserRepository(User, db_session)
                 user = await user_repo.get_by_phone(phone)
-                
+
                 if user:
                     return {
                         "name": user.name,
@@ -551,9 +540,15 @@ class MemoryManager:
                 merged[key] = redis_context[key]
         
         merged["last_search_criteria"] = redis_context.get("last_search_criteria")
-        
         merged["conversation_stage"] = redis_context.get("conversation_stage", "new")
-        
+        merged["current_state"] = redis_context.get("current_state", "idle")
+
+        # last_shown_properties vive en Redis — incluirlo para que el agente
+        # pueda referenciar propiedades de la búsqueda anterior
+        last_props = redis_context.get("last_shown_properties")
+        if last_props:
+            merged["last_shown_properties"] = last_props
+
         return merged
     
     # =========================================================================
@@ -673,4 +668,4 @@ class MemoryManager:
 
 
 # Instancia global del gestor de memoria
-memory_manager = MemoryManager()
+memory_manager = MemoryManager()                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      

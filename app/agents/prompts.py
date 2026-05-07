@@ -460,11 +460,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "search_properties",
         "tool_call_id": "call_1",
-        "content": "🏠 *Encontré 3 propiedades:*\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: prop-001\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: prop-002"
+        "content": "Encontre 2 propiedades:\n\n1. Casa amplia en Posadas — $145,000 — 4 hab — 300m² — Posadas — ID: prop-001\n2. Casa centrica en Posadas — $120,000 — 3 hab — 200m² — Centro Posadas — ID: prop-002"
     },
     {
         "role": "assistant",
-        "content": "¡Encontré 2 casas en Posadas dentro de tu presupuesto!\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: prop-001\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: prop-002\n\n¿Te gustaría más detalles de alguna? ¿O preferís que agendemos una visita?"
+        "content": "Encontre 2 casas en Posadas dentro de tu presupuesto:\n\n1. Casa amplia en Posadas — $145,000 — 4 hab — 300m² — ID: prop-001\n2. Casa centrica en Posadas — $120,000 — 3 hab — 200m² — ID: prop-002\n\nQue te parece alguna? Puedo darte mas detalles o coordinar una visita."
     },
     {
         "role": "user",
@@ -488,11 +488,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "get_property_details",
         "tool_call_id": "call_2",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n- Tipo: Casa\n- Operación: Venta\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID de propiedad:* prop-001"
+        "content": "Casa amplia en Posadas\nPrecio: $145,000\nCaracteristicas: 4 hab | 3 banos | 300m²\nUbicacion: Posadas, Paraguay\nID: prop-001"
     },
     {
         "role": "assistant",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n- Tipo: Casa\n- Operación: Venta\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID de propiedad:* prop-001\n\n¿Te gustaría agendar una visita a esta propiedad?"
+        "content": "Casa amplia en Posadas — $145,000 — 4 habitaciones, 3 banos, 300m².\nUbicada en Posadas. ID: prop-001.\n\nQueres coordinar una visita?"
     },
     {
         "role": "user",
@@ -500,7 +500,7 @@ FEW_SHOT_EXAMPLES = [
     },
     {
         "role": "assistant",
-        "content": "¡Excelente! Para agendar la visita necesito algunos datos:\n\n- ¿Qué fecha exacta te conviene? (por ejemplo: viernes 20 de enero)\n- ¿Qué horario? (mañana o tarde)\n- ¿Tu nombre completo?\n\nPuedes escribir: \"Viernes 20 a las 10am, Juan Pérez\""
+        "content": "Para el viernes, a que hora te conviene?"
     },
     # New example: 4 bedrooms in Obera - shows MULTIPLE results
     {
@@ -525,11 +525,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "search_properties",
         "tool_call_id": "call_4bed",
-        "content": "🏠 *Encontré 5 propiedades:*\n\n1. 🏠 *Casa amplia en Oberá*\n   💰 $180,000 | 🛏 4 hab | 📐 250m²\n   📍 Oberá Centro\n   🔍 ID: prop-101\n\n2. 🏠 *Casa moderna en Oberá*\n   💰 $220,000 | 🛏 5 hab | 📐 300m²\n   📍Oberá Norte\n   🔍 ID: prop-102\n\n3. 🏠 *Casa céntrica en Oberá*\n   💰 $150,000 | 🛏 4 hab | 📐 180m²\n   📍 Centro, Oberá\n   🔍 ID: prop-103"
+        "content": "Encontre 5 propiedades:\n\n1. Casa amplia en Obera — $180,000 — 4 hab — 250m² — Obera Centro — ID: prop-101\n2. Casa moderna en Obera — $220,000 — 5 hab — 300m² — Obera Norte — ID: prop-102\n3. Casa centrica en Obera — $150,000 — 4 hab — 180m² — Centro — ID: prop-103"
     },
     {
         "role": "assistant",
-        "content": "Encontré 5 casas con 4+ habitaciones en Oberá. Aquí las más interesantes:\n\n1. 🏠 *Casa amplia en Oberá Centro* | 💰 $180,000 | 🛏 4 hab | 📐 250m²\n2. 🏠 *Casa moderna en Oberá Norte* | 💰 $220,000 | 🛏 5 hab | 📐 300m²\n3. 🏠 *Casa céntrica en Oberá* | 💰 $150,000 | 🛏 4 hab | 📐 180m²\n\n¿Cuál te llama más la atención? ¿Querés más detalles de alguna, o preferís filtrar por precio/zona?"
+        "content": "Encontre 5 casas con 4 o mas habitaciones en Obera:\n\n1. Casa amplia — $180,000 — 4 hab — Obera Centro — ID: prop-101\n2. Casa moderna — $220,000 — 5 hab — Obera Norte — ID: prop-102\n3. Casa centrica — $150,000 — 4 hab — Centro — ID: prop-103\n\nCual te interesa?"
     },
     {
         "role": "user",
@@ -559,11 +559,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "search_properties",
         "tool_call_id": "call_3",
-        "content": "🏠 *Encontré 3 departamentos:*\n\n1. 🏠 *Dpto céntrico en Asunción* | 💰 $120,000 | 🛏 2 hab | 📐 80m²\n\n2. 🏠 *Dpto moderno en Asunción* | 💰 $150,000 | 🛏 3 hab | 📐 100m²"
+        "content": "Encontre 2 departamentos:\n\n1. Dpto centrico en Asuncion — $120,000 — 2 hab — 80m² — ID: dpto-001\n2. Dpto moderno en Asuncion — $150,000 — 3 hab — 100m² — ID: dpto-002"
     },
     {
         "role": "assistant",
-        "content": "Encontré departamentos en Asunción. Algunas opciones:\n\n1. Dpto céntrico | $120,000 | 2 hab\n2. Dpto moderno | $150,000 | 3 hab\n\n¿Cuál te interesa?"
+        "content": "Encontre departamentos en Asuncion:\n\n1. Dpto centrico — $120,000 — 2 hab — ID: dpto-001\n2. Dpto moderno — $150,000 — 3 hab — ID: dpto-002\n\nCual te interesa?"
     },
     {
         "role": "user",
@@ -571,7 +571,7 @@ FEW_SHOT_EXAMPLES = [
     },
     {
         "role": "assistant",
-        "content": "¡Por supuesto! Un agente humano te contactará pronto.\n\nMientras tanto, ¿hay algo más en lo que pueda ayudarte? Estoy aquí para asistirte. 😊"
+        "content": "Claro, en un momento te contacta un asesor. Si necesitas algo mas mientras tanto, avisame."
     },
     {
         "role": "user",
@@ -595,11 +595,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "schedule_visit",
         "tool_call_id": "call_4",
-        "content": "📅 *¡Cita Agendada!*\n\n✅ *Tipo:* visita\n📆 *Fecha:* 19/04/2026\n⏰ *Hora:* 15:00\n🏠 *Propiedad:* Casa en Posadas\n\n📝 *Nota:* Un agente te contactará para confirmar los detalles.\n\n¿Necesitas hacer algún cambio? Solo dime."
+        "content": "Cita agendada. Tipo: visita. Fecha: 19/04/2026. Hora: 15:00. Propiedad: Casa en Posadas. Un asesor te va a contactar para confirmar. <!--CONFIRMED:2026-04-19 15:00-->"
     },
     {
         "role": "assistant",
-        "content": "¡Perfecto! Tu cita ha sido agendada para mañana a las 15:00 (3pm).\n\n📋 *Resumen:*\n- 📅 19 de abril de 2026\n- ⏰ 15:00\n- 🏠 Casa en Posadas\n\nUn agente te contactará para confirmar los detalles. ¿Necesitas algo más?"
+        "content": "Listo, quedo agendada la visita para el 19/04/2026 a las 15:00. Un asesor te va a confirmar. Necesitas algo mas?"
     },
     {
         "role": "user",
@@ -623,11 +623,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "get_my_appointments",
         "tool_call_id": "call_5",
-        "content": "📅 *Tus próximas citas:*\n\n1. 📆 19/04 a las 15:00\n   🏠 Casa en Posadas (visita)\n   🔍 ID: abc-123\n\n2. 📆 22/04 a las 10:00\n   🏠 Departamento en Asunción (visita)\n   🔍 ID: def-456"
+        "content": "Tus citas proximas:\n1. 19/04 a las 15:00 — Casa en Posadas — ID: abc-123\n2. 22/04 a las 10:00 — Departamento en Asuncion — ID: def-456"
     },
     {
         "role": "assistant",
-        "content": "Tienes 2 citas programadas:\n\n1. 📆 19/04 a las 15:00 - Casa en Posadas\n2. 📆 22/04 a las 10:00 - Departamento en Asunción\n\n¿Te interesa cambiar o cancelar alguna?"
+        "content": "Tenes 2 visitas coordinadas:\n1. 19/04 a las 15:00 — Casa en Posadas\n2. 22/04 a las 10:00 — Departamento en Asuncion\n\nQueres cambiar o cancelar alguna?"
     }
 ]
 
@@ -930,56 +930,78 @@ Recuerda:
 
 def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
     """
-    Genera el system prompt con contexto del usuario.
-    
-    Args:
-        user_context: Diccionario con preferencias del usuario
-    
-    Returns:
-        Prompt del sistema completo
+    Genera el system prompt con contexto del usuario inyectado correctamente.
+    El bloque de perfil se concatena al final del prompt base — no usa .format()
+    para evitar colisiones con las llaves del prompt.
     """
-    prompt = SYSTEM_PROMPT
-    
     if user_context is None:
         user_context = {}
-    
-    location = user_context.get("location_preferences", "No definida")
-    budget = user_context.get("budget_max") or user_context.get("budget_min")
-    if budget:
-        budget = f"${budget:,}"
+
+    # --- Construir bloque de perfil ---
+    profile_lines = []
+
+    name = user_context.get("name")
+    if name:
+        profile_lines.append(f"- Nombre: {name}")
+
+    location = user_context.get("location_preferences")
+    if location:
+        profile_lines.append(f"- Zona de interes: {location}")
+
+    budget_max = user_context.get("budget_max")
+    budget_min = user_context.get("budget_min")
+    if budget_max:
+        profile_lines.append(f"- Presupuesto maximo: ${budget_max:,}")
+    if budget_min:
+        profile_lines.append(f"- Presupuesto minimo: ${budget_min:,}")
+
+    prop_type = user_context.get("property_type")
+    if prop_type:
+        profile_lines.append(f"- Tipo de propiedad: {prop_type}")
+
+    op_type = user_context.get("operation_type")
+    if op_type:
+        profile_lines.append(f"- Operacion: {op_type}")
+
+    bedrooms = user_context.get("bedrooms")
+    if bedrooms:
+        profile_lines.append(f"- Dormitorios: {bedrooms}")
+
+    bathrooms = user_context.get("bathrooms")
+    if bathrooms:
+        profile_lines.append(f"- Banos: {bathrooms}")
+
+    current_state = user_context.get("current_state", "idle")
+    profile_lines.append(f"- Estado de conversacion: {current_state}")
+
+    last_criteria = user_context.get("last_search_criteria")
+    if last_criteria and isinstance(last_criteria, dict):
+        search_text = last_criteria.get("search_text", "")
+        if search_text:
+            profile_lines.append(f"- Ultima busqueda del usuario: \"{search_text[:120]}\"")
+
+    if profile_lines:
+        profile_block = (
+            "\n\n## PERFIL DEL USUARIO (datos guardados — usalos sin volver a preguntar):\n"
+            + "\n".join(profile_lines)
+        )
     else:
-        budget = "No definido"
-    property_type = user_context.get("property_type", "No definido")
-    operation_type = user_context.get("operation_type", "No definida")
-    bedrooms = user_context.get("bedrooms", "No-specified")
-    bathrooms = user_context.get("bathrooms", "No-specified")
-    
-    other_prefs = []
-    if user_context.get("area_min"):
-        other_prefs.append(f"Área mínima: {user_context['area_min']}m²")
-    if user_context.get("features"):
-        other_prefs.append(f"Características: {', '.join(user_context['features'])}")
-    if user_context.get("last_search_criteria"):
-        other_prefs.append(f"Búsqueda anterior: {user_context['last_search_criteria']}")
-    other_prefs_str = ", ".join(other_prefs) if other_prefs else "Ninguno"
-    
-    message_context = "Sin contexto previo" if not user_context else "Usuario recurrente con historial"
-    
-    prompt = prompt.format(
-        message_context=message_context,
-        location=location,
-        budget=budget,
-        property_type=property_type,
-        operation_type=operation_type,
-        bedrooms=bedrooms,
-        bathrooms=bathrooms,
-        other_prefs=other_prefs_str,
-        uuid="[ID]"
-    )
-    
-    prompt += "\n\n¡Listo para ayudar!"
-    
-    return prompt
+        profile_block = "\n\n## PERFIL DEL USUARIO: Sin historial previo (primera interaccion)."
+
+    # --- Instrucción de formato (sin emojis) ---
+    format_block = """
+
+## FORMATO DE RESPUESTA — OBLIGATORIO:
+- Responde como un asesor inmobiliario humano, en lenguaje natural y conversacional.
+- NO uses emojis en ninguna respuesta.
+- NO uses asteriscos para negrita (*texto*).
+- NO uses listas con bullets (-, *, •). Usa numeracion simple (1. 2. 3.) solo cuando muestres resultados de busqueda.
+- Oraciones cortas, directas. Maximo 3-4 lineas por bloque de texto.
+- Cuando muestres propiedades, usa este formato limpio:
+  1. [Titulo] — $[precio] — [X hab] — [ubicacion] — ID: [id]
+"""
+
+    return SYSTEM_PROMPT + profile_block + format_block
 
 
 def format_messages_for_llm(
@@ -1027,4 +1049,4 @@ __all__ = [
     "AGENT_SYSTEM_PROMPT",
     "get_system_prompt",
     "format_messages_for_llm",
-]
+]                                                                                                                                                                                                                                                                                     

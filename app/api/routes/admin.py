@@ -670,6 +670,4 @@ async def resume_bot(
     phone_to = format_phone_number(phone)
     await whatsapp_client.send_message(
         to=phone_to,
-        message="El agente ha finalizado la atención. Volvés a estar en modo automático. ¿En qué más puedo ayudarte? 🏠"
-    )
-    return {"status": "resumed", "phone": phone}
+        message="El agente ha finalizado la at

@@ -48,27 +48,27 @@ def format_property(prop) -> str:
     
     features = []
     if bedrooms:
-        features.append(f"🛏 {bedrooms} hab")
+        features.append(f"{bedrooms} hab")
     if bathrooms:
-        features.append(f"🛁 {bathrooms} baños")
+        features.append(f"{bathrooms} baños")
     if area_m2:
-        features.append(f"📐 {area_m2}m²")
+        features.append(f"{area_m2}m²")
     features_str = " | ".join(features) if features else "Sin especificar"
-    
+
     lines = [
-        f"🏠 *{title}*",
-        f"💰 *Precio:* {price_str}",
+        f"{title}",
+        f"Precio: {price_str}",
         ""
     ]
-    
+
     if description:
-        lines.append(f"📝 *Descripción:*\n{description[:200]}...")
+        lines.append(f"Descripcion: {description[:200]}")
         lines.append("")
-    
-    lines.append(f"📋 *Características:* {features_str}")
-    lines.append(f"📍 *Ubicación:* {location}")
-    lines.append(f"🔍 *ID de propiedad:* `{prop_id}`")
-    
+
+    lines.append(f"Caracteristicas: {features_str}")
+    lines.append(f"Ubicacion: {location}")
+    lines.append(f"ID: {prop_id}")
+
     return "\n".join(lines)
 
 
@@ -86,8 +86,8 @@ def format_property_list(properties: List) -> str:
         return "No encontré propiedades que coincidan con tu búsqueda."
     
     lines = []
-    lines.append(f"🏠 *Encontré {len(properties)} propiedades:*\n")
-    
+    lines.append(f"Encontre {len(properties)} propiedades:\n")
+
     for i, prop in enumerate(properties, 1):
         # Use original_id (integer) if available
         original_id = _get_attr(prop, "original_id", None)
@@ -95,37 +95,37 @@ def format_property_list(properties: List) -> str:
             prop_id = str(original_id)
         else:
             prop_id = str(_get_attr(prop, "id", f"prop-{i}"))[:8]
-        
+
         title = _get_attr(prop, "title", "Sin título")
         title = title[:50] + "..." if len(title) > 50 else title
-        
+
         price = _get_attr(prop, "price", 0)
         prop_type = _get_attr(prop, "type", "venta")
         if prop_type == "alquiler":
             price_str = f"${price:,}/mes"
         else:
             price_str = f"${price:,}"
-        
+
         bedrooms = _get_attr(prop, "bedrooms")
         bathrooms = _get_attr(prop, "bathrooms")
         area_m2 = _get_attr(prop, "area_m2")
-        
+
         features = []
         if bedrooms:
-            features.append(f"🛏 {bedrooms}")
+            features.append(f"{bedrooms} hab")
         if bathrooms:
-            features.append(f"🛁 {bathrooms}")
+            features.append(f"{bathrooms} baños")
         if area_m2:
-            features.append(f"📐 {area_m2}m²")
+            features.append(f"{area_m2}m²")
         features_str = " | ".join(features) if features else "Sin info"
-        
+
         location = _get_attr(prop, "location", "Sin ubicación")
-        
-        line = f"{i}. *{title}*\n"
-        line += f"   💰 {price_str} | {features_str}\n"
-        line += f"   📍 {location}\n"
-        line += f"   🔍 ID: `{prop_id}`"
-        
+
+        line = f"{i}. {title}\n"
+        line += f"   {price_str} | {features_str}\n"
+        line += f"   {location}\n"
+        line += f"   ID: {prop_id}"
+
         lines.append(line)
     
     return "\n\n".join(lines)
@@ -961,3 +961,4 @@ __all__ = [
     "execute_tool",
     "TOOL_FUNCTIONS",
 ]
+                                                                                                                                                                                          
