@@ -433,14 +433,40 @@ async def process_messages(messages: List[Dict[str, Any]]):
                     message=response_text
                 )
 
-            # Send images if any
-            images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
-            for url in images[:3]:
-                await whatsapp_client.send_image(
-                    to=phone_to,
-                    image_url=url,
-                    caption=rich_content.get("caption", "")
-                )
+            # Send images if any — validate URLs before hitting the WhatsApp API
+            # to prevent rejected requests from malformed/empty placeholders.
+            if isinstance(rich_content, dict):
+                raw_images = rich_content.get("images") or []
+                caption = rich_content.get("caption", "")
+                sent = 0
+                for url in raw_images:
+                    if not url or not isinstance(url, str):
+                        continue
+                    url = url.strip()
+                    if not url.startswith(("http://", "https://")):
+                        logger.warning(f"[Webhook] Skipping invalid image URL: {url!r}")
+                        continue
+                    try:
+                        result_img = await whatsapp_client.send_image(
+                            to=phone_to,
+                            image_url=url,
+                            caption=caption
+                        )
+                        if "error" in result_img:
+                            logger.error(
+                                f"[Webhook] send_image failed for {url!r}: {result_img}"
+                            )
+                        else:
+                            sent += 1
+                        if sent >= 3:
+                            break
+                    except Exception as img_err:
+                        logger.error(f"[Webhook] Exception sending image {url!r}: {img_err}")
+                if raw_images and sent == 0:
+                    logger.warning(
+                        f"[Webhook] {len(raw_images)} images in rich_content but none sent "
+                        f"(all failed validation or API errors)"
+                    )
 
         except Exception as e:
             logger.error(f"Error processing: {e}")

@@ -298,28 +298,64 @@ class RealEstateAgent:
         
         return messages
     
+    @staticmethod
+    def _is_valid_image_url(url: str) -> bool:
+        """
+        Returns True only for URLs that the WhatsApp API can actually fetch.
+        Rejects: empty strings, bare underscores, relative paths, data: URIs,
+        and anything that doesn't start with http:// or https://.
+        """
+        if not url or not isinstance(url, str):
+            return False
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            return False
+        # Must have a meaningful host — reject "https://_" etc.
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            return bool(parsed.netloc and len(parsed.netloc) > 3)
+        except Exception:
+            return False
+
     def _extract_rich_content(self, tool_args: dict, tool_result: str) -> dict:
         """Extrae rich content desde el resultado de la herramienta."""
         try:
             # Try extract images if tool_result contains JSON with images
             try:
                 data = json.loads(tool_result)
-                if isinstance(data, dict) and data.get("images"):
-                    return {
-                        "action": "show_property_images",
-                        "images": data.get("images", [])
-                    }
+                if isinstance(data, dict):
+                    raw_images = data.get("images") or []
+                    valid_images = [
+                        url for url in raw_images
+                        if self._is_valid_image_url(url)
+                    ]
+                    if valid_images:
+                        logger.info(
+                            f"[Agent] get_property_images: {len(raw_images)} total, "
+                            f"{len(valid_images)} valid URLs"
+                        )
+                        return {
+                            "action": "show_property_images",
+                            "images": valid_images
+                        }
+                    elif raw_images:
+                        logger.warning(
+                            f"[Agent] get_property_images returned {len(raw_images)} URLs "
+                            f"but none passed validation: {raw_images!r}"
+                        )
+                    # Return empty action so response_text can inform the user gracefully
+                    return {"action": "no_images_available"}
             except Exception:
                 pass
-            properties = []
-            
+
             if "Encontré" in tool_result and "propiedades" in tool_result:
                 return {
                     "action": "show_search_results",
                     "search_criteria": tool_args,
                     "message": tool_result
                 }
-            
+
             if "ID de propiedad:" in tool_result or "ID:" in tool_result:
                 import re
                 id_match = re.search(r'ID[:\s]*`?([a-zA-Z0-9-]+)`?', tool_result)
@@ -329,9 +365,9 @@ class RealEstateAgent:
                         "property_id": id_match.group(1),
                         "message": tool_result
                     }
-            
+
             return {"action": "general_response", "message": tool_result}
-            
+
         except Exception as e:
             logger.error(f"Error extract rich content: {e}")
             return {"action": "general_response", "message": tool_result}
@@ -418,9 +454,18 @@ class RealEstateAgent:
         
         # Replace common bad patterns with cleaner text
         cleaned = response
-        
-        # Remove "I'm calling..." / "Llamando a la función..." patterns
         import re
+
+        # ── Strip markdown image syntax ─────────────────────────────────────
+        # WhatsApp doesn't render markdown images. The LLM sometimes outputs
+        # ![Imagen N](url) or ![Imagen N](_) when it "knows" images exist but
+        # doesn't have real URLs. Strip them entirely so the user doesn't see
+        # broken placeholders; real images are sent via send_image() separately.
+        cleaned = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", cleaned)
+        # Also remove bare lines that become empty after the strip above
+        cleaned = re.sub(r"^\s*$\n", "", cleaned, flags=re.MULTILINE)
+
+        # Remove "I'm calling..." / "Llamando a la función..." patterns
         patterns_to_remove = [
             r".*\(Llamando\s+a\s+la\s+función.*\)",
             r".*\(calling.*function.*\)",
@@ -428,7 +473,7 @@ class RealEstateAgent:
             r"print\(.*\)",
             r"\[tool[_\s]call.*\]",
         ]
-        
+
         for pattern in patterns_to_remove:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
         

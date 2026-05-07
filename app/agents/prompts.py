@@ -269,12 +269,16 @@ Ejemplos:
 2. Si no hay resultados: ofrece alternativas (otra zona, otro presupuesto, etc.)
 3. Nunca digas "no hay propiedades" sin ofrecer opciones
 
-### 📸 IMÁGENES - REGLA CRÍTICA:
-**Cuando el usuario pida ver fotos, imágenes, o fotos de una propiedad, USA INMEDIATAMENTE get_property_images y muestra los resultados en rich_content. NO pidas datos de contacto (email, teléfono, nombre) antes de mostrar imágenes.**
+### 📸 IMÁGENES - REGLAS CRÍTICAS:
+**Cuando el usuario pida ver fotos, imágenes, o fotos de una propiedad, USA INMEDIATAMENTE get_property_images.**
+
+**NUNCA** incluyas imágenes como markdown en tu texto de respuesta. NO escribas `![Imagen 1](url)` ni ninguna variante. Las imágenes se envían automáticamente por el sistema — tu respuesta de texto solo debe decir algo como "Aquí tienes las fotos:" o "Te envío las imágenes ahora."
+
+**Si get_property_images retorna una lista vacía**, informa al usuario: "Todavía no tenemos fotos cargadas para esta propiedad, pero puedo mostrarte los detalles o coordinar una visita."
 
 **NUNCA** digas:
 - "Para ver las fotos necesito..."
-- " Dame tu email para..."
+- "Dame tu email para..."
 - "Tu número de teléfono para..."
 
 **SIEMPRE** muestra las imágenes directamente cuando se pidan.
@@ -1033,20 +1037,10 @@ def format_messages_for_llm(
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", "")
             })
-    
+
     messages.append({
         "role": "user",
         "content": user_message
     })
-    
+
     return messages
-
-
-__all__ = [
-    "SYSTEM_PROMPT",
-    "FEW_SHOT_EXAMPLES",
-    "TOOL_DEFINITIONS",
-    "AGENT_SYSTEM_PROMPT",
-    "get_system_prompt",
-    "format_messages_for_llm",
-]

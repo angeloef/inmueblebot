@@ -58,6 +58,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("DB check failed: {}", e)
 
+    # ── Column-type migration: ensure varchar[] (not JSONB) for array prefs ──
+    # If a prior deployment created property_type / location_preferences as JSONB,
+    # alter them to character varying[] so asyncpg can bind Python lists natively.
+    # Safe to run on every startup: IF NOT EXISTS guards make it idempotent.
+    try:
+        async with async_session_factory() as session:
+            for col in ("property_type", "location_preferences"):
+                result = await session.execute(text(
+                    f"SELECT data_type FROM information_schema.columns "
+                    f"WHERE table_name='users' AND column_name='{col}'"
+                ))
+                row = result.fetchone()
+                if row and row[0] == "jsonb":
+                    logger.warning(
+                        f"[Migration] users.{col} is JSONB — migrating to varchar[]"
+                    )
+                    await session.execute(text(
+                        f"ALTER TABLE users ALTER COLUMN {col} "
+                        f"TYPE character varying[] "
+                        f"USING ARRAY(SELECT jsonb_array_elements_text({col}))::varchar[]"
+                    ))
+                    await session.commit()
+                    logger.info(f"[Migration] users.{col} migrated to varchar[] ✓")
+    except Exception as e:
+        logger.warning(f"[Migration] varchar[] column check failed (non-fatal): {e}")
+
     # Auto-seed properties if none exist
     try:
         from app.db.seed import seed_properties

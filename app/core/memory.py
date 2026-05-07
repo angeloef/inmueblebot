@@ -297,7 +297,56 @@ class MemoryManager:
     # =========================================================================
     # MÉTODOS DE PREFERENCIAS (POSTGRESQL - LARGO PLAZO)
     # =========================================================================
-    
+
+    @staticmethod
+    def _normalize_varchar_array(value, field_name: str) -> list:
+        """
+        Normalize a value that must be stored as varchar[] in PostgreSQL.
+
+        Rules:
+        - None / empty  → []
+        - str           → [str]  (never iterate chars — avoids list("casa") bug)
+        - list          → deduplicated list of non-empty strings with len > 1
+                          (discards single-char artefacts from past list(str) misuse)
+        - anything else → [] with a warning log
+
+        This is the single authoritative coercion point for varchar[] columns
+        (property_type, location_preferences).  Centralising it here prevents
+        the asyncpg DatatypeMismatchError (JSONB cast vs varchar[]) and the
+        character-splitting bug where list("casa") produced ["c","a","s","a"].
+        """
+        if value is None:
+            return []
+        if isinstance(value, str):
+            v = value.strip()
+            return [v] if v else []
+        if isinstance(value, list):
+            cleaned = []
+            for item in value:
+                if not isinstance(item, str):
+                    continue
+                item = item.strip()
+                if len(item) <= 1:
+                    logger.warning(
+                        f"[Memory] Discarding single-char artefact {item!r} "
+                        f"in {field_name} — likely caused by list(str) upstream"
+                    )
+                    continue
+                cleaned.append(item)
+            # Deduplicate preserving insertion order
+            seen: set = set()
+            deduped = []
+            for item in cleaned:
+                if item not in seen:
+                    seen.add(item)
+                    deduped.append(item)
+            return deduped
+        logger.warning(
+            f"[Memory] Unexpected type {type(value).__name__} for varchar[] "
+            f"field {field_name} — storing as empty array"
+        )
+        return []
+
     async def update_user_preferences(
         self,
         phone: str,
@@ -307,6 +356,10 @@ class MemoryManager:
         """
         Actualiza las preferencias del usuario en PostgreSQL.
         Usa UserRepository para persistir en la tabla users.
+
+        varchar[] columns (property_type, location_preferences) are normalized
+        through _normalize_varchar_array before being sent to asyncpg so they
+        are always bound as native PostgreSQL arrays, never as JSONB.
         """
         try:
             from app.db.session import async_session_factory
@@ -320,18 +373,19 @@ class MemoryManager:
 
                 update_fields = {}
                 if "name" in preferences:
-                    update_fields["name"] = preferences["name"]
+                    update_fields["name"] = str(preferences["name"]).strip() or None
                 if "budget_min" in preferences:
                     update_fields["budget_min"] = preferences["budget_min"]
                 if "budget_max" in preferences:
                     update_fields["budget_max"] = preferences["budget_max"]
                 if "location_preferences" in preferences:
-                    update_fields["location_preferences"] = preferences["location_preferences"]
+                    update_fields["location_preferences"] = self._normalize_varchar_array(
+                        preferences["location_preferences"], "location_preferences"
+                    )
                 if "property_type" in preferences:
-                    pt = preferences["property_type"]
-                    if isinstance(pt, str):
-                        pt = [pt]  # DB column is character varying[], needs a list
-                    update_fields["property_type"] = pt
+                    update_fields["property_type"] = self._normalize_varchar_array(
+                        preferences["property_type"], "property_type"
+                    )
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
@@ -340,9 +394,13 @@ class MemoryManager:
                 update_fields["last_interaction"] = datetime.utcnow()
 
                 if update_fields:
+                    logger.debug(
+                        "[Memory] Updating prefs for %s: %s", phone,
+                        {k: v for k, v in update_fields.items() if k != "last_interaction"}
+                    )
                     await user_repo.update(user.id, **update_fields)
                     await db_session.commit()
-                    logger.info(f"Preferencias actualizadas para {phone}")
+                    logger.info(f"[Memory] Preferencias actualizadas para {phone}")
 
                 # Invalidate merged_context cache so the next get_merged_context
                 # reflects the new preferences without waiting for TTL expiry.
@@ -354,7 +412,7 @@ class MemoryManager:
 
                 return True
         except Exception as e:
-            logger.error(f"Error al actualizar preferencias de {phone}: {e}")
+            logger.error(f"[Memory] Error al actualizar preferencias de {phone}: {e}")
             return False
     
     async def get_user_preferences(self, phone: str, db_session=None) -> Optional[dict]:
@@ -420,7 +478,8 @@ class MemoryManager:
         
         for loc in locations:
             if loc in message_lower:
-                new_prefs["location_preferences"] = loc.title()
+                # Always store as a list to match varchar[] column type
+                new_prefs["location_preferences"] = [loc.strip().title()]
                 break
         
         budget_patterns = [
@@ -463,7 +522,8 @@ class MemoryManager:
         
         for key, value in property_types.items():
             if key in message_lower:
-                new_prefs["property_type"] = value
+                # Always store as a list to match varchar[] column type
+                new_prefs["property_type"] = [value]
                 break
         
         operation_types = {
@@ -648,22 +708,18 @@ class MemoryManager:
         
         if not messages:
             return ""
-        
-        # Por ahora, simplemente retornamos los últimos 5 mensajes como "resumen"
+
+        # Por ahora, simplemente retornamos los ultimos 5 mensajes como "resumen"
         recent = messages[-5:]
         summary = "\n".join([f"{m['role']}: {m['content'][:100]}" for m in recent])
-        
-        # TODO: Integrar con MiniMax para generar resumen inteligente
-        # prompt = f"Resume esta conversación en español:\n{summary}"
-        # summary = await llm_client.chat(prompt)
-        
+
         await self.save_conversation_summary(phone, summary)
         return summary
-    
+
     # =========================================================================
     # LIMPIEZA
     # =========================================================================
-    
+
     async def clear_short_term_memory(self, phone: str) -> bool:
         """
         Limpia la memoria de corto plazo (Redis).
@@ -692,10 +748,7 @@ class MemoryManager:
 
     async def clear_user(self, phone: str) -> bool:
         """Limpia TODA la informacion del usuario (Redis + PostgreSQL)."""
-        # Clear Redis
         await self.clear_short_term_memory(phone)
-
-        # Clear PostgreSQL
         try:
             async with get_async_session() as session:
                 result = await session.execute(
@@ -709,7 +762,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Error al eliminar preferencias de {phone}: {e}")
             return False
-
         return True
 
     async def close(self):
