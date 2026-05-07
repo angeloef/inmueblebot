@@ -162,21 +162,41 @@ class RealEstateAgent:
                         ]
                     })
 
-                    messages.append({
-                        "role": "tool",
-                        "name": tool_name,
-                        "tool_call_id": tc_id,
-                        "content": str(tool_result)
-                    })
-                    
+                    if "get_property_images" in tool_name:
+                        # Extract images NOW, before the LLM sees the result.
+                        # We then feed the LLM a clean confirmation string instead of
+                        # the raw JSON — this prevents the model from echoing the URL
+                        # in its text reply despite the system prompt instruction.
+                        rich_content = self._extract_rich_content(tool_args, tool_result)
+                        images_found = rich_content.get("images", [])
+                        if images_found:
+                            llm_tool_content = (
+                                f"Imágenes encontradas ({len(images_found)}). "
+                                "El sistema las enviará al usuario automáticamente. "
+                                "NO incluyas las URLs en tu respuesta de texto."
+                            )
+                        else:
+                            llm_tool_content = (
+                                "No hay imágenes disponibles para esta propiedad."
+                            )
+                        messages.append({
+                            "role": "tool",
+                            "name": tool_name,
+                            "tool_call_id": tc_id,
+                            "content": llm_tool_content,
+                        })
+                    else:
+                        messages.append({
+                            "role": "tool",
+                            "name": tool_name,
+                            "tool_call_id": tc_id,
+                            "content": str(tool_result)
+                        })
+
                     if "search_properties" in tool_name or "recommend_properties" in tool_name:
                         # last_shown_properties is already saved to Redis inside tools.py
                         # (search_properties calls update_context_field directly).
                         # _extract_rich_content returns action + message for the frontend.
-                        rich_content = self._extract_rich_content(tool_args, tool_result)
-
-                    elif "get_property_images" in tool_name:
-                        # Images tool returns JSON; _extract_rich_content parses it.
                         rich_content = self._extract_rich_content(tool_args, tool_result)
                     
                     # Log confirmed datetime for schedule_visit
@@ -463,6 +483,12 @@ class RealEstateAgent:
         # broken placeholders; real images are sent via send_image() separately.
         cleaned = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", cleaned)
         # Also remove bare lines that become empty after the strip above
+        cleaned = re.sub(r"^\s*$\n", "", cleaned, flags=re.MULTILINE)
+
+        # ── Strip raw /media/property/... URLs ──────────────────────────────
+        # Safety net: if the LLM echoes a media endpoint URL in its text
+        # despite the system prompt, remove it so users don't see raw links.
+        cleaned = re.sub(r"https?://[^\s]+/media/property/[^\s]+", "", cleaned)
         cleaned = re.sub(r"^\s*$\n", "", cleaned, flags=re.MULTILINE)
 
         # Remove "I'm calling..." / "Llamando a la función..." patterns
