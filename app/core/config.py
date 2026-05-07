@@ -136,6 +136,16 @@ class Settings(BaseSettings):
     API_PREFIX: str = Field(default="/api", description="Prefijo para rutas API")
     CORS_ORIGINS: list[str] = Field(default=["*"], description="Orígenes permitidos para CORS")
 
+    # === Public API URL (used for media serving, etc.) ===
+    # Render sets RENDER_EXTERNAL_URL automatically.
+    # We read that env var here as a fallback so no manual config is needed on Render.
+    API_BASE_URL: str = Field(
+        default_factory=lambda: (
+            os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000"
+        ),
+        description="Public base URL for this API (e.g. https://inmueblebot-api.onrender.com)"
+    )
+
     # === Rate Limiting ===
     RATE_LIMIT_MESSAGES: int = Field(default=20, description="Máximo de mensajes por ventana")
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, description="Ventana de tiempo en segundos")

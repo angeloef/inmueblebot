@@ -845,10 +845,26 @@ async def request_human_assistance(phone: str = None, reason: str = "user_reques
         return "Un agente humano te contactará pronto. Gracias por tu paciencia."
 
 
+def _to_public_image_urls(raw_images: list, property_id: str) -> list:
+    """
+    Convierte data:URI a URLs públicas del endpoint /media/property/{id}/{index}.
+    WhatsApp no acepta data URIs — necesita URLs HTTPS públicas.
+    """
+    from app.core.config import get_settings
+    base = get_settings().API_BASE_URL.rstrip("/")
+    public = []
+    for i, img in enumerate(raw_images):
+        if isinstance(img, str) and img.startswith("data:"):
+            public.append(f"{base}/media/property/{property_id}/{i}")
+        else:
+            public.append(img)
+    return public
+
+
 async def get_property_images(property_id: str) -> str:
     """Muestra imágenes de una propiedad por su ID (o referencia). Devuelve JSON string con images."""
     import json
-    
+
     try:
         # Try integer ID first
         try:
@@ -861,24 +877,19 @@ async def get_property_images(property_id: str) -> str:
                     repo = BaseRepository(Property, session)
                     prop = await repo.get(int_id)
                     if prop and getattr(prop, "images", None):
-                        return json.dumps({"images": prop.images})
+                        images = _to_public_image_urls(prop.images, str(int_id))
+                        return json.dumps({"images": images})
         except Exception:
             pass
         # Try UUID via service
         try:
             from uuid import UUID
-            # Normalize input to string; if it's a UUID object, convert to string
-            if isinstance(property_id, UUID):
-                id_str = str(property_id)
-            else:
-                id_str = str(property_id)
-            prop_uuid = UUID(id_str) if id_str is not None else None
+            id_str = str(property_id) if not isinstance(property_id, UUID) else str(property_id)
+            prop_uuid = UUID(id_str)
             from app.services.property_service import property_service
-            if prop_uuid:
-                images = await property_service.get_property_images(id_str)  # type: ignore
-            else:
-                images = []
+            images = await property_service.get_property_images(id_str)  # type: ignore
             if images:
+                images = _to_public_image_urls(images, id_str)
                 return json.dumps({"images": images})
         except Exception:
             pass

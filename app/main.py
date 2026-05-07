@@ -166,6 +166,69 @@ async def health_redis():
     return result
 
 
+@app.get("/media/property/{property_id}/{image_index}", include_in_schema=False)
+async def serve_property_image(property_id: str, image_index: int):
+    """
+    Serve a property image as binary.
+    Images stored as data:image/...;base64,... in the DB are decoded on-the-fly
+    so WhatsApp (which only accepts public HTTPS URLs) can fetch them.
+    """
+    import re
+    import base64
+    from fastapi.responses import Response, RedirectResponse
+    from app.db.session import async_session_factory
+    from app.db.repository import BaseRepository
+    from app.db.models import Property
+
+    try:
+        async with async_session_factory() as session:
+            repo = BaseRepository(Property, session)
+
+            prop = None
+            # Try UUID
+            try:
+                from uuid import UUID
+                prop = await repo.get(UUID(property_id))
+            except Exception:
+                pass
+            # Try integer ID
+            if not prop:
+                try:
+                    from sqlalchemy import select
+                    result = await session.execute(
+                        select(Property).where(Property.id == int(property_id))
+                    )
+                    prop = result.scalar_one_or_none()
+                except Exception:
+                    pass
+
+            if not prop or not getattr(prop, "images", None):
+                return Response(status_code=404)
+
+            images = prop.images
+            if image_index < 0 or image_index >= len(images):
+                return Response(status_code=404)
+
+            image_data = images[image_index]
+
+            # data:image/jpeg;base64,<payload>
+            if image_data.startswith("data:"):
+                match = re.match(r"data:([^;]+);base64,(.+)", image_data, re.DOTALL)
+                if not match:
+                    return Response(status_code=400)
+                mime_type = match.group(1).strip()
+                b64_payload = match.group(2).strip()
+                binary = base64.b64decode(b64_payload)
+                return Response(content=binary, media_type=mime_type)
+
+            # Regular URL — redirect WhatsApp to it
+            return RedirectResponse(url=image_data)
+
+    except Exception as e:
+        logger.error(f"[Media] Error serving property {property_id} image {image_index}: {e}")
+        return Response(status_code=500)
+
+
 # ── Routers ─────────────────────────────────────────────────────────────────
 
 # WhatsApp webhook
