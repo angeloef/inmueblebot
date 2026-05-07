@@ -74,6 +74,7 @@ dashboard/node_modules/
 dashboard/dist/
 dashboard/.env.local
 dashboard/.env.production
+!dashboard/.env
 !dashboard/package.json
 
 # =============================================================================
