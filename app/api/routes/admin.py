@@ -59,7 +59,10 @@ def _run_startup_migration(engine):
 def _get_sync_session() -> Session:
     global _engine, _SessionLocal
     if _SessionLocal is None:
-        url = get_settings().resolved_database_url.replace("+asyncpg", "")
+        url = (get_settings().resolved_database_url
+               .replace("+asyncpg", "")
+               .replace("?ssl=require", "?sslmode=require")
+               .replace("&ssl=require", "&sslmode=require"))
         _engine = create_engine(url, pool_pre_ping=True)
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         _run_startup_migration(_engine)
