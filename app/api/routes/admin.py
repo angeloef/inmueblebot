@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 from app.core.config import get_settings
 import uuid as _uuid
@@ -137,6 +137,7 @@ class PropertyCreate(BaseModel):
     area_m2: Optional[int] = None
     currency: str = "USD"
     status: str = "available"            # 'available','reserved','sold','rented'
+    images: Optional[List[str]] = None   # list of base64 data URLs or CDN URLs
 
 
 class AppointmentCreate(BaseModel):
@@ -373,6 +374,7 @@ def create_property(
         bathrooms=data.bathrooms,
         area_m2=data.area_m2,
         status=data.status if data.status in ("available", "reserved", "sold", "rented") else "available",
+        images=data.images or [],
         extra_data={"building_type": data.building_type, "city": ""},
     )
     db.add(prop)
@@ -418,6 +420,9 @@ def update_property(
         prop.extra_data = extra
     if "currency" in updates:
         prop.currency = updates.pop("currency")
+    if "images" in updates:
+        imgs = updates.pop("images")
+        prop.images = imgs if imgs is not None else []
 
     for k, v in updates.items():
         if hasattr(prop, k):

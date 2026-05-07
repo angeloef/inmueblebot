@@ -103,12 +103,14 @@ const STATUS_TO_ROLE = {
 
 function toProperty(p) {
   const bedrooms = p.bedrooms ?? 0;
-  let photo = '';
+  // Build full photos array from DB images field
+  let photosArr = [];
   if (Array.isArray(p.images) && p.images.length > 0) {
-    photo = p.images[0];
+    photosArr = p.images.filter(Boolean);
   } else if (typeof p.images === 'string' && p.images) {
-    try { photo = JSON.parse(p.images)[0] ?? p.images; } catch { photo = p.images; }
+    try { photosArr = JSON.parse(p.images).filter(Boolean); } catch { photosArr = [p.images]; }
   }
+  const photo = photosArr[0] ?? '';
   return {
     id:        String(p.id),
     addr:      p.location ?? p.address ?? '',
@@ -126,6 +128,7 @@ function toProperty(p) {
     baths:     p.bathrooms ?? 0,
     parking:   0,
     photo,
+    photos:    photosArr,   // full array for the edit form
     notes:     p.description ?? '',
     _createdAt: p.created_at ?? null,
   };
@@ -146,7 +149,7 @@ function fromProperty(d) {
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
-    images:        d.photo ? [d.photo] : [],
+    images:        d.photos && d.photos.length ? d.photos : (d.photo ? [d.photo] : []),
   };
 }
 

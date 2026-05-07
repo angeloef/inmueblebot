@@ -220,7 +220,8 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
         currency:  initialData.currency  || 'ARS',
         agent:     initialData.agent     || 'M. Pereyra',
         notes:     initialData.notes     || '',
-        photos:    [],
+        // Pre-populate photos from existing DB images so they show in the dropzone
+        photos: (initialData.photos || []).map((url, i) => ({ id: `existing-${i}`, name: 'foto', size: 0, url })),
       };
     }
     return {
@@ -266,7 +267,12 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
   const submit = () => {
     setTouched({ addr: true, price: true });
     if (!canSave) return;
-    const photo = form.photos[0]?.url || (mode === 'edit' ? initialData?.photo || '' : '');
+    // Build photos array: new uploads (data URLs) + existing (from DB)
+    const photos = form.photos.map(p => p.url).filter(Boolean);
+    // Fallback: if no photos changed at all, keep the original list from DB
+    const finalPhotos = photos.length > 0
+      ? photos
+      : (mode === 'edit' ? (initialData?.photos || (initialData?.photo ? [initialData.photo] : [])) : []);
     onSave({
       addr:      form.addr,
       neigh:     form.neigh,
@@ -281,7 +287,8 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       currency:  form.currency,
       agent:     form.agent,
       notes:     form.notes,
-      photo,
+      photos:    finalPhotos,
+      photo:     finalPhotos[0] ?? '',   // kept for backward compat (card thumbnail)
     });
   };
   return (
