@@ -398,7 +398,15 @@ class MemoryManager:
                         "[Memory] Updating prefs for %s: %s", phone,
                         {k: v for k, v in update_fields.items() if k != "last_interaction"}
                     )
-                    await user_repo.update(user.id, **update_fields)
+                    # Use ORM attribute assignment instead of Core update().values(**kwargs).
+                    # SQLAlchemy Core does NOT propagate column type info to asyncpg, so
+                    # Python lists are bound as JSONB by default — causing
+                    # DatatypeMismatchError on character varying[] columns.
+                    # ORM setattr() goes through the mapped column type (ARRAY(String))
+                    # and asyncpg receives the correct PostgreSQL array wire format.
+                    for key, value in update_fields.items():
+                        setattr(user, key, value)
+                    await db_session.flush()
                     await db_session.commit()
                     logger.info(f"[Memory] Preferencias actualizadas para {phone}")
 
@@ -750,24 +758,30 @@ class MemoryManager:
         """Limpia TODA la informacion del usuario (Redis + PostgreSQL)."""
         await self.clear_short_term_memory(phone)
         try:
-            async with get_async_session() as session:
-                result = await session.execute(
-                    select(UserPreferences).where(UserPreferences.phone == phone)
-                )
-                pref = result.scalar_one_or_none()
-                if pref:
-                    await session.delete(pref)
-                    await session.commit()
-                    logger.info(f"Preferencias eliminadas de PostgreSQL para {phone}")
+            from app.db.session import async_session_factory
+            db_session = async_session_factory()
+            async with db_session:
+                user_repo = UserRepository(User, db_session)
+                user = await user_repo.get_by_phone(phone)
+                if user:
+                    # Reset preferences but keep the user record
+                    user.budget_min = None
+                    user.budget_max = None
+                    user.location_preferences = None
+                    user.property_type = None
+                    user.lead_score = 0
+                    await db_session.flush()
+                    await db_session.commit()
+                    logger.info(f"[Memory] Preferencias eliminadas de PostgreSQL para {phone}")
         except Exception as e:
-            logger.error(f"Error al eliminar preferencias de {phone}: {e}")
+            logger.error(f"[Memory] Error al limpiar preferencias de {phone}: {e}")
             return False
         return True
 
     async def close(self):
         """Cierra la conexion Redis."""
         if self._redis:
-            await self._redis.close()
+            await self._redis.aclose()
             self._redis = None
 
 
