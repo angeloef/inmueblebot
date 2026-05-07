@@ -16,7 +16,9 @@ RUN cd dashboard && npm install
 # Copy dashboard source and build
 COPY dashboard/ ./dashboard/
 ARG VITE_API_BASE_URL=""
+ARG VITE_API_TOKEN=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_API_TOKEN=$VITE_API_TOKEN
 RUN cd dashboard && npm run build
 # Result: dashboard/dist/
 
