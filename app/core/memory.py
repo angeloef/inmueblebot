@@ -42,7 +42,11 @@ class MemoryManager:
     CONTEXT_TTL = 86400
     MESSAGES_TTL = 86400
     MAX_MESSAGES = 20
-    
+
+    # merged_context is rebuilt from Redis + Postgres on every message; cache it
+    # in Redis for 5 minutes so we skip the Postgres round-trip on repeat messages.
+    MERGED_CONTEXT_TTL = 300
+
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 1.0
     
@@ -340,6 +344,14 @@ class MemoryManager:
                     await db_session.commit()
                     logger.info(f"Preferencias actualizadas para {phone}")
 
+                # Invalidate merged_context cache so the next get_merged_context
+                # reflects the new preferences without waiting for TTL expiry.
+                try:
+                    r = await self._get_redis_with_retry()
+                    await r.delete(f"user:{phone}:merged_context")
+                except Exception:
+                    pass  # non-fatal: cache will expire naturally
+
                 return True
         except Exception as e:
             logger.error(f"Error al actualizar preferencias de {phone}: {e}")
@@ -523,41 +535,62 @@ class MemoryManager:
     async def get_merged_context(self, phone: str) -> dict:
         """
         Obtiene contexto combinado (Redis + PostgreSQL) para el LLM.
-        Con fallback silencioso si no hay BD.
-        
+
+        Result is cached in Redis for MERGED_CONTEXT_TTL seconds to avoid
+        a Postgres round-trip on every single incoming message.
+        Cache is invalidated by update_user_preferences (write path).
+
         Returns:
             Diccionario con preferencias combinadas de ambas fuentes
         """
+        cache_key = f"user:{phone}:merged_context"
+
+        # --- Cache read ---
+        try:
+            r = await self._get_redis_with_retry()
+            cached = await r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass  # proceed to rebuild
+
+        # --- Rebuild from sources ---
         try:
             redis_context = await self.get_user_context(phone)
         except Exception as e:
             logger.warning(f"Error get_user_context, usando default: {e}")
             redis_context = {"current_state": "idle", "conversation_stage": "new"}
-        
+
         try:
             postgres_prefs = await self.get_user_preferences(phone)
         except Exception as e:
             logger.warning(f"Error get_user_preferences, usando vacío: {e}")
             postgres_prefs = None
-        
+
         merged = {}
-        
-        for key in ["location_preferences", "property_type", "budget_min", "budget_max", 
-                   "operation_type", "bedrooms", "bathrooms", "name"]:
+
+        for key in ["location_preferences", "property_type", "budget_min", "budget_max",
+                    "operation_type", "bedrooms", "bathrooms", "name"]:
             if postgres_prefs and postgres_prefs.get(key):
                 merged[key] = postgres_prefs[key]
             elif redis_context.get(key):
                 merged[key] = redis_context[key]
-        
-        merged["last_search_criteria"] = redis_context.get("last_search_criteria")
-        merged["conversation_stage"] = redis_context.get("conversation_stage", "new")
-        merged["current_state"] = redis_context.get("current_state", "idle")
 
-        # last_shown_properties vive en Redis — incluirlo para que el agente
-        # pueda referenciar propiedades de la búsqueda anterior
+        merged["last_search_criteria"] = redis_context.get("last_search_criteria")
+        merged["conversation_stage"]   = redis_context.get("conversation_stage", "new")
+        merged["current_state"]        = redis_context.get("current_state", "idle")
+
+        # last_shown_properties lives in Redis — include for agent property references
         last_props = redis_context.get("last_shown_properties")
         if last_props:
             merged["last_shown_properties"] = last_props
+
+        # --- Cache write (best-effort; failures are non-fatal) ---
+        try:
+            r = await self._get_redis_with_retry()
+            await r.setex(cache_key, self.MERGED_CONTEXT_TTL, json.dumps(merged, default=str))
+        except Exception:
+            pass
 
         return merged
     
@@ -641,41 +674,49 @@ class MemoryManager:
         except Exception as e:
             logger.debug(f"[Memory] Redis no disponible para clear, skipping: {e}")
             return False
-        
+
         try:
             keys = [
                 f"user:{phone}:context",
                 f"user:{phone}:messages",
                 f"user:{phone}:summary",
+                f"user:{phone}:merged_context",
             ]
-            
             for key in keys:
                 await r.delete(key)
-            
             logger.info(f"Memoria de corto plazo limpiada para {phone}")
             return True
         except Exception as e:
             logger.error(f"Error al limpiar memoria de {phone}: {e}")
             return False
-    
+
     async def clear_user(self, phone: str) -> bool:
-        """
-        Limpia toda la memoria del usuario (Redis + PostgreSQL).
-        Alias para compatibilidad con frontend.
-        """
+        """Limpia TODA la informacion del usuario (Redis + PostgreSQL)."""
+        # Clear Redis
+        await self.clear_short_term_memory(phone)
+
+        # Clear PostgreSQL
         try:
-            await self.clear_short_term_memory(phone)
-            logger.info(f"Usuario {phone} limpiado completamente")
-            return True
+            async with get_async_session() as session:
+                result = await session.execute(
+                    select(UserPreferences).where(UserPreferences.phone == phone)
+                )
+                pref = result.scalar_one_or_none()
+                if pref:
+                    await session.delete(pref)
+                    await session.commit()
+                    logger.info(f"Preferencias eliminadas de PostgreSQL para {phone}")
         except Exception as e:
-            logger.error(f"Error al limpiar usuario {phone}: {e}")
+            logger.error(f"Error al eliminar preferencias de {phone}: {e}")
             return False
-    
+
+        return True
+
     async def close(self):
-        """Cierra conexión Redis."""
+        """Cierra la conexion Redis."""
         if self._redis:
             await self._redis.close()
+            self._redis = None
 
 
-# Instancia global del gestor de memoria
 memory_manager = MemoryManager()

@@ -60,7 +60,10 @@ class ConversationState:
     Gestor de estado de conversación con persistencia Redis + PostgreSQL.
     """
     
-    STATE_TTL = 1800  # 30 minutes
+    # Match MemoryManager.CONTEXT_TTL so state and context expire together.
+    # 30 min was too short: state reset to 'idle' while last_shown_properties
+    # was still alive in context, producing stale property references.
+    STATE_TTL = 86400  # 24 hours
     
     VALID_TRANSITIONS = {
         ConversationStateEnum.IDLE: [

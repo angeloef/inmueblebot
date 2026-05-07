@@ -18,7 +18,11 @@ from app.db.repository import UserRepository
 from app.db.models import User
 
 
-FAST_PATH_INTENTS = {Intent.GREETING, Intent.HUMAN_HANDOFF, Intent.UNKNOWN, Intent.PROPERTY_SEARCH, Intent.SCHEDULE_APPOINTMENT}
+# Only truly simple intents belong on the fast path (no LLM needed).
+# PROPERTY_SEARCH and SCHEDULE_APPOINTMENT were here by mistake — they require
+# the agent + tool calling; routing them to _generate_response completely
+# bypasses the LLM and produces stub responses.
+FAST_PATH_INTENTS = {Intent.GREETING, Intent.HUMAN_HANDOFF}
 
 
 class Router:
@@ -138,21 +142,15 @@ class Router:
             }
     
     async def _update_last_interaction(self, phone: str) -> None:
-        """Actualiza last_interaction en la tabla de usuarios."""
+        """Actualiza last_interaction en la tabla de usuarios.
+
+        Uses the shared async_session_factory (singleton connection pool) rather
+        than creating a new engine per call, which was leaking connections.
+        update_user_preferences always sets last_interaction internally, so this
+        is a lightweight call with minimal DB overhead.
+        """
         try:
-            from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-            from sqlalchemy.orm import sessionmaker
-            from app.core.config import get_settings
-            
-            settings = get_settings()
-            engine = create_async_engine(settings.DATABASE_URL, echo=False)
-            async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-            
-            async with async_session_factory() as session:
-                user_repo = UserRepository(User, session)
-                user = await user_repo.get_or_create(phone)
-                await user_repo.update(user.id, last_interaction=datetime.utcnow())
-                await session.commit()
+            await memory_manager.update_user_preferences(phone, {})
         except Exception as e:
             logger.warning(f"Error al actualizar last_interaction: {e}")
     

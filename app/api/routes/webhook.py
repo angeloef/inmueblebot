@@ -24,6 +24,9 @@ from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
 from app.core.config import get_settings
 from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id
+from app.core.session import get_user_lock
+from app.core.memory import memory_manager
+from app.core.classifier import intent_classifier
 
 logger = logging.getLogger(__name__)
 
@@ -371,15 +374,49 @@ async def process_messages(messages: List[Dict[str, Any]]):
         logger.info(f"Processing from {phone} → sending to {phone_to}: {text[:30]}...")
         
         try:
-            # Rate limit: skip if same user sends too fast
-            if not _check_user_rate_limit(phone):
-                logger.warning(f"Rate-limited {phone}, dropping message")
-                continue
+            # ── Concurrency guard ───────────────────────────────────────────
+            # Acquire a per-user lock before touching Redis context so that
+            # concurrent tasks for the same phone are serialised.  The 1-second
+            # _check_user_rate_limit only gates arrival rate; it does NOT prevent
+            # two overlapping LLM calls that each do read-modify-write on context.
+            async with get_user_lock(phone):
 
+                # ── 1. Persist user message to Redis history ─────────────────
+                # The agent reads get_recent_messages for LLM context but never
+                # saves the user turn itself — only the assistant turn is saved
+                # inside process_turn.  Without this call the LLM history only
+                # contains assistant messages, making it blind to prior user input.
+                try:
+                    await memory_manager.save_message(phone, "user", text)
+                except Exception as e:
+                    logger.warning(f"[Webhook] Could not save user message: {e}")
+
+                # ── 2. Classify intent + persist extracted entities ───────────
+                # Run with a tight timeout so a slow LLM call never blocks the
+                # lock and starves other users.  On failure we fall back to None
+                # and let the agent decide intent from context.
+                classified_intent = None
+                try:
+                    classification = await asyncio.wait_for(
+                        intent_classifier.classify(text), timeout=5.0
+                    )
+                    classified_intent = classification.intent
+                    entities = classification.extracted_entities.model_dump(exclude_none=True)
+                    if entities:
+                        await memory_manager.update_user_preferences(phone, entities)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[Webhook] Classification timed out for {phone}, proceeding without intent")
+                except Exception as e:
+                    logger.warning(f"[Webhook] Classification failed (non-fatal): {e}")
+
+            # ── 3. Process turn (outside lock — LLM call may take seconds) ───
             result = await real_estate_agent.process_turn(
                 phone=phone,
-                user_message=text
+                user_message=text,
+                intent=classified_intent
             )
+
+            # (lock released — LLM call runs outside the per-user lock)
 
             if not result:
                 logger.warning(f"Agent returned None for {phone}, skipping")

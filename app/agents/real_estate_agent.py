@@ -130,25 +130,29 @@ class RealEstateAgent:
                     response_text = llm_response.content
                     break
                 
-                for tool_call in llm_response.tool_calls:
+                for tc_idx, tool_call in enumerate(llm_response.tool_calls):
                     tool_name = tool_call.name
                     tool_args = tool_call.arguments
-                    
-                    logger.info(f"Tool call: {tool_name} con args: {tool_args}")
+
+                    # Unique ID per tool call: iteration + index avoids ID collisions
+                    # when the LLM requests multiple tools in a single response.
+                    tc_id = f"call_{iteration}_{tc_idx}"
+
+                    logger.info(f"Tool call [{tc_id}]: {tool_name} args={tool_args}")
                     tools_used.append(tool_name)
-                    
+
                     tool_result = await execute_tool(
                         tool_name=tool_name,
                         arguments=tool_args,
                         phone=phone
                     )
-                    
+
                     messages.append({
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [
                             {
-                                "id": f"call_{iteration}",
+                                "id": tc_id,
                                 "type": "function",
                                 "function": {
                                     "name": tool_name,
@@ -157,32 +161,22 @@ class RealEstateAgent:
                             }
                         ]
                     })
-                    
+
                     messages.append({
                         "role": "tool",
                         "name": tool_name,
-                        "tool_call_id": f"call_{iteration}",
+                        "tool_call_id": tc_id,
                         "content": str(tool_result)
                     })
                     
                     if "search_properties" in tool_name or "recommend_properties" in tool_name:
+                        # last_shown_properties is already saved to Redis inside tools.py
+                        # (search_properties calls update_context_field directly).
+                        # _extract_rich_content returns action + message for the frontend.
                         rich_content = self._extract_rich_content(tool_args, tool_result)
-                        
-                        # Save last_shown_properties for context
-                        last_props = rich_content.get("properties", [])
-                        if last_props:
-                            logger.info(f"[Agent] Saving {len(last_props)} properties to context")
-                            # Save to memory for next turn
-                            try:
-                                await memory_manager.update_context_field(
-                                    phone, 
-                                    "last_shown_properties", 
-                                    last_props
-                                )
-                            except Exception as e:
-                                logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
-                    
-                    if "get_property_images" in tool_name:
+
+                    elif "get_property_images" in tool_name:
+                        # Images tool returns JSON; _extract_rich_content parses it.
                         rich_content = self._extract_rich_content(tool_args, tool_result)
                     
                     # Log confirmed datetime for schedule_visit
@@ -257,11 +251,10 @@ class RealEstateAgent:
     ) -> List[Dict]:
         """Construye la lista de mensajes para el LLM."""
         messages = []
-        
-        # Inject last_shown_properties into context for reference
-        if last_shown_properties:
-            user_context["last_shown_properties"] = last_shown_properties
-            logger.info(f"[Agent] Injecting {len(last_shown_properties)} properties into context")
+
+        # NOTE: do NOT mutate user_context here — get_system_prompt does not render
+        # last_shown_properties so the mutation would be silently ignored.
+        # The property list is injected below as a dedicated <last_results> system message.
         
         system_prompt = get_system_prompt(user_context)
         messages.append({"role": "system", "content": system_prompt})

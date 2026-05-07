@@ -237,20 +237,20 @@ class IntentClassifier:
             "max_tokens": 500
         }
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Hard limit: classification must not block the webhook for more than 5 s
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(url, json=payload, headers=headers)
-            
+
             # Check for errors in response
             if response.status_code != 200:
                 error_data = response.json()
                 raise Exception(f"API error: {error_data.get('error', {}).get('message', 'Unknown error')}")
-            
+
             data = response.json()
-            
+
             if "choices" not in data or len(data["choices"]) == 0:
                 raise Exception("No choices in response")
-            
-            return data["choices"][0]["message"]["content"]
+
             return data["choices"][0]["message"]["content"]
     
     def _parse_response(self, response: str) -> IntentClassification:

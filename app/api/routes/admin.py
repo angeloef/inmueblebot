@@ -671,7 +671,7 @@ async def resume_bot(
     from app.core.state_machine import state_machine, ConversationStateEnum
     from app.integrations.whatsapp import whatsapp_client
     from app.api.routes.webhook import format_phone_number
-    await state_machine.set_state(phone, ConversationStateEnum.BROWSING.value)
+    await state_machine.set_state(phone, ConversationStateEnum.IDLE.value, allow_invalid=True)
     phone_to = format_phone_number(phone)
     await whatsapp_client.send_message(
         to=phone_to,

@@ -1,10 +1,61 @@
 """
 Gestión de sesiones de usuario.
 Combina memoria + estado para proporcionar una vista unificada de la sesión del usuario.
+
+Also exposes per-user async locks (get_user_lock) used by the webhook to serialise
+concurrent messages from the same phone number and prevent read-modify-write races
+on the Redis context keys.
 """
-from typing import Optional
+import asyncio
+import time
+from typing import Optional, Dict, Tuple
 from datetime import datetime
 from loguru import logger
+
+# ---------------------------------------------------------------------------
+# Per-user async locks
+# ---------------------------------------------------------------------------
+
+# phone → (asyncio.Lock, last_used_monotonic_timestamp)
+_user_locks: Dict[str, Tuple[asyncio.Lock, float]] = {}
+
+_LOCK_CLEANUP_THRESHOLD = 1000   # prune when dict exceeds this many entries
+_LOCK_TTL               = 600    # seconds — evict locks idle > 10 min
+
+
+def get_user_lock(phone: str) -> asyncio.Lock:
+    """
+    Return the asyncio.Lock for *phone*, creating it on first call.
+
+    Always wrapping a message-processing turn in ``async with get_user_lock(phone):``
+    ensures that two concurrent tasks for the same user are serialised, preventing
+    Redis context corruption from overlapping read-modify-write operations.
+
+    Complexity: O(1) amortised; cleanup is O(n) but only triggered when the dict
+    exceeds _LOCK_CLEANUP_THRESHOLD entries.
+    """
+    now = time.monotonic()
+
+    # Lazy cleanup — only pay the cost when the dict is large
+    if len(_user_locks) > _LOCK_CLEANUP_THRESHOLD:
+        stale = [p for p, (_, ts) in _user_locks.items() if (now - ts) > _LOCK_TTL]
+        for p in stale:
+            del _user_locks[p]
+        if stale:
+            logger.debug(f"[Session] Pruned {len(stale)} stale locks; {len(_user_locks)} remaining")
+
+    if phone not in _user_locks:
+        _user_locks[phone] = (asyncio.Lock(), now)
+    else:
+        lock, _ = _user_locks[phone]
+        _user_locks[phone] = (lock, now)   # refresh timestamp on access
+
+    return _user_locks[phone][0]
+
+
+def active_lock_count() -> int:
+    """Number of currently tracked user locks (observability hook)."""
+    return len(_user_locks)
 
 from app.core.memory import memory_manager, MemoryManager
 from app.core.state_machine import state_machine, ConversationState, ConversationStateEnum
@@ -190,60 +241,5 @@ class SessionManager:
         return True
     
     async def request_handoff(self, phone: str) -> bool:
-        """
-        El usuario pide hablar con un agente humano.
-        """
-        await self.state.set_state(
-            phone,
-            ConversationStateEnum.HANDOFF.value,
-            {"reason": "user_requested"}
-        )
-        
-        # No limpiar memoria para que el agente tenga contexto
-        logger.info(f"Usuario {phone} solicitó handoff a agente")
-        return True
-    
-    # =========================================================================
-    # MÉTODOS DE CONSULTA
-    # =========================================================================
-    
-    async def get_session_info(self, phone: str) -> dict:
-        """
-        Obtiene información completa de la sesión del usuario.
-        """
-        current_state = await self.state.get_state(phone)
-        context = await self.memory.get_user_context(phone)
-        preferences = await self.memory.get_user_preferences(phone)
-        recent_messages = await self.memory.get_recent_messages(phone)
-        
-        return {
-            "phone": phone,
-            "state": current_state,
-            "is_active": await self.state.is_active(phone),
-            "context": context,
-            "preferences": preferences,
-            "recent_messages": recent_messages[-5:],  # Últimos 5 mensajes
-        }
-    
-    async def should_qualify_user(self, phone: str) -> bool:
-        """
-        Determina si el usuario necesita ser cualificado.
-        Returns True si es un usuario nuevo o necesita más información.
-        """
-        preferences = await self.memory.get_user_preferences(phone)
-        
-        if not preferences:
-            return True  # Usuario nuevo
-        
-        # Verificar si tiene preferencias mínimas
-        if not preferences.get("budget_min") and not preferences.get("budget_max"):
-            return True
-        
-        if not preferences.get("location_preferences"):
-            return True
-        
-        return False
-
-
-# Instancia global del gestor de sesiones
-session_manager = SessionManager()
+        """El usuario pide hablar con un agente humano."""
+        await s
