@@ -47,17 +47,19 @@ class RealEstateAgent:
         phone: str,
         user_message: str,
         intent: Intent = None,
+        entities: Dict[str, Any] = None,
         force_agent: bool = False
     ) -> Dict[str, Any]:
         """
         Procesa un turno de conversación.
-        
+
         Args:
             phone: Número de teléfono del usuario
             user_message: Mensaje del usuario
             intent: Intent clasificado (opcional)
+            entities: Slots extraídos por el clasificador (opcional)
             force_agent: Forzar uso del agente completo aunque sea un intent simple
-        
+
         Returns:
             dict con:
             - response_text: Texto de respuesta
@@ -65,6 +67,7 @@ class RealEstateAgent:
             - tools_used: Lista de herramientas usadas
             - next_state: Estado siguiente
         """
+        entities = entities or {}
         logger.info(f"Agent procesando mensaje de {phone}: {user_message[:50]}...")
         
         try:
@@ -92,7 +95,22 @@ class RealEstateAgent:
                     "tools_used": ["request_human_assistance"],
                     "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
                 }
-            
+
+            # ── Deterministic dispatch ────────────────────────────────────────
+            # For intents with a single correct action, execute that action in
+            # code without delegating the decision to the LLM.  The LLM is only
+            # used afterward to format the result into natural language.
+            if not force_agent:
+                deterministic_result = await self._deterministic_dispatch(
+                    phone=phone,
+                    intent=intent,
+                    entities=entities,
+                    user_message=user_message,
+                    merged_context=merged_context,
+                )
+                if deterministic_result is not None:
+                    return deterministic_result
+
             # Get last_shown_properties from context for reference
             last_props = merged_context.get("last_shown_properties", [])
             
@@ -261,6 +279,147 @@ class RealEstateAgent:
                 "next_state": "idle"
             }
     
+    # ── Deterministic dispatch ────────────────────────────────────────────────
+
+    @staticmethod
+    def _slots_complete(entities: Dict[str, Any]) -> bool:
+        """
+        Returns True if the classifier extracted enough slots to perform a
+        meaningful property search without asking the user for more info.
+        At minimum we need at least one of: location, property_type, budget_max.
+        """
+        return bool(
+            entities.get("location")
+            or entities.get("property_type")
+            or entities.get("budget_max")
+            or entities.get("budget_min")
+        )
+
+    def _detect_handoff_request(self, message: str) -> bool:
+        """Detects if the user is requesting a human agent."""
+        handoff_keywords = [
+            "hablar con", "agente humano", "persona real", "asesor",
+            "quiero hablar", "llamar", "human", "agent", "persona",
+        ]
+        msg_lower = message.lower()
+        return any(kw in msg_lower for kw in handoff_keywords)
+
+    async def _deterministic_dispatch(
+        self,
+        phone: str,
+        intent: Intent,
+        entities: Dict[str, Any],
+        user_message: str,
+        merged_context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Handles intents that have a single correct action — no LLM needed
+        to decide *what* to do.  Returns a complete turn result dict if the
+        intent was handled deterministically, or None to fall through to the
+        full agent loop.
+
+        Current dispatch table:
+          GREETING          → static template (no LLM, no DB)
+          PROPERTY_SEARCH   → DB search, then LLM formats the results
+          (all others)      → None (fall through to agent)
+        """
+        if intent == Intent.GREETING:
+            logger.info(f"[Dispatch] GREETING → template")
+            await state_machine.set_state(phone, ConversationStateEnum.IDLE.value)
+            return {
+                "response_text": (
+                    "¡Hola! 👋 Soy InmuebleBot, tu asistente de bienes raíces. "
+                    "Puedo ayudarte a buscar propiedades, darte detalles, o agendar una visita. "
+                    "¿En qué te puedo ayudar hoy?"
+                ),
+                "rich_content": None,
+                "tools_used": [],
+                "next_state": ConversationStateEnum.IDLE.value,
+            }
+
+        if intent == Intent.PROPERTY_SEARCH:
+            # Merge persisted preferences with freshly-classified slots so that
+            # slots accumulated across multiple turns are respected.
+            persisted = {
+                k: merged_context.get(k)
+                for k in ("location", "property_type", "budget_min", "budget_max",
+                          "bedrooms", "bathrooms", "area_min", "operation_type")
+                if merged_context.get(k)
+            }
+            merged_slots = {**persisted, **{k: v for k, v in entities.items() if v}}
+
+            if not self._slots_complete(merged_slots):
+                logger.info(f"[Dispatch] PROPERTY_SEARCH → slots incomplete, falling through to agent")
+                return None  # Let the agent ask for the missing slot
+
+            logger.info(f"[Dispatch] PROPERTY_SEARCH → direct DB search with slots: {merged_slots}")
+            try:
+                from app.agents.tools import search_properties as _search_tool
+                search_criteria = {
+                    k: v for k, v in merged_slots.items()
+                    if k in ("location", "property_type", "budget_min", "budget_max",
+                             "bedrooms", "bathrooms", "area_min", "operation_type")
+                    and v is not None
+                }
+                search_result_str = await _search_tool(
+                    criteria=search_criteria,
+                    phone=phone,
+                )
+                logger.info(f"[Dispatch] DB search returned: {str(search_result_str)[:120]}...")
+            except Exception as e:
+                logger.warning(f"[Dispatch] DB search failed, falling through to agent: {e}")
+                return None
+
+            await state_machine.set_state(phone, ConversationStateEnum.SEARCHING.value)
+
+            # Let the LLM format the structured result into natural language only
+            try:
+                history = await memory_manager.get_recent_messages(phone, limit=6)
+            except Exception:
+                history = []
+
+            format_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un asistente inmobiliario. Tu única tarea ahora es presentar "
+                        "los siguientes resultados de búsqueda al usuario de forma amigable, "
+                        "clara y en español. NO inventes propiedades. NO agregues información "
+                        "que no esté en los resultados. Si no hay resultados, díselo amablemente "
+                        "y sugiere ampliar los criterios."
+                    ),
+                },
+                *[{"role": m["role"], "content": m["content"]} for m in history if m.get("content")],
+                {
+                    "role": "user",
+                    "content": (
+                        f"El usuario preguntó: {user_message}\n\n"
+                        f"Resultados de la base de datos:\n{search_result_str}"
+                    ),
+                },
+            ]
+
+            llm_response = await self.llm.ainvoke(
+                messages=format_messages,
+                tools=None,
+                temperature=0.4,
+            )
+            response_text = llm_response.content or search_result_str
+
+            try:
+                await memory_manager.save_message(phone, "assistant", response_text)
+            except Exception as e:
+                logger.warning(f"[Dispatch] Could not save assistant message: {e}")
+
+            return {
+                "response_text": response_text,
+                "rich_content": {"action": "show_search_results", "message": search_result_str},
+                "tools_used": ["search_properties"],
+                "next_state": ConversationStateEnum.SEARCHING.value,
+            }
+
+        return None  # All other intents fall through to the full agent loop
+
     def _build_messages(
         self,
         user_message: str,

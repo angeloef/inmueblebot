@@ -17,12 +17,61 @@ from dataclasses import dataclass, field
 import logging
 import hashlib
 import hmac
+import re
 import time
 import asyncio
 
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
 from app.core.config import get_settings
+
+# ── Leak detector ──────────────────────────────────────────────────────────────
+# Patterns that indicate the LLM leaked internal implementation details into the
+# response text that should NEVER reach the user via WhatsApp.
+_LEAK_PATTERNS = [
+    re.compile(r"data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/=]{20,}", re.DOTALL),  # base64 data URIs
+    re.compile(r"imagenes/[^\s]+"),           # local filesystem image paths
+    re.compile(r"/static/[^\s]+"),            # static file paths
+    re.compile(r"/app/[^\s]+"),               # container filesystem paths
+    re.compile(r"[A-Za-z]:\\[^\s]+"),         # Windows paths
+    re.compile(r"<tool[_\s][^>]*>"),          # raw tool call artifacts
+    re.compile(r"\[function[^\]]*\]"),        # function call artifacts
+]
+
+_FALLBACK_MESSAGE = (
+    "Hubo un problema al procesar tu solicitud. Por favor intentá de nuevo."
+)
+
+
+def _sanitize_response_text(text: str) -> str:
+    """
+    Strips known leak patterns from response_text before sending to WhatsApp.
+    Returns the cleaned text, or a safe fallback if the result is empty.
+    """
+    if not text:
+        return text
+
+    original = text
+    for pattern in _LEAK_PATTERNS:
+        text = pattern.sub("", text)
+
+    # Collapse multiple blank lines left by the substitutions
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    if not text:
+        logger.warning(
+            f"[LeakDetector] Response was entirely stripped — "
+            f"original snippet: {original[:120]!r}"
+        )
+        return _FALLBACK_MESSAGE
+
+    if text != original:
+        logger.warning(
+            f"[LeakDetector] Stripped leak patterns from response. "
+            f"Before: {original[:80]!r} | After: {text[:80]!r}"
+        )
+
+    return text
 from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id
 from app.core.session import get_user_lock
 from app.core.memory import memory_manager
@@ -375,48 +424,41 @@ async def process_messages(messages: List[Dict[str, Any]]):
         
         try:
             # ── Concurrency guard ───────────────────────────────────────────
-            # Acquire a per-user lock before touching Redis context so that
-            # concurrent tasks for the same phone are serialised.  The 1-second
-            # _check_user_rate_limit only gates arrival rate; it does NOT prevent
-            # two overlapping LLM calls that each do read-modify-write on context.
+            # The lock wraps the ENTIRE turn (classify + agent + save) so that
+            # concurrent messages from the same phone are fully serialised.
+            # A second message arriving while the first is being processed
+            # will wait here until the lock is released.
             async with get_user_lock(phone):
 
                 # ── 1. Persist user message to Redis history ─────────────────
-                # The agent reads get_recent_messages for LLM context but never
-                # saves the user turn itself — only the assistant turn is saved
-                # inside process_turn.  Without this call the LLM history only
-                # contains assistant messages, making it blind to prior user input.
                 try:
                     await memory_manager.save_message(phone, "user", text)
                 except Exception as e:
                     logger.warning(f"[Webhook] Could not save user message: {e}")
 
                 # ── 2. Classify intent + persist extracted entities ───────────
-                # Run with a tight timeout so a slow LLM call never blocks the
-                # lock and starves other users.  On failure we fall back to None
-                # and let the agent decide intent from context.
                 classified_intent = None
+                classified_entities = {}
                 try:
                     classification = await asyncio.wait_for(
                         intent_classifier.classify(text), timeout=5.0
                     )
                     classified_intent = classification.intent
-                    entities = classification.extracted_entities.model_dump(exclude_none=True)
-                    if entities:
-                        await memory_manager.update_user_preferences(phone, entities)
+                    classified_entities = classification.extracted_entities.model_dump(exclude_none=True)
+                    if classified_entities:
+                        await memory_manager.update_user_preferences(phone, classified_entities)
                 except asyncio.TimeoutError:
                     logger.warning(f"[Webhook] Classification timed out for {phone}, proceeding without intent")
                 except Exception as e:
                     logger.warning(f"[Webhook] Classification failed (non-fatal): {e}")
 
-            # ── 3. Process turn (outside lock — LLM call may take seconds) ───
-            result = await real_estate_agent.process_turn(
-                phone=phone,
-                user_message=text,
-                intent=classified_intent
-            )
-
-            # (lock released — LLM call runs outside the per-user lock)
+                # ── 3. Process turn (inside lock — serialises read-modify-write) ─
+                result = await real_estate_agent.process_turn(
+                    phone=phone,
+                    user_message=text,
+                    intent=classified_intent,
+                    entities=classified_entities,
+                )
 
             if not result:
                 logger.warning(f"Agent returned None for {phone}, skipping")
@@ -424,6 +466,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
             response_text = result.get("response_text", "") or ""
             rich_content = result.get("rich_content") or {}
+
+            # ── Leak detector: strip internal paths / base64 before sending ──
+            response_text = _sanitize_response_text(response_text)
 
             # Send text response
             if response_text:
@@ -437,6 +482,37 @@ async def process_messages(messages: List[Dict[str, Any]]):
             # to prevent rejected requests from malformed/empty placeholders.
             if isinstance(rich_content, dict):
                 raw_images = rich_content.get("images") or []
+                caption = rich_content.get("caption", "")
+                sent = 0
+                for url in raw_images:
+                    if not url or not isinstance(url, str):
+                        continue
+                    url = url.strip()
+                    if not url.startswith(("http://", "https://")):
+                        logger.warning(f"[Webhook] Skipping invalid image URL: {url!r}")
+                        continue
+                    try:
+                        result_img = await whatsapp_client.send_image(
+                            to=phone_to,
+                            image_url=url,
+                            caption=caption
+                        )
+                        if "error" in result_img:
+                            logger.error(
+                                f"[Webhook] send_image failed for {url!r}: {result_img}"
+                            )
+                        else:
+                            sent += 1
+                        if sent >= 3:
+                            break
+                    except Exception as img_err:
+                        logger.error(f"[Webhook] Exception sending image {url!r}: {img_err}")
+                if raw_images and sent == 0:
+                    logger.warning(
+                        f"[Webhook] {len(raw_images)} images in rich_content but none sent "
+                        f"(all failed validation or API errors)"
+                    )
+
                 caption = rich_content.get("caption", "")
                 sent = 0
                 for url in raw_images:
