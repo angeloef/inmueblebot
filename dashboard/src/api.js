@@ -28,12 +28,14 @@ http.interceptors.request.use((config) => {
 // ─── Query keys ───────────────────────────────────────────────────────────────
 
 export const keys = {
-  properties: ['properties'],
-  property:   (id) => ['properties', id],
-  clients:    ['clients'],
-  client:     (id) => ['clients', id],
-  events:     ['events'],
-  event:      (id) => ['events', id],
+  properties:      ['properties'],
+  property:        (id) => ['properties', id],
+  clients:         ['clients'],
+  client:          (id) => ['clients', id],
+  events:          ['events'],
+  event:           (id) => ['events', id],
+  calendarStatus:  ['calendar', 'status'],
+  calendarEvents:  ['calendar', 'events'],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,18 +53,28 @@ export function timeAgo(dateStr) {
   return new Date(dateStr).toLocaleDateString('es-AR');
 }
 
+/**
+ * Returns the date portion in Argentina timezone (America/Argentina/Buenos_Aires).
+ * This is the canonical timezone for the entire dashboard.
+ */
+const AR_TZ = 'America/Argentina/Buenos_Aires';
+
 function toDateStr(iso) {
   if (!iso) return '';
-  // Use local date (consistent with toTimeStr which uses local time)
   const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // Use en-CA locale which formats as YYYY-MM-DD
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  const get = (t) => parts.find(p => p.type === t)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
-function toTimeStr(iso) { return iso ? new Date(iso).toTimeString().slice(0, 5) : ''; }
+function toTimeStr(iso) {
+  if (!iso) return '';
+  return new Intl.DateTimeFormat('es-AR', { timeZone: AR_TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+}
 function addHoursTimeStr(iso, h = 1) {
-  return iso ? new Date(new Date(iso).getTime() + h * 3_600_000).toTimeString().slice(0, 5) : '';
+  if (!iso) return '';
+  const d = new Date(new Date(iso).getTime() + h * 3_600_000);
+  return new Intl.DateTimeFormat('es-AR', { timeZone: AR_TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
 }
 // Build an ISO string with the local timezone offset so the backend stores the correct UTC value.
 // e.g. "2026-05-05" + "10:00" in UTC-3 → "2026-05-05T10:00:00-03:00"
@@ -103,14 +115,12 @@ const STATUS_TO_ROLE = {
 
 function toProperty(p) {
   const bedrooms = p.bedrooms ?? 0;
-  // Build full photos array from DB images field
-  let photosArr = [];
+  let photo = '';
   if (Array.isArray(p.images) && p.images.length > 0) {
-    photosArr = p.images.filter(Boolean);
+    photo = p.images[0];
   } else if (typeof p.images === 'string' && p.images) {
-    try { photosArr = JSON.parse(p.images).filter(Boolean); } catch { photosArr = [p.images]; }
+    try { photo = JSON.parse(p.images)[0] ?? p.images; } catch { photo = p.images; }
   }
-  const photo = photosArr[0] ?? '';
   return {
     id:        String(p.id),
     addr:      p.location ?? p.address ?? '',
@@ -128,7 +138,6 @@ function toProperty(p) {
     baths:     p.bathrooms ?? 0,
     parking:   0,
     photo,
-    photos:    photosArr,   // full array for the edit form
     notes:     p.description ?? '',
     _createdAt: p.created_at ?? null,
   };
@@ -149,7 +158,7 @@ function fromProperty(d) {
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
-    images:        d.photos && d.photos.length ? d.photos : (d.photo ? [d.photo] : []),
+    images:        d.photo ? [d.photo] : [],
   };
 }
 
@@ -204,6 +213,7 @@ function toEvent(a) {
     agent:      '',
     status:     a.status === 'completed' ? 'confirmed' : (a.status ?? 'confirmed'),
     notes,
+    calendarEventId: a.calendar_event_id ?? null,
     _createdAt: a.created_at ?? null,
   };
 }
@@ -337,3 +347,21 @@ export const useDeleteEvent = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: eventApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }) });
 };
+
+// ─── Google Calendar ──────────────────────────────────────────────────────────
+
+export const useCalendarStatus = () =>
+  useQuery({
+    queryKey: keys.calendarStatus,
+    queryFn: () => http.get('/admin/calendar/status').then(r => r.data),
+    staleTime: 60_000,       // re-check every minute
+    refetchOnWindowFocus: true,
+  });
+
+export const useCalendarEvents = (daysAhead = 30, maxResults = 50) =>
+  useQuery({
+    queryKey: [...keys.calendarEvents, daysAhead, maxResults],
+    queryFn: () => http.get('/admin/calendar/events', { params: { days_ahead: daysAhead, max_results: maxResults } }).then(r => r.data),
+    staleTime: 120_000,       // re-check every 2 minutes
+    refetchOnWindowFocus: true,
+  });

@@ -62,7 +62,7 @@ class AppointmentService:
     async def create_appointment(
         self,
         user_id: UUID,
-        property_id: UUID,
+        property_id: int,
         start_time: datetime,
         type: str = "visit",
         notes: str = None,
@@ -105,13 +105,12 @@ class AppointmentService:
             calendar_event_id = None
             logger.info(f"[Create Appointment] check_calendar={check_calendar}, calendar_service.is_configured={calendar_service.is_configured}")
             if check_calendar and calendar_service.is_configured:
-                property_uuid = UUID(str(property_id)) if isinstance(property_id, str) else property_id
-                result = await db.execute(select(Property).where(Property.id == property_uuid))
+                result = await db.execute(select(Property).where(Property.id == property_id))
                 property_obj = result.scalar_one_or_none()
                 property_title = property_obj.title if property_obj else f"Propiedad {property_id}"
                 
                 cal_check = await calendar_service.check_availability(
-                    property_id=int(property_id) if isinstance(property_id, UUID) else property_id,
+                    property_id=property_id,
                     date_str=start_time.strftime("%Y-%m-%d"),
                     time_str=start_time.strftime("%H:%M"),
                     duration_hours=1
@@ -130,7 +129,7 @@ class AppointmentService:
                 end_time = start_time + self.DEFAULT_VISIT_DURATION
                 cal_result = await calendar_service.create_visit_event(
                     user_phone=user_phone or "Unknown",
-                    property_id=int(property_id) if isinstance(property_id, UUID) else property_id,
+                    property_id=property_id,
                     property_title=property_title,
                     start_time=start_time,
                     end_time=end_time,
@@ -472,9 +471,14 @@ class AppointmentService:
             logger.error(f"Error actualizando lead score: {e}")
     
     def _ensure_timezone(self, dt: datetime) -> datetime:
-        """Asegura que el datetime tenga timezone."""
+        """Asegura que el datetime tenga timezone.
+        
+        Los datetimes naive se asumen como hora de Argentina (UTC-3),
+        consistente con _check_conflict().
+        """
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=tz.utc)
+            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+            return arg_tz.localize(dt)
         return dt
 
 

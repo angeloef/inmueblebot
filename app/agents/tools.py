@@ -597,7 +597,7 @@ async def schedule_visit(
                 prop_uuid = UUID(property_id)
             except ValueError:
                 return f"El ID de propiedad '{property_id}' no es válido."
-            prop = await property_service.get_property_details(prop_uuid)
+            prop = await property_service.get_property_details(str(prop_uuid))
             if not prop:
                 return f"No encontré la propiedad con ID '{property_id}'."
             prop_int_id = prop.id

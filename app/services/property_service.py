@@ -264,6 +264,11 @@ class PropertyService:
                     except ValueError:
                         logger.warning(f"Invalid property ID format: {property_id}")
                         return None
+            elif isinstance(property_id, UUID):
+                uuid_id = property_id
+            else:
+                logger.warning(f"Unhandled property_id type: {type(property_id).__name__}")
+                return None
             
             if db_session:
                 from app.db.repository import BaseRepository
@@ -291,10 +296,10 @@ class PropertyService:
                     logger.info(f"Property found: {property_id} - {prop.title}")
                 else:
                     logger.warning(f"Property not found: {property_id}")
-                return prop
-            
+
             await engine.dispose()
-            
+            return prop
+
         except Exception as e:
             logger.error(f"Error fetching property {property_id}: {e}")
             return None

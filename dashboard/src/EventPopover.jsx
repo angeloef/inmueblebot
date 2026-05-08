@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, initials } from './Primitives';
 import { fmtTime12 } from './data';
-import { useClients, useProperties } from './api';
+import { useClients, useProperties, useCalendarStatus } from './api';
 
 export const KIND_META = {
   visit: { label: 'Visita',   color: 'var(--accent-500)',  cls: 'ev-visit' },
@@ -11,6 +11,7 @@ export const KIND_META = {
 export function EventPopover({ event, anchor, onClose, onEdit, onReschedule, onCancel, onDelete, onOpenClient, onOpenProperty }) {
   const { data: clients = [] }    = useClients();
   const { data: properties = [] } = useProperties();
+  const { data: calStatus }       = useCalendarStatus();
   if (!event) return null;
   const meta   = KIND_META[event.kind];
   const client = clients.find(c => c.id === event.clientId);
@@ -115,10 +116,34 @@ export function EventPopover({ event, anchor, onClose, onEdit, onReschedule, onC
           <div className="popover-row">
             <Icon name="calendar" size={16} />
             <div className="val" style={{ display:'flex', alignItems:'center', gap: 6, fontSize: 12, color: 'var(--fg-secondary)' }}>
-              <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 7px',background:'var(--success-50)',color:'var(--success-700)',borderRadius:4,fontWeight:500}}>
-                <span style={{width:6,height:6,borderRadius:'50%',background:'var(--success-500)'}}></span>
-                Sincronizado con Google Calendar
-              </span>
+              {(() => {
+                if (!calStatus) {
+                  // loading — no indicator
+                  return null;
+                }
+                if (calStatus.configured && event.calendarEventId) {
+                  return (
+                    <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 7px',background:'var(--success-50)',color:'var(--success-700)',borderRadius:4,fontWeight:500}}>
+                      <span style={{width:6,height:6,borderRadius:'50%',background:'var(--success-500)'}}></span>
+                      Sincronizado con Google Calendar
+                    </span>
+                  );
+                }
+                if (calStatus.configured) {
+                  return (
+                    <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 7px',background:'var(--gray-100)',color:'var(--fg-tertiary)',borderRadius:4,fontWeight:400,fontSize:11}}>
+                      <span style={{width:6,height:6,borderRadius:'50%',background:'var(--fg-tertiary)'}}></span>
+                      No sincronizado con Google Calendar
+                    </span>
+                  );
+                }
+                return (
+                  <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 7px',background:'var(--gray-50)',color:'var(--fg-tertiary)',borderRadius:4,fontWeight:400,fontSize:11}}>
+                    <span style={{width:6,height:6,borderRadius:'50%',background:'var(--fg-muted)'}}></span>
+                    Google Calendar no configurado
+                  </span>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -11,7 +11,6 @@ def sanitize_text(text: str, max_length: int = 5000) -> str:
     """
     Sanitiza texto entrada de usuario.
     - Trim whitespace
-    - Normaliza unicode
     - Remueve control characters
     - Limita longitud
     """
@@ -20,9 +19,6 @@ def sanitize_text(text: str, max_length: int = 5000) -> str:
     
     # Strip whitespace
     text = text.strip()
-    
-    # Normalizar unicode (ñ -> n, etc.)
-    text = unicodedata.normalize('NFKD', text)
     
     # Remover caracteres de control (excepto saltos de línea normales)
     text = ''.join(
@@ -202,9 +198,6 @@ def sanitize_for_llm(text: str, max_length: int = 4000) -> str:
         return ""
     
     text = text.strip()
-    
-    # Normalizar unicode
-    text = unicodedata.normalize('NFKD', text)
     
     # Quite control characters peligrosos
     dangerous_chars = ['\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07',

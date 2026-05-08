@@ -100,17 +100,17 @@ class Settings(BaseSettings):
         description="Set to True to use localhost instead of Docker redis service"
     )
 
-    # === OpenAI API (único proveedor LLM) ===
-    OPENAI_API_KEY: Optional[str] = Field(default=None, description="API key de OpenAI")
-    OPENAI_MODEL: str = Field(default="gpt-4o-mini", description="Modelo de OpenAI a usar")
+    # === MiniMax API (Primary LLM) ===
+    MINIMAX_API_KEY: Optional[str] = Field(default=None, description="API key de MiniMax via OpenRouter")
+    MINIMAX_MODEL: str = Field(default="minimax/minimax-m2.5:free", description="Modelo de MiniMax (primary)")
 
-    # === Legacy LLM keys (mantenidas para no romper deploys existentes) ===
-    MINIMAX_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    MINIMAX_MODEL: str = Field(default="minimax/minimax-m2.5:free", description="Deprecated")
-    GEMINI_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Deprecated")
-    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    OPENROUTER_MODEL: str = Field(default="openai/gpt-oss-120b:free", description="Deprecated")
+    # === Google Gemini API (Backup LLM) ===
+    GEMINI_API_KEY: Optional[str] = Field(default=None, description="API key de Google Gemini")
+    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Modelo de Gemini a usar")
+
+    # === OpenRouter API (Fallback LLM - GPT-Oss) ===
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="API key de OpenRouter")
+    OPENROUTER_MODEL: str = Field(default="openai/gpt-oss-120b:free", description="Modelo de OpenRouter (fallback)")
 
     # === LLM Configuration ===
     LLM_TIMEOUT_SECONDS: int = Field(default=25, description="Timeout para llamadas al LLM")
@@ -136,16 +136,6 @@ class Settings(BaseSettings):
     API_PREFIX: str = Field(default="/api", description="Prefijo para rutas API")
     CORS_ORIGINS: list[str] = Field(default=["*"], description="Orígenes permitidos para CORS")
 
-    # === Public API URL (used for media serving, etc.) ===
-    # Render sets RENDER_EXTERNAL_URL automatically.
-    # We read that env var here as a fallback so no manual config is needed on Render.
-    API_BASE_URL: str = Field(
-        default_factory=lambda: (
-            os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000"
-        ),
-        description="Public base URL for this API (e.g. https://inmueblebot-api.onrender.com)"
-    )
-
     # === Rate Limiting ===
     RATE_LIMIT_MESSAGES: int = Field(default=20, description="Máximo de mensajes por ventana")
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, description="Ventana de tiempo en segundos")
@@ -165,6 +155,12 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_ID: str = Field(
         default="primary",
         description="Google Calendar ID to use for appointments"
+    )
+
+    # === API Base URL for external links ===
+    API_BASE_URL: str = Field(
+        default="https://inmueblebot-api.onrender.com",
+        description="Public base URL of the API (for image URLs, webhook links, etc.)"
     )
 
     @property
@@ -269,4 +265,9 @@ def get_settings() -> Settings:
     logger.info(f"   - Twilio: [{_wa_twilio}]")
     
     # Admin
-    _admin = "SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "DEFAULT"
+    _admin = "✅ SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "⚠️ DEFAULT"
+    logger.info(f"🔑 ADMIN_API_KEY: [{_admin}]")
+    
+    logger.info("=" * 50)
+    
+    return settings

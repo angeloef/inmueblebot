@@ -42,11 +42,7 @@ class MemoryManager:
     CONTEXT_TTL = 86400
     MESSAGES_TTL = 86400
     MAX_MESSAGES = 20
-
-    # merged_context is rebuilt from Redis + Postgres on every message; cache it
-    # in Redis for 5 minutes so we skip the Postgres round-trip on repeat messages.
-    MERGED_CONTEXT_TTL = 300
-
+    
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 1.0
     
@@ -297,56 +293,7 @@ class MemoryManager:
     # =========================================================================
     # MÉTODOS DE PREFERENCIAS (POSTGRESQL - LARGO PLAZO)
     # =========================================================================
-
-    @staticmethod
-    def _normalize_varchar_array(value, field_name: str) -> list:
-        """
-        Normalize a value that must be stored as varchar[] in PostgreSQL.
-
-        Rules:
-        - None / empty  → []
-        - str           → [str]  (never iterate chars — avoids list("casa") bug)
-        - list          → deduplicated list of non-empty strings with len > 1
-                          (discards single-char artefacts from past list(str) misuse)
-        - anything else → [] with a warning log
-
-        This is the single authoritative coercion point for varchar[] columns
-        (property_type, location_preferences).  Centralising it here prevents
-        the asyncpg DatatypeMismatchError (JSONB cast vs varchar[]) and the
-        character-splitting bug where list("casa") produced ["c","a","s","a"].
-        """
-        if value is None:
-            return []
-        if isinstance(value, str):
-            v = value.strip()
-            return [v] if v else []
-        if isinstance(value, list):
-            cleaned = []
-            for item in value:
-                if not isinstance(item, str):
-                    continue
-                item = item.strip()
-                if len(item) <= 1:
-                    logger.warning(
-                        f"[Memory] Discarding single-char artefact {item!r} "
-                        f"in {field_name} — likely caused by list(str) upstream"
-                    )
-                    continue
-                cleaned.append(item)
-            # Deduplicate preserving insertion order
-            seen: set = set()
-            deduped = []
-            for item in cleaned:
-                if item not in seen:
-                    seen.add(item)
-                    deduped.append(item)
-            return deduped
-        logger.warning(
-            f"[Memory] Unexpected type {type(value).__name__} for varchar[] "
-            f"field {field_name} — storing as empty array"
-        )
-        return []
-
+    
     async def update_user_preferences(
         self,
         phone: str,
@@ -356,71 +303,63 @@ class MemoryManager:
         """
         Actualiza las preferencias del usuario en PostgreSQL.
         Usa UserRepository para persistir en la tabla users.
-
-        varchar[] columns (property_type, location_preferences) are normalized
-        through _normalize_varchar_array before being sent to asyncpg so they
-        are always bound as native PostgreSQL arrays, never as JSONB.
         """
+        import json
+        
         try:
             from app.db.session import async_session_factory
-
+            
             if db_session is None:
                 db_session = async_session_factory()
-
+            
             async with db_session:
                 user_repo = UserRepository(User, db_session)
                 user = await user_repo.get_or_create(phone)
-
+                
                 update_fields = {}
                 if "name" in preferences:
-                    update_fields["name"] = str(preferences["name"]).strip() or None
+                    update_fields["name"] = preferences["name"]
                 if "budget_min" in preferences:
                     update_fields["budget_min"] = preferences["budget_min"]
                 if "budget_max" in preferences:
                     update_fields["budget_max"] = preferences["budget_max"]
                 if "location_preferences" in preferences:
-                    update_fields["location_preferences"] = self._normalize_varchar_array(
-                        preferences["location_preferences"], "location_preferences"
-                    )
+                    loc_pref = preferences["location_preferences"]
+                    if isinstance(loc_pref, str):
+                        if loc_pref.startswith("["):
+                            try:
+                                loc_pref = json.loads(loc_pref)
+                            except json.JSONDecodeError:
+                                loc_pref = [loc_pref]
+                        else:
+                            loc_pref = [loc_pref]
+                    update_fields["location_preferences"] = loc_pref
                 if "property_type" in preferences:
-                    update_fields["property_type"] = self._normalize_varchar_array(
-                        preferences["property_type"], "property_type"
-                    )
+                    prop_type = preferences["property_type"]
+                    if isinstance(prop_type, str):
+                        if prop_type.startswith("["):
+                            try:
+                                prop_type = json.loads(prop_type)
+                            except json.JSONDecodeError:
+                                prop_type = [prop_type]
+                        else:
+                            prop_type = [prop_type]
+                    update_fields["property_type"] = prop_type
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
                     update_fields["lead_score"] = preferences["lead_score"]
-
+                
                 update_fields["last_interaction"] = datetime.utcnow()
-
+                
                 if update_fields:
-                    logger.debug(
-                        "[Memory] Updating prefs for %s: %s", phone,
-                        {k: v for k, v in update_fields.items() if k != "last_interaction"}
-                    )
-                    # Use ORM attribute assignment instead of Core update().values(**kwargs).
-                    # SQLAlchemy Core does NOT propagate column type info to asyncpg, so
-                    # Python lists are bound as JSONB by default — causing
-                    # DatatypeMismatchError on character varying[] columns.
-                    # ORM setattr() goes through the mapped column type (ARRAY(String))
-                    # and asyncpg receives the correct PostgreSQL array wire format.
-                    for key, value in update_fields.items():
-                        setattr(user, key, value)
-                    await db_session.flush()
+                    await user_repo.update(user.id, **update_fields)
                     await db_session.commit()
-                    logger.info(f"[Memory] Preferencias actualizadas para {phone}")
-
-                # Invalidate merged_context cache so the next get_merged_context
-                # reflects the new preferences without waiting for TTL expiry.
-                try:
-                    r = await self._get_redis_with_retry()
-                    await r.delete(f"user:{phone}:merged_context")
-                except Exception:
-                    pass  # non-fatal: cache will expire naturally
-
+                    logger.info(f"Preferencias actualizadas para {phone}")
+                
                 return True
         except Exception as e:
-            logger.error(f"[Memory] Error al actualizar preferencias de {phone}: {e}")
+            logger.error(f"Error al actualizar preferencias de {phone}: {e}")
             return False
     
     async def get_user_preferences(self, phone: str, db_session=None) -> Optional[dict]:
@@ -430,14 +369,17 @@ class MemoryManager:
         """
         try:
             from app.db.session import async_session_factory
-
+            
             if db_session is None:
                 db_session = async_session_factory()
-
+                should_close = True
+            else:
+                should_close = False
+            
             async with db_session:
                 user_repo = UserRepository(User, db_session)
                 user = await user_repo.get_by_phone(phone)
-
+                
                 if user:
                     return {
                         "name": user.name,
@@ -486,8 +428,7 @@ class MemoryManager:
         
         for loc in locations:
             if loc in message_lower:
-                # Always store as a list to match varchar[] column type
-                new_prefs["location_preferences"] = [loc.strip().title()]
+                new_prefs["location_preferences"] = loc.title()
                 break
         
         budget_patterns = [
@@ -504,9 +445,7 @@ class MemoryManager:
                     budget = int(float(budget_str))
                     if "mil" in message_lower and budget < 10000:
                         budget *= 1000
-                    # Ignore implausibly small numbers (2 banos -> 2, 4 habitaciones -> 4)
-                    if budget >= 100:
-                        new_prefs["budget_max"] = budget
+                    new_prefs["budget_max"] = budget
                 except:
                     pass
         
@@ -530,8 +469,7 @@ class MemoryManager:
         
         for key, value in property_types.items():
             if key in message_lower:
-                # Always store as a list to match varchar[] column type
-                new_prefs["property_type"] = [value]
+                new_prefs["property_type"] = value
                 break
         
         operation_types = {
@@ -585,16 +523,11 @@ class MemoryManager:
         
         if new_prefs:
             await self.update_user_preferences(phone, new_prefs)
-            logger.info(f"Preferencias guardadas para {phone}")
-
-        # Strip recursive/volatile fields before saving last_search_criteria
-        SKIP_FIELDS = {"last_search_criteria", "current_state", "conversation_stage",
-                       "last_shown_properties", "last_interaction"}
-        simple_prefs = {k: v for k, v in new_prefs.items() if k not in SKIP_FIELDS}
-
+            logger.info(f"Preferencias extraídas y guardadas para {phone}: {new_prefs}")
+        
         last_criteria = {
             "search_text": message[:200],
-            "extracted_prefs": simple_prefs,
+            "extracted_prefs": new_prefs,
         }
         await self.update_context_field(phone, "last_search_criteria", last_criteria)
         
@@ -603,63 +536,36 @@ class MemoryManager:
     async def get_merged_context(self, phone: str) -> dict:
         """
         Obtiene contexto combinado (Redis + PostgreSQL) para el LLM.
-
-        Result is cached in Redis for MERGED_CONTEXT_TTL seconds to avoid
-        a Postgres round-trip on every single incoming message.
-        Cache is invalidated by update_user_preferences (write path).
-
+        Con fallback silencioso si no hay BD.
+        
         Returns:
             Diccionario con preferencias combinadas de ambas fuentes
         """
-        cache_key = f"user:{phone}:merged_context"
-
-        # --- Cache read ---
-        try:
-            r = await self._get_redis_with_retry()
-            cached = await r.get(cache_key)
-            if cached:
-                return json.loads(cached)
-        except Exception:
-            pass  # proceed to rebuild
-
-        # --- Rebuild from sources ---
         try:
             redis_context = await self.get_user_context(phone)
         except Exception as e:
             logger.warning(f"Error get_user_context, usando default: {e}")
             redis_context = {"current_state": "idle", "conversation_stage": "new"}
-
+        
         try:
             postgres_prefs = await self.get_user_preferences(phone)
         except Exception as e:
             logger.warning(f"Error get_user_preferences, usando vacío: {e}")
             postgres_prefs = None
-
+        
         merged = {}
-
-        for key in ["location_preferences", "property_type", "budget_min", "budget_max",
-                    "operation_type", "bedrooms", "bathrooms", "name"]:
+        
+        for key in ["location_preferences", "property_type", "budget_min", "budget_max", 
+                   "operation_type", "bedrooms", "bathrooms", "name"]:
             if postgres_prefs and postgres_prefs.get(key):
                 merged[key] = postgres_prefs[key]
             elif redis_context.get(key):
                 merged[key] = redis_context[key]
-
+        
         merged["last_search_criteria"] = redis_context.get("last_search_criteria")
-        merged["conversation_stage"]   = redis_context.get("conversation_stage", "new")
-        merged["current_state"]        = redis_context.get("current_state", "idle")
-
-        # last_shown_properties lives in Redis — include for agent property references
-        last_props = redis_context.get("last_shown_properties")
-        if last_props:
-            merged["last_shown_properties"] = last_props
-
-        # --- Cache write (best-effort; failures are non-fatal) ---
-        try:
-            r = await self._get_redis_with_retry()
-            await r.setex(cache_key, self.MERGED_CONTEXT_TTL, json.dumps(merged, default=str))
-        except Exception:
-            pass
-
+        
+        merged["conversation_stage"] = redis_context.get("conversation_stage", "new")
+        
         return merged
     
     # =========================================================================
@@ -716,18 +622,22 @@ class MemoryManager:
         
         if not messages:
             return ""
-
-        # Por ahora, simplemente retornamos los ultimos 5 mensajes como "resumen"
+        
+        # Por ahora, simplemente retornamos los últimos 5 mensajes como "resumen"
         recent = messages[-5:]
         summary = "\n".join([f"{m['role']}: {m['content'][:100]}" for m in recent])
-
+        
+        # TODO: Integrar con MiniMax para generar resumen inteligente
+        # prompt = f"Resume esta conversación en español:\n{summary}"
+        # summary = await llm_client.chat(prompt)
+        
         await self.save_conversation_summary(phone, summary)
         return summary
-
+    
     # =========================================================================
     # LIMPIEZA
     # =========================================================================
-
+    
     async def clear_short_term_memory(self, phone: str) -> bool:
         """
         Limpia la memoria de corto plazo (Redis).
@@ -738,51 +648,96 @@ class MemoryManager:
         except Exception as e:
             logger.debug(f"[Memory] Redis no disponible para clear, skipping: {e}")
             return False
-
+        
         try:
             keys = [
                 f"user:{phone}:context",
                 f"user:{phone}:messages",
                 f"user:{phone}:summary",
-                f"user:{phone}:merged_context",
             ]
+            
             for key in keys:
                 await r.delete(key)
+            
             logger.info(f"Memoria de corto plazo limpiada para {phone}")
             return True
         except Exception as e:
             logger.error(f"Error al limpiar memoria de {phone}: {e}")
             return False
-
+    
     async def clear_user(self, phone: str) -> bool:
-        """Limpia TODA la informacion del usuario (Redis + PostgreSQL)."""
-        await self.clear_short_term_memory(phone)
+        """
+        Limpia toda la memoria del usuario (Redis + PostgreSQL).
+        Alias para compatibilidad con frontend.
+        """
         try:
-            from app.db.session import async_session_factory
-            db_session = async_session_factory()
-            async with db_session:
-                user_repo = UserRepository(User, db_session)
-                user = await user_repo.get_by_phone(phone)
-                if user:
-                    # Reset preferences but keep the user record
-                    user.budget_min = None
-                    user.budget_max = None
-                    user.location_preferences = None
-                    user.property_type = None
-                    user.lead_score = 0
-                    await db_session.flush()
-                    await db_session.commit()
-                    logger.info(f"[Memory] Preferencias eliminadas de PostgreSQL para {phone}")
+            await self.clear_short_term_memory(phone)
+            logger.info(f"Usuario {phone} limpiado completamente")
+            return True
         except Exception as e:
-            logger.error(f"[Memory] Error al limpiar preferencias de {phone}: {e}")
+            logger.error(f"Error al limpiar usuario {phone}: {e}")
             return False
-        return True
-
+    
     async def close(self):
-        """Cierra la conexion Redis."""
+        """Cierra conexión Redis."""
         if self._redis:
-            await self._redis.aclose()
-            self._redis = None
+            await self._redis.close()
+
+    # =========================================================================
+    # DEAD-LETTER QUEUE (message retry)
+    # =========================================================================
+
+    async def save_dead_letter(
+        self,
+        messages: list,
+        error: str,
+        ttl: int = 604800,  # 7 days
+    ) -> bool:
+        """Save message payloads to a dead-letter queue for later retry.
+
+        Uses a Redis list: ``dead_letter:messages``.  Each entry is a JSON
+        blob with the original messages, a timestamp, and the error string.
+        Oldest entries are trimmed to 10 000 to avoid unbounded growth.
+
+        Returns True on success, False if Redis is unavailable.
+        """
+        try:
+            r = await self._get_redis_with_retry()
+        except Exception:
+            logger.error("[DeadLetter] Redis unavailable — cannot save dead-letter")
+            return False
+
+        key = "dead_letter:messages"
+        entry = {
+            "messages": messages,
+            "crashed_at": datetime.utcnow().isoformat(),
+            "error": error[:500],
+        }
+        try:
+            await r.lpush(key, json.dumps(entry, default=str))
+            await r.ltrim(key, 0, 9999)
+            await r.expire(key, ttl)
+            logger.info(
+                "[DeadLetter] Saved {} message(s) to dead-letter queue (error: {})",
+                len(messages),
+                error[:80],
+            )
+            return True
+        except Exception as e:
+            logger.error("[DeadLetter] Failed to save dead-letter entry: {}", e)
+            return False
+
+    async def get_dead_letter_count(self) -> int:
+        """Return the number of entries in the dead-letter queue."""
+        try:
+            r = await self._get_redis_with_retry()
+        except Exception:
+            return 0
+        try:
+            return await r.llen("dead_letter:messages")
+        except Exception:
+            return 0
 
 
+# Instancia global del gestor de memoria
 memory_manager = MemoryManager()

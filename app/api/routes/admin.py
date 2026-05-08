@@ -79,8 +79,9 @@ def get_db():
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
-def verify_admin_api_key(x_api_key: str = Header(...)):
-    if x_api_key != get_settings().ADMIN_API_KEY:
+def verify_admin_api_key(x_api_key: str = Header(None), x_admin_api_key: str = Header(None)):
+    api_key = x_api_key or x_admin_api_key
+    if not api_key or api_key != get_settings().ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
@@ -137,7 +138,7 @@ class PropertyCreate(BaseModel):
     area_m2: Optional[int] = None
     currency: str = "USD"
     status: str = "available"            # 'available','reserved','sold','rented'
-    images: Optional[List[str]] = None   # list of base64 data URLs or CDN URLs
+    images: Optional[List[str]] = None    # List of image URLs
 
 
 class AppointmentCreate(BaseModel):
@@ -374,8 +375,8 @@ def create_property(
         bathrooms=data.bathrooms,
         area_m2=data.area_m2,
         status=data.status if data.status in ("available", "reserved", "sold", "rented") else "available",
-        images=data.images or [],
         extra_data={"building_type": data.building_type, "city": ""},
+        images=data.images,
     )
     db.add(prop)
     db.commit()
@@ -420,9 +421,8 @@ def update_property(
         prop.extra_data = extra
     if "currency" in updates:
         prop.currency = updates.pop("currency")
-    if "images" in updates:
-        imgs = updates.pop("images")
-        prop.images = imgs if imgs is not None else []
+    if "images" in updates and updates["images"] is not None:
+        prop.images = updates.pop("images")
 
     for k, v in updates.items():
         if hasattr(prop, k):
@@ -511,7 +511,147 @@ def create_appointment(
     db.add(apt)
     db.commit()
     db.refresh(apt)
+
+    # ── Sync with Google Calendar ────────────────────────────────────────
+    _sync_create_gcal(db, apt, data, user_uuid)
+
     return _apt_to_dict(apt)
+
+
+# ── Google Calendar sync helpers ────────────────────────────────────────────
+# These bridge the sync admin endpoints with the async calendar_service.
+
+
+def _sync_create_gcal(db: Session, apt, data, user_uuid) -> None:
+    """Create a Google Calendar event for an admin-created appointment."""
+    try:
+        from app.services.calendar_service import calendar_service
+        import asyncio
+
+        if not calendar_service.is_configured:
+            return
+
+        # Get user phone
+        user_phone = "Admin"
+        if user_uuid:
+            from app.db.models import User
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if user:
+                user_phone = user.whatsapp_phone
+
+        # Get property title
+        prop_title = "Sin propiedad"
+        if data.property_id:
+            prop_title = f"Propiedad {data.property_id}"
+            from app.db.models import Property
+            prop = db.query(Property).filter(Property.id == data.property_id).first()
+            if prop:
+                prop_title = prop.title or prop_title
+
+        cal_result = asyncio.run(calendar_service.create_visit_event(
+            user_phone=user_phone,
+            property_id=data.property_id,
+            property_title=prop_title,
+            start_time=apt.start_time,
+            end_time=apt.end_time,
+            notes=data.notes,
+        ))
+        if cal_result.get("success"):
+            apt.calendar_event_id = cal_result.get("event_id")
+            db.commit()
+            import logging
+            logging.getLogger(__name__).info(
+                "[Admin] Created Google Calendar event: %s", cal_result.get("event_id")
+            )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[Admin] Failed to sync create with Google Calendar: %s", exc
+        )
+
+
+def _sync_update_gcal(db: Session, apt) -> None:
+    """Reschedule or create a Google Calendar event for an updated appointment."""
+    try:
+        from app.services.calendar_service import calendar_service
+        import asyncio
+
+        if not calendar_service.is_configured:
+            return
+
+        if apt.calendar_event_id:
+            # Reschedule existing event
+            cal_result = asyncio.run(calendar_service.reschedule_visit(
+                event_id=apt.calendar_event_id,
+                new_start_time=apt.start_time,
+                new_end_time=apt.end_time,
+                notes=f"Actualizado por Admin",
+            ))
+            if cal_result.get("success"):
+                import logging
+                logging.getLogger(__name__).info(
+                    "[Admin] Rescheduled Google Calendar event: %s", apt.calendar_event_id
+                )
+        else:
+            # Create new calendar event (appointment previously had no GCal link)
+            user_phone = "Admin"
+            if apt.user_id:
+                from app.db.models import User
+                user = db.query(User).filter(User.id == apt.user_id).first()
+                if user:
+                    user_phone = user.whatsapp_phone
+            prop_title = f"Propiedad {apt.property_id}"
+            from app.db.models import Property
+            prop = db.query(Property).filter(Property.id == apt.property_id).first()
+            if prop:
+                prop_title = prop.title or prop_title
+            cal_result = asyncio.run(calendar_service.create_visit_event(
+                user_phone=user_phone,
+                property_id=apt.property_id,
+                property_title=prop_title,
+                start_time=apt.start_time,
+                end_time=apt.end_time,
+                notes=apt.notes,
+            ))
+            if cal_result.get("success"):
+                apt.calendar_event_id = cal_result.get("event_id")
+                db.commit()
+                import logging
+                logging.getLogger(__name__).info(
+                    "[Admin] Created Google Calendar event: %s", cal_result.get("event_id")
+                )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[Admin] Failed to sync update with Google Calendar: %s", exc
+        )
+
+
+def _sync_delete_gcal(db: Session, apt) -> None:
+    """Cancel a Google Calendar event for a deleted/cancelled appointment."""
+    if not apt.calendar_event_id:
+        return
+    try:
+        from app.services.calendar_service import calendar_service
+        import asyncio
+
+        if not calendar_service.is_configured:
+            return
+
+        cal_result = asyncio.run(calendar_service.cancel_visit(
+            event_id=apt.calendar_event_id,
+            reason="Cancelada desde Admin",
+        ))
+        if cal_result.get("success"):
+            import logging
+            logging.getLogger(__name__).info(
+                "[Admin] Cancelled Google Calendar event: %s", apt.calendar_event_id
+            )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[Admin] Failed to sync delete with Google Calendar: %s", exc
+        )
 
 
 @router.patch("/appointments/{apt_id}")
@@ -577,8 +717,11 @@ def update_appointment(
     if "notes" in updates:
         apt.notes = updates.pop("notes")
 
+    time_changed = "start_time" in updates or "end_time" in updates
     db.commit()
     db.refresh(apt)
+    if time_changed:
+        _sync_update_gcal(db, apt)
     return _apt_to_dict(apt)
 
 
@@ -597,9 +740,51 @@ def delete_appointment(
     apt = db.query(Appointment).filter(Appointment.id == aid).first()
     if not apt:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    _sync_delete_gcal(db, apt)
     apt.status = "cancelled"
     db.commit()
     return {"status": "deleted", "appointment_id": apt_id}
+
+
+# ── Google Calendar ─────────────────────────────────────────────────────────────
+
+@router.get("/calendar/status")
+def calendar_status(
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Return Google Calendar integration status and configured timezone."""
+    try:
+        from app.services.calendar_service import calendar_service
+        configured = calendar_service.is_configured
+    except Exception:
+        configured = False
+    return {
+        "configured": configured,
+        "timezone": "America/Argentina/Buenos_Aires",
+        "label": "GMT-3",
+    }
+
+
+@router.get("/calendar/events")
+def list_calendar_events(
+    days_ahead: int = 30,
+    max_results: int = 50,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Fetch upcoming events from Google Calendar for the dashboard."""
+    import asyncio
+    try:
+        from app.services.calendar_service import calendar_service
+        if not calendar_service.is_configured:
+            return {"configured": False, "events": [], "total": 0}
+        events = asyncio.run(calendar_service.get_upcoming_events(
+            days_ahead=days_ahead,
+            max_results=max_results,
+        ))
+        return {"configured": True, "events": events, "total": len(events)}
+    except Exception as exc:
+        import traceback
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
 
 
 # ── Conversations / Handoff ────────────────────────────────────────────────────
@@ -671,10 +856,10 @@ async def resume_bot(
     from app.core.state_machine import state_machine, ConversationStateEnum
     from app.integrations.whatsapp import whatsapp_client
     from app.api.routes.webhook import format_phone_number
-    await state_machine.set_state(phone, ConversationStateEnum.IDLE.value, allow_invalid=True)
+    await state_machine.set_state(phone, ConversationStateEnum.BROWSING.value)
     phone_to = format_phone_number(phone)
     await whatsapp_client.send_message(
         to=phone_to,
-        message="El agente ha finalizado la atencion. Volves a estar en modo automatico. En que mas puedo ayudarte?"
+        message="El agente ha finalizado la atención. Volvés a estar en modo automático. ¿En qué más puedo ayudarte? 🏠"
     )
     return {"status": "resumed", "phone": phone}

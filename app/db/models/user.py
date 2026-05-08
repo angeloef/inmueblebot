@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import uuid4
 from sqlalchemy import String, Integer, DateTime, Index, func
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -59,15 +59,15 @@ class User(Base):
     )
 
     location_preferences: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String),
+        JSONB,
         nullable=True,
-        comment="Lista de ubicaciones de interés (varchar[])"
+        comment="Lista de ubicaciones de interés"
     )
 
     property_type: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String),
+        JSONB,
         nullable=True,
-        comment="Tipos de propiedad preferidos (varchar[])"
+        comment="Tipos de propiedad preferidos"
     )
 
     lead_score: Mapped[int] = mapped_column(

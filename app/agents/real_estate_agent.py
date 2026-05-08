@@ -47,19 +47,17 @@ class RealEstateAgent:
         phone: str,
         user_message: str,
         intent: Intent = None,
-        entities: Dict[str, Any] = None,
         force_agent: bool = False
     ) -> Dict[str, Any]:
         """
         Procesa un turno de conversación.
-
+        
         Args:
             phone: Número de teléfono del usuario
             user_message: Mensaje del usuario
             intent: Intent clasificado (opcional)
-            entities: Slots extraídos por el clasificador (opcional)
             force_agent: Forzar uso del agente completo aunque sea un intent simple
-
+        
         Returns:
             dict con:
             - response_text: Texto de respuesta
@@ -67,7 +65,6 @@ class RealEstateAgent:
             - tools_used: Lista de herramientas usadas
             - next_state: Estado siguiente
         """
-        entities = entities or {}
         logger.info(f"Agent procesando mensaje de {phone}: {user_message[:50]}...")
         
         try:
@@ -95,22 +92,7 @@ class RealEstateAgent:
                     "tools_used": ["request_human_assistance"],
                     "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
                 }
-
-            # ── Deterministic dispatch ────────────────────────────────────────
-            # For intents with a single correct action, execute that action in
-            # code without delegating the decision to the LLM.  The LLM is only
-            # used afterward to format the result into natural language.
-            if not force_agent:
-                deterministic_result = await self._deterministic_dispatch(
-                    phone=phone,
-                    intent=intent,
-                    entities=entities,
-                    user_message=user_message,
-                    merged_context=merged_context,
-                )
-                if deterministic_result is not None:
-                    return deterministic_result
-
+            
             # Get last_shown_properties from context for reference
             last_props = merged_context.get("last_shown_properties", [])
             
@@ -127,8 +109,90 @@ class RealEstateAgent:
             rich_content = {}
             
             for iteration in range(self.MAX_TOOL_CALLS):
+                # Phase 4: Add detailed logging for tools + intent detection
                 tools_count = len(self.tools) if self.tools else 0
-
+                
+                # Debug log for clear search intent - FORCE tool call if clear search
+                user_msg_lower = user_message.lower()
+                is_clear_search = any(kw in user_msg_lower for kw in ["busco", "busca", "quiero", "necesito", "tengo", " tengo"]) and any(kw in user_msg_lower for kw in ["casa", "departamento", "propiedad", "habitacion", "dormitorio", "alquilar", "comprar", "obera", "asuncion", "posadas", "encarnacion"])
+                
+                # Check if we should force tool call
+                if is_clear_search and iteration == 0 and self.tools:
+                    logger.info(f"[Agent] 🔍 CLEAR SEARCH INTENT DETECTED - performing direct search_properties call")
+                    
+                    # Extract search params from message - simple extraction
+                    search_params = {}
+                    msg = user_message.lower()
+                    
+                    # Location extraction
+                    locations = ["oberá", "asunción", "posadas", "encarnacion", "ciudad del este", "san lorenzo", "lambaré", "villa hayes"]
+                    for loc in locations:
+                        if loc in msg:
+                            search_params["location"] = loc.title()
+                            break
+                    
+                    # Property type
+                    if "casa" in msg:
+                        search_params["property_type"] = "casa"
+                    elif "departamento" in msg or "dpto" in msg:
+                        search_params["property_type"] = "departamento"
+                    elif "terreno" in msg:
+                        search_params["operation_type"] = search_params.get("operation_type", None)
+                        search_params["property_type"] = "terreno"
+                    
+                    # Bedrooms
+                    import re
+                    bedrooms_match = re.search(r'(\d+)\s*(habitacion|dormitorio|hab|hab\.)', msg)
+                    if bedrooms_match:
+                        search_params["bedrooms"] = int(bedrooms_match.group(1))
+                    
+                    # Operation type
+                    if "alquil" in msg:
+                        search_params["operation_type"] = "alquiler"
+                    elif "compr" in msg or "venta" in msg:
+                        search_params["operation_type"] = "venta"
+                    
+                    if search_params:
+                        logger.info(f"[Agent] executing direct search with: {search_params}")
+                        # Directly execute the tool
+                        tool_name = "search_properties"
+                        tool_result = await execute_tool(
+                            tool_name=tool_name,
+                            arguments=search_params,
+                            phone=phone
+                        )
+                        # If the tool returned images JSON, attach to rich_content for frontend STEP 7
+                        try:
+                            parsed = json.loads(tool_result)
+                            if isinstance(parsed, dict) and parsed.get("images"):
+                                rich_content = {"action": "show_property_images", "images": parsed["images"]}
+                        except Exception:
+                            pass
+                        # Build and inject tool call messages as if returned by LLM
+                        messages.append({
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{iteration}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": json.dumps(search_params)
+                                    }
+                                }
+                            ]
+                        })
+                        messages.append({
+                            "role": "tool",
+                            "name": tool_name,
+                            "tool_call_id": f"call_{iteration}",
+                            "content": str(tool_result)
+                        })
+                        tools_used.append(tool_name)
+                        # Do not proceed with LLM call for this iteration
+                        continue
+                
                 logger.info(f"[Agent] Iteration {iteration + 1}: Sending {tools_count} tools to LLM")
                 
                 llm_response = await self.llm.ainvoke(
@@ -148,29 +212,25 @@ class RealEstateAgent:
                     response_text = llm_response.content
                     break
                 
-                for tc_idx, tool_call in enumerate(llm_response.tool_calls):
+                for tool_call in llm_response.tool_calls:
                     tool_name = tool_call.name
                     tool_args = tool_call.arguments
-
-                    # Unique ID per tool call: iteration + index avoids ID collisions
-                    # when the LLM requests multiple tools in a single response.
-                    tc_id = f"call_{iteration}_{tc_idx}"
-
-                    logger.info(f"Tool call [{tc_id}]: {tool_name} args={tool_args}")
+                    
+                    logger.info(f"Tool call: {tool_name} con args: {tool_args}")
                     tools_used.append(tool_name)
-
+                    
                     tool_result = await execute_tool(
                         tool_name=tool_name,
                         arguments=tool_args,
                         phone=phone
                     )
-
+                    
                     messages.append({
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [
                             {
-                                "id": tc_id,
+                                "id": f"call_{iteration}",
                                 "type": "function",
                                 "function": {
                                     "name": tool_name,
@@ -179,43 +239,50 @@ class RealEstateAgent:
                             }
                         ]
                     })
-
-                    if "get_property_images" in tool_name:
-                        # Extract images NOW, before the LLM sees the result.
-                        # We then feed the LLM a clean confirmation string instead of
-                        # the raw JSON — this prevents the model from echoing the URL
-                        # in its text reply despite the system prompt instruction.
-                        rich_content = self._extract_rich_content(tool_args, tool_result)
-                        images_found = rich_content.get("images", [])
-                        if images_found:
-                            llm_tool_content = (
-                                f"Imágenes encontradas ({len(images_found)}). "
-                                "El sistema las enviará al usuario automáticamente. "
-                                "NO incluyas las URLs en tu respuesta de texto."
-                            )
-                        else:
-                            llm_tool_content = (
-                                "No hay imágenes disponibles para esta propiedad."
-                            )
-                        messages.append({
-                            "role": "tool",
-                            "name": tool_name,
-                            "tool_call_id": tc_id,
-                            "content": llm_tool_content,
-                        })
-                    else:
-                        messages.append({
-                            "role": "tool",
-                            "name": tool_name,
-                            "tool_call_id": tc_id,
-                            "content": str(tool_result)
-                        })
-
+                    
+                    messages.append({
+                        "role": "tool",
+                        "name": tool_name,
+                        "tool_call_id": f"call_{iteration}",
+                        "content": str(tool_result)
+                    })
+                    
                     if "search_properties" in tool_name or "recommend_properties" in tool_name:
-                        # last_shown_properties is already saved to Redis inside tools.py
-                        # (search_properties calls update_context_field directly).
-                        # _extract_rich_content returns action + message for the frontend.
-                        rich_content = self._extract_rich_content(tool_args, tool_result)
+                        new_rich = self._extract_rich_content(tool_args, tool_result)
+                        # Preserve images from previous get_property_images calls
+                        existing_images = rich_content.get("images", [])
+                        if existing_images:
+                            new_rich["images"] = existing_images
+                        elif new_rich.get("properties"):
+                            # Extract images from property list if available
+                            for prop in new_rich["properties"]:
+                                if prop.get("images"):
+                                    new_rich["images"] = prop["images"]
+                                    break
+                        rich_content = new_rich
+                        
+                        # Save last_shown_properties for context
+                        last_props = rich_content.get("properties", [])
+                        if last_props:
+                            logger.info(f"[Agent] Saving {len(last_props)} properties to context")
+                            # Save to memory for next turn
+                            try:
+                                await memory_manager.update_context_field(
+                                    phone, 
+                                    "last_shown_properties", 
+                                    last_props
+                                )
+                            except Exception as e:
+                                logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
+                    
+                    if "get_property_images" in tool_name:
+                        new_rich = self._extract_rich_content(tool_args, tool_result)
+                        # Preserve images from both current and previous rich_content
+                        existing_images = rich_content.get("images", [])
+                        new_images = new_rich.get("images", [])
+                        if existing_images:
+                            new_rich["images"] = existing_images + new_images
+                        rich_content = new_rich
                     
                     # Log confirmed datetime for schedule_visit
                     if "schedule_visit" in tool_name and "Cita Agendada" in str(tool_result):
@@ -279,147 +346,6 @@ class RealEstateAgent:
                 "next_state": "idle"
             }
     
-    # ── Deterministic dispatch ────────────────────────────────────────────────
-
-    @staticmethod
-    def _slots_complete(entities: Dict[str, Any]) -> bool:
-        """
-        Returns True if the classifier extracted enough slots to perform a
-        meaningful property search without asking the user for more info.
-        At minimum we need at least one of: location, property_type, budget_max.
-        """
-        return bool(
-            entities.get("location")
-            or entities.get("property_type")
-            or entities.get("budget_max")
-            or entities.get("budget_min")
-        )
-
-    def _detect_handoff_request(self, message: str) -> bool:
-        """Detects if the user is requesting a human agent."""
-        handoff_keywords = [
-            "hablar con", "agente humano", "persona real", "asesor",
-            "quiero hablar", "llamar", "human", "agent", "persona",
-        ]
-        msg_lower = message.lower()
-        return any(kw in msg_lower for kw in handoff_keywords)
-
-    async def _deterministic_dispatch(
-        self,
-        phone: str,
-        intent: Intent,
-        entities: Dict[str, Any],
-        user_message: str,
-        merged_context: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Handles intents that have a single correct action — no LLM needed
-        to decide *what* to do.  Returns a complete turn result dict if the
-        intent was handled deterministically, or None to fall through to the
-        full agent loop.
-
-        Current dispatch table:
-          GREETING          → static template (no LLM, no DB)
-          PROPERTY_SEARCH   → DB search, then LLM formats the results
-          (all others)      → None (fall through to agent)
-        """
-        if intent == Intent.GREETING:
-            logger.info(f"[Dispatch] GREETING → template")
-            await state_machine.set_state(phone, ConversationStateEnum.IDLE.value)
-            return {
-                "response_text": (
-                    "¡Hola! 👋 Soy InmuebleBot, tu asistente de bienes raíces. "
-                    "Puedo ayudarte a buscar propiedades, darte detalles, o agendar una visita. "
-                    "¿En qué te puedo ayudar hoy?"
-                ),
-                "rich_content": None,
-                "tools_used": [],
-                "next_state": ConversationStateEnum.IDLE.value,
-            }
-
-        if intent == Intent.PROPERTY_SEARCH:
-            # Merge persisted preferences with freshly-classified slots so that
-            # slots accumulated across multiple turns are respected.
-            persisted = {
-                k: merged_context.get(k)
-                for k in ("location", "property_type", "budget_min", "budget_max",
-                          "bedrooms", "bathrooms", "area_min", "operation_type")
-                if merged_context.get(k)
-            }
-            merged_slots = {**persisted, **{k: v for k, v in entities.items() if v}}
-
-            if not self._slots_complete(merged_slots):
-                logger.info(f"[Dispatch] PROPERTY_SEARCH → slots incomplete, falling through to agent")
-                return None  # Let the agent ask for the missing slot
-
-            logger.info(f"[Dispatch] PROPERTY_SEARCH → direct DB search with slots: {merged_slots}")
-            try:
-                from app.agents.tools import search_properties as _search_tool
-                search_criteria = {
-                    k: v for k, v in merged_slots.items()
-                    if k in ("location", "property_type", "budget_min", "budget_max",
-                             "bedrooms", "bathrooms", "area_min", "operation_type")
-                    and v is not None
-                }
-                search_result_str = await _search_tool(
-                    criteria=search_criteria,
-                    phone=phone,
-                )
-                logger.info(f"[Dispatch] DB search returned: {str(search_result_str)[:120]}...")
-            except Exception as e:
-                logger.warning(f"[Dispatch] DB search failed, falling through to agent: {e}")
-                return None
-
-            await state_machine.set_state(phone, ConversationStateEnum.SEARCHING.value)
-
-            # Let the LLM format the structured result into natural language only
-            try:
-                history = await memory_manager.get_recent_messages(phone, limit=6)
-            except Exception:
-                history = []
-
-            format_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres un asistente inmobiliario. Tu única tarea ahora es presentar "
-                        "los siguientes resultados de búsqueda al usuario de forma amigable, "
-                        "clara y en español. NO inventes propiedades. NO agregues información "
-                        "que no esté en los resultados. Si no hay resultados, díselo amablemente "
-                        "y sugiere ampliar los criterios."
-                    ),
-                },
-                *[{"role": m["role"], "content": m["content"]} for m in history if m.get("content")],
-                {
-                    "role": "user",
-                    "content": (
-                        f"El usuario preguntó: {user_message}\n\n"
-                        f"Resultados de la base de datos:\n{search_result_str}"
-                    ),
-                },
-            ]
-
-            llm_response = await self.llm.ainvoke(
-                messages=format_messages,
-                tools=None,
-                temperature=0.4,
-            )
-            response_text = llm_response.content or search_result_str
-
-            try:
-                await memory_manager.save_message(phone, "assistant", response_text)
-            except Exception as e:
-                logger.warning(f"[Dispatch] Could not save assistant message: {e}")
-
-            return {
-                "response_text": response_text,
-                "rich_content": {"action": "show_search_results", "message": search_result_str},
-                "tools_used": ["search_properties"],
-                "next_state": ConversationStateEnum.SEARCHING.value,
-            }
-
-        return None  # All other intents fall through to the full agent loop
-
     def _build_messages(
         self,
         user_message: str,
@@ -430,10 +356,11 @@ class RealEstateAgent:
     ) -> List[Dict]:
         """Construye la lista de mensajes para el LLM."""
         messages = []
-
-        # NOTE: do NOT mutate user_context here — get_system_prompt does not render
-        # last_shown_properties so the mutation would be silently ignored.
-        # The property list is injected below as a dedicated <last_results> system message.
+        
+        # Inject last_shown_properties into context for reference
+        if last_shown_properties:
+            user_context["last_shown_properties"] = last_shown_properties
+            logger.info(f"[Agent] Injecting {len(last_shown_properties)} properties into context")
         
         system_prompt = get_system_prompt(user_context)
         messages.append({"role": "system", "content": system_prompt})
@@ -477,64 +404,43 @@ class RealEstateAgent:
         
         return messages
     
-    @staticmethod
-    def _is_valid_image_url(url: str) -> bool:
-        """
-        Returns True only for URLs that the WhatsApp API can actually fetch.
-        Rejects: empty strings, bare underscores, relative paths, data: URIs,
-        and anything that doesn't start with http:// or https://.
-        """
-        if not url or not isinstance(url, str):
-            return False
-        url = url.strip()
-        if not url.startswith(("http://", "https://")):
-            return False
-        # Must have a meaningful host — reject "https://_" etc.
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            return bool(parsed.netloc and len(parsed.netloc) > 3)
-        except Exception:
-            return False
-
     def _extract_rich_content(self, tool_args: dict, tool_result: str) -> dict:
         """Extrae rich content desde el resultado de la herramienta."""
+        import re
+        
         try:
+            # Try extract images from <!--IMAGES:...--> comment
+            images_match = re.search(r'<!--IMAGES:(\[[^\]]+\])-->', tool_result)
+            if images_match:
+                try:
+                    images_data = json.loads(images_match.group(1))
+                    if images_data:
+                        return {
+                            "action": "show_property_images",
+                            "images": images_data[:6]  # Max 6 images
+                        }
+                except json.JSONDecodeError:
+                    pass
+            
             # Try extract images if tool_result contains JSON with images
             try:
                 data = json.loads(tool_result)
-                if isinstance(data, dict):
-                    raw_images = data.get("images") or []
-                    valid_images = [
-                        url for url in raw_images
-                        if self._is_valid_image_url(url)
-                    ]
-                    if valid_images:
-                        logger.info(
-                            f"[Agent] get_property_images: {len(raw_images)} total, "
-                            f"{len(valid_images)} valid URLs"
-                        )
-                        return {
-                            "action": "show_property_images",
-                            "images": valid_images
-                        }
-                    elif raw_images:
-                        logger.warning(
-                            f"[Agent] get_property_images returned {len(raw_images)} URLs "
-                            f"but none passed validation: {raw_images!r}"
-                        )
-                    # Return empty action so response_text can inform the user gracefully
-                    return {"action": "no_images_available"}
+                if isinstance(data, dict) and data.get("images"):
+                    return {
+                        "action": "show_property_images",
+                        "images": data.get("images", [])
+                    }
             except Exception:
                 pass
-
+            properties = []
+            
             if "Encontré" in tool_result and "propiedades" in tool_result:
                 return {
                     "action": "show_search_results",
                     "search_criteria": tool_args,
                     "message": tool_result
                 }
-
+            
             if "ID de propiedad:" in tool_result or "ID:" in tool_result:
                 import re
                 id_match = re.search(r'ID[:\s]*`?([a-zA-Z0-9-]+)`?', tool_result)
@@ -544,9 +450,9 @@ class RealEstateAgent:
                         "property_id": id_match.group(1),
                         "message": tool_result
                     }
-
+            
             return {"action": "general_response", "message": tool_result}
-
+            
         except Exception as e:
             logger.error(f"Error extract rich content: {e}")
             return {"action": "general_response", "message": tool_result}
@@ -633,24 +539,9 @@ class RealEstateAgent:
         
         # Replace common bad patterns with cleaner text
         cleaned = response
-        import re
-
-        # ── Strip markdown image syntax ─────────────────────────────────────
-        # WhatsApp doesn't render markdown images. The LLM sometimes outputs
-        # ![Imagen N](url) or ![Imagen N](_) when it "knows" images exist but
-        # doesn't have real URLs. Strip them entirely so the user doesn't see
-        # broken placeholders; real images are sent via send_image() separately.
-        cleaned = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", cleaned)
-        # Also remove bare lines that become empty after the strip above
-        cleaned = re.sub(r"^\s*$\n", "", cleaned, flags=re.MULTILINE)
-
-        # ── Strip raw /media/property/... URLs ──────────────────────────────
-        # Safety net: if the LLM echoes a media endpoint URL in its text
-        # despite the system prompt, remove it so users don't see raw links.
-        cleaned = re.sub(r"https?://[^\s]+/media/property/[^\s]+", "", cleaned)
-        cleaned = re.sub(r"^\s*$\n", "", cleaned, flags=re.MULTILINE)
-
+        
         # Remove "I'm calling..." / "Llamando a la función..." patterns
+        import re
         patterns_to_remove = [
             r".*\(Llamando\s+a\s+la\s+función.*\)",
             r".*\(calling.*function.*\)",
@@ -658,7 +549,7 @@ class RealEstateAgent:
             r"print\(.*\)",
             r"\[tool[_\s]call.*\]",
         ]
-
+        
         for pattern in patterns_to_remove:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
         

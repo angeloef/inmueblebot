@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, IconButton, pushToast } from './Primitives';
 import { parseTime, padDate, fmtTime12 } from './data';
-import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent } from './api';
+import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus } from './api';
 import { EventPopover, EventEditor } from './EventPopover';
 
 const DOWS = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
@@ -121,7 +121,7 @@ function layoutDayEvents(dayEvents) {
   return result;
 }
 
-function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onMoveEvent }) {
+function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onMoveEvent, tzLabel }) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const cols = days.length;
   const template = `${GUTTER_W}px repeat(${cols}, minmax(0, 1fr))`;
@@ -280,7 +280,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   return (
     <div className={`cal-tg-wrap${drag ? ' is-dragging' : ''}`}>
       <div className="cal-tg-head" style={{ gridTemplateColumns: template }}>
-        <div className="cal-tg-gmt">GMT-3</div>
+        <div className="cal-tg-gmt">{tzLabel}</div>
         {days.map((d) => {
           const [yr, mo, dy] = d.split('-').map(Number);
           const dt = new Date(yr, mo - 1, dy);
@@ -411,10 +411,13 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
 }
 
 export default function Calendar() {
-  const { data: events = [] } = useEvents();
-  const createEventMut  = useCreateEvent();
-  const updateEventMut  = useUpdateEvent();
-  const deleteEventMut  = useDeleteEvent();
+  const { data: events = [] }                 = useEvents();
+  const createEventMut                        = useCreateEvent();
+  const updateEventMut                        = useUpdateEvent();
+  const deleteEventMut                        = useDeleteEvent();
+  const { data: calStatus }                   = useCalendarStatus();
+
+  const tzLabel = calStatus?.label ?? 'GMT-3';
 
   const [view, setView] = useState('month');
   const [popover, setPopover] = useState(null);
@@ -572,6 +575,7 @@ export default function Calendar() {
             view="week"
             onSlotInteract={handleSlotInteract}
             onMoveEvent={handleMoveEvent}
+            tzLabel={tzLabel}
           />
         )}
         {view === 'day' && (
@@ -584,6 +588,7 @@ export default function Calendar() {
             view="day"
             onSlotInteract={handleSlotInteract}
             onMoveEvent={handleMoveEvent}
+            tzLabel={tzLabel}
           />
         )}
       </div>

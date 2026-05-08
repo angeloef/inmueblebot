@@ -37,19 +37,3 @@ services:
         value: "8000"
       - key: REDIS_URL
         value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0?ssl_cert_reqs=none"
-
-# Celery Worker (Not available on free plan - disabled)
-#   - type: worker
-#     name: inmueblebot-celery-worker
-#     env: docker
-#     plan: free
-#     dockerfilePath: Dockerfile
-#     region: oregon
-
-# Celery Beat (Not available on free plan - disabled)
-#   - type: worker
-#     name: inmueblebot-celery-beat
-#     env: docker
-#     plan: free
-#     dockerfilePath: Dockerfile
-#     region: oregon

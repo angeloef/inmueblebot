@@ -135,6 +135,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Dashboard SPA ───────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
@@ -225,6 +226,29 @@ async def serve_property_image(property_id: str, image_index: int):
     except Exception as e:
         logger.error(f"[Media] Error serving property {property_id} image {image_index}: {e}")
         return Response(status_code=500)
+
+
+# ── Global Exception Handler ────────────────────────────────────────────────
+from fastapi.responses import JSONResponse
+from starlette.requests import Request
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch unhandled exceptions, log them, and return a friendly response."""
+    logger.opt(exception=True).error(
+        "Unhandled exception on {} {}: {}",
+        request.method,
+        request.url.path,
+        repr(exc),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "message": "Ocurrió un error interno. Por favor intentá de nuevo.",
+        },
+    )
 
 
 # ── Routers ─────────────────────────────────────────────────────────────────

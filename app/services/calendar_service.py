@@ -4,10 +4,11 @@ Manages appointment scheduling through Google Calendar API.
 """
 import os
 import json
+import asyncio
 from datetime import datetime, timedelta, timezone as tz
 from typing import Optional, List, Dict, Any
-from uuid import UUID
 from loguru import logger
+import pytz
 
 from app.core.config import get_settings
 
@@ -17,14 +18,57 @@ class CalendarService:
     Google Calendar API integration for scheduling visits.
     
     Uses OAuth2 with stored tokens (client_secrets.json + token.json).
+    All API calls are executed in a thread pool to avoid blocking the event loop.
     """
     
     def __init__(self):
         self._credentials = None
         self._service = None
         self._calendar_id = None
-        self._token_path = "/app/credentials/token.json"
-        self._client_secrets_path = "/app/credentials/client_secrets.json"
+        self._token_path = None
+        self._client_secrets_path = None
+        self._resolve_credential_paths()
+    
+    def _resolve_credential_paths(self):
+        """
+        Resolve credential file paths from settings (with local-dev fallback).
+        
+        Priority:
+        1. Settings-provided path (GOOGLE_TOKEN_PATH / GOOGLE_CREDENTIALS_PATH from .env)
+        2. /app/credentials/<file> (Docker container path)
+        3. Relative to project root (local dev outside Docker)
+        """
+        settings = get_settings()
+        
+        # Resolve token path
+        token_candidates = []
+        if settings.GOOGLE_TOKEN_PATH:
+            token_candidates.append(settings.GOOGLE_TOKEN_PATH)
+        token_candidates.append("/app/credentials/token.json")
+        
+        # Local dev fallback
+        py_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(py_dir, "..", ".."))
+        token_candidates.append(os.path.join(project_root, "credentials", "token.json"))
+        
+        self._token_path = self._first_existing(token_candidates) or "/app/credentials/token.json"
+        
+        # Resolve client secrets path
+        secrets_candidates = []
+        if settings.GOOGLE_CREDENTIALS_PATH:
+            secrets_candidates.append(settings.GOOGLE_CREDENTIALS_PATH)
+        secrets_candidates.append("/app/credentials/client_secrets.json")
+        secrets_candidates.append(os.path.join(project_root, "credentials", "client_secrets.json"))
+        
+        self._client_secrets_path = self._first_existing(secrets_candidates) or "/app/credentials/client_secrets.json"
+    
+    @staticmethod
+    def _first_existing(paths: List[str]) -> Optional[str]:
+        """Return the first path that exists on disk, or None."""
+        for p in paths:
+            if os.path.exists(p):
+                return p
+        return None
     
     @property
     def is_configured(self) -> bool:
@@ -35,12 +79,33 @@ class CalendarService:
         """Get the calendar ID."""
         return "primary"
     
+    async def _execute_async(self, request):
+        """Execute a Google API request in a thread pool to avoid blocking the event loop."""
+        return await asyncio.to_thread(request.execute)
+    
     def _load_token(self):
         """Load OAuth token from file."""
         if os.path.exists(self._token_path):
             with open(self._token_path, 'r') as f:
                 return json.load(f)
         return None
+    
+    def _save_token(self, credentials) -> None:
+        """Save OAuth credentials to token file after refresh."""
+        from google.oauth2.credentials import Credentials
+        if isinstance(credentials, Credentials):
+            token_data = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes,
+                'expiry': credentials.expiry.isoformat() if credentials.expiry else None,
+            }
+            with open(self._token_path, 'w') as f:
+                json.dump(token_data, f, indent=2)
+            logger.info("[Calendar] Saved refreshed token")
     
     def _build_service(self):
         """Build Google Calendar service using OAuth2."""
@@ -62,18 +127,19 @@ class CalendarService:
                 scopes=['https://www.googleapis.com/auth/calendar']
             )
             
+            # Refresh token if expired
+            if credentials.expired and credentials.refresh_token:
+                import google.auth.transport.requests
+                credentials.refresh(google.auth.transport.requests.Request())
+                self._save_token(credentials)
+                logger.info("[Calendar] OAuth token refreshed")
+            
             service = build('calendar', 'v3', credentials=credentials, cache_discovery=False)
             self._calendar_id = self._get_calendar_id()
             logger.info("[Calendar] Service initialized with OAuth2")
             return service
         except Exception as e:
             logger.error(f"[Calendar] Failed to initialize OAuth2 service: {e}")
-            return None
-            self._calendar_id = self._get_calendar_id()
-            logger.info(f"[Calendar] Service initialized for calendar: {self._calendar_id}")
-            return service
-        except Exception as e:
-            logger.error(f"[Calendar] Failed to initialize service: {e}")
             return None
     
     @property
@@ -115,13 +181,15 @@ class CalendarService:
             time_min = start_dt.isoformat()
             time_max = end_dt.isoformat()
             
-            events_result = self.service.events().list(
-                calendarId=self._calendar_id,
-                timeMin=time_min,
-                timeMax=time_max,
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = await self._execute_async(
+                self.service.events().list(
+                    calendarId=self._calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    singleEvents=True,
+                    orderBy='startTime'
+                )
+            )
             
             events = events_result.get('items', [])
             
@@ -192,11 +260,11 @@ class CalendarService:
                 ),
                 'start': {
                     'dateTime': start_time.isoformat(),
-                    'timeZone': 'America/Asuncion'
+                    'timeZone': 'America/Argentina/Buenos_Aires'
                 },
                 'end': {
                     'dateTime': end_time.isoformat(),
-                    'timeZone': 'America/Asuncion'
+                    'timeZone': 'America/Argentina/Buenos_Aires'
                 },
                 'reminders': {
                     'useDefault': False,
@@ -207,10 +275,12 @@ class CalendarService:
                 }
             }
             
-            created_event = self.service.events().insert(
-                calendarId=self._calendar_id,
-                body=event
-            ).execute()
+            created_event = await self._execute_async(
+                self.service.events().insert(
+                    calendarId=self._calendar_id,
+                    body=event
+                )
+            )
             
             logger.info(f"[Calendar] Created event: {created_event.get('id')}")
             
@@ -248,10 +318,12 @@ class CalendarService:
             return {"success": False, "error": "Calendar not configured"}
         
         try:
-            event = self.service.events().get(
-                calendarId=self._calendar_id,
-                eventId=event_id
-            ).execute()
+            event = await self._execute_async(
+                self.service.events().get(
+                    calendarId=self._calendar_id,
+                    eventId=event_id
+                )
+            )
             
             event['start']['dateTime'] = new_start_time.isoformat()
             event['end']['dateTime'] = new_end_time.isoformat()
@@ -259,11 +331,13 @@ class CalendarService:
             if notes:
                 event['description'] = f"{event.get('description', '')}\n\nReprogramado: {notes}"
             
-            updated = self.service.events().update(
-                calendarId=self._calendar_id,
-                eventId=event_id,
-                body=event
-            ).execute()
+            updated = await self._execute_async(
+                self.service.events().update(
+                    calendarId=self._calendar_id,
+                    eventId=event_id,
+                    body=event
+                )
+            )
             
             logger.info(f"[Calendar] Rescheduled event: {event_id}")
             
@@ -296,19 +370,23 @@ class CalendarService:
             return {"success": False, "error": "Calendar not configured"}
         
         try:
-            event = self.service.events().get(
-                calendarId=self._calendar_id,
-                eventId=event_id
-            ).execute()
+            event = await self._execute_async(
+                self.service.events().get(
+                    calendarId=self._calendar_id,
+                    eventId=event_id
+                )
+            )
             
-            event['description'] = f"{event.get('description', '')}\n\n❌ CANCELADO: {reason or 'Sin reason especificada'}"
+            event['description'] = f"{event.get('description', '')}\n\n❌ CANCELADO: {reason or 'Sin razón especificada'}"
             event['status'] = 'cancelled'
             
-            updated = self.service.events().update(
-                calendarId=self._calendar_id,
-                eventId=event_id,
-                body=event
-            ).execute()
+            updated = await self._execute_async(
+                self.service.events().update(
+                    calendarId=self._calendar_id,
+                    eventId=event_id,
+                    body=event
+                )
+            )
             
             logger.info(f"[Calendar] Cancelled event: {event_id}")
             
@@ -340,14 +418,16 @@ class CalendarService:
             now = datetime.now(tz.utc).isoformat()
             future = (datetime.now(tz.utc) + timedelta(days=days_ahead)).isoformat()
             
-            events_result = self.service.events().list(
-                calendarId=self._calendar_id,
-                timeMin=now,
-                timeMax=future,
-                maxResults=max_results,
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = await self._execute_async(
+                self.service.events().list(
+                    calendarId=self._calendar_id,
+                    timeMin=now,
+                    timeMax=future,
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy='startTime'
+                )
+            )
             
             events = events_result.get('items', [])
             return [
@@ -403,13 +483,15 @@ class CalendarService:
                 time_min = slot_start.isoformat()
                 time_max = slot_end.isoformat()
                 
-                events_result = self.service.events().list(
-                    calendarId=self._calendar_id,
-                    timeMin=time_min,
-                    timeMax=time_max,
-                    singleEvents=True,
-                    maxResults=1
-                ).execute()
+                events_result = await self._execute_async(
+                    self.service.events().list(
+                        calendarId=self._calendar_id,
+                        timeMin=time_min,
+                        timeMax=time_max,
+                        singleEvents=True,
+                        maxResults=1
+                    )
+                )
                 
                 events = events_result.get('items', [])
                 slots.append({
@@ -426,7 +508,7 @@ class CalendarService:
             return []
     
     def _parse_datetime(self, date_str: str, time_str: str = "10:00") -> datetime:
-        """Parse date and time strings into datetime object."""
+        """Parse date and time strings into datetime object with Argentina/Asunción timezone."""
         formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]
         
         dt = None
@@ -444,7 +526,8 @@ class CalendarService:
         hour = int(time_parts[0])
         minute = int(time_parts[1]) if len(time_parts) > 1 else 0
         
-        return dt.replace(hour=hour, minute=minute, second=0, tzinfo=tz.utc)
+        ba_tz = pytz.timezone("America/Argentina/Buenos_Aires")
+        return ba_tz.localize(dt.replace(hour=hour, minute=minute, second=0))
 
 
 calendar_service = CalendarService()
