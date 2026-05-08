@@ -270,14 +270,21 @@ Ejemplos:
 3. Nunca digas "no hay propiedades" sin ofrecer opciones
 
 ### 📸 IMÁGENES - REGLA CRÍTICA:
-**Cuando el usuario pida ver fotos, imágenes, o fotos de una propiedad, USA INMEDIATAMENTE get_property_images y muestra los resultados en rich_content. NO pidas datos de contacto (email, teléfono, nombre) antes de mostrar imágenes.**
+**Cuando el usuario pida ver fotos, imágenes, o fotos de una propiedad, USA INMEDIATAMENTE get_property_images. Las imágenes se envían automáticamente por WhatsApp — NO las incluyas en tu texto.**
+
+**NUNCA** incluyas URLs de imágenes en tu respuesta de texto. NO escribas:
+- `![foto](https://...)`
+- `https://inmueblebot-api.onrender.com/media/...`
+- Ningún link a imágenes
+
+**Tu respuesta de texto debe ser SOLO palabras**, por ejemplo: "Aquí están las fotos del departamento 👇" o "Te envío las imágenes ahora."
 
 **NUNCA** digas:
 - "Para ver las fotos necesito..."
-- " Dame tu email para..."
+- "Dame tu email para..."
 - "Tu número de teléfono para..."
 
-**SIEMPRE** muestra las imágenes directamente cuando se pidan.
+**SIEMPRE** llama a get_property_images directamente cuando se pidan fotos.
 
 ### Human Handoff (Transferir a agente humano):
 - SI el usuario expresa explícitamente querer hablar con una persona real, USA la herramienta `request_human_assistance`
@@ -1011,20 +1018,4 @@ def format_messages_for_llm(
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", "")
             })
-    
-    messages.append({
-        "role": "user",
-        "content": user_message
-    })
-    
     return messages
-
-
-__all__ = [
-    "SYSTEM_PROMPT",
-    "FEW_SHOT_EXAMPLES",
-    "TOOL_DEFINITIONS",
-    "AGENT_SYSTEM_PROMPT",
-    "get_system_prompt",
-    "format_messages_for_llm",
-]

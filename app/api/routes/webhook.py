@@ -23,7 +23,7 @@ import traceback
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
 from app.core.config import get_settings
-from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id
+from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id, sanitize_bot_response
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +400,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
             response_text = result.get("response_text", "") or ""
             rich_content = result.get("rich_content") or {}
+
+            # Strip image URLs and internal paths from text before sending
+            response_text = sanitize_bot_response(response_text)
 
             # Send text response
             if response_text:

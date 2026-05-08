@@ -218,3 +218,36 @@ def sanitize_for_llm(text: str, max_length: int = 4000) -> str:
 clean_text = sanitize_text
 clean_phone = sanitize_phone
 clean_criteria = sanitize_criteria
+
+
+# ── Output sanitizer (bot responses before sending to WhatsApp) ────────────────
+
+_OUTPUT_LEAK_PATTERNS = [
+    # Markdown images: ![alt](url)
+    re.compile(r'!\[[^\]]*\]\(https?://[^\)]+\)', re.IGNORECASE),
+    # Raw media/property URLs embedded in text
+    re.compile(r'https?://\S+/media/property/\S+', re.IGNORECASE),
+    # base64 data URIs
+    re.compile(r'data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/=]{20,}', re.DOTALL),
+    # Internal file paths
+    re.compile(r'/app/[^\s]+'),
+    re.compile(r'[A-Za-z]:\\[^\s]+'),
+    # Tool call artifacts
+    re.compile(r'<tool[_\s][^>]*>'),
+    re.compile(r'\[function[^\]]*\]'),
+]
+
+
+def sanitize_bot_response(text: str) -> str:
+    """
+    Limpia la respuesta del bot antes de enviarla a WhatsApp.
+    Elimina URLs de imágenes (se envían por separado como media),
+    paths internos, y artefactos de tool-calling.
+    """
+    if not text:
+        return text
+    for pattern in _OUTPUT_LEAK_PATTERNS:
+        text = pattern.sub('', text)
+    # Clean up double blank lines left by removals
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
