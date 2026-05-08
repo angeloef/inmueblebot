@@ -112,10 +112,13 @@ class RealEstateAgent:
                 # Phase 4: Add detailed logging for tools + intent detection
                 tools_count = len(self.tools) if self.tools else 0
                 
-                # Debug log for clear search intent - FORCE tool call if clear search
+                # Force tool call if intent is PROPERTY_SEARCH (use classified intent, not fragile keyword match)
                 user_msg_lower = user_message.lower()
-                is_clear_search = any(kw in user_msg_lower for kw in ["busco", "busca", "quiero", "necesito", "tengo", " tengo"]) and any(kw in user_msg_lower for kw in ["casa", "departamento", "propiedad", "habitacion", "dormitorio", "alquilar", "comprar", "obera", "asuncion", "posadas", "encarnacion"])
-                
+                is_clear_search = (intent == Intent.PROPERTY_SEARCH) or (
+                    any(kw in user_msg_lower for kw in ["busco", "busca", "buscando", "quiero", "necesito", "buscar"])
+                    and any(kw in user_msg_lower for kw in ["casa", "departamento", "propiedad", "habitacion", "dormitorio", "alquilar", "comprar", "obera", "oberá", "asuncion", "posadas", "encarnacion"])
+                )
+
                 # Check if we should force tool call
                 if is_clear_search and iteration == 0 and self.tools:
                     logger.info(f"[Agent] 🔍 CLEAR SEARCH INTENT DETECTED - performing direct search_properties call")
@@ -209,7 +212,17 @@ class RealEstateAgent:
                     logger.info(f"[Agent] No tools called (provider: {llm_response.provider})")
                 
                 if not llm_response.has_tool_calls:
-                    response_text = llm_response.content
+                    # Anti-hallucination guard: if this was a property search but the LLM
+                    # never called the search tool, don't accept a made-up response.
+                    search_was_called = any(
+                        "search_properties" in t or "recommend_properties" in t
+                        for t in tools_used
+                    )
+                    if is_clear_search and not search_was_called:
+                        logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
+                        response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
+                    else:
+                        response_text = llm_response.content
                     break
                 
                 for tool_call in llm_response.tool_calls:
