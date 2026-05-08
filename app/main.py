@@ -59,9 +59,6 @@ async def lifespan(app: FastAPI):
         logger.warning("DB check failed: {}", e)
 
     # ── Column-type migration: ensure varchar[] (not JSONB) for array prefs ──
-    # If a prior deployment created property_type / location_preferences as JSONB,
-    # alter them to character varying[] so asyncpg can bind Python lists natively.
-    # Safe to run on every startup: IF NOT EXISTS guards make it idempotent.
     try:
         async with async_session_factory() as session:
             for col in ("property_type", "location_preferences"):
@@ -135,7 +132,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Dashboard SPA ───────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
@@ -259,6 +255,16 @@ app.include_router(webhook_router, prefix="/webhook", tags=["whatsapp"])
 # Admin dashboard API
 from app.api.routes.admin import router as admin_router
 app.include_router(admin_router)
+
+# Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
+# on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
+# FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
+# be registered here too.
+from fastapi import APIRouter as _APIRouter
+_api_compat = _APIRouter(prefix="/api")
+_api_compat.include_router(admin_router)
+app.include_router(_api_compat)
+
 logger.info("Admin router registered")
 
 # ── Dashboard SPA ───────────────────────────────────────────────────────────
