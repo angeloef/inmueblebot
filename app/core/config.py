@@ -100,17 +100,17 @@ class Settings(BaseSettings):
         description="Set to True to use localhost instead of Docker redis service"
     )
 
-    # === MiniMax API (Primary LLM) ===
-    MINIMAX_API_KEY: Optional[str] = Field(default=None, description="API key de MiniMax via OpenRouter")
-    MINIMAX_MODEL: str = Field(default="minimax/minimax-m2.5:free", description="Modelo de MiniMax (primary)")
+    # === OpenAI API (único proveedor LLM) ===
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="API key de OpenAI")
+    OPENAI_MODEL: str = Field(default="gpt-4o-mini", description="Modelo de OpenAI a usar")
 
-    # === Google Gemini API (Backup LLM) ===
-    GEMINI_API_KEY: Optional[str] = Field(default=None, description="API key de Google Gemini")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Modelo de Gemini a usar")
-
-    # === OpenRouter API (Fallback LLM - GPT-Oss) ===
-    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="API key de OpenRouter")
-    OPENROUTER_MODEL: str = Field(default="openai/gpt-oss-120b:free", description="Modelo de OpenRouter (fallback)")
+    # === Legacy LLM keys (mantenidas para no romper deploys existentes) ===
+    MINIMAX_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
+    MINIMAX_MODEL: str = Field(default="minimax/minimax-m2.5:free", description="Deprecated")
+    GEMINI_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
+    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Deprecated")
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
+    OPENROUTER_MODEL: str = Field(default="openai/gpt-oss-120b:free", description="Deprecated")
 
     # === LLM Configuration ===
     LLM_TIMEOUT_SECONDS: int = Field(default=25, description="Timeout para llamadas al LLM")
@@ -124,17 +124,26 @@ class Settings(BaseSettings):
     TWILIO_WHATSAPP_NUMBER: Optional[str] = Field(default=None, description="Twilio WhatsApp number (e.g. +14155238886)")
     TWILIO_WEBHOOK_VERIFY_TOKEN: Optional[str] = Field(default=None, description="Optional webhook verification")
     
-    # === WhatsApp (Meta) - Legacy ===
+    # === WhatsApp (Meta) ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = Field(default=None, description="Phone Number ID de Meta")
     WHATSAPP_ACCESS_TOKEN: Optional[str] = Field(default=None, description="Access Token de Meta")
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(
         default="change-me",
         description="Token para verificar webhook de Meta"
     )
+    AGENT_WHATSAPP_NUMBER: Optional[str] = Field(default=None, description="Número WhatsApp del agente humano para handoffs")
 
     # === Configuración de la aplicación ===
     API_PREFIX: str = Field(default="/api", description="Prefijo para rutas API")
     CORS_ORIGINS: list[str] = Field(default=["*"], description="Orígenes permitidos para CORS")
+
+    # === Public API URL ===
+    API_BASE_URL: str = Field(
+        default_factory=lambda: (
+            os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000"
+        ),
+        description="Public base URL for this API (e.g. https://inmueblebot-api.onrender.com)"
+    )
 
     # === Rate Limiting ===
     RATE_LIMIT_MESSAGES: int = Field(default=20, description="Máximo de mensajes por ventana")
@@ -155,12 +164,6 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_ID: str = Field(
         default="primary",
         description="Google Calendar ID to use for appointments"
-    )
-
-    # === API Base URL for external links ===
-    API_BASE_URL: str = Field(
-        default="https://inmueblebot-api.onrender.com",
-        description="Public base URL of the API (for image URLs, webhook links, etc.)"
     )
 
     @property
@@ -211,63 +214,46 @@ def get_settings() -> Settings:
     Incluye logging de las variables críticas al iniciar.
     """
     settings = Settings()
-    
-    # Detect source of key variables
+
     def get_var_source(key: str, default: str = "NOT SET") -> str:
-        """Check if variable came from system env or .env file"""
         if key in os.environ:
             return "SYSTEM_ENV"
-        # Check if it's set to a non-default value
         field_value = getattr(settings, key.lower(), None)
         if field_value and field_value != default:
             return ".env_FILE"
         return "DEFAULT"
-    
-    # Enhanced startup logging with source tracking
+
     logger.info("=" * 50)
-    logger.info("🚀 InmuebleBot Configuration")
+    logger.info("InmuebleBot Configuration")
     logger.info("=" * 50)
-    
-    # Platform detection
+
     if _is_render():
-        logger.info("🌐 Platform: RENDER.COM")
+        logger.info("Platform: RENDER.COM")
     else:
-        logger.info("💻 Platform: LOCAL DEVELOPMENT")
-    
-    # Env file status
+        logger.info("Platform: LOCAL DEVELOPMENT")
+
     env_files = _get_env_files()
     if env_files:
-        logger.info(f"📄 .env file: {env_files[0]}")
+        logger.info(f".env file: {env_files[0]}")
     else:
-        logger.info("📄 .env file: NONE (using system env only)")
-    
+        logger.info(".env file: NONE (using system env only)")
+
     logger.info("-" * 50)
     logger.info(f"ENVIRONMENT: {settings.ENVIRONMENT} (source: {get_var_source('ENVIRONMENT', 'development')})")
     logger.info(f"DEBUG: {settings.DEBUG}")
-    logger.info(f"🗄️  DATABASE_URL: {'***SET***' if settings.DATABASE_URL and 'postgres' in settings.DATABASE_URL else 'NOT SET'}")
-    logger.info(f"   Resolved: {settings.resolved_database_url[:40]}...")
-    logger.info(f"📡 REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
-    
-    # LLM Providers status
-    _gemini = "✅ SET" if settings.GEMINI_API_KEY else "❌ NOT SET"
-    _minimax = "✅ SET" if settings.MINIMAX_API_KEY else "❌ NOT SET"
-    _openrouter = "✅ SET" if settings.OPENROUTER_API_KEY else "❌ NOT SET"
-    logger.info(f"🤖 LLM Providers:")
-    logger.info(f"   - Gemini: {settings.GEMINI_MODEL} [{_gemini}]")
-    logger.info(f"   - MiniMax: [{_minimax}]")
-    logger.info(f"   - OpenRouter: [{_openrouter}]")
-    
-    # WhatsApp status
-    _wa_meta = "✅ SET" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "❌ NOT SET"
-    _wa_twilio = "✅ SET" if settings.TWILIO_ACCOUNT_SID else "❌ NOT SET"
-    logger.info(f"💬 WhatsApp:")
-    logger.info(f"   - Meta Cloud API: [{_wa_meta}]")
-    logger.info(f"   - Twilio: [{_wa_twilio}]")
-    
-    # Admin
-    _admin = "✅ SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "⚠️ DEFAULT"
-    logger.info(f"🔑 ADMIN_API_KEY: [{_admin}]")
-    
+    logger.info(f"DATABASE_URL: {'***SET***' if settings.DATABASE_URL and 'postgres' in settings.DATABASE_URL else 'NOT SET'}")
+    logger.info(f"Resolved DB: {settings.resolved_database_url[:40]}...")
+    logger.info(f"REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
+
+    _openai = "SET" if settings.OPENAI_API_KEY else "NOT SET"
+    logger.info(f"LLM: OpenAI {settings.OPENAI_MODEL} [{_openai}]")
+
+    _wa_meta = "SET" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "NOT SET"
+    _wa_twilio = "SET" if settings.TWILIO_ACCOUNT_SID else "NOT SET"
+    logger.info(f"WhatsApp Meta: [{_wa_meta}]  Twilio: [{_wa_twilio}]")
+
+    _admin = "SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "DEFAULT"
+    logger.info(f"ADMIN_API_KEY: [{_admin}]")
     logger.info("=" * 50)
-    
+
     return settings
