@@ -412,14 +412,24 @@ async def process_messages(messages: List[Dict[str, Any]]):
                     message=response_text
                 )
 
-            # Send images if any
+            # Send images if any, with rate-limiting delay and error isolation
             images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
-            for url in images[:3]:
-                await whatsapp_client.send_image(
-                    to=phone_to,
-                    image_url=url,
-                    caption=rich_content.get("caption", "")
-                )
+            for i, url in enumerate(images[:3]):
+                try:
+                    result = await whatsapp_client.send_image(
+                        to=phone_to,
+                        image_url=url,
+                        caption=rich_content.get("caption", "")
+                    )
+                    if result is None or (isinstance(result, dict) and result.get("error")):
+                        logger.warning(f"Image send failed (index {i}, url truncated: {url[:60]}...): result={result}")
+                    else:
+                        logger.info(f"Image sent successfully (index {i})")
+                except Exception as e:
+                    logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
+                # Rate-limiting delay between image sends
+                if i < len(images[:3]) - 1:
+                    await asyncio.sleep(0.5)
 
         except Exception as e:
             logger.error(f"Error processing: {e}")

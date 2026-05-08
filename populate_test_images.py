@@ -7,15 +7,17 @@ from app.core.config import get_settings
 
 
 async def main():
+    settings = get_settings()
+    api_base = settings.API_BASE_URL.rstrip("/")
     # 4 test image URLs hosted under /static/imagenes served by FastAPI
     image_urls = [
-        "http://localhost:8051/static/imagenes/img1.jpg",
-        "http://localhost:8051/static/imagenes/img2.jpg",
-        "http://localhost:8051/static/imagenes/img3.jpg",
-        "http://localhost:8051/static/imagenes/img4.jpg",
+        f"{api_base}/static/imagenes/img1.jpg",
+        f"{api_base}/static/imagenes/img2.jpg",
+        f"{api_base}/static/imagenes/img3.jpg",
+        f"{api_base}/static/imagenes/img4.jpg",
     ]
 
-    settings = get_settings()
+
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

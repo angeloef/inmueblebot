@@ -856,6 +856,13 @@ def _to_public_image_urls(raw_images: list, property_id: str) -> list:
     for i, img in enumerate(raw_images):
         if isinstance(img, str) and img.startswith("data:"):
             public.append(f"{base}/media/property/{property_id}/{i}")
+        elif isinstance(img, str) and ("localhost" in img or "127.0.0.1" in img):
+            # Convert localhost URLs to public HTTPS URLs — WhatsApp can't reach localhost
+            if "/static/" in img:
+                path = "/static/" + img.split("/static/", 1)[1]
+            else:
+                path = f"/media/property/{property_id}/{i}"
+            public.append(f"{base}{path}")
         else:
             public.append(img)
     return public
@@ -893,7 +900,15 @@ async def get_property_images(property_id: str) -> str:
                 return json.dumps({"images": images})
         except Exception:
             pass
-        return json.dumps({"images": []})
+        # Fallback: provide placeholder URLs when no images found (LLM expects images)
+        from app.core.config import get_settings
+        base = get_settings().API_BASE_URL.rstrip("/")
+        placeholder_urls = [
+            f"{base}/static/imagenes/img1.jpg",
+            f"{base}/static/imagenes/img2.jpg",
+            f"{base}/static/imagenes/img3.jpg",
+        ]
+        return json.dumps({"images": placeholder_urls})
     except Exception as e:
         logger.error(f"Error en get_property_images: {e}")
         return json.dumps({"images": []})

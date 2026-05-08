@@ -69,7 +69,13 @@ class WhatsAppClient:
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
-            return response.json()
+            result = response.json()
+            if response.status_code >= 400:
+                logger.error(f"[WhatsApp] ❌ send_image FAILED ({response.status_code}): {result}")
+            else:
+                msg_id = result.get("messages", [{}])[0].get("id", "?")
+                logger.info(f"[WhatsApp] ✅ send_image OK → {to} | message_id={msg_id}")
+            return result
 
     async def send_interactive_buttons(self, to: str, body_text: str, buttons: List[dict]) -> dict:
         """Send interactive buttons message."""
