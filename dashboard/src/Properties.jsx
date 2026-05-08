@@ -119,6 +119,30 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   );
 }
 
+/** Compress an image File to JPEG, max 1200px on the longest side, quality 0.78.
+ *  Returns a Promise<string> with the resulting data URL (~100-200 KB for typical photos). */
+function compressImage(file, maxPx = 1200, quality = 0.78) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function PhotoDropzone({ photos, onAdd, onRemove, onSetCover }) {
   const [drag, setDrag] = useState(false);
   const inputRef = React.useRef(null);
@@ -126,16 +150,14 @@ function PhotoDropzone({ photos, onAdd, onRemove, onSetCover }) {
   const acceptFiles = (fileList) => {
     const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
     if (!files.length) return;
-    Promise.all(files.map(f => new Promise(res => {
-      const r = new FileReader();
-      r.onload = () => res({
-        id: 'ph_' + Math.random().toString(36).slice(2,8),
-        name: f.name,
-        size: f.size,
-        url: r.result,
-      });
-      r.readAsDataURL(f);
-    }))).then(items => onAdd(items));
+    Promise.all(files.map(f =>
+      compressImage(f).then(url => ({
+        id: 'ph_' + Math.random().toString(36).slice(2, 8),
+        name: f.name.replace(/\.[^.]+$/, '.jpg'),
+        size: Math.round(url.length * 0.75),   // approx bytes after compression
+        url,
+      }))
+    )).then(items => onAdd(items));
   };
 
   const onDrop = (e) => {
