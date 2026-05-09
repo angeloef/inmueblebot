@@ -123,6 +123,7 @@ class RealEstateAgent:
             rich_content = {}
             cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
+            reschedule_failures = 0
             for iteration in range(self.MAX_TOOL_CALLS):
                 break_out = False
                 # Phase 4: Add detailed logging for tools + intent detection
@@ -203,6 +204,23 @@ class RealEstateAgent:
                             logger.info(f"[Agent] Short-circuit: {tool_name} returned no results")
                             break_out = True
                             break
+
+                    # Reschedule failure counter: max 2 consecutive failures
+                    if tool_name == "reschedule_appointment":
+                        if not isinstance(tool_result, str) or "<!--CONFIRMED:" not in str(tool_result):
+                            reschedule_failures += 1
+                            logger.warning(
+                                f"[Agent] reschedule_appointment failed ({reschedule_failures}/2): "
+                                f"no CONFIRMED in result"
+                            )
+                            if reschedule_failures >= 2:
+                                response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
+                                logger.warning("[Agent] Reschedule failure limit reached — breaking out")
+                                break_out = True
+                                break
+                        else:
+                            # Success — reset counter
+                            reschedule_failures = 0
 
                     # Detect tool loops — same tool + same args called twice = break
                     if len(tools_used) >= 2:

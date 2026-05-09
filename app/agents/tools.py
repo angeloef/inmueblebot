@@ -743,6 +743,7 @@ async def reschedule_appointment_tool(
     from app.db.models import Appointment as AppointmentModel
     from sqlalchemy import select
     import pytz
+    from app.utils.date_parser import parse_spanish_datetime, get_argentina_now
 
     try:
         apt_uuid = None
@@ -800,7 +801,36 @@ async def reschedule_appointment_tool(
         if not new_date_str:
             return "Necesito saber la nueva fecha."
         
-        date_obj = datetime.strptime(new_date_str, "%Y-%m-%d").date()
+        # Parse date with multiple format fallbacks:
+        # 1. Try YYYY-MM-DD (current behavior)
+        # 2. Try DD/MM/YYYY
+        # 3. Try natural language via parse_spanish_datetime (mañana, hoy, próximo martes, etc.)
+        date_obj = None
+        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"]:
+            try:
+                date_obj = datetime.strptime(new_date_str.strip(), fmt).date()
+                logger.info(f"[reschedule] Parsed date '{new_date_str}' with format {fmt} -> {date_obj}")
+                break
+            except ValueError:
+                continue
+
+        if date_obj is None:
+            # Try natural language parsing (handles "mañana", "hoy", "próximo martes", etc.)
+            try:
+                parsed_dt, error_msg = parse_spanish_datetime(new_date_str)
+                if parsed_dt:
+                    date_obj = parsed_dt.date()
+                    logger.info(f"[reschedule] Natural language parsed '{new_date_str}' -> {date_obj}")
+                else:
+                    return (
+                        f"No pude entender la fecha '{new_date_str}'. "
+                        f"Por favor usá formato como '12/05/2026' o 'próximo martes'."
+                    )
+            except Exception:
+                return (
+                    f"No pude entender la fecha '{new_date_str}'. "
+                    f"Por favor usá formato como '12/05/2026' o 'próximo martes'."
+                )
         
         # If no new_time_str, use existing appointment's time
         if not new_time_str and current_apt:
