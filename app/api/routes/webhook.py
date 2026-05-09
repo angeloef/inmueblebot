@@ -385,6 +385,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
         logger.info(f"Processing from {phone} → sending to {phone_to}: {text[:30]}...")
         
         try:
+            # Record start time for response-time logging
+            start_time = time.time()
+
             # Rate limit: skip if same user sends too fast
             if not _check_user_rate_limit(phone):
                 logger.warning(f"Rate-limited {phone}, dropping message")
@@ -401,6 +404,10 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 phone=phone,
                 user_message=text
             )
+
+            elapsed = time.time() - start_time
+            tools_used = result.get("tools_used", []) if result else []
+            logger.info(f"[Timing] phone={phone[-4:]} | total={elapsed:.2f}s | tools={tools_used}")
 
             if not result:
                 logger.warning(f"Agent returned None for {phone}, skipping")

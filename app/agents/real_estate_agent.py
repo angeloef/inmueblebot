@@ -3,12 +3,13 @@ Agente principal de bienes raíces.
 Orquesta la interacción entre LLM, herramientas y memoria.
 """
 import json
+import asyncio
 from typing import Dict, Any, Optional, List
 from loguru import logger
 
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
-from app.agents.prompts import get_system_prompt, format_messages_for_llm, TOOL_DEFINITIONS, FEW_SHOT_EXAMPLES
+from app.agents.prompts import get_system_prompt, TOOL_DEFINITIONS
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
@@ -75,7 +76,7 @@ class RealEstateAgent:
                 merged_context = {"current_state": "idle", "conversation_stage": "new"}
             
             try:
-                history = await memory_manager.get_recent_messages(phone, limit=10)
+                history = await memory_manager.get_recent_messages(phone, limit=5)
             except Exception as e:
                 logger.warning(f"Error get_recent_messages: {e}")
                 history = []
@@ -184,6 +185,24 @@ class RealEstateAgent:
                         arguments=tool_args,
                         phone=phone
                     )
+
+                    # SHORT-CIRCUIT: if tool result IS the final answer, skip remaining LLM iterations
+                    if isinstance(tool_result, str):
+                        if tool_name in ("schedule_visit", "reschedule_appointment") and "<!--CONFIRMED:" in tool_result:
+                            response_text = tool_result
+                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
+                            break_out = True
+                            break
+                        if tool_name == "cancel_appointment" and "Cita Cancelada" in tool_result:
+                            response_text = tool_result
+                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
+                            break_out = True
+                            break
+                        if tool_name in ("search_properties", "recommend_properties") and "No encontré" in tool_result:
+                            response_text = tool_result
+                            logger.info(f"[Agent] Short-circuit: {tool_name} returned no results")
+                            break_out = True
+                            break
 
                     # Detect tool loops — same tool + same args called twice = break
                     if len(tools_used) >= 2:
@@ -303,21 +322,17 @@ class RealEstateAgent:
                 current_state=merged_context.get("current_state", "idle")
             )
             
-            try:
-                await state_machine.set_state(phone, next_state, allow_invalid=True)
-            except Exception as e:
-                logger.warning(f"Error estableciendo estado: {e}")
-            
-            try:
-                await self._update_lead_score(phone, tools_used, user_message)
-            except Exception as e:
-                logger.warning(f"Error actualizando lead score: {e}")
-            
-            try:
-                if user_prefs:
-                    await self._extract_and_save_preferences(phone, user_message, user_prefs)
-            except Exception as e:
-                logger.warning(f"Error extrayendo preferencias: {e}")
+            # Run post-processing tasks in PARALLEL for ~6s speedup
+            post_tasks = []
+            post_tasks.append(state_machine.set_state(phone, next_state, allow_invalid=True))
+            post_tasks.append(self._update_lead_score(phone, tools_used, user_message))
+            if user_prefs:
+                post_tasks.append(self._extract_and_save_preferences(phone, user_message, user_prefs))
+            results = await asyncio.gather(*post_tasks, return_exceptions=True)
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    task_names = ["set_state", "lead_score", "extract_preferences"]
+                    logger.warning(f"Error en post-processing [{task_names[i]}]: {r}")
             
             if cumulative_tokens["calls"] > 0:
                 logger.info(
@@ -404,10 +419,7 @@ class RealEstateAgent:
             for i, p in enumerate(last_shown_properties[:6]):
                 db_id = p.get('id', p.get('property_id', 'N/A'))
                 title = p.get('title', 'N/A')
-                price = p.get('price', 'N/A')
-                bedrooms = p.get('bedrooms', 'N/A')
-                location = p.get('location', 'N/A')
-                prop_list_lines.append(f"<opción {i+1}> → ID={db_id} | {title} | ${price} | {bedrooms} hab | {location}")
+                prop_list_lines.append(f"<opción {i+1}> → ID={db_id} | {title}")
             
             prop_list = "\n".join(prop_list_lines)
             
@@ -426,8 +438,7 @@ class RealEstateAgent:
                 "content": context_reminder
             })
 
-        # Inject few-shot examples as separate messages for in-context learning
-        messages.extend(FEW_SHOT_EXAMPLES)
+        # (Few-shot examples condensed inline in SYSTEM_PROMPT REGLAS section)
 
         # Append existing appointments context (DB-sourced) — prevents time hallucination during rescheduling
         existing = user_context.get("existing_appointments")

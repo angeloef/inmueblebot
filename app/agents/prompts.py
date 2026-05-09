@@ -36,6 +36,17 @@ Las imágenes se envían automáticamente por separado — no las incluyas en tu
 hora, PREGUNTA al usuario. No asumas ni adivines. Pero tampoco preguntes info que el
 usuario ya te dio — revisá el contexto de la conversación primero.
 
+## PATRONES FEW-SHOT (condensados):
+
+**Búsqueda:** "Busco una casa en Posadas hasta 150000" → search_properties(location="Posadas", budget_max=150000, property_type="casa", operation_type="venta")
+**Respuesta búsqueda:** mostrar resultados con precio, hab, ubicación, ID. Preguntar "¿Te gustaría más detalles de alguna?"
+**Detalles por opción:** "Quiero ver los detalles de la primera" → buscar ID en <last_results> → get_property_details(property_id=ID_DEL_CONTEXTO)
+**Multi-turn search:** "busco una casa de 4 habitaciones en Oberá" → search_properties(location="Oberá", bedrooms=4, property_type="casa")
+**Agendar:** "Quiero agendar para mañana a las 3pm" → schedule_visit(property_id=ID_ACTIVO, date_str="mañana", time_str="15:00")
+**Ver citas:** "puedo ver mis citas?" → get_my_appointments()
+**Reprogramar:** "cambiar la cita" → reschedule_appointment(appointment_id=UUID, new_date_str=...)
+**Handoff:** "quiero hablar con un agente humano" → request_human_assistance()
+
 ## Tu rol:
 Ayudar a encontrar propiedades (casa, departamento, terreno, etc.) para comprar o alquilar.
 Si el usuario da criterios parciales, BUSCA inmediatamente — no preguntes más de lo necesario.
@@ -101,166 +112,11 @@ Si no hay propiedades, ofrecé alternativas (otra zona, otro presupuesto). No di
 ## HUMAN HANDOFF:
 SOLO si el usuario pide explícitamente hablar con una persona real, usá request_human_assistance.
 
-Ejemplos de conversaciones correctas se inyectan como mensajes separados al final de cada turno.
+Ejemplos de conversaciones correctas se describen en la sección PATRONES FEW-SHOT arriba.
 """
 
 
-FEW_SHOT_EXAMPLES = [
-    # --- Example 1: Search → results (Posadas) ---
-    {
-        "role": "user",
-        "content": "Busco una casa en Posadas hasta 150000 dólares"
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "type": "function",
-                "function": {
-                    "name": "search_properties",
-                    "arguments": '{"location": "Posadas", "budget_max": 150000, "property_type": "casa", "operation_type": "venta"}'
-                }
-            }
-        ]
-    },
-    {
-        "role": "tool",
-        "name": "search_properties",
-        "tool_call_id": "call_1",
-        "content": "🏠 *Encontré 3 propiedades:*\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: 1\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: 2"
-    },
-    {
-        "role": "assistant",
-        "content": "¡Encontré 2 casas en Posadas dentro de tu presupuesto!\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: 1\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: 2\n\n¿Te gustaría más detalles de alguna? ¿O preferís que agendemos una visita?"
-    },
-    # --- Example 2: Request details by option number ---
-    {
-        "role": "user",
-        "content": "Quiero ver los detalles de la primera"
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_2",
-                "type": "function",
-                "function": {
-                    "name": "get_property_details",
-                    "arguments": '{"property_id": "1"}'
-                }
-            }
-        ]
-    },
-    {
-        "role": "tool",
-        "name": "get_property_details",
-        "tool_call_id": "call_2",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n- Tipo: Casa\n- Operación: Venta\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID de propiedad:* 1"
-    },
-    {
-        "role": "assistant",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID:* 1\n\n¿Te gustaría agendar una visita a esta propiedad?"
-    },
-    # --- Example 3: Multi-turn search in Oberá with 4 bedrooms ---
-    {
-        "role": "user",
-        "content": "busco una casa de 4 habitaciones en Oberá"
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_3bed",
-                "type": "function",
-                "function": {
-                    "name": "search_properties",
-                    "arguments": '{"location": "Oberá", "bedrooms": 4, "property_type": "casa"}'
-                }
-            }
-        ]
-    },
-    {
-        "role": "tool",
-        "name": "search_properties",
-        "tool_call_id": "call_3bed",
-        "content": "🏠 *Encontré 5 propiedades:*\n\n1. 🏠 *Casa amplia en Oberá*\n   💰 $180,000 | 🛏 4 hab | 📐 250m²\n   📍 Oberá Centro\n   🔍 ID: 101\n\n2. 🏠 *Casa moderna en Oberá*\n   💰 $220,000 | 🛏 5 hab | 📐 300m²\n   📍 Oberá Norte\n   🔍 ID: 102\n\n3. 🏠 *Casa céntrica en Oberá*\n   💰 $150,000 | 🛏 4 hab | 📐 180m²\n   📍 Centro, Oberá\n   🔍 ID: 103"
-    },
-    {
-        "role": "assistant",
-        "content": "Encontré 5 casas con 4+ habitaciones en Oberá. Aquí las más interesantes:\n\n1. 🏠 *Casa amplia en Oberá Centro* | 💰 $180,000 | 🛏 4 hab | 📐 250m²\n2. 🏠 *Casa moderna en Oberá Norte* | 💰 $220,000 | 🛏 5 hab | 📐 300m²\n3. 🏠 *Casa céntrica en Oberá* | 💰 $150,000 | 🛏 4 hab | 📐 180m²\n\n¿Cuál te llama más la atención? ¿Querés más detalles de alguna?"
-    },
-    # --- Example 4: Schedule a visit ---
-    {
-        "role": "user",
-        "content": "Quiero agendar una visita a la casa abc123 para mañana a las 3pm"
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_4",
-                "type": "function",
-                "function": {
-                    "name": "schedule_visit",
-                    "arguments": '{"property_id": "abc123", "date_str": "mañana", "time_str": "15:00"}'
-                }
-            }
-        ]
-    },
-    {
-        "role": "tool",
-        "name": "schedule_visit",
-        "tool_call_id": "call_4",
-        "content": "📅 *¡Cita Agendada!*\n\n✅ *Tipo:* visita\n📆 *Fecha:* 19/04/2026\n⏰ *Hora:* 15:00\n🏠 *Propiedad:* Casa en Posadas\n\n📝 *Nota:* Un agente te contactará para confirmar los detalles."
-    },
-    {
-        "role": "assistant",
-        "content": "¡Perfecto! Tu cita ha sido agendada para mañana a las 15:00.\n\n📋 *Resumen:*\n- 📅 19 de abril de 2026\n- ⏰ 15:00\n- 🏠 Casa en Posadas\n\nUn agente te contactará para confirmar los detalles. ¿Necesitas algo más?"
-    },
-    # --- Example 5: Check appointments ---
-    {
-        "role": "user",
-        "content": "Tengo una cita agendada, puedo ver mis citas?"
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_5",
-                "type": "function",
-                "function": {
-                    "name": "get_my_appointments",
-                    "arguments": "{}"
-                }
-            }
-        ]
-    },
-    {
-        "role": "tool",
-        "name": "get_my_appointments",
-        "tool_call_id": "call_5",
-        "content": "📅 *Tus próximas citas:*\n\n1. 📆 19/04 a las 15:00\n   🏠 Casa en Posadas (visita)\n   🔍 ID: abc-123\n\n2. 📆 22/04 a las 10:00\n   🏠 Departamento en Asunción (visita)\n   🔍 ID: def-456"
-    },
-    {
-        "role": "assistant",
-        "content": "Tienes 2 citas programadas:\n\n1. 📆 19/04 a las 15:00 - Casa en Posadas\n2. 📆 22/04 a las 10:00 - Departamento en Asunción\n\n¿Te interesa cambiar o cancelar alguna?"
-    },
-    # --- Example 6: Human handoff ---
-    {
-        "role": "user",
-        "content": "Quiero hablar con un agente humano"
-    },
-    {
-        "role": "assistant",
-        "content": "¡Por supuesto! Un agente humano te contactará pronto. Mientras tanto, ¿hay algo más en lo que pueda ayudarte? 😊"
-    }
-]
+FEW_SHOT_EXAMPLES = []  # Condensed inline in SYSTEM_PROMPT → PATRONES FEW-SHOT section
 
 
 TOOL_DEFINITIONS = [
@@ -613,9 +469,6 @@ def format_messages_for_llm(
         "role": "system",
         "content": get_system_prompt(user_context)
     })
-
-    # Inject few-shot examples as separate messages for in-context learning
-    messages.extend(FEW_SHOT_EXAMPLES)
 
     if history:
         for msg in history[-10:]:

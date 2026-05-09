@@ -88,6 +88,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Seed failed: {}", e)
 
+    # Pre-warm Calendar OAuth at startup (avoids 2s cold start on first appointment)
+    try:
+        from app.services.calendar_service import calendar_service
+        _ = calendar_service.service  # triggers OAuth init if credentials exist
+        logger.info("[Calendar] Service pre-warmed at startup")
+    except Exception:
+        pass  # Calendar not configured, that's fine
+
     yield
     # Graceful shutdown: close Redis connections before event loop closes
     logger.info("Shutting down")
