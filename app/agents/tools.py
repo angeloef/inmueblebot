@@ -9,7 +9,7 @@ from loguru import logger
 
 from app.services.property_service import property_service
 from app.core.memory import memory_manager
-from app.utils.sanitizer import sanitize_criteria, sanitize_property_id, sanitize_text
+from app.utils.sanitizer import sanitize_criteria, sanitize_property_id, sanitize_text, sanitize_date_input, sanitize_time_input
 
 
 def format_property(prop) -> str:
@@ -304,19 +304,11 @@ async def get_property_details(property_id: str) -> str:
                 # Use the service with direct ID lookup
                 from app.db.repository import BaseRepository
                 from app.db.models import Property
-                from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-                from sqlalchemy.orm import sessionmaker
-                from app.core.config import get_settings
-                
-                settings = get_settings()
-                engine = create_async_engine(settings.DATABASE_URL, echo=False)
-                async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+                from app.db.session import async_session_factory
                 
                 async with async_session_factory() as session:
                     repo = BaseRepository(Property, session)
                     prop = await repo.get(int_id)  # Direct integer ID lookup
-                    
-                await engine.dispose()
                 
                 if prop:
                     logger.info(f"[get_property_details] Encontrada por ID: {prop.id} - {prop.title}")
@@ -608,9 +600,19 @@ async def schedule_visit(
         
         # Use robust Argentine timezone parser
         from app.utils.date_parser import parse_spanish_datetime, format_datetime_argentina, validate_future
+        from app.services.appointment_service import appointment_service, format_appointment_confirmation
+        from app.db.repository import UserRepository
+        from app.db.models import User
+        from app.db.session import async_session_factory
         logger.info(f"[schedule_visit] Input: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
         
         parsed_dt, parse_error = parse_spanish_datetime(combined_input)
+        
+        # Log what the LLM sent vs what was parsed for debugging
+        logger.info(f"[schedule_visit] LLM sent: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
+        logger.info(f"[schedule_visit] Parser returned: parsed_dt={parsed_dt}, parse_error={parse_error}")
+        if parsed_dt:
+            logger.info(f"[schedule_visit] PARSED: {format_datetime_argentina(parsed_dt)}")
         
         if parse_error:
             # If parsing failed, ask user for clarification

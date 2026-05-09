@@ -104,14 +104,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="API key de OpenAI")
     OPENAI_MODEL: str = Field(default="gpt-4o-mini", description="Modelo de OpenAI a usar")
 
-    # === Legacy LLM keys (mantenidas para no romper deploys existentes) ===
-    MINIMAX_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    MINIMAX_MODEL: str = Field(default="minimax/minimax-m2.5:free", description="Deprecated")
-    GEMINI_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Deprecated")
-    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="Deprecated — no se usa")
-    OPENROUTER_MODEL: str = Field(default="openai/gpt-oss-120b:free", description="Deprecated")
-
     # === LLM Configuration ===
     LLM_TIMEOUT_SECONDS: int = Field(default=25, description="Timeout para llamadas al LLM")
     LLM_MAX_RETRIES: int = Field(default=2, description="Máximo de reintentos por proveedor")

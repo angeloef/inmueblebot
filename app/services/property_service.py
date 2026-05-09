@@ -51,9 +51,7 @@ class PropertyService:
         logger.info(f"[PropertyService] Criterios recibidos: {criteria}")
         logger.info("=" * 60)
         
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-        from sqlalchemy.orm import sessionmaker
-        from app.core.config import get_settings
+        from app.db.session import async_session_factory
         
         # Log individual criteria
         location = criteria.get("location")
@@ -78,15 +76,10 @@ class PropertyService:
                 return await self._search_with_repo(repo, criteria)
             
             # Crear nueva sesión
-            settings = get_settings()
-            engine = create_async_engine(settings.DATABASE_URL, echo=False)
-            async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-            
             async with async_session_factory() as session:
                 repo = PropertyRepository(Property, session)
                 results = await self._search_with_repo(repo, criteria)
             
-            await engine.dispose()
             return results
             
         except Exception as e:
@@ -242,10 +235,8 @@ class PropertyService:
         Returns:
             Objeto Property o None si no existe
         """
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-        from sqlalchemy.orm import sessionmaker
+        from app.db.session import async_session_factory
         from sqlalchemy import select
-        from app.core.config import get_settings
         from uuid import UUID
         
         try:
@@ -281,10 +272,6 @@ class PropertyService:
                     logger.info(f"Property found: {property_id}")
                 return prop
             
-            settings = get_settings()
-            engine = create_async_engine(settings.DATABASE_URL, echo=False)
-            async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-            
             async with async_session_factory() as session:
                 from app.db.repository import BaseRepository
                 repo = BaseRepository(Property, session)
@@ -296,8 +283,6 @@ class PropertyService:
                     logger.info(f"Property found: {property_id} - {prop.title}")
                 else:
                     logger.warning(f"Property not found: {property_id}")
-
-            await engine.dispose()
             return prop
 
         except Exception as e:
@@ -351,10 +336,8 @@ class PropertyService:
         """
         Obtiene propiedades destacadas (recientes o marcadas).
         """
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-        from sqlalchemy.orm import sessionmaker
+        from app.db.session import async_session_factory
         from sqlalchemy import select, func
-        from app.core.config import get_settings
         
         if db_session:
             from app.db.models import Property
@@ -366,10 +349,6 @@ class PropertyService:
             )
             return list(result.scalars().all())
         
-        settings = get_settings()
-        engine = create_async_engine(settings.DATABASE_URL, echo=False)
-        async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-        
         async with async_session_factory() as session:
             from app.db.models import Property
             result = await session.execute(
@@ -380,7 +359,6 @@ class PropertyService:
             )
             props = list(result.scalars().all())
         
-        await engine.dispose()
         return props
 
     async def get_property_images(self, property_identifier: str) -> List[str]:
@@ -401,20 +379,13 @@ class PropertyService:
 
             if int_id is not None:
                 from app.db.repository import BaseRepository
-                repo = BaseRepository(Property, None)  # session will be provided below
+                from app.db.session import async_session_factory
                 from app.db.models import Property as PropertyModel
-                from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-                from sqlalchemy.orm import sessionmaker
-                from app.core.config import get_settings
-                settings = get_settings()
-                engine = create_async_engine(settings.DATABASE_URL, echo=False)
-                async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
                 async with async_session_factory() as session:
                     repo = BaseRepository(PropertyModel, session)
                     prop = await repo.get(int_id)
                     if prop and getattr(prop, "images", None):
                         return list(prop.images) or []
-                await engine.dispose()
                 return []
             # Fallback: attempt to parse as UUID and fetch via repository if supported
             try:

@@ -56,8 +56,8 @@ class GeminiClient:
     
     def __init__(self):
         settings = get_settings()
-        self._api_key = settings.GEMINI_API_KEY
-        self._model = settings.GEMINI_MODEL
+        self._api_key = getattr(settings, 'GEMINI_API_KEY', None)
+        self._model = getattr(settings, 'GEMINI_MODEL', '')
         self._timeout = settings.LLM_TIMEOUT_SECONDS
         self._client: Optional[genai.Client] = None
         

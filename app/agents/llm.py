@@ -57,8 +57,8 @@ class AsyncMiniMaxClient:
     
     def __init__(self):
         settings = get_settings()
-        self._api_key = settings.MINIMAX_API_KEY or settings.OPENROUTER_API_KEY
-        self._model = settings.MINIMAX_MODEL
+        self._api_key = getattr(settings, 'MINIMAX_API_KEY', None) or getattr(settings, 'OPENROUTER_API_KEY', None)
+        self._model = getattr(settings, 'MINIMAX_MODEL', '')
         self._base_url = "https://openrouter.ai/api/v1"
         self._default_headers = {
             "Authorization": f"Bearer {self._api_key}",

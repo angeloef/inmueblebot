@@ -23,6 +23,7 @@ import traceback
 from app.agents.real_estate_agent import real_estate_agent
 from app.integrations.whatsapp import whatsapp_client
 from app.core.config import get_settings
+from app.core.rate_limiter import rate_limiter
 from app.utils.sanitizer import sanitize_text, sanitize_phone, sanitize_property_id, sanitize_bot_response
 
 logger = logging.getLogger(__name__)
@@ -387,6 +388,13 @@ async def process_messages(messages: List[Dict[str, Any]]):
             # Rate limit: skip if same user sends too fast
             if not _check_user_rate_limit(phone):
                 logger.warning(f"Rate-limited {phone}, dropping message")
+                continue
+
+            # Global rate limit: protect OpenAI API from saturation
+            if not await rate_limiter.check_global():
+                logger.warning(
+                    f"[RateLimiter] Global rate limit exceeded, dropping message from {phone}"
+                )
                 continue
 
             result = await real_estate_agent.process_turn(

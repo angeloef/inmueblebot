@@ -8,9 +8,7 @@ from loguru import logger
 from uuid import uuid4
 
 from app.db.models import Message
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from app.core.config import get_settings
+from app.db.session import async_session_factory
 
 
 class NotificationService:
@@ -27,11 +25,7 @@ class NotificationService:
     """
     
     def __init__(self):
-        settings = get_settings()
-        self._engine = create_async_engine(settings.DATABASE_URL, echo=False)
-        self._session_factory = sessionmaker(
-            self._engine, class_=AsyncSession, expire_on_commit=False
-        )
+        pass
     
     async def send_whatsapp_message(
         self,
@@ -63,7 +57,7 @@ class NotificationService:
         try:
             logger.info(f"Enviando WhatsApp a {phone}: {message[:50]}...")
             
-            async with self._session_factory() as db:
+            async with async_session_factory() as db:
                 db_message = Message(
                     id=uuid4(),
                     user_id=None,

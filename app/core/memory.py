@@ -21,7 +21,7 @@ Con soporte para:
 """
 import asyncio
 import json
-from typing import Optional
+from typing import Optional, Dict, List
 from datetime import datetime
 import redis.asyncio as redis
 from loguru import logger
@@ -54,6 +54,12 @@ class MemoryManager:
         self._redis_available = False
         self._connection_tested = False
         self._degraded_logged = False
+
+        # In-memory fallback stores — used when Redis is down so the
+        # user never loses their conversation context even during a
+        # Redis restart or transient outage.
+        self._fallback_context: Dict[str, dict] = {}
+        self._fallback_messages: Dict[str, list] = {}
     
     async def check_health(self) -> dict:
         """
@@ -144,43 +150,50 @@ class MemoryManager:
     async def get_user_context(self, phone: str) -> dict:
         """
         Obtiene el contexto actual del usuario desde Redis.
-        Si Redis no está disponible, retorna contexto default (graceful degradation).
+        Si Redis no está disponible, retorna contexto desde fallback en memoria.
         """
+        _DEFAULT = {
+            "current_state": "idle",
+            "last_search_criteria": None,
+            "selected_property_id": None,
+            "conversation_stage": "new",
+            "pending_scheduling_info": None,
+        }
+
         try:
             r = await self._get_redis_with_retry()
             key = f"user:{phone}:context"
             data = await r.get(key)
             if data:
                 context = json.loads(data)
+                # Sync fallback cache so it's always up to date
+                self._fallback_context[phone] = context
                 return context
-            
-            return {
-                "current_state": "idle",
-                "last_search_criteria": None,
-                "selected_property_id": None,
-                "conversation_stage": "new",
-                "pending_scheduling_info": None,
-            }
+            return _DEFAULT
         except Exception as e:
-            logger.debug(f"[Memory] Redis unavailable, using default context: {e}")
-            return {"current_state": "idle", "last_search_criteria": None, "conversation_stage": "new", "pending_scheduling_info": None}
+            logger.debug(f"[Memory] Redis unavailable, using fallback context: {e}")
+            return self._fallback_context.get(phone, _DEFAULT)
     
     async def save_user_context(self, phone: str, context: dict) -> bool:
         """
         Guarda el contexto del usuario en Redis.
+        Siempre mantiene una copia en el fallback en memoria.
         """
+        # Always keep a local copy for fallback
+        context["updated_at"] = datetime.utcnow().isoformat()
+        self._fallback_context[phone] = context
+
         try:
             r = await self._get_redis_with_retry()
             key = f"user:{phone}:context"
-            
-            # Agregar timestamp de última actualización
-            context["updated_at"] = datetime.utcnow().isoformat()
             await r.setex(key, self.CONTEXT_TTL, json.dumps(context, default=str))
             logger.debug(f"Contexto guardado para {phone}")
             return True
         except Exception as e:
-            logger.warning(f"Error al guardar contexto de {phone}: {e}")
-            return False
+            logger.warning(
+                f"[Memory] Redis down, context saved to fallback for {phone}: {e}"
+            )
+            return True  # Return True — the data is available in fallback
     
     async def update_context_field(self, phone: str, field: str, value: any) -> bool:
         """
@@ -244,22 +257,31 @@ class MemoryManager:
         """
         Guarda un mensaje en la cola de mensajes del usuario (Redis).
         Mantiene los últimos MAX_MESSAGES mensajes.
+        Siempre mantiene una copia en el fallback en memoria.
         """
+        message = {
+            "role": role,
+            "content": content,
+            "media_url": media_url,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        # Always keep a local copy for fallback
+        existing = self._fallback_messages.get(phone, [])
+        existing.append(message)
+        if len(existing) > self.MAX_MESSAGES:
+            existing = existing[-self.MAX_MESSAGES:]
+        self._fallback_messages[phone] = existing
+
         try:
             r = await self._get_redis_with_retry()
             key = f"user:{phone}:messages"
             
             # Obtener mensajes actuales
-            existing = await r.get(key)
-            messages = json.loads(existing) if existing else []
+            existing_json = await r.get(key)
+            messages = json.loads(existing_json) if existing_json else []
             
             # Agregar nuevo mensaje
-            message = {
-                "role": role,
-                "content": content,
-                "media_url": media_url,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
             messages.append(message)
             
             # Mantener solo los últimos MAX_MESSAGES
@@ -271,12 +293,15 @@ class MemoryManager:
             logger.debug(f"Mensaje ({role}) guardado para {phone}")
             return True
         except Exception as e:
-            logger.warning(f"Error al guardar mensaje de {phone}: {e}")
-            return False
+            logger.warning(
+                f"[Memory] Redis down, message saved to fallback for {phone}: {e}"
+            )
+            return True  # Return True — the data is available in fallback
     
     async def get_recent_messages(self, phone: str, limit: int = 20) -> list[dict]:
         """
         Obtiene los últimos N mensajes de la conversación.
+        Con fallback en memoria si Redis no está disponible.
         """
         try:
             r = await self._get_redis_with_retry()
@@ -284,11 +309,14 @@ class MemoryManager:
             data = await r.get(key)
             if data:
                 messages = json.loads(data)
+                # Sync fallback cache
+                self._fallback_messages[phone] = messages
                 return messages[-limit:] if len(messages) > limit else messages
             return []
         except Exception as e:
-            logger.warning(f"Redis no disponible para mensajes: {e}")
-            return []
+            logger.debug(f"[Memory] Redis unavailable, using fallback messages: {e}")
+            messages = self._fallback_messages.get(phone, [])
+            return messages[-limit:] if messages else []
     
     # =========================================================================
     # MÉTODOS DE PREFERENCIAS (POSTGRESQL - LARGO PLAZO)
@@ -640,14 +668,18 @@ class MemoryManager:
     
     async def clear_short_term_memory(self, phone: str) -> bool:
         """
-        Limpia la memoria de corto plazo (Redis).
+        Limpia la memoria de corto plazo (Redis + fallback en memoria).
         Mantiene las preferencias en PostgreSQL.
         """
+        # Always clear fallback first
+        self._fallback_context.pop(phone, None)
+        self._fallback_messages.pop(phone, None)
+
         try:
             r = await self._get_redis_with_retry()
         except Exception as e:
-            logger.debug(f"[Memory] Redis no disponible para clear, skipping: {e}")
-            return False
+            logger.debug(f"[Memory] Redis no disponible para clear, fallback cleared: {e}")
+            return True
         
         try:
             keys = [

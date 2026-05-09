@@ -8,7 +8,7 @@ from loguru import logger
 
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
-from app.agents.prompts import get_system_prompt, format_messages_for_llm, TOOL_DEFINITIONS
+from app.agents.prompts import get_system_prompt, format_messages_for_llm, TOOL_DEFINITIONS, FEW_SHOT_EXAMPLES
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
@@ -36,7 +36,7 @@ class RealEstateAgent:
     6. Retorna respuesta estructurada
     """
     
-    MAX_TOOL_CALLS = 3  # Reduced to avoid loops
+    MAX_TOOL_CALLS = 5  # Increased to allow search→details→images→schedule sequences
     
     def __init__(self):
         self.llm = llm_router
@@ -107,103 +107,36 @@ class RealEstateAgent:
             tools_used = []
             response_text = ""
             rich_content = {}
-            
+            cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
+
             for iteration in range(self.MAX_TOOL_CALLS):
                 # Phase 4: Add detailed logging for tools + intent detection
                 tools_count = len(self.tools) if self.tools else 0
-                
-                # Force tool call if intent is PROPERTY_SEARCH (use classified intent, not fragile keyword match)
-                user_msg_lower = user_message.lower()
-                is_clear_search = (intent == Intent.PROPERTY_SEARCH) or (
-                    any(kw in user_msg_lower for kw in ["busco", "busca", "buscando", "quiero", "necesito", "buscar"])
-                    and any(kw in user_msg_lower for kw in ["casa", "departamento", "propiedad", "habitacion", "dormitorio", "alquilar", "comprar", "obera", "oberá", "asuncion", "posadas", "encarnacion"])
-                )
 
-                # Check if we should force tool call
-                if is_clear_search and iteration == 0 and self.tools:
-                    logger.info(f"[Agent] 🔍 CLEAR SEARCH INTENT DETECTED - performing direct search_properties call")
-                    
-                    # Extract search params from message - simple extraction
-                    search_params = {}
-                    msg = user_message.lower()
-                    
-                    # Location extraction
-                    locations = ["oberá", "asunción", "posadas", "encarnacion", "ciudad del este", "san lorenzo", "lambaré", "villa hayes"]
-                    for loc in locations:
-                        if loc in msg:
-                            search_params["location"] = loc.title()
-                            break
-                    
-                    # Property type
-                    if "casa" in msg:
-                        search_params["property_type"] = "casa"
-                    elif "departamento" in msg or "dpto" in msg:
-                        search_params["property_type"] = "departamento"
-                    elif "terreno" in msg:
-                        search_params["operation_type"] = search_params.get("operation_type", None)
-                        search_params["property_type"] = "terreno"
-                    
-                    # Bedrooms
-                    import re
-                    bedrooms_match = re.search(r'(\d+)\s*(habitacion|dormitorio|hab|hab\.)', msg)
-                    if bedrooms_match:
-                        search_params["bedrooms"] = int(bedrooms_match.group(1))
-                    
-                    # Operation type
-                    if "alquil" in msg:
-                        search_params["operation_type"] = "alquiler"
-                    elif "compr" in msg or "venta" in msg:
-                        search_params["operation_type"] = "venta"
-                    
-                    if search_params:
-                        logger.info(f"[Agent] executing direct search with: {search_params}")
-                        # Directly execute the tool
-                        tool_name = "search_properties"
-                        tool_result = await execute_tool(
-                            tool_name=tool_name,
-                            arguments=search_params,
-                            phone=phone
-                        )
-                        # If the tool returned images JSON, attach to rich_content for frontend STEP 7
-                        try:
-                            parsed = json.loads(tool_result)
-                            if isinstance(parsed, dict) and parsed.get("images"):
-                                rich_content = {"action": "show_property_images", "images": parsed["images"]}
-                        except Exception:
-                            pass
-                        # Build and inject tool call messages as if returned by LLM
-                        messages.append({
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{iteration}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": tool_name,
-                                        "arguments": json.dumps(search_params)
-                                    }
-                                }
-                            ]
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "name": tool_name,
-                            "tool_call_id": f"call_{iteration}",
-                            "content": str(tool_result)
-                        })
-                        tools_used.append(tool_name)
-                        # Do not proceed with LLM call for this iteration
-                        continue
-                
                 logger.info(f"[Agent] Iteration {iteration + 1}: Sending {tools_count} tools to LLM")
-                
+
                 llm_response = await self.llm.ainvoke(
                     messages=messages,
                     tools=self.tools,
                     temperature=0.7
                 )
-                
+
+                # Token usage logging
+                if llm_response.usage:
+                    u = llm_response.usage
+                    prompt_t = u.get("prompt_tokens", u.get("input_tokens", "?"))
+                    completion_t = u.get("completion_tokens", u.get("output_tokens", "?"))
+                    total_t = u.get("total_tokens", u.get("total", "?"))
+                    logger.info(
+                        f"[Tokens] phone={phone[-4:]} | provider={llm_response.provider} | "
+                        f"prompt={prompt_t} | completion={completion_t} | total={total_t}"
+                    )
+                    if isinstance(total_t, (int, float)):
+                        cumulative_tokens["prompt"] += prompt_t if isinstance(prompt_t, (int, float)) else 0
+                        cumulative_tokens["completion"] += completion_t if isinstance(completion_t, (int, float)) else 0
+                        cumulative_tokens["total"] += total_t
+                        cumulative_tokens["calls"] += 1
+
                 # Log tool call results
                 if llm_response.has_tool_calls:
                     tool_names = [tc.name for tc in llm_response.tool_calls]
@@ -218,7 +151,7 @@ class RealEstateAgent:
                         "search_properties" in t or "recommend_properties" in t
                         for t in tools_used
                     )
-                    if is_clear_search and not search_was_called:
+                    if intent == Intent.PROPERTY_SEARCH and not search_was_called:
                         logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
                         response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
                     else:
@@ -237,7 +170,14 @@ class RealEstateAgent:
                         arguments=tool_args,
                         phone=phone
                     )
-                    
+
+                    # Detect tool loops — same tool + same args called twice = break
+                    if len(tools_used) >= 2:
+                        last_two = tools_used[-2:]
+                        if last_two[0] == last_two[1]:
+                            logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
+                            break
+
                     messages.append({
                         "role": "assistant",
                         "content": None,
@@ -318,6 +258,9 @@ class RealEstateAgent:
                             logger.info(f"[Agent] Tool confirmed datetime: {confirmed_time}")
                             logger.info(f"[Agent] Final confirmation message using time: {confirmed_time}")
             
+            # Turn summary log
+            logger.info(f"[Agent] Turn complete: {len(tools_used)} tool(s) used: {tools_used}")
+
             if not response_text:
                 response_text = "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
             
@@ -351,6 +294,14 @@ class RealEstateAgent:
             except Exception as e:
                 logger.warning(f"Error extrayendo preferencias: {e}")
             
+            if cumulative_tokens["calls"] > 0:
+                logger.info(
+                    f"[Tokens] phone={phone[-4:]} | CUMULATIVE | "
+                    f"calls={cumulative_tokens['calls']} | "
+                    f"prompt={cumulative_tokens['prompt']} | "
+                    f"completion={cumulative_tokens['completion']} | "
+                    f"total={cumulative_tokens['total']}"
+                )
             logger.info(f"Agent respondió: {response_text[:50]}... (tools: {tools_used})")
             
             return {
@@ -389,8 +340,39 @@ class RealEstateAgent:
         
         system_prompt = get_system_prompt(user_context)
         messages.append({"role": "system", "content": system_prompt})
-        
-        # Inject last properties as system reminder with EXPLICIT index-to-ID mapping
+
+        # Inject active/selected property for context continuity — BEFORE history
+        selected_id = user_context.get("selected_property_id")
+        if selected_id:
+            selected_prop_reminder = (
+                f"\n### ACTIVE PROPERTY CONTEXT\n"
+                f"El usuario está viendo actualmente la propiedad con ID: {selected_id}\n"
+                f"Si el usuario dice 'esa', 'esa propiedad', 'la misma', 'la que vimos' — "
+                f"USA get_property_details(property_id={selected_id})\n"
+            )
+            messages.append({
+                "role": "system",
+                "content": selected_prop_reminder
+            })
+            logger.info(f"[Agent] Injected selected_property_id={selected_id} into LLM context for {phone}")
+
+        # Inject pending scheduling info for context-aware scheduling — BEFORE history
+        pending = user_context.get("pending_scheduling_info")
+        if pending and pending.get("date_str"):
+            schedule_context = "\n### PENDING SCHEDULING INFO\nEl usuario ya mencionó querer agendar. Tiene guardado: "
+            if pending.get("property_id"):
+                schedule_context += f"Propiedad: {pending['property_id']}, "
+            schedule_context += f"Fecha: {pending['date_str']}"
+            if pending.get("time_str"):
+                schedule_context += f", Hora: {pending['time_str']}"
+            schedule_context += "\nUSA ESTA INFORMACIÓN cuando el usuario seleccione una propiedad — NO preguntes de nuevo por fecha/hora.\n"
+            messages.append({
+                "role": "system",
+                "content": schedule_context
+            })
+            logger.info(f"[Agent] Injected pending scheduling info for {phone}: {pending}")
+
+        # Inject last properties as system reminder with EXPLICIT index-to-ID mapping — BEFORE history
         if last_shown_properties:
             # Format: Explicit mapping "Option N" → "Database ID" to prevent hallucination
             prop_list_lines = []
@@ -419,36 +401,8 @@ class RealEstateAgent:
                 "content": context_reminder
             })
 
-        # Inject active/selected property for context continuity
-        selected_id = user_context.get("selected_property_id")
-        if selected_id:
-            selected_prop_reminder = (
-                f"\n### ACTIVE PROPERTY CONTEXT\n"
-                f"El usuario está viendo actualmente la propiedad con ID: {selected_id}\n"
-                f"Si el usuario dice 'esa', 'esa propiedad', 'la misma', 'la que vimos' — "
-                f"USA get_property_details(property_id={selected_id})\n"
-            )
-            messages.append({
-                "role": "system",
-                "content": selected_prop_reminder
-            })
-            logger.info(f"[Agent] Injected selected_property_id={selected_id} into LLM context for {phone}")
-        
-        # Inject pending scheduling info for context-aware scheduling
-        pending = user_context.get("pending_scheduling_info")
-        if pending and pending.get("date_str"):
-            schedule_context = "\n### PENDING SCHEDULING INFO\nEl usuario ya mencionó querer agendar. Tiene guardado: "
-            if pending.get("property_id"):
-                schedule_context += f"Propiedad: {pending['property_id']}, "
-            schedule_context += f"Fecha: {pending['date_str']}"
-            if pending.get("time_str"):
-                schedule_context += f", Hora: {pending['time_str']}"
-            schedule_context += "\nUSA ESTA INFORMACIÓN cuando el usuario seleccione una propiedad — NO preguntes de nuevo por fecha/hora.\n"
-            messages.append({
-                "role": "system",
-                "content": schedule_context
-            })
-            logger.info(f"[Agent] Injected pending scheduling info for {phone}: {pending}")
+        # Inject few-shot examples as separate messages for in-context learning
+        messages.extend(FEW_SHOT_EXAMPLES)
 
         for msg in history:
             role = msg.get("role", "user")

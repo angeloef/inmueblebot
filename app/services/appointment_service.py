@@ -12,10 +12,9 @@ from app.db.models import Appointment
 from app.db.models import User
 from app.db.models import Property
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import async_session_factory
 
-from app.core.config import get_settings
 from app.services.calendar_service import calendar_service
 
 
@@ -37,27 +36,10 @@ class AppointmentService:
     DEFAULT_VISIT_DURATION = timedelta(hours=1)
     
     def __init__(self):
-        settings = get_settings()
-        self._engine = None
-        self._session_factory = None
-    
-    @property
-    def engine(self):
-        if self._engine is None:
-            settings = get_settings()
-            self._engine = create_async_engine(settings.DATABASE_URL, echo=False)
-        return self._engine
-    
-    @property
-    def session_factory(self):
-        if self._session_factory is None:
-            self._session_factory = sessionmaker(
-                self.engine, class_=AsyncSession, expire_on_commit=False
-            )
-        return self._session_factory
+        pass
     
     def _get_session(self) -> AsyncSession:
-        return self.session_factory()
+        return async_session_factory()
     
     async def create_appointment(
         self,

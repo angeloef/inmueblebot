@@ -10,9 +10,7 @@ from loguru import logger
 from app.agents.llm_router import llm_router
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.db.models import User
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from app.core.config import get_settings
+from app.db.session import async_session_factory
 
 
 class HandoffService:
@@ -27,19 +25,6 @@ class HandoffService:
     
     def __init__(self):
         pass
-    
-    def _get_engine(self):
-        """Lazy initialization of database engine."""
-        from sqlalchemy.ext.asyncio import create_async_engine
-        from app.core.config import get_settings
-        
-        settings = get_settings()
-        return create_async_engine(settings.DATABASE_URL, echo=False)
-    
-    def _get_session_factory(self, engine):
-        """Get session factory for given engine."""
-        from sqlalchemy.orm import sessionmaker
-        return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async def generate_conversation_summary(self, phone: str) -> str:
         """

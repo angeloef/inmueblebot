@@ -535,28 +535,6 @@ def _extract_time_from_text(user_text: str) -> Optional[Tuple[int]]:
         return 12, 0
     
     return None
-    
-    # Make sure it's timezone-aware
-    if result.tzinfo is None:
-        result = ARG_TZ.localize(result)
-    else:
-        result = result.astimezone(ARG_TZ)
-    
-    # === VALIDATION ===
-    # Must be in the future (at least 30 minutes from now)
-    min_time = now + timedelta(minutes=30)
-    if result < min_time:
-        # If today but past, try next day same time
-        if result.date() == now.date() and result < now:
-            result = result + timedelta(days=1)
-            logger.info(f"[DateParser] Adjusted to next day: {result}")
-        
-        if result < min_time:
-            return None, f"La fecha/hora seleccionada ya pasó o es muy soon. Por favor elegir una fecha futura."
-    
-    logger.info(f"[DateParser] SUCCESS: '{original_input}' -> {result.isoformat()}")
-    return result, None
-
 
 def _parse_date(user_text: str, now: datetime) -> Optional[datetime]:
     """Parse date part of user input."""

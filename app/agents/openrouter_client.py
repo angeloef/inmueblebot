@@ -25,8 +25,8 @@ class OpenRouterClient:
     
     def __init__(self):
         settings = get_settings()
-        self._api_key = settings.OPENROUTER_API_KEY
-        self._model = settings.OPENROUTER_MODEL
+        self._api_key = getattr(settings, 'OPENROUTER_API_KEY', None)
+        self._model = getattr(settings, 'OPENROUTER_MODEL', '')
         self._timeout = settings.LLM_TIMEOUT_SECONDS
         self._max_retries = 2
         
