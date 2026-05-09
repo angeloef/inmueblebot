@@ -186,8 +186,14 @@ class CalendarService:
             if credentials.expired and credentials.refresh_token:
                 import google.auth.transport.requests
                 credentials.refresh(google.auth.transport.requests.Request())
-                self._save_token(credentials)
-                logger.info("[Calendar] OAuth token refreshed")
+                try:
+                    self._save_token(credentials)
+                    logger.info("[Calendar] OAuth token refreshed and saved")
+                except OSError as save_err:
+                    # Render mounts /etc/secrets/ as read-only — can't save there
+                    logger.warning(f"[Calendar] Token refreshed in-memory but could not save to disk ({save_err}). This is expected on Render with Secret Files.")
+                except Exception as save_err:
+                    logger.warning(f"[Calendar] Token refreshed but save failed: {save_err}")
             
             service = build('calendar', 'v3', credentials=credentials, cache_discovery=False)
             self._calendar_id = self._get_calendar_id()
