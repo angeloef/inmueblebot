@@ -372,7 +372,8 @@ class MemoryManager:
                                 prop_type = [prop_type]
                         else:
                             prop_type = [prop_type]
-                    update_fields["property_type"] = prop_type
+                    # Use json.dumps to ensure proper PostgreSQL JSONB format
+                    update_fields["property_type"] = json.dumps(prop_type)
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
@@ -544,18 +545,32 @@ class MemoryManager:
                 break
         
         if current_prefs:
+            # Merge new prefs without carrying over recursive context fields
+            clean_prefs = {k: v for k, v in current_prefs.items() 
+                          if k not in ("last_search_criteria", "conversation_stage", "selected_property_id", 
+                                      "pending_scheduling_info", "last_shown_properties", "current_state",
+                                      "updated_at")}
             for key, value in new_prefs.items():
                 if value is not None and value != "No definido":
-                    current_prefs[key] = value
-            new_prefs = current_prefs
+                    clean_prefs[key] = value
+            new_prefs = clean_prefs
+        
+        # Ensure property_type is sent as proper array type (not JSONB)
+        if "property_type" in new_prefs:
+            pt = new_prefs["property_type"]
+            if isinstance(pt, str):
+                new_prefs["property_type"] = [pt]
         
         if new_prefs:
             await self.update_user_preferences(phone, new_prefs)
             logger.info(f"Preferencias extraídas y guardadas para {phone}: {new_prefs}")
         
+        # Only save clean extraction, not the full context, to avoid recursive nesting
         last_criteria = {
             "search_text": message[:200],
-            "extracted_prefs": new_prefs,
+            "extracted_prefs": {k: v for k, v in new_prefs.items() 
+                               if k in ("property_type", "bedrooms", "bathrooms", "budget_min", "budget_max",
+                                        "location_preferences", "operation_type")},
         }
         await self.update_context_field(phone, "last_search_criteria", last_criteria)
         
