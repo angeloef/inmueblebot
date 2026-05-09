@@ -294,6 +294,15 @@ async def get_property_details(property_id: str) -> str:
         # SANITIZAR property_id
         property_id = sanitize_property_id(property_id)
         
+        # Validate format — catch clearly hallucinated IDs early
+        is_numeric = property_id.isdigit()
+        is_uuid_like = len(property_id) == 36 and property_id.count('-') == 4
+        if not is_numeric and not is_uuid_like:
+            logger.warning(f"[get_property_details] ⚠️ Posible ID alucinado: '{property_id}'")
+            return (f"El ID '{property_id}' no es válido. "
+                    f"Usá el ID numérico exacto que aparece en <last_results>. "
+                    f"NUNCA inventes IDs.")
+
         prop = None
         
         # Try integer ID first - use the integer 'id' field directly
@@ -566,6 +575,17 @@ async def schedule_visit(
         
         if not property_id:
             return "Necesito saber qué propiedad quieres visitar."
+        
+        # Validate property_id format — catch clearly hallucinated IDs early
+        # Valid formats: integer strings ("6"), UUIDs, or numeric references
+        is_numeric = property_id.isdigit()
+        is_uuid_like = len(property_id) == 36 and property_id.count('-') == 4
+        if not is_numeric and not is_uuid_like:
+            logger.warning(f"[schedule_visit] ⚠️ Posible ID alucinado por el LLM: '{property_id}' — no es numérico ni UUID")
+            # Return a clear message telling the LLM to use IDs from context
+            return (f"El ID '{property_id}' no es válido. "
+                    f"Usá el ID numérico exacto que aparece en <last_results> como ID=6 o ID=1. "
+                    f"NUNCA inventes IDs. Revisá el contexto de la conversación para encontrar el ID correcto.")
         
         if not date_str:
             return "¿Para qué fecha te conviene la visita? Dime algo como 'mañana a las 15', 'el viernes a las 10', o 'el 28 de abril'."
@@ -875,6 +895,13 @@ async def get_property_images(property_id: str) -> str:
     import json
 
     try:
+        # Validate format — catch clearly hallucinated IDs early
+        is_numeric = property_id.isdigit()
+        is_uuid_like = len(property_id) == 36 and property_id.count('-') == 4
+        if not is_numeric and not is_uuid_like:
+            logger.warning(f"[get_property_images] ⚠️ Posible ID alucinado: '{property_id}'")
+            return json.dumps({"images": [], "error": f"ID '{property_id}' no válido — usá un ID numérico del contexto"})
+
         # Try integer ID first
         try:
             int_id = int(property_id)
