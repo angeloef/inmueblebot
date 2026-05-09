@@ -372,8 +372,10 @@ class MemoryManager:
                                 prop_type = [prop_type]
                         else:
                             prop_type = [prop_type]
-                    # Use json.dumps to ensure proper PostgreSQL JSONB format
-                    update_fields["property_type"] = json.dumps(prop_type)
+                    # Use SQLAlchemy ARRAY cast to match the actual column type (character varying[])
+                    from sqlalchemy import cast
+                    from sqlalchemy.dialects.postgresql import ARRAY, String
+                    update_fields["property_type"] = cast(prop_type, ARRAY(String))
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]
                 if "lead_score" in preferences:
