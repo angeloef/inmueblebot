@@ -111,21 +111,6 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
         day_after = now + timedelta(days=2)
         return day_after.replace(hour=10, minute=0, second=0), None
     
-    # Simple day of week (without time) - default to 10:00
-    dow_map = {
-        "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
-        "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
-    }
-    
-    for day_name, target_dow in dow_map.items():
-        if day_name in user_text or f"el {day_name}" in user_text:
-            current_dow = now.weekday()
-            days_ahead = target_dow - current_dow
-            if days_ahead <= 0:
-                days_ahead += 7
-            target = now + timedelta(days=days_ahead)
-            return target.replace(hour=10, minute=0, second=0), None
-    
     # === "esta semana" - this week, assume Friday at 10:00 ===
     if "esta semana" in user_text and "próxima" not in user_text and "que viene" not in user_text:
         days_until_friday = (4 - now.weekday()) % 7
@@ -162,6 +147,10 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
     
     # === Day of week with modifiers ===
     # Check for "lunes que viene", "el próximo lunes", "este lunes", "el lunes próximo"
+    dow_map = {
+        "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+        "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
+    }
     weekday_patterns = [
         (r'el?\s*(\w+)\s+que\s+viene', 1),  # "lunes que viene" = next occurrence
         (r'el?\s*próximo\s+(\w+)', 1),    # "el próximo lunes" = next occurrence  
@@ -184,9 +173,9 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
                 target = now + timedelta(days=days_ahead)
                 return target.replace(hour=10, minute=0, second=0), None
     
-    # Simple weekday without modifier
+    # Simple weekday fallback (no modifier) - checked AFTER weekday_patterns for priority
     for day_name, target_dow in dow_map.items():
-        if f"el {day_name}" in user_text or day_name in user_text:
+        if day_name in user_text or f"el {day_name}" in user_text:
             current_dow = now.weekday()
             days_ahead = target_dow - current_dow
             if days_ahead <= 0:

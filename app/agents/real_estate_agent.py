@@ -297,6 +297,18 @@ class RealEstateAgent:
                             new_rich["images"] = existing_images + new_images
                         rich_content = new_rich
                     
+                    # Save selected_property_id for context continuity across turns
+                    if tool_args.get("property_id") and tool_name in ("get_property_details", "get_property_images"):
+                        try:
+                            await memory_manager.update_context_field(
+                                phone, "selected_property_id", tool_args["property_id"]
+                            )
+                            logger.info(
+                                f"[Agent] Saved selected_property_id={tool_args['property_id']} for {phone}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"[Agent] Could not save selected_property_id: {e}")
+                    
                     # Log confirmed datetime for schedule_visit
                     if "schedule_visit" in tool_name and "Cita Agendada" in str(tool_result):
                         import re
@@ -401,12 +413,43 @@ class RealEstateAgent:
 - Si el usuario menciona "opción 1", "la primera", "opción 2", etc., busca el ID correspondiente en <last_results> arriba
 - NUNCA inventes un ID - usa EXACTAMENTE el ID que aparece después de "→ ID=" en <last_results>
 - Ejemplo: "dame detalles de la opción 2" → busca ID=XXX en <last_results> → get_property_details(property_id=XXX)"""
-            
+
             messages.append({
                 "role": "system", 
                 "content": context_reminder
             })
+
+        # Inject active/selected property for context continuity
+        selected_id = user_context.get("selected_property_id")
+        if selected_id:
+            selected_prop_reminder = (
+                f"\n### ACTIVE PROPERTY CONTEXT\n"
+                f"El usuario está viendo actualmente la propiedad con ID: {selected_id}\n"
+                f"Si el usuario dice 'esa', 'esa propiedad', 'la misma', 'la que vimos' — "
+                f"USA get_property_details(property_id={selected_id})\n"
+            )
+            messages.append({
+                "role": "system",
+                "content": selected_prop_reminder
+            })
+            logger.info(f"[Agent] Injected selected_property_id={selected_id} into LLM context for {phone}")
         
+        # Inject pending scheduling info for context-aware scheduling
+        pending = user_context.get("pending_scheduling_info")
+        if pending and pending.get("date_str"):
+            schedule_context = "\n### PENDING SCHEDULING INFO\nEl usuario ya mencionó querer agendar. Tiene guardado: "
+            if pending.get("property_id"):
+                schedule_context += f"Propiedad: {pending['property_id']}, "
+            schedule_context += f"Fecha: {pending['date_str']}"
+            if pending.get("time_str"):
+                schedule_context += f", Hora: {pending['time_str']}"
+            schedule_context += "\nUSA ESTA INFORMACIÓN cuando el usuario seleccione una propiedad — NO preguntes de nuevo por fecha/hora.\n"
+            messages.append({
+                "role": "system",
+                "content": schedule_context
+            })
+            logger.info(f"[Agent] Injected pending scheduling info for {phone}: {pending}")
+
         for msg in history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
