@@ -482,9 +482,18 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
         Mensaje formateado listo para enviar (incluye metadata estructurada para el LLM)
     """
     start = appointment.start_time
-    date_str = start.strftime("%d/%m/%Y")
-    time_str = start.strftime("%H:%M")
-    iso_datetime = start.strftime("%Y-%m-%d %H:%M")
+    
+    # Convert from UTC (DB storage) to Argentina timezone for display
+    import pytz
+    arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    if start.tzinfo is not None:
+        start_local = start.astimezone(arg_tz)
+    else:
+        start_local = arg_tz.localize(start)
+    
+    date_str = start_local.strftime("%d/%m/%Y")
+    time_str = start_local.strftime("%H:%M")
+    iso_datetime = start_local.strftime("%Y-%m-%d %H:%M")
     
     type_labels = {
         "visit": "visita",
