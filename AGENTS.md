@@ -18,8 +18,8 @@
 ## Stack
 
 - **Python 3.12+** with FastAPI + SQLAlchemy 2.0 async + asyncpg
-- **PostgreSQL 16** (primary via Docker, Render managed externally)
-- **Redis 7 Alpine** (session state, conversation context, classifier cache, rate limiting in-memory fallback)
+- **PostgreSQL 16** (Render Managed, **Oregon** region — migrated from Frankfurt May 10)
+- **Redis 7 Alpine** (Render Managed, **Oregon** region — recreated May 10, auto-injected via blueprint)
 - **LLM**: OpenAI GPT-4o-mini (single provider — friend's refactor replaced the multi-provider chain)
 - **WhatsApp**: Meta Cloud API (v18.0 Graph API) → `facebook.com/v18.0/{phone_number_id}/messages`
 - **Dashboard**: React SPA (Vite, @tanstack/react-query, axios)
@@ -109,6 +109,50 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 - **normalize_location()**: New function in `sanitizer.py` — strips street prefixes (calle, av, avenida, pasaje, boulevard) and trailing street numbers. `"Calle Sarmiento 285"` → `"sarmiento"`
 - **Fuzzy ILIKE search**: `repository.py:search()` now uses 3-strategy OR combination: (1) original query, (2) normalized (prefix stripped), (3) individual words OR'd
 
+### Sprint 8 — Latency Optimizations (May 10, 2026)
+
+| Optimization | Files Changed | Measured Impact |
+|-------------|--------------|-----------------|
+| **Prompt reduction**: History 10→5 messages, compressed property context (id+title only), few-shot examples inlined into SYSTEM_PROMPT | `real_estate_agent.py`, `prompts.py` | ~2,900 fewer prompt tokens per LLM call (from 4,800→1,900) |
+| **Short-circuit LLM iterations**: schedule_visit/reschedule/cancel with confirmation → use tool result directly, skip iteration 2 | `real_estate_agent.py` | 2→1 LLM calls on scheduling (~50% reduction, saves ~1.5s) |
+| **Parallel post-agent saves**: State machine, lead score, preferences now run via `asyncio.gather()` | `real_estate_agent.py` | Post-processing ~4-5s→1-2s |
+| **Calendar OAuth pre-warm**: Service initialized at startup via `calendar_service.service` access in `lifespan()` | `main.py` | Eliminates 2s cold start on first appointment |
+| **Response time logging**: `[Timing] phone=XXXX total=3.45s` logged per webhook | `webhook.py` | New observability |
+| **DD/MM/YYYY + natural language dates**: 3-stage parsing in reschedule (YYYY-MM-DD → DD/MM/YYYY → parse_spanish_datetime) | `tools.py` | Fixes infinite reschedule loop |
+| **Reschedule retry limit**: Max 2 consecutive failures, then breaks with friendly message | `real_estate_agent.py` | Prevents infinite loop |
+
+**Latency validation (from production logs):**
+
+| Scenario | Before | After | Improvement |
+|----------|--------|-------|-------------|
+| Schedule visit | ~14s, 2 LLM calls | ~7s, **1 LLM call** | **−50%** |
+| Search | ~12s | ~8s | **−33%** |
+| Generic reply | ~6s | ~3-4s | **−33%** |
+| Tokens per turn | ~19K | ~3.3K (scheduling) | **−83%** |
+
+### Sprint 9 — Infrastructure Migration (May 10, 2026)
+
+The API was already on Render Oregon, but both PostgreSQL and Redis were in **Frankfurt** — adding ~500ms round-trip latency per operation.
+
+| Change | Method | Result |
+|--------|--------|--------|
+| **PostgreSQL** Frankfurt → Oregon | pg_dump → Render API create → psql restore + column rename | DB now at `dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com` |
+| **Redis** Frankfurt → Oregon | Render API create (`POST /v1/redis`) | Now at `red-d7vfg9d0lvsc73fqmg60.oregon-keyvalue.render.com` |
+| **render.yaml** Redis service | Re-added with `plan: free`, `region: oregon` | REDIS_URL auto-injected by Render blueprint |
+| **render.yaml** credentials | Removed stale Frankfurt credentials | Oregon DB password + auto-injected Redis |
+
+**Impact**: DB queries now ~1ms instead of ~500ms RTT. With 8-10 queries per turn, this saves ~4s per user message.
+
+### Sprint 10 — Rescheduling Robustness (May 10, 2026)
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| **LLM passes `UUID_DE_LA_CITA` placeholder** | Prompt doesn't reinforce real UUID format | Added prompt rule: "usá el UUID exacto de la lista de CITAS EXISTENTES" |
+| **`new_date_str='12/05/2026'` breaks strptime** | Tool expects `%Y-%m-%d` but LLM sends DD/MM/YYYY | 3-stage parsing: try `%Y-%m-%d`, then `%d/%m/%Y`, then `parse_spanish_datetime()` |
+| **`new_date_str='mañana'` causes ValueError** | Natural language not handled by strptime | Falls through to `parse_spanish_datetime()` which handles "mañana", "próximo martes", etc. |
+| **Infinite reschedule loop on failure** | No retry limit; LLM retries with same failing args | Max 2 consecutive failures → friendly message + loop break |
+| **User says "a las 3 es muy temprano" but apt is at 17:00** | No contradiction detection | Prompt rule: "Si el usuario contradice la cita real, corregilo amablemente" + always fetch appointment from DB |
+
 ### Open Issues (NOT Fixed)
 
 | Issue | Severity | Status |
@@ -123,16 +167,11 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 | Streamlit duplicates chat UI without agent pipeline | 🟡 MEDIUM | Direct LLM call, no tools |
 | Celery broker not configured | 🟡 MEDIUM | Tasks defined but don't run |
 | Admin mutations don't sync to bot state | 🟡 MEDIUM | Changes via admin won't refresh Redis context |
-### 12. Cross-Region Latency (Critical — DB + Redis in Frankfurt, API in Oregon)
-**IMPACT: ~4s added to every response**
-
-The `render.yaml` declares `region: oregon` for all services, but the actual DB and Redis instances are in **Frankfurt** (evidenced by `frankfurt-postgres.render.com` and `frankfurt-keyvalue.render.com` hostnames). The API runs on `oregon` region.
-
-This means every DB query incurs ~500ms round-trip latency (Oregon → Frankfurt → Oregon). With 8-10 DB queries per user turn, **~4 seconds of every response is pure network latency**.
-
-**Fix (partial — applied May 10):**
-- `render.yaml` DATABASE_URL and REDIS_URL were replaced with `PENDING_` placeholders
-- **Manual step**: Create new PostgreSQL + Redis instances in Oregon region on Render dashboard, update the URLs, migrate data via `pg_dump` + `psql`
+### 12. Cross-Region Latency (FIXED — May 10, 2026)
+**Before**: DB in Frankfurt + Redis in Frankfurt → API in Oregon = ~500ms RTT per operation
+**After**: All three services co-located in **Oregon** → ~1ms RTT per operation
+**Impact**: ~4s saved per user message (8-10 DB queries × ~500ms eliminated)
+**Method**: pg_dump → Render API (create new DB + Redis in Oregon) → restore → render.yaml update
 
 ### 13. LLM Token Bloat (Reduced — Sprint B1)
 **Before**: ~4,800 prompt tokens per call, 2 calls per turn = ~19K tokens/turn
@@ -204,6 +243,9 @@ The dashboard Nginx config is at `dashboard/nginx.conf`.
 ### 10. LLM Intent Classifier Is Not Gemini
 The `intent_classifier` in `classifier.py` uses OpenRouter (NOT Gemini) with temperature=0.
 Results cached in Redis for 5 minutes. Falls back to `UNKNOWN` on error.
+
+### 11. Render Blueprint — Redis Auto-Injection
+When a Redis service is defined in `render.yaml` alongside a web service, Render **automatically injects** the `REDIS_URL` environment variable into the web service with the correct connection string (including auto-generated password). Do NOT manually set `REDIS_URL` if a Redis service is defined — the manual value overrides the auto-injected one and will have the wrong password.
 
 ## File Layout (Key Files)
 
@@ -333,6 +375,10 @@ pytest tests/test_agent.py -v -k "test_name"
 # Lint + Typecheck
 ruff check app/ tests/
 mypy app/
+
+# Render API (infrastructure management)
+curl -s -H "Authorization: Bearer \$RENDER_API_KEY" "https://api.render.com/v1/postgres" | jq .
+curl -s -H "Authorization: Bearer \$RENDER_API_KEY" "https://api.render.com/v1/redis" | jq .
 
 # Docker build
 docker compose build app
