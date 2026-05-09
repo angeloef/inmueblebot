@@ -27,12 +27,14 @@ class CalendarService:
         self._calendar_id = None
         self._token_path = None
         self._client_secrets_path = None
+        self._auth_failed = False  # Cache auth failures to prevent repeated retry spam
         self._resolve_credential_paths()
     
     def reset(self):
         """Reset cached service so it re-initializes on next access. Call this when credentials might have changed."""
         self._service = None
         self._credentials = None
+        self._auth_failed = False
         self._resolve_credential_paths()
         logger.info("[Calendar] Service cache reset — will re-initialize on next access")
 
@@ -192,14 +194,27 @@ class CalendarService:
             logger.info("[Calendar] Service initialized with OAuth2")
             return service
         except Exception as e:
-            logger.error(f"[Calendar] Failed to initialize OAuth2 service: {e}")
+            error_str = str(e)
+            if "invalid_grant" in error_str:
+                logger.error(
+                    f"[Calendar] ❌ TOKEN EXPIRADO O REVOCADO. "
+                    f"Debes generar un nuevo token.json ejecutando el flujo OAuth localmente "
+                    f"y re-subirlo a Render Secret Files o actualizar GOOGLE_TOKEN_JSON. "
+                    f"Error: {error_str}"
+                )
+                self._auth_failed = True
+            else:
+                logger.error(f"[Calendar] Failed to initialize OAuth2 service: {e}")
             return None
     
     @property
     def service(self):
+        # Skip retry if auth has permanently failed (expired/revoked token)
+        if self._auth_failed:
+            return None
         if self._service is None:
             self._service = self._build_service()
-            if self._service is None:
+            if self._service is None and not self._auth_failed:
                 # Try one more time with fresh path resolution (files might have appeared)
                 self._resolve_credential_paths()
                 self._service = self._build_service()
