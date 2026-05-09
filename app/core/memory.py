@@ -374,7 +374,8 @@ class MemoryManager:
                             prop_type = [prop_type]
                     # Use SQLAlchemy ARRAY cast to match the actual column type (character varying[])
                     from sqlalchemy import cast
-                    from sqlalchemy.dialects.postgresql import ARRAY, String
+                    from sqlalchemy.dialects.postgresql import ARRAY
+                    from sqlalchemy import String
                     update_fields["property_type"] = cast(prop_type, ARRAY(String))
                 if "preferred_language" in preferences:
                     update_fields["preferred_language"] = preferences["preferred_language"]

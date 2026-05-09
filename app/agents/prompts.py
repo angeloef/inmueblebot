@@ -111,11 +111,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "search_properties",
         "tool_call_id": "call_1",
-        "content": "🏠 *Encontré 3 propiedades:*\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: prop-001\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: prop-002"
+        "content": "🏠 *Encontré 3 propiedades:*\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: 1\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: 2"
     },
     {
         "role": "assistant",
-        "content": "¡Encontré 2 casas en Posadas dentro de tu presupuesto!\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: prop-001\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: prop-002\n\n¿Te gustaría más detalles de alguna? ¿O preferís que agendemos una visita?"
+        "content": "¡Encontré 2 casas en Posadas dentro de tu presupuesto!\n\n1. 🏠 *Casa amplia en Posadas*\n   💰 $145,000 | 🛏 4 hab | 📐 300m²\n   📍 Posadas, Paraguay\n   🔍 ID: 1\n\n2. 🏠 *Casa céntrica en Posadas*\n   💰 $120,000 | 🛏 3 hab | 📐 200m²\n   📍 Centro, Posadas\n   🔍 ID: 2\n\n¿Te gustaría más detalles de alguna? ¿O preferís que agendemos una visita?"
     },
     # --- Example 2: Request details by option number ---
     {
@@ -131,7 +131,7 @@ FEW_SHOT_EXAMPLES = [
                 "type": "function",
                 "function": {
                     "name": "get_property_details",
-                    "arguments": '{"property_id": "prop-001"}'
+                    "arguments": '{"property_id": "1"}'
                 }
             }
         ]
@@ -140,11 +140,11 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "get_property_details",
         "tool_call_id": "call_2",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n- Tipo: Casa\n- Operación: Venta\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID de propiedad:* prop-001"
+        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n- Tipo: Casa\n- Operación: Venta\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID de propiedad:* 1"
     },
     {
         "role": "assistant",
-        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID:* prop-001\n\n¿Te gustaría agendar una visita a esta propiedad?"
+        "content": "🏠 *Casa amplia en Posadas*\n💰 *Precio:* $145,000 USD\n\n📋 *Características:*\n- Dormitorios: 4\n- Baños: 3\n- Área: 300m²\n\n📍 *Ubicación:* Posadas, Paraguay\n\n🔍 *ID:* 1\n\n¿Te gustaría agendar una visita a esta propiedad?"
     },
     # --- Example 3: Multi-turn search in Oberá with 4 bedrooms ---
     {
@@ -169,7 +169,7 @@ FEW_SHOT_EXAMPLES = [
         "role": "tool",
         "name": "search_properties",
         "tool_call_id": "call_3bed",
-        "content": "🏠 *Encontré 5 propiedades:*\n\n1. 🏠 *Casa amplia en Oberá*\n   💰 $180,000 | 🛏 4 hab | 📐 250m²\n   📍 Oberá Centro\n   🔍 ID: prop-101\n\n2. 🏠 *Casa moderna en Oberá*\n   💰 $220,000 | 🛏 5 hab | 📐 300m²\n   📍 Oberá Norte\n   🔍 ID: prop-102\n\n3. 🏠 *Casa céntrica en Oberá*\n   💰 $150,000 | 🛏 4 hab | 📐 180m²\n   📍 Centro, Oberá\n   🔍 ID: prop-103"
+        "content": "🏠 *Encontré 5 propiedades:*\n\n1. 🏠 *Casa amplia en Oberá*\n   💰 $180,000 | 🛏 4 hab | 📐 250m²\n   📍 Oberá Centro\n   🔍 ID: 101\n\n2. 🏠 *Casa moderna en Oberá*\n   💰 $220,000 | 🛏 5 hab | 📐 300m²\n   📍 Oberá Norte\n   🔍 ID: 102\n\n3. 🏠 *Casa céntrica en Oberá*\n   💰 $150,000 | 🛏 4 hab | 📐 180m²\n   📍 Centro, Oberá\n   🔍 ID: 103"
     },
     {
         "role": "assistant",
