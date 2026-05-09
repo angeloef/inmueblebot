@@ -736,10 +736,11 @@ async def reschedule_appointment_tool(
     Returns:
         Mensaje de confirmación o error
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     from uuid import UUID
     from app.services.appointment_service import appointment_service, format_appointment_confirmation
-    
+    import pytz
+
     try:
         if not appointment_id:
             return "Necesito el ID de la cita que quieres reprogramar."
@@ -754,15 +755,16 @@ async def reschedule_appointment_tool(
         
         date_obj = datetime.strptime(new_date_str, "%Y-%m-%d").date()
         
+        arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
         if new_time_str:
             time_obj = datetime.strptime(new_time_str, "%H:%M").time()
-            new_start = datetime.combine(date_obj, time_obj, tzinfo=timezone.utc)
+            new_start = arg_tz.localize(datetime.combine(date_obj, time_obj))
         else:
-            new_start = datetime.combine(date_obj, datetime.min.time(), tzinfo=timezone.utc)
+            new_start = arg_tz.localize(datetime.combine(date_obj, datetime.min.time()))
         
         appointment = await appointment_service.reschedule_appointment(apt_uuid, new_start)
         
-        return f"✅ *¡Cita Reprogramada!*\n\n📆 Nueva fecha: {appointment.start_time.strftime('%d/%m/%Y')}\n⏰ Nueva hora: {appointment.start_time.strftime('%H:%M')}\n\n¿Necesitas algo más?"
+        return format_appointment_confirmation(appointment)
         
     except ValueError as e:
         return str(e)
