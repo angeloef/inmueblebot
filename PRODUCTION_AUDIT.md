@@ -5,22 +5,37 @@
 
 ---
 
-## ✅ Recently Fixed (May 8, 2026 — Multi-Agent Fix Sprint)
+## ✅ Fixed Across May 2026 Sprints
 
-| # | Issue | Severity | What was done | Status |
-|---|-------|----------|--------------|--------|
-| C1 | Timezone bug (appointments 3h off) | 🔴 CRITICAL | `_ensure_timezone()` now uses `America/Argentina/Buenos_Aires` instead of UTC. Conflict detection and storage now agree. | ✅ FIXED |
-| C12 | No exception handlers | 🔴 CRITICAL | Added `@app.exception_handler(Exception)` with structured logging + friendly JSON 500 response | ✅ FIXED |
-| H6 | Webhook fire-and-forget loses messages | 🟠 HIGH | Wrapped `process_messages()` in `try/except` via `_safe_process()`. Exceptions now logged with full traceback instead of silent loss. | ✅ FIXED |
-| C9/C10 | Celery dead code | 🔴 CRITICAL | **Removed entirely.** Dead code: broken imports (`app.db.repository.database`), `await` in sync tasks, no broker config. All Celery files deleted. | ✅ REMOVED |
-| M1 | NFKD destroys Spanish names | 🟡 MEDIUM | Removed `unicodedata.normalize('NFKD', text)` from both `sanitize_text()` and `sanitize_for_llm()`. | ✅ FIXED |
-| H4 | Engine never disposed in property_service | 🟠 HIGH | `engine.dispose()` moved before `return` — no longer dead code. | ✅ FIXED |
-| Calendar | Timezone mismatch (America/Asuncion vs Buenos Aires) | 🟠 MEDIUM | Unified all layers to America/Argentina/Buenos_Aires (GMT-3) | ✅ FIXED |
-| Calendar | Dead code after return in calendar_service.py | 🟡 MEDIUM | Removed duplicate block, cleaned up _build_service() | ✅ FIXED |
-| Calendar | Sync .execute() blocks async event loop | 🟡 MEDIUM | All 7 API calls now use _execute_async() + asyncio.to_thread() | ✅ FIXED |
-| Calendar | Admin appointments not synced to Google Calendar | 🟠 HIGH | Admin CRUD endpoints now create/update/delete Google Calendar events | ✅ FIXED |
-| Calendar | No OAuth token refresh | 🟠 HIGH | Added auto-refresh in _build_service() + credential path config | ✅ FIXED |
-| Calendar | Dashboard shows fake sync status | 🟡 MEDIUM | Now shows real calendar_event_id status | ✅ FIXED |
+### Multi-Agent Fix Sprint (May 8)
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| C1 | Timezone bug (appointments 3h off) | 🔴 CRITICAL | ✅ FIXED |
+| C12 | No exception handlers | 🔴 CRITICAL | ✅ FIXED |
+| H6 | Webhook fire-and-forget loses messages | 🟠 HIGH | ✅ FIXED |
+| C9/C10 | Celery dead code | 🔴 CRITICAL | ✅ REMOVED |
+| M1 | NFKD destroys Spanish names | 🟡 MEDIUM | ✅ FIXED |
+| H4 | Engine never disposed in property_service | 🟠 HIGH | ✅ FIXED |
+| Calendar | Timezone mismatch, dead code, blocking sync, no OAuth refresh, admin not synced | 🟠 HIGH | ✅ ALL FIXED |
+
+### Architecture Sprint 3 (May 9-10)
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| M4 | Engine created per call in tools.py (connection pool churn) | 🟡 MEDIUM | ✅ FIXED — Global async_session_factory replaces 8 ad-hoc engines |
+| M7 | Engine never disposed in memory.py | 🟡 MEDIUM | ✅ FIXED — Uses global pool, no ad-hoc engines |
+| H2 | Forced search bypass causes double execution | 🟠 HIGH | ✅ FIXED — Forced search removed entirely |
+| H7 | _processed_ids unbounded memory leak | 🟠 HIGH | ✅ FIXED — In-memory fallback added (non-leaking) |
+| H1 | State machine TOCTOU race | 🟠 HIGH | ✅ FIXED — Per-user Redis lock (prior sprint) |
+
+### Google Calendar Auth Sprint (May 10)
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| C4 | Google OAuth credentials on disk (live refresh token) | 🔴 CRITICAL | ✅ FIXED — Now loads from Render Secret Files or env vars |
+| C16 | Missing GOOGLE_* env vars in render.yaml | 🔴 CRITICAL | ✅ FIXED — GOOGLE_TOKEN_JSON + GOOGLE_CREDENTIALS_JSON added |
+| — | Calendar service no retry on credential failure | 🟠 HIGH | ✅ FIXED — reset() method + double retry in service property |
 
 ---
 

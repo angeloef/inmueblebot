@@ -28,44 +28,69 @@
 - **Docker**: Multi-stage (dashboard build → Python runtime), deployed on Render via `render.yaml`
 - **Linting**: ruff (strict), mypy (non-strict)
 
-## Recent Changes (Claude Code — May 2026)
+## Recent Changes (Hermes Agent — May 2026)
 
-Three "nuclearizando al agente" commits refactored the core:
+The codebase underwent a comprehensive 3-phase architecture sprint following initial bug-fix sprints.
 
-### Fase 0 — Housekeeping
-- `.gitignore`: Added `*.sqlite` / `*.sqlite3` endings
-- `storage.py` + `twilio.py`: Fixed import paths (`config.settings` → `app.core.config`)
-- **Fixed** seed data wipe: `main.py` now always uses `force=False` — no more data loss on restart
+### Sprint 1 — Bug Fixes (May 8, 2026)
 
-### Fase 1 — Agent Rewrite + Webhook Improvements
-- Added `_deterministic_dispatch()` method — replaces hacky keyword-match forced search with classifier-entity-based dispatch. When `PROPERTY_SEARCH` intent + slots complete, searches directly and uses LLM only for formatting.
-- Added `entities` parameter to `process_turn()` — passes classifier-extracted slots to agent.
-- Added `_sanitize_response_text()` leak detector — strips base64 data URIs, local paths, tool call artifacts from LLM output before sending.
-- **Fixed** state machine race: Entire turn (classify + agent + save) now executes INSIDE the per-user Redis lock.
-- Added image URL validation — validates URLs before sending via WhatsApp API.
+| Issue | Severity | Fix |
+|-------|----------|-----|
+| **Timezone (appointments 3h off)** | 🔴 CRITICAL | `_ensure_timezone()` now uses `America/Argentina/Buenos_Aires` via `pytz.localize()` instead of `dt.replace(tzinfo=tz.utc)` |
+| **No exception handlers** | 🔴 CRITICAL | Added `@app.exception_handler(Exception)` with structured logging |
+| **Webhook message loss on crash** | 🟠 HIGH | Wrapped `process_messages()` in try/except |
+| **Celery dead code** | 🔴 CRITICAL | Removed entirely (Celery, tasks/, deps/, celery_settings.py) |
+| **NFKD destroys Spanish names** | 🟡 MEDIUM | Removed `unicodedata.normalize('NFKD', text)` from sanitizer |
+| **Connection pool leak** | 🟠 HIGH | `engine.dispose()` moved before `return` in property_service |
+| **Calendar refactor** | 🟠 HIGH | Dead code removed, timezone unified to Buenos Aires, all API calls async, OAuth refresh added, admin CRUD syncs to Google Calendar |
+| **WhatsApp image sending** | 🟠 HIGH | 4 bugs: silent failure in send_image, localhost URLs, no rate-limiting, hardcoded URLs |
 
-### Fase 2 — Switched to GPT-4o-mini
-- `llm_router.py`: Replaced multi-provider chain (Gemini → OpenRouter → MiniMax → Fallback) with single `AsyncOpenAI` using GPT-4o-mini. Much simpler, 561→174 lines.
-- `classifier.py`: Replaced OpenRouter-based intent classifier with OpenAI using `response_format=json_object` for deterministic structured output. Removed fragile text parsing.
-- `config.py`: Added `OPENAI_API_KEY` and `OPENAI_MODEL` (default: `gpt-4o-mini`). Old LLM keys marked as deprecated.
-- `requirements.txt`: Added `openai>=1.30.0`.
+### Sprint 2 — Context Memory + Temporal Reasoning (May 9, 2026)
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| **Property context lost after 3-4 turns** | `selected_property_id` existed in Redis schema but was NEVER written to | Now saved after `get_property_details`/`get_property_images` and injected into LLM context |
+| **Pending scheduling info ignored** | `pending_scheduling_info` was saved to Redis but NEVER loaded into LLM context | Now injected via `_build_messages()` system message |
+| **"próximo martes" parsed as "martes"** | Simple weekday match ran BEFORE weekday_patterns regex | Reordered: weekday_patterns first, simple weekday as fallback |
+| **Bot contradicts user dates** | Prompt lacked rules against contradicting | Added `PROPIEDAD ACTIVA` + `CONSISTENCIA TEMPORAL` sections to system prompt |
+
+### Sprint 3 — 3-Phase Architecture Refactor (May 9-10, 2026)
+
+#### Phase 0 — Housekeeping
+- **Provider cleanup**: Removed 6 legacy LLM keys from `config.py` (Gemini, OpenRouter, MiniMax). Only `OPENAI_API_KEY` remains
+- **render.yaml**: Added `OPENAI_API_KEY` as `sync: false`
+- **Token logging**: Added per-call + cumulative token usage logging for cost monitoring
+- **MAX_TOOL_CALLS**: Increased from 3 to 5 with loop detection
+- **Legacy client safety**: 3 deprecated provider files updated with `getattr` fallbacks
+
+#### Phase 1 — Prompt + Tool Calling
+- **System prompt**: Reduced from ~1064→~599 lines. Extracted few-shot examples as separate messages, consolidated all NUNCA rules into 5 compact REGLAS DE ORO, removed inline redundant examples
+- **Forced search eliminated**: The keyword-based `is_clear_search` bypass was removed. LLM tool calling is now the ONLY path for search detection
+- **Context injection reordered**: `selected_property_id`, `pending_scheduling_info`, and `last_shown_properties` are now injected BEFORE history messages
+
+#### Phase 2 — Performance + Infrastructure
+- **Global session pool**: Replaced 8 ad-hoc `create_async_engine()` + `dispose()` patterns across 5 files with global `async_session_factory` from `session.py`
+- **Rate limiting**: New `app/core/rate_limiter.py` — Redis-based token bucket, 50 RPM global, graceful degradation when Redis is down
+- **Memory fallback**: In-memory dict fallback (`_fallback_context`, `_fallback_messages`) when Redis is unavailable — users no longer lose conversation context on Redis restart
+
+### Sprint 4 — Google Calendar Auth + Rendering (May 10, 2026)
+
+- **Secure credential loading**: Added `/etc/secrets/` path resolution for Render Secret Files. Added env var-based credential loading (`GOOGLE_TOKEN_JSON`, `GOOGLE_CREDENTIALS_JSON`)
+- **Service resilience**: Added `reset()` method, double retry in `service` property, better operator logging, user-facing "calendar sync unavailable" messaging
+- **New config fields**: `GOOGLE_TOKEN_JSON`, `GOOGLE_CREDENTIALS_JSON` in config.py
+- **render.yaml**: Added both env vars with `sync: false`
 
 ### Open Issues (NOT Fixed)
-| **Fixed** | seed data wipe, state machine race, forced search double-exec, switched to GPT-4o-mini | ✅ Fixed |
-| **Fixed** | timezone bug (Argentina UTC-3), exception handlers, message loss on crash, Celery dead code, NFKD Spanish names, connection pool leaks | ✅ Fixed |
-| **Remaining** | credential exposure (render.yaml/old.env), no auth on debug endpoints, no CI/CD, webhook signature verification | 🔴 Still open |
 
----
+| Issue | Status |
+|-------|--------|
+| Credential exposure (render.yaml hardcoded DB/Redis passwords) | 🔴 Still open — need rotation |
+| No auth on `/admin/debug/users` and `/webhook/debug` | 🔴 Still open |
+| No CI/CD pipeline | 🔴 Still open |
+| Webhook signature verification skipped | 🔴 Still open |
+| Docker healthcheck uses curl (not in slim image) | 🔴 Still open |
+| Loguru `serialize=True` incompatible with Render log aggregation | 🟡 Medium |
 
-## Calendar System (Refactored May 8, 2026)
-
-The calendar system uses a unified **America/Argentina/Buenos_Aires** timezone (GMT-3) across all layers:
-
-- **`calendar_service.py`** — Refactored: dead code removed, `_parse_datetime` uses Buenos Aires timezone (not UTC). All 7 Google API calls use `_execute_async()` + `asyncio.to_thread()` for non-blocking async. OAuth token auto-refresh added.
-- **`admin.py`** — Admin appointment CRUD endpoints now sync to Google Calendar. `calendar_event_id` stored/updated/removed on create/update/cancel.
-- **`tools.py`** — `schedule_visit` checks Google Calendar availability with correct `property_id` type (int, not UUID).
-- **`config.py`** — Added `CALENDAR_CREDENTIALS_DIR`, `CALENDAR_TOKEN_FILE`, `CALENDAR_CLIENT_SECRETS_FILE` config fields.
-- **Dashboard** — Calendar UI shows real sync status. Uses `America/Argentina/Buenos_Aires` for timezone conversions. GMT-3 label displayed.
 
 ## Critical Architecture Notes
 
@@ -86,23 +111,26 @@ Auto-adds `+asyncpg` to plain `postgresql://` URLs in `config.py:resolve_databas
 Render provides `postgresql://...` without driver prefix — the resolver handles it.
 **Admin routes** use sync psycopg2; they strip `+asyncpg` from the URL in `_get_sync_session()`.
 
-### 3. LLM Routing (single provider — refactored)
-Now single provider: **OpenAI GPT-4o-mini** via `AsyncOpenAI` (no more multi-provider chain).
-- Uses _provider_health dict + _rate_limit_until cooldowns (60s on 429)
-- Retries per provider: up to 3 attempts with exponential backoff
-- When Gemini 400s with tools, retries without tools before falling through
-- Each provider maintains health status; unhealthy providers are skipped
+### 3. LLM Routing (single provider — OpenAI GPT-4o-mini)
+Single provider: **OpenAI GPT-4o-mini** via `AsyncOpenAI`. No more multi-provider fallback chain.
+- Retries: up to 3 attempts with exponential backoff on 429/5xx
+- Rate limiting: Redis-based token bucket (50 RPM global)
+- Token logging: per-call + cumulative for cost tracking
+- Temperature: currently 0.7 (consider 0.3 for tool decisions)
 
-### 4. Agent Tool Calling with Forced Search
-The agent in `real_estate_agent.py` has a **forced search** bypass: if the user message contains clear search intent keywords (busco, quiero, casa, departamento, etc.), it calls `search_properties` directly on iteration 0 without waiting for the LLM to decide. This is a performance optimization that can race with the LLM's own tool decisions.
+### 4. Tool Calling (no more forced search bypass)
+The forced search bypass (keyword-based `is_clear_search`) was **removed** in Sprint 3. LLM tool calling is now the only path for search intent detection. The agent iterates up to 5 tool calls per turn with loop detection (breaks if same tool called twice consecutively).
 
 ### 5. Property ID System (Dual ID)
 The `Property` model uses an **integer primary key** (seeded from JSON data, `autoincrement=False`). The `original_id` field mirrors it for backward compatibility. Tools (`tools.py`) try integer lookup first, then UUID, then title search. This creates ambiguity in `get_property_details` and `schedule_visit` where both int and UUID lookups happen.
 
-### 6. Memory Architecture (Dual Store)
-- **Redis** (short-term): user context (state, last search, pending_scheduling), last 20 messages, intent cache (5 min TTL)
+### 6. Memory Architecture (Dual Store + Fallback)
+- **Redis** (short-term): user context (state, selected_property_id, last_shown_properties, pending_scheduling_info), last 20 messages, intent cache (5 min TTL)
 - **PostgreSQL** (long-term): user preferences, lead score, conversation history
-- On Redis failure, falls back to empty defaults (graceful degradation)
+- **In-memory fallback** (added Sprint 3): `_fallback_context` and `_fallback_messages` dicts preserve conversation context when Redis is down
+- `selected_property_id` is saved after every `get_property_details`/`get_property_images` and injected into LLM context via `_build_messages()`
+- `pending_scheduling_info` is saved by LLM and injected into context for context-aware scheduling
+- Conversation context survives Redis restarts via the in-memory fallback
 
 ### 7. State Machine (Conversation Flow)
 States: `idle` → `qualifying` → `searching` → `viewing_property` → `booking` → `completed` / `handoff`
@@ -132,13 +160,13 @@ inmueblebot/
 ├── app/
 │   ├── main.py                          # FastAPI app, lifespan, CORS, routers, dashboard SPA
 │   ├── agents/
-│   │   ├── real_estate_agent.py          # Main agent: turn processing, tool loop, forced search
-│   │   ├── llm_router.py                 # Multi-LLM router with fallback chain
-│   │   ├── tools.py                      # Tool implementations (~994 lines, 13 tools)
-│   │   ├── prompts.py                    # System prompt + few-shot examples (~1029 lines)
-│   │   ├── gemini_client.py              # Gemini 2.5 Flash adapter
-│   │   ├── openrouter_client.py          # OpenRouter adapter
-│   │   └── llm.py                        # MiniMax adapter (AsyncMiniMaxClient)
+│   │   ├── real_estate_agent.py          # Main agent: turn processing, tool loop (MAX=5)
+│   │   ├── llm_router.py                 # Single OpenAI GPT-4o-mini provider
+│   │   ├── tools.py                      # Tool implementations (~1001 lines, 13 tools)
+│   │   ├── prompts.py                    # System prompt + few-shot examples (~600 lines, cleaned Sprint 3)
+│   │   ├── gemini_client.py              # [DEPRECATED] Not used — kept for reference
+│   │   ├── openrouter_client.py          # [DEPRECATED] Not used — kept for reference
+│   │   └── llm.py                        # [DEPRECATED] MiniMax adapter — kept for reference
 │   ├── core/
 │   │   ├── config.py                     # Pydantic-settings, multi-source .env loading
 │   │   ├── state_machine.py              # Redis-backed FSM for conversation flow
