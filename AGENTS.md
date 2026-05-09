@@ -4,6 +4,41 @@
 > Target market: Argentina, Paraguay (Spanish/Portuguese speaking users)
 > ~17,873 LOC across 55+ Python modules, 6 React JSX files
 
+## ⚠️ TOP PRIORITY — Database & Redis Migration UNTESTED ⚠️
+
+**THIS IS THE FIRST THING TO WORK ON.**
+
+### Context
+On May 10, 2026, both PostgreSQL and Redis were migrated from **Frankfurt** (EU) to **Oregon** (US West) to co-locate with the Render API server and eliminate cross-region latency (~500ms RTT → ~1ms).
+
+### What Was Done
+- **PostgreSQL**: `pg_dump` → Render API create new DB in Oregon → data restore → column renames to match codebase schema
+- **Redis**: Render API create new instance in Oregon → env var `REDIS_URL` set via API
+- **render.yaml**: Updated with Oregon DB URL; Redis service re-added for blueprint auto-injection
+
+### Known Issues (Need Debugging)
+1. ⚠️ **Redis URL format**: Currently set as `redis://red-d7vfn5j7uimc73enga80:6379`. May need `rediss://` (SSL). Passwordless auth may or may not work from within Render's network. **Test by sending a WhatsApp message and checking logs for `REDIS DOWN` warning.**
+2. ⚠️ **Column mapping**: Old Frankfurt schema had different column names than current SQLAlchemy models. During migration, these were renamed (e.g., `type`→`operation_type`, `whatsapp_phone`→`phone`→`whatsapp_phone`). **Test all CRUD operations** and check for `UndefinedColumnError` in logs.
+3. ⚠️ **Foreign key constraints**: Appointment/user/property FK relationships from old schema may have orphaned references. **Test appointment creation, listing, and rescheduling.**
+4. ⚠️ **Google Calendar sync**: Calendar integration writes to both DB and Google API. Verify events created via new Oregon DB sync correctly.
+5. ⚠️ **Dashboard**: Dashboard connects to the same DB. Verify data loads correctly in the web dashboard at `/admin/*`.
+
+### Quick Test Scenarios (Run After Deploy)
+```bash
+# 1. Send a WhatsApp message → check logs for REDIS DOWN or DB errors
+# 2. Search for a property → verify LLM response includes results
+# 3. Schedule a visit → verify appointment created + Calendar event
+# 4. Open Dashboard → verify data loads at /admin/leads, /admin/appointments
+```
+
+### Rollback Plan
+If migration has unresolvable issues:
+- Revert `render.yaml` to point to Frankfurt DB URL
+- Recreate Redis instance in Frankfurt via Render dashboard
+- Restore from the backup at `/tmp/inmueblebot_dump.sql`
+
+---
+
 ## Entrypoints
 
 | Purpose | Command | Port |
@@ -18,8 +53,8 @@
 ## Stack
 
 - **Python 3.12+** with FastAPI + SQLAlchemy 2.0 async + asyncpg
-- **PostgreSQL 16** (Render Managed, **Oregon** region — migrated from Frankfurt May 10)
-- **Redis 7 Alpine** (Render Managed, **Oregon** region — recreated May 10, auto-injected via blueprint)
+- **PostgreSQL 16** (Render Managed, **Oregon** region — migrated from Frankfurt May 10 — ⚠️ UNTESTED, see TOP PRIORITY)
+- **Redis 7 Alpine** (Render Managed, **Oregon** region — recreated May 10, auto-injected via blueprint — ⚠️ UNTESTED, see TOP PRIORITY)
 - **LLM**: OpenAI GPT-4o-mini (single provider — friend's refactor replaced the multi-provider chain)
 - **WhatsApp**: Meta Cloud API (v18.0 Graph API) → `facebook.com/v18.0/{phone_number_id}/messages`
 - **Dashboard**: React SPA (Vite, @tanstack/react-query, axios)
@@ -141,7 +176,9 @@ The API was already on Render Oregon, but both PostgreSQL and Redis were in **Fr
 | **render.yaml** Redis service | Re-added with `plan: free`, `region: oregon` | REDIS_URL auto-injected by Render blueprint |
 | **render.yaml** credentials | Removed stale Frankfurt credentials | Oregon DB password + auto-injected Redis |
 
-**Impact**: DB queries now ~1ms instead of ~500ms RTT. With 8-10 queries per turn, this saves ~4s per user message.
+**⚠️ STATUS: UNTESTED** — Migration completed but full integration testing pending. See TOP PRIORITY section at top of this file.
+
+**Known deploy issue (env var wipe)**: The `PUT /v1/services/{id}/env-vars` Render API endpoint REPLACES all env vars, not just the specified key. When setting `REDIS_URL` via API, all other env vars (`DATABASE_URL`, `PORT`, `ENVIRONMENT`, etc.) were accidentally deleted. They were restored immediately. `OPENAI_API_KEY`, `GOOGLE_TOKEN_JSON`, and `GOOGLE_CREDENTIALS_JSON` are stored as Secret Files (`/etc/secrets/`) and were NOT affected.
 
 ### Sprint 10 — Rescheduling Robustness (May 10, 2026)
 
