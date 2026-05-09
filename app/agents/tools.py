@@ -739,19 +739,51 @@ async def reschedule_appointment_tool(
     from datetime import datetime
     from uuid import UUID
     from app.services.appointment_service import appointment_service, format_appointment_confirmation
+    from app.db.session import async_session_factory
+    from app.db.models import Appointment as AppointmentModel
+    from sqlalchemy import select
     import pytz
 
     try:
-        if not appointment_id:
+        apt_uuid = None
+        
+        # Try to parse the appointment_id as UUID
+        if appointment_id:
+            try:
+                apt_uuid = UUID(appointment_id)
+            except ValueError:
+                logger.warning(f"[reschedule] ⚠️ LLM pasó ID inválido '{appointment_id}' — buscando cita más reciente del usuario")
+                apt_uuid = None
+        
+        # If no valid UUID, try to find the user's most recent appointment automatically
+        if not apt_uuid and phone:
+            try:
+                from app.db.models import User
+                async with async_session_factory() as db:
+                    user_repo_q = select(User).where(User.whatsapp_phone == phone)
+                    user_result = await db.execute(user_repo_q)
+                    user = user_result.scalar_one_or_none()
+                    if user:
+                        apt_q = (
+                            select(AppointmentModel)
+                            .where(AppointmentModel.user_id == user.id)
+                            .where(AppointmentModel.status.in_(["scheduled", "confirmed"]))
+                            .order_by(AppointmentModel.created_at.desc())
+                            .limit(1)
+                        )
+                        apt_result = await db.execute(apt_q)
+                        latest_apt = apt_result.scalar_one_or_none()
+                        if latest_apt:
+                            apt_uuid = latest_apt.id
+                            logger.info(f"[reschedule] Auto-resolved appointment: {apt_uuid}")
+            except Exception as e:
+                logger.warning(f"[reschedule] Could not auto-resolve appointment: {e}")
+        
+        if not apt_uuid:
             return "Necesito el ID de la cita que quieres reprogramar."
         
         if not new_date_str:
             return "Necesito saber la nueva fecha."
-        
-        try:
-            apt_uuid = UUID(appointment_id)
-        except ValueError:
-            return f"El ID de cita '{appointment_id}' no es válido."
         
         date_obj = datetime.strptime(new_date_str, "%Y-%m-%d").date()
         
