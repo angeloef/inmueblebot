@@ -123,6 +123,7 @@ class RealEstateAgent:
             cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
             for iteration in range(self.MAX_TOOL_CALLS):
+                break_out = False
                 # Phase 4: Add detailed logging for tools + intent detection
                 tools_count = len(self.tools) if self.tools else 0
 
@@ -189,6 +190,14 @@ class RealEstateAgent:
                         last_two = tools_used[-2:]
                         if last_two[0] == last_two[1]:
                             logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
+                            # If it's a scheduling tool that already succeeded, use the success response
+                            if last_two[0] in ("schedule_visit", "reschedule_appointment", "cancel_appointment"):
+                                result_str = str(tool_result)
+                                if "<!--CONFIRMED:" in result_str or "Cita Reprogramada" in result_str or "Cita Cancelada" in result_str or "Cita Agendada" in result_str:
+                                    response_text = tool_result
+                                    logger.info(f"[Agent] Scheduling tool {last_two[0]} succeeded despite loop — confirmation used")
+                                    break_out = True
+                                    break
                             break
 
                     messages.append({
@@ -262,15 +271,18 @@ class RealEstateAgent:
                         except Exception as e:
                             logger.warning(f"[Agent] Could not save selected_property_id: {e}")
                     
-                    # Log confirmed datetime for schedule_visit
-                    if "schedule_visit" in tool_name and "Cita Agendada" in str(tool_result):
+                    # Log confirmed datetime for schedule_visit / reschedule
+                    if ("schedule_visit" in tool_name or "reschedule_appointment" in tool_name) and "Cita" in str(tool_result):
                         import re
                         match = re.search(r'<!--CONFIRMED:(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-->', str(tool_result))
                         if match:
                             confirmed_time = match.group(1)
                             logger.info(f"[Agent] Tool confirmed datetime: {confirmed_time}")
                             logger.info(f"[Agent] Final confirmation message using time: {confirmed_time}")
-            
+
+                if break_out:
+                    break
+
             # Turn summary log
             logger.info(f"[Agent] Turn complete: {len(tools_used)} tool(s) used: {tools_used}")
 
