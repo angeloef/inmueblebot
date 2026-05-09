@@ -782,14 +782,44 @@ async def reschedule_appointment_tool(
         if not apt_uuid:
             return "Necesito el ID de la cita que quieres reprogramar."
         
+        # Fetch current appointment data to use as reference
+        current_apt = None
+        async with async_session_factory() as db:
+            try:
+                current_apt = await db.get(AppointmentModel, apt_uuid)
+            except Exception:
+                pass
+        
+        # If no new_date_str provided, use existing appointment's date
+        if not new_date_str and current_apt:
+            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+            existing_local = current_apt.start_time.astimezone(arg_tz)
+            new_date_str = existing_local.strftime("%Y-%m-%d")
+            logger.info(f"[reschedule] No new date provided, using existing: {new_date_str}")
+        
         if not new_date_str:
             return "Necesito saber la nueva fecha."
         
         date_obj = datetime.strptime(new_date_str, "%Y-%m-%d").date()
         
+        # If no new_time_str, use existing appointment's time
+        if not new_time_str and current_apt:
+            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+            existing_local = current_apt.start_time.astimezone(arg_tz)
+            new_time_str = existing_local.strftime("%H:%M")
+            logger.info(f"[reschedule] No new time provided, using existing: {new_time_str}")
+        
         arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
         if new_time_str:
             time_obj = datetime.strptime(new_time_str, "%H:%M").time()
+            # Contextual hour interpretation: if existing apt is PM and user says "7", prefer 19:00 over 07:00
+            if current_apt and time_obj.hour < 12:
+                arg_tz_inner = pytz.timezone('America/Argentina/Buenos_Aires')
+                existing_local = current_apt.start_time.astimezone(arg_tz_inner)
+                if existing_local.hour >= 12:
+                    # Existing apt is PM — interpret user's hour as PM too
+                    time_obj = time_obj.replace(hour=time_obj.hour + 12)
+                    logger.info(f"[reschedule] Contextual PM interpretation: existing={existing_local.hour}:00, new={time_obj.hour}:00")
             new_start = arg_tz.localize(datetime.combine(date_obj, time_obj))
         else:
             new_start = arg_tz.localize(datetime.combine(date_obj, datetime.min.time()))
