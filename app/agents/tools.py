@@ -643,6 +643,14 @@ async def schedule_visit(
         is_valid, validation_error = validate_future(parsed_dt, min_minutes=30)
         if not is_valid:
             logger.warning(f"[schedule_visit] Validation error: {validation_error}")
+            # Check if the user's original input was a natural language date
+            # that got incorrectly converted by the LLM to a numeric date
+            import re as _re_date
+            is_numeric_date = bool(_re_date.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', date_str or ''))
+            if is_numeric_date:
+                return (f"La fecha '{date_str} {time_str or ''}' ya pasó. "
+                        f"REINTENTÁ pasando la fecha TAL CUAL la dijo el usuario, sin convertirla a números. "
+                        f"Por ejemplo, si el usuario dijo 'dentro de 4 días', usá date_str='dentro de 4 días'.")
             return validation_error
         
         start_datetime = parsed_dt

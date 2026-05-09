@@ -134,6 +134,15 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
         return target.replace(hour=10, minute=0, second=0), None
     
     # === Relative days ===
+    # "dentro de 4 días", "dentro de una semana", "en 3 días" — relative from now
+    import re as _re
+    dentro_match = _re.search(r'(?:dentro\s+de|en)\s+(\d+)\s*(?:d[ií]as?|d[ií]a)', user_text)
+    if dentro_match:
+        days_ahead = int(dentro_match.group(1))
+        if 1 <= days_ahead <= 30:
+            target = now + timedelta(days=days_ahead)
+            return target.replace(hour=10, minute=0, second=0), None
+
     if user_text in ("hoy", "today"):
         return now.replace(hour=10, minute=0, second=0), None
     
