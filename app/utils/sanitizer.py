@@ -123,8 +123,8 @@ def sanitize_date_input(date_str: str) -> str:
     date_str = date_str.strip()
     
     # Solo permitir caracteres válidos para fechas
-    # Dígitos, /, -, de, espacio, y, mes
-    date_str = re.sub(r'[^\d/\- deenerofebreromarabrilmayojuniojulioagostoseptiembreoctubrenoviembrebediciembrey]', ' ', date_str.lower())
+    # Dígitos, /, -, de, espacio, y, mes (incluye ñ y acentos del español)
+    date_str = re.sub(r'[^\d/\- deenerofebreromarabrilmayojuniojulioagostoseptiembreoctubrenoviembrebediciembreyñáéíóúü]', ' ', date_str.lower())
     date_str = re.sub(r' +', ' ', date_str).strip()
     
     return date_str
