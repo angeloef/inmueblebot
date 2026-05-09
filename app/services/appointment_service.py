@@ -86,6 +86,8 @@ class AppointmentService:
             # Check Google Calendar availability if configured
             calendar_event_id = None
             logger.info(f"[Create Appointment] check_calendar={check_calendar}, calendar_service.is_configured={calendar_service.is_configured}")
+            if check_calendar and not calendar_service.is_configured:
+                logger.warning("[Appointment] ⚠️ Google Calendar NOT configured — appointment will be DB-only (no calendar sync)")
             if check_calendar and calendar_service.is_configured:
                 result = await db.execute(select(Property).where(Property.id == property_id))
                 property_obj = result.scalar_one_or_none()
@@ -144,9 +146,13 @@ class AppointmentService:
             
             logger.info(f"Cita creada: {appointment.id} calendar_event_id={calendar_event_id}")
             
+            calendar_note = ""
+            if check_calendar and not calendar_service.is_configured:
+                calendar_note = "\n\n⚠️ Nota: La sincronización con el calendario no está disponible. La cita se registró en nuestro sistema."
+            
             return {
                 "success": True,
-                "message": "Cita agendada exitosamente",
+                "message": f"Cita agendada exitosamente{calendar_note}",
                 "appointment": appointment,
                 "confirmed_datetime": start_time.isoformat()
             }

@@ -39,3 +39,7 @@ services:
         value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0?ssl_cert_reqs=none"
       - key: OPENAI_API_KEY
         sync: false
+      - key: GOOGLE_TOKEN_JSON
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false

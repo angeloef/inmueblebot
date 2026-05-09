@@ -157,6 +157,14 @@ class Settings(BaseSettings):
         default="primary",
         description="Google Calendar ID to use for appointments"
     )
+    GOOGLE_TOKEN_JSON: Optional[str] = Field(
+        default=None,
+        description="Google OAuth token as JSON string (Render secret file or env var)"
+    )
+    GOOGLE_CREDENTIALS_JSON: Optional[str] = Field(
+        default=None,
+        description="Google client secrets as JSON string (Render secret file or env var)"
+    )
 
     @property
     def is_production(self) -> bool:

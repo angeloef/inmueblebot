@@ -29,14 +29,22 @@ class CalendarService:
         self._client_secrets_path = None
         self._resolve_credential_paths()
     
+    def reset(self):
+        """Reset cached service so it re-initializes on next access. Call this when credentials might have changed."""
+        self._service = None
+        self._credentials = None
+        self._resolve_credential_paths()
+        logger.info("[Calendar] Service cache reset — will re-initialize on next access")
+
     def _resolve_credential_paths(self):
         """
         Resolve credential file paths from settings (with local-dev fallback).
-        
+
         Priority:
         1. Settings-provided path (GOOGLE_TOKEN_PATH / GOOGLE_CREDENTIALS_PATH from .env)
         2. /app/credentials/<file> (Docker container path)
-        3. Relative to project root (local dev outside Docker)
+        3. /etc/secrets/<file> (Render Secret Files mount point)
+        4. Relative to project root (local dev outside Docker)
         """
         settings = get_settings()
         
@@ -45,6 +53,8 @@ class CalendarService:
         if settings.GOOGLE_TOKEN_PATH:
             token_candidates.append(settings.GOOGLE_TOKEN_PATH)
         token_candidates.append("/app/credentials/token.json")
+        token_candidates.append("/etc/secrets/token.json")
+        token_candidates.append("/etc/secrets/google_token.json")
         
         # Local dev fallback
         py_dir = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +68,8 @@ class CalendarService:
         if settings.GOOGLE_CREDENTIALS_PATH:
             secrets_candidates.append(settings.GOOGLE_CREDENTIALS_PATH)
         secrets_candidates.append("/app/credentials/client_secrets.json")
+        secrets_candidates.append("/etc/secrets/client_secrets.json")
+        secrets_candidates.append("/etc/secrets/google_credentials.json")
         secrets_candidates.append(os.path.join(project_root, "credentials", "client_secrets.json"))
         
         self._client_secrets_path = self._first_existing(secrets_candidates) or "/app/credentials/client_secrets.json"
@@ -70,9 +82,28 @@ class CalendarService:
                 return p
         return None
     
+    def _load_credentials_from_env(self) -> tuple:
+        """Try loading credentials from env vars (Render dashboard) instead of files."""
+        settings = get_settings()
+        
+        # Try GOOGLE_TOKEN_JSON env var (entire token as JSON string)
+        token_json = getattr(settings, 'GOOGLE_TOKEN_JSON', None)
+        if not token_json:
+            token_json = os.environ.get('GOOGLE_TOKEN_JSON')
+        
+        # Try GOOGLE_CREDENTIALS_JSON env var
+        creds_json = getattr(settings, 'GOOGLE_CREDENTIALS_JSON', None)
+        if not creds_json:
+            creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        
+        return token_json, creds_json
+    
     @property
     def is_configured(self) -> bool:
-        """Check if Google Calendar is configured."""
+        """Check if Google Calendar is configured (files or env vars)."""
+        token_json, creds_json = self._load_credentials_from_env()
+        if token_json and creds_json:
+            return True
         return os.path.exists(self._client_secrets_path) and os.path.exists(self._token_path)
     
     def _get_calendar_id(self) -> Optional[str]:
@@ -112,14 +143,36 @@ class CalendarService:
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         
-        if not os.path.exists(self._client_secrets_path):
-            logger.warning("[Calendar] client_secrets.json not found")
-            return None
+        # Try file-based credentials first
+        token_data = None
+        client_secrets_loaded = os.path.exists(self._client_secrets_path)
         
-        token_data = self._load_token()
-        if not token_data:
-            logger.warning("[Calendar] token.json not found or empty")
-            return None
+        if client_secrets_loaded:
+            token_data = self._load_token()
+        
+        # Fall back to env var credentials if files don't exist
+        if not token_data or not client_secrets_loaded:
+            token_json, creds_json = self._load_credentials_from_env()
+            if token_json and creds_json:
+                logger.info("[Calendar] Loading credentials from environment variables")
+                try:
+                    token_data = json.loads(token_json)
+                    # Mark as loaded from env var so we proceed
+                    client_secrets_loaded = True
+                except json.JSONDecodeError as e:
+                    logger.error(f"[Calendar] Failed to parse GOOGLE_TOKEN_JSON env var: {e}")
+                    return None
+            else:
+                if not client_secrets_loaded:
+                    logger.warning("[Calendar] client_secrets.json not found")
+                if not token_data:
+                    logger.warning("[Calendar] No token found (files or env vars)")
+                logger.warning(
+                    f"[Calendar] NOT CONFIGURED — appointments will be DB-only. "
+                    f"To enable: set GOOGLE_CREDENTIALS_JSON + GOOGLE_TOKEN_JSON env vars "
+                    f"or place files at {self._client_secrets_path} and {self._token_path}"
+                )
+                return None
         
         try:
             credentials = Credentials.from_authorized_user_info(
@@ -146,6 +199,10 @@ class CalendarService:
     def service(self):
         if self._service is None:
             self._service = self._build_service()
+            if self._service is None:
+                # Try one more time with fresh path resolution (files might have appeared)
+                self._resolve_credential_paths()
+                self._service = self._build_service()
         return self._service
     
     async def check_availability(
