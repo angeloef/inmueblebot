@@ -9,15 +9,6 @@ databases:
 
 # ==================== SERVICES ====================
 services:
-  # Redis
-  - type: redis
-    name: inmueblebot-redis
-    plan: free
-    region: oregon
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: Allow all for development
-
   # FastAPI Backend
   - type: web
     name: inmueblebot-api
@@ -30,19 +21,14 @@ services:
 
     envVars:
       - key: DATABASE_URL
-        # ?? PENDIENTE: Reemplazar con Internal Connection String de la nueva DB en Oregon
-        # Crear nueva DB en https://dashboard.render.com/databases → New PostgreSQL
-        # Region: Oregon. Luego poner acá la "Internal Database URL" (sin +asyncpg, lo agrega config.py)
-        value: "PENDING_REPLACE_WITH_OREGON_DB_URL"
+        value: "postgresql://inmueblebot_user:XSqFG4FiC0q5OXXn1CiND25aHX076isu@dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com/inmueblebot_rfv1?ssl=require"
       - key: ENVIRONMENT
         value: production
       - key: PORT
         value: "8000"
       - key: REDIS_URL
-        # ?? PENDIENTE: Reemplazar con Internal Connection String del nuevo Redis en Oregon
-        # Crear nuevo Redis en https://dashboard.render.com/redis → New Redis
-        # Region: Oregon. Usar la \"Internal Connection String\" (rediss://...)
-        value: "PENDING_REPLACE_WITH_OREGON_REDIS_URL"
+        # Redis no disponible en free tier de Render. La app usa fallback a memoria local.
+        value: ""
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_TOKEN_JSON
