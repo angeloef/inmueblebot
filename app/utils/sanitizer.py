@@ -4,7 +4,10 @@ Limpia y valida inputs antes de procesarlos.
 """
 import re
 import unicodedata
+import logging
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 def sanitize_text(text: str, max_length: int = 5000) -> str:
@@ -222,6 +225,71 @@ clean_criteria = sanitize_criteria
 
 # ── Output sanitizer (bot responses before sending to WhatsApp) ────────────────
 
+# Patterns that indicate internal errors that must NEVER reach users
+_INTERNAL_ERROR_PATTERNS_RAW = [
+    r"El ID '[^']*' no es válido",
+    r"ID '[^']*' no válido",
+    r"No encontré la propiedad con ID",
+    r"Property not found",
+    r"Propiedad no encontrada",
+    r"Invalid property",
+    r"ID de propiedad '[^']*' no es válido",
+    r"Error al ejecutar",
+    r"Error de tipos en",
+    r"Herramienta '[^']*' no encontrada",
+    r"SQLAlchemy",
+    r"ProgrammingError",
+    r"asyncpg",
+    r"InterfaceError",
+    r"Database error",
+    r"Error en get_property_images",
+    r"Traceback",
+    r'File ".*", line \d+',
+    r"Exception:",
+    r"Error:.*at 0x[0-9a-fA-F]+",
+]
+
+_COMPILED_INTERNAL_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _INTERNAL_ERROR_PATTERNS_RAW]
+
+_SAFE_FALLBACK_MESSAGE = (
+    "Perdón, ocurrió un inconveniente al procesar la información de la propiedad. "
+    "Un asesor humano se contactará con vos a la brevedad para ayudarte."
+)
+
+def is_internal_error(text: str) -> bool:
+    """Detecta si un texto contiene errores internos que no deben llegar al usuario."""
+    if not text:
+        return False
+    for pattern in _COMPILED_INTERNAL_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+def sanitize_bot_response(text: str) -> str:
+    """
+    Limpia la respuesta del bot antes de enviarla a WhatsApp.
+    - Elimina URLs de imágenes (se envían por separado como media)
+    - Elimina paths internos y artefactos de tool-calling
+    - Reemplaza errores internos con mensajes profesionales
+    """
+    if not text:
+        return text
+    
+    # First: detect and replace internal errors with safe fallback
+    if is_internal_error(text):
+        logger.warning(f"[Sanitizer] ⚠️ Detectado error interno en respuesta: {text[:80]}...")
+        return _SAFE_FALLBACK_MESSAGE
+    
+    # Strip technical patterns
+    for pattern in _OUTPUT_LEAK_PATTERNS:
+        text = pattern.sub('', text)
+    
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+# ── Output leak patterns (stripped before sending to WhatsApp) ─────────────────
+
 _OUTPUT_LEAK_PATTERNS = [
     # Markdown images: ![alt](url)
     re.compile(r'!\[[^\]]*\]\(https?://[^\)]+\)', re.IGNORECASE),
@@ -233,53 +301,6 @@ _OUTPUT_LEAK_PATTERNS = [
     re.compile(r'/app/[^\s]+'),
     re.compile(r'[A-Za-z]:\\[^\s]+'),
     # Tool call artifacts
-    re.compile(r'<tool[_\s][^>]*>'),
+    re.compile(r'<tool[_\\s][^>]*>'),
     re.compile(r'\[function[^\]]*\]'),
 ]
-
-
-def sanitize_bot_response(text: str) -> str:
-    """
-    Limpia la respuesta del bot antes de enviarla a WhatsApp.
-    Elimina URLs de imágenes (se envían por separado como media),
-    paths internos, y artefactos de tool-calling.
-    """
-    if not text:
-        return text
-    for pattern in _OUTPUT_LEAK_PATTERNS:
-        text = pattern.sub('', text)
-    # Clean up double blank lines left by removals
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
-
-# ── Output sanitizer (bot responses before sending to WhatsApp) ────────────────
-
-_OUTPUT_LEAK_PATTERNS = [
-    # Markdown images: ![alt](url)
-    re.compile(r'!\[[^\]]*\]\(https?://[^\)]+\)', re.IGNORECASE),
-    # Raw media/property URLs embedded in text
-    re.compile(r'https?://\S+/media/property/\S+', re.IGNORECASE),
-    # base64 data URIs
-    re.compile(r'data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/=]{20,}', re.DOTALL),
-    # Internal file paths
-    re.compile(r'/app/[^\s]+'),
-    re.compile(r'[A-Za-z]:\\[^\s]+'),
-    # Tool call artifacts
-    re.compile(r'<tool[_\s][^>]*>'),
-    re.compile(r'\[function[^\]]*\]'),
-]
-
-
-def sanitize_bot_response(text: str) -> str:
-    """
-    Limpia la respuesta del bot antes de enviarla a WhatsApp.
-    Elimina URLs de imágenes (se envían por separado como media),
-    paths internos, y artefactos de tool-calling.
-    """
-    if not text:
-        return text
-    for pattern in _OUTPUT_LEAK_PATTERNS:
-        text = pattern.sub('', text)
-    # Clean up double blank lines left by removals
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
