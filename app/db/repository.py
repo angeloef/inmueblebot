@@ -180,12 +180,36 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.type == type)
         
         if location:
-            # Flexible location matching - case insensitive, partial match
-            # Support "Oberá", "obera", "Obera" with one search
-            loc_normalized = location.strip().lower()
-            query = query.where(
-                Property.location.ilike(f"%{loc_normalized}%")
-            )
+            from app.utils.sanitizer import normalize_location
+            from sqlalchemy import or_
+
+            loc_clean = location.strip().lower()
+            loc_norm = normalize_location(location)
+
+            # Build multiple matching strategies for flexible address search
+            filters = []
+
+            # Strategy 1: Original query as-is (full ILIKE)
+            filters.append(Property.location.ilike(f"%{loc_clean}%"))
+
+            # Strategy 2: Normalized (prefix stripped, numbers removed)
+            # e.g. "calle sarmiento" → "sarmiento" matches "Sarmiento 285, Oberá"
+            if loc_norm and loc_norm != loc_clean:
+                filters.append(Property.location.ilike(f"%{loc_norm}%"))
+
+            # Strategy 3: Individual words (>2 chars) OR'd together
+            # e.g. "calle sarmiento" matches anything containing "calle" OR "sarmiento"
+            words = [w for w in loc_clean.split() if len(w) > 2]
+            # Also add normalized words (deduplicated)
+            if loc_norm and loc_norm != loc_clean:
+                norm_words = [w for w in loc_norm.split() if len(w) > 2]
+                words.extend(w for w in norm_words if w not in words)
+            if words:
+                word_filters = [Property.location.ilike(f"%{w}%") for w in words]
+                filters.append(or_(*word_filters))
+
+            # Combine all strategies with OR — any matching strategy returns results
+            query = query.where(or_(*filters))
         
         if budget_min is not None:
             query = query.where(Property.price >= budget_min)

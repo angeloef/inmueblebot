@@ -114,6 +114,33 @@ def sanitize_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
+# Street prefixes to strip for normalized location search
+_STREET_PREFIXES = [
+    "calle", "av", "av.", "avenida", "avda", "pasaje", "psje",
+    "boulevard", "bvar", "ruta", "camino", "autopista",
+]
+
+
+def normalize_location(location: str) -> str:
+    """
+    Normaliza una ubicación para búsqueda flexible.
+    - Quita prefijos de calle/avenida
+    - Quita números de altura
+    - Retorna término limpio para ILIKE matching
+    """
+    if not location:
+        return location
+    loc = location.strip().lower()
+    # Strip street prefixes (e.g. "calle sarmiento" → "sarmiento")
+    for prefix in _STREET_PREFIXES:
+        if loc.startswith(prefix + " ") or loc == prefix:
+            loc = loc[len(prefix):].strip()
+            break
+    # Remove street numbers at end (e.g. "sarmiento 285" → "sarmiento")
+    loc = re.sub(r'\s+\d+\s*$', '', loc).strip()
+    return loc
+
+
 def sanitize_date_input(date_str: str) -> str:
     """
     Sanitiza input de fecha.
