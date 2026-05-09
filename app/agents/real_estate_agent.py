@@ -81,6 +81,19 @@ class RealEstateAgent:
                 history = []
             
             user_prefs = merged_context
+
+            # Fetch existing appointments for context (prevents time hallucination in rescheduling)
+            try:
+                from app.services.appointment_service import appointment_service
+                from uuid import UUID
+                if "user_id" in merged_context and merged_context["user_id"]:
+                    uid = UUID(str(merged_context["user_id"]))
+                    existing = await appointment_service.get_upcoming_appointments(uid, limit=3)
+                    if existing:
+                        user_prefs["existing_appointments"] = existing
+                        logger.info(f"[Agent] Loaded {len(existing)} existing appointments for {phone}")
+            except Exception as e:
+                logger.warning(f"[Agent] Could not load existing appointments: {e}")
             
             if self._detect_handoff_request(user_message):
                 from app.services.handoff_service import handoff_service
@@ -403,6 +416,24 @@ class RealEstateAgent:
 
         # Inject few-shot examples as separate messages for in-context learning
         messages.extend(FEW_SHOT_EXAMPLES)
+
+        # Append existing appointments context (DB-sourced) — prevents time hallucination during rescheduling
+        existing = user_context.get("existing_appointments")
+        if existing:
+            from app.services.appointment_service import format_appointment_confirmation
+            apt_lines = []
+            for apt in existing[:3]:
+                apt_lines.append(format_appointment_confirmation(apt))
+            context_block = (
+                "\n### CITAS EXISTENTES DEL USUARIO\n"
+                + "\n---\n".join(apt_lines) +
+                "\n\n"
+                "USA ESTOS DATOS EXACTOS si el usuario menciona cambiar o cancelar una cita. "
+                "NO infieras ni adivines la hora desde la conversación. "
+                "La base de datos es la ÚNICA fuente de verdad.\n"
+            )
+            messages.append({"role": "system", "content": context_block})
+            logger.info(f"[Agent] Injected {len(existing)} existing appointments for {phone}")
 
         for msg in history:
             role = msg.get("role", "user")
