@@ -73,24 +73,57 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 - **Rate limiting**: New `app/core/rate_limiter.py` — Redis-based token bucket, 50 RPM global, graceful degradation when Redis is down
 - **Memory fallback**: In-memory dict fallback (`_fallback_context`, `_fallback_messages`) when Redis is unavailable — users no longer lose conversation context on Redis restart
 
-### Sprint 4 — Google Calendar Auth + Rendering (May 10, 2026)
+### Sprint 4 — Google Calendar Auth + Render Secrets (May 10, 2026)
 
 - **Secure credential loading**: Added `/etc/secrets/` path resolution for Render Secret Files. Added env var-based credential loading (`GOOGLE_TOKEN_JSON`, `GOOGLE_CREDENTIALS_JSON`)
-- **Service resilience**: Added `reset()` method, double retry in `service` property, better operator logging, user-facing "calendar sync unavailable" messaging
+- **Service resilience**: Added `reset()` method, `_auth_failed` flag to prevent repeated retries on `invalid_grant`, better operator logging, user-facing "calendar sync unavailable" messaging
+- **Read-only filesystem fix**: OAuth token refresh can't save to `/etc/secrets/` (Render mounts as read-only) — wrapped `_save_token()` in try/except with graceful degradation
 - **New config fields**: `GOOGLE_TOKEN_JSON`, `GOOGLE_CREDENTIALS_JSON` in config.py
 - **render.yaml**: Added both env vars with `sync: false`
 
+### Sprint 5 — Appointment Rescheduling Fixes (May 10, 2026)
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| **Confirmation shows UTC time (3h off)** | `format_appointment_confirmation()` used `strftime` directly on UTC datetime from asyncpg | Convert to `America/Argentina/Buenos_Aires` via `astimezone()` before formatting |
+| **Reschedule time stamped as UTC** | `reschedule_appointment_tool()` used `tzinfo=timezone.utc` for new time | Now uses `pytz.localize()` with Argentina timezone |
+| **LLM hallucinates appointment ID** | LLM calls `reschedule_appointment(id='abc-123')` — completely fake UUID | Tool now auto-resolves: if UUID invalid, fetches user's most recent appointment by phone |
+| **LLM invents date/time during reschedule** | No context about existing appointment in LLM messages | Injects `### CITAS EXISTENTES DEL USUARIO` with formatted appointment data + DB-first instruction |
+| **Success response replaced by generic error** | Loop detector broke inner loop only; response_text stayed empty | Loop detector now detects scheduling tool success and breaks BOTH loops, using success message |
+| **"a las 7" interpreted as 07:00 not 19:00** | No contextual hour interpretation | Tool adds +12h when existing appointment is PM and user says hour < 12 |
+| **Wrong date when only time changes** | LLM sends `2026-05-19` instead of original date | Prompt rule: "SI EL USUARIO SOLO MENCIONA UNA NUEVA HORA, NO CAMBIES LA FECHA" |
+| **property_type PostgreSQL type mismatch** | Column is `character varying[]` but code sent JSON serialized array | `cast(prop_type, ARRAY(String))` from SQLAlchemy |
+| **ll (encoding corruption in "mañana")** | `sanitize_date_input()` regex whitelist didn't include `ñ` | Added `ñáéíóúü` to the whitelist |
+
+### Sprint 6 — Error Handling + Production Safeguards (May 10, 2026)
+
+- **Internal error detection**: New `is_internal_error()` in `sanitizer.py` — detects 20+ patterns (property ID errors, DB errors, SQLAlchemy traces, Python exceptions)
+- **Safe user-facing fallback**: When internal error detected, response is replaced with: *"Perdón, ocurrió un inconveniente al procesar la información de la propiedad. Un asesor humano se contactará con vos a la brevedad."*
+- **LLM date hallucination guard**: In `schedule_visit`, when validation fails on a NUMERIC date (DD/MM/YYYY), returns message telling LLM to pass raw text
+- **Anti-hallucination property ID guard**: 3 tools (get_property_details, get_property_images, schedule_visit) now validate property_id is numeric or UUID before proceeding. Invalid IDs like `abc-123` are caught early with a corrective message to the LLM
+- **Few-shot examples fixed**: Changed `prop-001` → `1` in all examples — was training LLM to use wrong ID format
+- **Context injection reordered**: `existing_appointments` now injected BEFORE conversation history
+
+### Sprint 7 — Smart Search + Location Matching (May 10, 2026)
+
+- **normalize_location()**: New function in `sanitizer.py` — strips street prefixes (calle, av, avenida, pasaje, boulevard) and trailing street numbers. `"Calle Sarmiento 285"` → `"sarmiento"`
+- **Fuzzy ILIKE search**: `repository.py:search()` now uses 3-strategy OR combination: (1) original query, (2) normalized (prefix stripped), (3) individual words OR'd
+
 ### Open Issues (NOT Fixed)
 
-| Issue | Status |
-|-------|--------|
-| Credential exposure (render.yaml hardcoded DB/Redis passwords) | 🔴 Still open — need rotation |
-| No auth on `/admin/debug/users` and `/webhook/debug` | 🔴 Still open |
-| No CI/CD pipeline | 🔴 Still open |
-| Webhook signature verification skipped | 🔴 Still open |
-| Docker healthcheck uses curl (not in slim image) | 🔴 Still open |
-| Loguru `serialize=True` incompatible with Render log aggregation | 🟡 Medium |
-
+| Issue | Severity | Status |
+|-------|----------|--------|
+| Credential exposure (render.yaml hardcoded DB/Redis passwords) | 🔴 CRITICAL | Need rotation |
+| No auth on `/admin/debug/users` and `/webhook/debug` | 🔴 CRITICAL | Still open |
+| No CI/CD pipeline | 🔴 CRITICAL | Still open |
+| Webhook signature verification skipped | 🔴 CRITICAL | Still open |
+| Docker healthcheck uses curl (not in slim image) | 🟠 HIGH | Still open |
+| Loguru `serialize=True` incompatible with Render log aggregation | 🟡 MEDIUM | Still open |
+| No Redis Sentinel/Cluster support | 🟡 MEDIUM | Single instance, no HA |
+| Streamlit duplicates chat UI without agent pipeline | 🟡 MEDIUM | Direct LLM call, no tools |
+| Celery broker not configured | 🟡 MEDIUM | Tasks defined but don't run |
+| Admin mutations don't sync to bot state | 🟡 MEDIUM | Changes via admin won't refresh Redis context |
+| Property integer PK collision risk | 🟡 MEDIUM | `_next_property_id()` does `MAX(id)+1`, race on concurrent creates |
 
 ## Critical Architecture Notes
 
@@ -118,11 +151,17 @@ Single provider: **OpenAI GPT-4o-mini** via `AsyncOpenAI`. No more multi-provide
 - Token logging: per-call + cumulative for cost tracking
 - Temperature: currently 0.7 (consider 0.3 for tool decisions)
 
-### 4. Tool Calling (no more forced search bypass)
-The forced search bypass (keyword-based `is_clear_search`) was **removed** in Sprint 3. LLM tool calling is now the only path for search intent detection. The agent iterates up to 5 tool calls per turn with loop detection (breaks if same tool called twice consecutively).
+### 4. Tool Calling (no forced search, loop detection)
+The forced search bypass (keyword-based `is_clear_search`) was **removed** in Sprint 3. LLM tool calling is now the only path for search intent detection. The agent iterates up to 5 tool calls per turn with loop detection:
+- If same tool called twice consecutively → inner break + check if success message exists
+- If scheduling tool succeeded (`Cita Agendada`, `Cita Reprogramada`, `Confirmado`) → use success response, break outer loop
+- If not a scheduling tool or failed → break inner, continue outer loop
 
-### 5. Property ID System (Dual ID)
-The `Property` model uses an **integer primary key** (seeded from JSON data, `autoincrement=False`). The `original_id` field mirrors it for backward compatibility. Tools (`tools.py`) try integer lookup first, then UUID, then title search. This creates ambiguity in `get_property_details` and `schedule_visit` where both int and UUID lookups happen.
+### 5. Property ID System (Integer PK)
+The `Property` model uses an **integer primary key** (seeded from JSON data, `autoincrement=False`). The `original_id` field mirrors it for backward compatibility. All tools now validate IDs early:
+- `isdigit()` check → integer lookup → UUID fallback → title search (last resort)
+- **Anti-hallucination**: If ID is non-numeric and non-UUID (e.g., `abc-123`, `prop-001`), returns immediate error telling LLM to use context IDs
+- Few-shot examples use integer IDs like `1`, `2` (not `prop-001` as before)
 
 ### 6. Memory Architecture (Dual Store + Fallback)
 - **Redis** (short-term): user context (state, selected_property_id, last_shown_properties, pending_scheduling_info), last 20 messages, intent cache (5 min TTL)
@@ -167,15 +206,16 @@ inmueblebot/
 │   │   ├── gemini_client.py              # [DEPRECATED] Not used — kept for reference
 │   │   ├── openrouter_client.py          # [DEPRECATED] Not used — kept for reference
 │   │   └── llm.py                        # [DEPRECATED] MiniMax adapter — kept for reference
-│   ├── core/
-│   │   ├── config.py                     # Pydantic-settings, multi-source .env loading
-│   │   ├── state_machine.py              # Redis-backed FSM for conversation flow
-│   │   ├── memory.py                     # Hybrid memory (Redis + PostgreSQL), ~695 lines
-│   │   ├── classifier.py                 # OpenRouter-based intent classifier
-│   │   ├── intent.py                     # Intent enum (7 intents)
-│   │   ├── date_parser.py                # Spanish date/time parsing
-│   │   ├── session.py                    # Session management
-│   │   └── router.py                     # Simple router (legacy)
+├── core/
+│   ├── config.py                     # Pydantic-settings, multi-source .env loading
+│   ├── state_machine.py              # Redis-backed FSM for conversation flow
+│   ├── memory.py                     # Hybrid memory (Redis + PostgreSQL), ~695 lines
+│   ├── classifier.py                 # OpenRouter-based intent classifier
+│   ├── intent.py                     # Intent enum (7 intents)
+│   ├── date_parser.py                # Spanish date/time parsing
+│   ├── rate_limiter.py               # Redis-based token bucket (50 RPM global) — NEW May 10
+│   ├── session.py                    # Session management
+│   └── router.py                     # Simple router (legacy)
 │   ├── api/routes/
 │   │   ├── webhook.py                    # WhatsApp webhook handler (~408 lines)
 │   │   ├── admin.py                      # Admin CRUD API (sync psycopg2, ~680 lines)
@@ -318,7 +358,7 @@ Three sources in priority order:
 3. `.env` (local development)
 
 Key variables:
-- **LLM**: `GEMINI_API_KEY` + `GEMINI_MODEL`, `OPENROUTER_API_KEY` + `OPENROUTER_MODEL`, `MINIMAX_API_KEY`
+- **LLM**: `OPENAI_API_KEY` (single provider — GPT-4o-mini)
 - **WhatsApp**: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 - **DB**: `DATABASE_URL` (auto-adds `+asyncpg`)
 - **Redis**: `REDIS_URL` or `USE_LOCAL_REDIS=true`
@@ -333,29 +373,54 @@ Tools are defined as async functions in `tools.py` and registered in `TOOL_FUNCT
 ### The Agent Loop (real_estate_agent.py)
 ```
 1. Load user context from Redis + Redis message history (last 10)
-2. Check for handoff intent → early return
-3. Build messages: system prompt + context injection + conversation history
-4. Forced search bypass on iteration 0 if clear search intent detected
-5. LLM call → tool execution → append results → loop (max 3 iterations)
-6. Update state machine + lead score + preferences
-7. Clean response text (remove debug/programming words)
-8. Return structured result
+2. Fetch existing appointments from DB → inject into context
+3. Check for handoff intent → early return
+4. Build messages: system prompt + property/appointment context injection + conversation history
+5. LLM call → tool execution → append results → loop (max 5 iterations, loop detection)
+6. Loop detector: if same tool called twice AND success → break both loops with success response
+7. Update state machine + lead score + preferences
+8. Clean response text (remove debug/programming words, check for internal error patterns)
+9. Return structured result
 ```
 
 ### Context Injection for Property References
 The agent injects `<last_results>` XML tags with explicit mapping of option numbers to database IDs to prevent LLM hallucination of property IDs. The mapping format is:
 ```
-<opción 1> → ID=prop-001 | Casa amplia | $180,000 | 4 hab | Posadas
+<opci n 1> → ID=1 | Casa amplia | $180,000 | 4 hab | Posadas
 ```
 
-### Image Handling
-Images are passed via `<!--IMAGES:[...]-->` HTML comments in tool results and extracted by `_extract_rich_content()`. The `format_property_list()` function collects up to 3 images per property, deduplicates, and limits to 6 total. Images are sent to WhatsApp after the text response.
+### Context Injection for Appointments
+When a user has existing appointments (`get_upcoming_appointments()` from DB), a system message is injected:
+```
+### CITAS EXISTENTES DEL USUARIO
+{formatted appointment from format_appointment_confirmation()}
+---
+{formatted appointment}
+```
+With instruction: *"USA ESTOS DATOS EXACTOS si el usuario menciona cambiar o cancelar una cita. NO infieras ni adivines la hora desde la conversación. La base de datos es la ÚNICA fuente de verdad."*
+
+### Context Injection for Pending Scheduling
+When the LLM has pending scheduling info (from `pending_scheduling_info` in Redis), a system message is injected summarizing the pending property/date/time so the LLM doesn't re-ask.
 
 ### Appointment Confirmation
-The `schedule_visit` tool embeds confirmed time in `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` comment. The system prompt explicitly instructs the LLM to use this exact time (not what the user said) in the confirmation message.
+The `schedule_visit` tool embeds confirmed time in `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` comment. **Times are formatted in `America/Argentina/Buenos_Aires` timezone** (converted from UTC stored in DB). The same pattern applies to `reschedule_appointment` and `cancel_appointment`.
+
+### Rescheduling Flow (DB-First)
+1. LLM calls `reschedule_appointment(appointment_id, new_date_str, new_time_str, phone)`
+2. If `appointment_id` is not a valid UUID → auto-resolve from `phone` → user → latest appointment
+3. Fetch current appointment data from DB (used as reference for missing params)
+4. If no `new_date_str` → use existing appointment's date
+5. If no `new_time_str` → use existing appointment's time
+6. Contextual hour interpretation: if existing apt is PM and user says `7` → `19:00`, not `07:00`
+7. Update DB + Google Calendar + return `format_appointment_confirmation()`
 
 ### Google Calendar Integration
-The appointment service checks Google Calendar availability before creating appointments. On conflict, returns alternative time suggestions. OAuth setup is in `scripts/authenticate_calendar.py`.
+The appointment service checks Google Calendar availability before creating appointments. On conflict, returns alternative time suggestions. 
+
+**OAuth Setup**: `scripts/authenticate_calendar.py` — generates `credentials/token.json` via local browser flow.
+**Production (Render)**: Token stored in Secret Files at `/etc/secrets/token.json` (read-only mount). Token refresh works in-memory but can't persist — expected behavior.
+**Token refresh errors**: `invalid_grant` means token expired/revoked — regenerate locally and re-upload. `Errno 30` (read-only) means save-to-disk failed — safe to ignore, refresh still works for current session.
+**Service resilience**: `_auth_failed` flag prevents repeated re-auth attempts on bad credentials. `reset()` clears the cache for manual re-initialization.
 
 ### Celery Tasks
 Four task types in `app/tasks/`:
@@ -425,17 +490,9 @@ Key test files and their focus:
 ## Known Issues & Technical Debt
 
 1. **No pre-commit hooks or CI** — ruff/mypy/pytest must be run manually
-2. **Database engine creation per request** — services create engines on the fly instead of using the global async_session_factory, causing connection churn (property_service.py, tools.py, memory.py all create ad-hoc engines)
-3. **Streamlit duplicates the chat UI** — `frontend/chat_ui.py` directly calls the LLM without going through the agent (no tools, no state machine)
-4. **Celery broker not configured** — tasks defined but likely don't run without Redis broker config
-5. **Seed data loads every startup in development** — `lifespan` calls `seed_properties(force=True)` in dev mode, which could reset manual edits
-6. **OpenRouter model comment uses Nemotron but code says Grok** — `llm_router.py` docstring mentions Grok, `.env.example` uses `openai/gpt-oss-120b:free`
-7. **Duplicate line in classifier** — `classifier.py:253-254` has duplicate `return data["choices"][0]["message"]["content"]`
-8. **No typing in agents** — `real_estate_agent.py` `_extract_rich_content` and many methods omit return types
-9. **Hardcoded locations** — lists of cities/locations hardcoded across tools.py, memory.py, real_estate_agent.py
-10. **Admin mutations don't sync to bot** — changes made via admin API won't refresh Redis state machine context
-11. **No Redis Sentinel/Cluster support** — single Redis instance, no HA
-12. **Property integer PK collision risk** — `_next_property_id()` in admin.py does `MAX(id) + 1`, race condition on concurrent creates
+2. **No typing in agents** — `real_estate_agent.py` `_extract_rich_content` and many methods omit return types
+3. **Hardcoded locations** — lists of cities/locations hardcoded across tools.py, memory.py, real_estate_agent.py
+4. **Seed data loads every startup in development** — `lifespan` calls `seed_properties(force=True)` in dev mode, could reset manual edits
 
 ## LLM Tools Reference
 
@@ -450,7 +507,7 @@ Key test files and their focus:
 | `get_user_preferences` | phone | Read saved prefs |
 | `save_lead_info` | phone, name, email, budget, notes | Save lead info |
 | `schedule_visit` | property_id, date_str, time_str, phone | Schedule visit |
-| `reschedule_appointment` | appointment_id, new_date_str, new_time_str, phone | Reschedule |
+| `reschedule_appointment` | appointment_id, new_date_str, new_time_str, phone | Reschedule (auto-resolves if UUID invalid) |
 | `cancel_appointment` | appointment_id, reason, phone | Cancel |
 | `get_my_appointments` | phone | List appointments |
 | `request_human_assistance` | phone, reason | Escalate to human |
