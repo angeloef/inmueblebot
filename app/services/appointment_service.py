@@ -401,6 +401,23 @@ class AppointmentService:
         finally:
             await db.close()
     
+    async def get_upcoming_appointments(self, user_id: UUID, limit: int = 3) -> list[Appointment]:
+        """Obtiene las próximas citas agendadas o confirmadas de un usuario."""
+        db = self._get_session()
+        try:
+            query = (
+                select(Appointment)
+                .where(Appointment.user_id == user_id)
+                .where(Appointment.start_time > datetime.now(tz.utc))
+                .where(Appointment.status.in_(["scheduled", "confirmed"]))
+                .order_by(Appointment.start_time.asc())
+                .limit(limit)
+            )
+            result = await db.execute(query)
+            return list(result.scalars().all())
+        finally:
+            await db.close()
+    
     async def _check_conflict(
         self,
         db: AsyncSession,
