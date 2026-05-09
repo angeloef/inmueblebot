@@ -9,6 +9,15 @@ databases:
 
 # ==================== SERVICES ====================
 services:
+  # Redis (Render auto-inyecta REDIS_URL como env var)
+  - type: redis
+    name: inmueblebot-redis
+    plan: free
+    region: oregon
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Allow all
+
   # FastAPI Backend
   - type: web
     name: inmueblebot-api
@@ -26,9 +35,7 @@ services:
         value: production
       - key: PORT
         value: "8000"
-      - key: REDIS_URL
-        # Redis no disponible en free tier de Render. La app usa fallback a memoria local.
-        value: ""
+      # REDIS_URL es auto-inyectado por Render desde el servicio Redis definido arriba
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_TOKEN_JSON
