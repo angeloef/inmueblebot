@@ -30,13 +30,19 @@ services:
 
     envVars:
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://inmueblebot_user:saL1PlnMCey0qrxY0fd0LDmjqRl5BDeY@dpg-d7sj1jt0lvsc73cnvsrg-a.frankfurt-postgres.render.com/inmueblebot?ssl=require"
+        # ?? PENDIENTE: Reemplazar con Internal Connection String de la nueva DB en Oregon
+        # Crear nueva DB en https://dashboard.render.com/databases → New PostgreSQL
+        # Region: Oregon. Luego poner acá la "Internal Database URL" (sin +asyncpg, lo agrega config.py)
+        value: "PENDING_REPLACE_WITH_OREGON_DB_URL"
       - key: ENVIRONMENT
         value: production
       - key: PORT
         value: "8000"
       - key: REDIS_URL
-        value: "rediss://red-d7sj1jt0lvsc73cnvs80:VG3EM8cX2C4M3LLQuA4dd00VMhM7vq3z@frankfurt-keyvalue.render.com:6379/0?ssl_cert_reqs=none"
+        # ?? PENDIENTE: Reemplazar con Internal Connection String del nuevo Redis en Oregon
+        # Crear nuevo Redis en https://dashboard.render.com/redis → New Redis
+        # Region: Oregon. Usar la \"Internal Connection String\" (rediss://...)
+        value: "PENDING_REPLACE_WITH_OREGON_REDIS_URL"
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_TOKEN_JSON

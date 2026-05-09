@@ -123,7 +123,20 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 | Streamlit duplicates chat UI without agent pipeline | 🟡 MEDIUM | Direct LLM call, no tools |
 | Celery broker not configured | 🟡 MEDIUM | Tasks defined but don't run |
 | Admin mutations don't sync to bot state | 🟡 MEDIUM | Changes via admin won't refresh Redis context |
-| Property integer PK collision risk | 🟡 MEDIUM | `_next_property_id()` does `MAX(id)+1`, race on concurrent creates |
+### 12. Cross-Region Latency (Critical — DB + Redis in Frankfurt, API in Oregon)
+**IMPACT: ~4s added to every response**
+
+The `render.yaml` declares `region: oregon` for all services, but the actual DB and Redis instances are in **Frankfurt** (evidenced by `frankfurt-postgres.render.com` and `frankfurt-keyvalue.render.com` hostnames). The API runs on `oregon` region.
+
+This means every DB query incurs ~500ms round-trip latency (Oregon → Frankfurt → Oregon). With 8-10 DB queries per user turn, **~4 seconds of every response is pure network latency**.
+
+**Fix (partial — applied May 10):**
+- `render.yaml` DATABASE_URL and REDIS_URL were replaced with `PENDING_` placeholders
+- **Manual step**: Create new PostgreSQL + Redis instances in Oregon region on Render dashboard, update the URLs, migrate data via `pg_dump` + `psql`
+
+### 13. LLM Token Bloat (Reduced — Sprint B1)
+**Before**: ~4,800 prompt tokens per call, 2 calls per turn = ~19K tokens/turn
+**After**: ~3,300 prompt tokens per call, 1 call for scheduling = ~3.3K tokens/turn (scheduling)
 
 ## Critical Architecture Notes
 
