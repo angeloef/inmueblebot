@@ -81,15 +81,11 @@ async def seed_properties(force: bool = False):
     Args:
         force: If True, deletes existing properties before seeding
     """
-    settings = get_settings()
+    from app.db.session import async_session_factory
+    from sqlalchemy import select, func, delete
     
-    # Crear engine async
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    
-    async with async_session() as session:
+    async with async_session_factory() as session:
         # Verificar si ya hay propiedades
-        from sqlalchemy import select, func, delete
         result = await session.execute(select(func.count()).select_from(Property))
         count = result.scalar_one()
         
@@ -100,7 +96,6 @@ async def seed_properties(force: bool = False):
                 await session.commit()
             else:
                 print(f"[INFO] Already {count} properties exist. Skipping seed.")
-                await engine.dispose()
                 return
         
         # Crear propiedades (seeded from JSON if loaded)
@@ -128,8 +123,6 @@ async def seed_properties(force: bool = False):
         await session.commit()
         if SAMPLE_PROPERTIES:
             print(f"[OK] {len(SAMPLE_PROPERTIES)} properties created from seed.json")
-    
-    await engine.dispose()
 
 
 if __name__ == "__main__":

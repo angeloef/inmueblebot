@@ -24,15 +24,15 @@ async def lifespan(app: FastAPI):
         await create_tables(echo=False)
         logger.info("DB tables ensured")
     except Exception as e:
-        logger.warning("Table creation failed: {}", e)
+        logger.warning("Table creation failed: %s", e)
 
     try:
         async with async_session_factory() as session:
             result = await session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
             tables = [row[0] for row in result.fetchall()]
-            logger.info("DB tables: {}", tables)
+            logger.info("DB tables: %s", tables)
     except Exception as e:
-        logger.warning("DB check failed: {}", e)
+        logger.warning("DB check failed: %s", e)
 
     # ── Column-type migration: ensure varchar[] (not JSONB) for array prefs ──
     try:
@@ -52,14 +52,14 @@ async def lifespan(app: FastAPI):
                     await session.commit()
                     logger.info(f"  → users.{col} migrated to varchar[]")
     except Exception as e:
-        logger.warning("Column migration failed: {}", e)
+        logger.warning("Column migration failed: %s", e)
 
     # Seed data (development only)
     try:
         from app.db.seed import seed_properties
         await seed_properties(force=False)
     except Exception as e:
-        logger.warning("Seed failed: {}", e)
+        logger.warning("Seed failed: %s", e)
 
     # Pre-warm Calendar OAuth at startup (avoids 2s cold start on first appointment)
     try:
@@ -323,10 +323,11 @@ _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 app.include_router(_api_compat)
 
-# Serve dashboard SPA index.html for all unmatched routes
+# Serve dashboard SPA index.html for root and /dashboard/*
 from fastapi.responses import FileResponse
 import os
 
+@app.get("/", include_in_schema=False)
 @app.get("/dashboard", include_in_schema=False)
 @app.get("/dashboard/{full_path:path}", include_in_schema=False)
 async def serve_dashboard(full_path: str = ""):
