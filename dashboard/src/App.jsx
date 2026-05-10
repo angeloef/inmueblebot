@@ -7,6 +7,7 @@ import Dashboard from './Dashboard';
 import Calendar from './Calendar';
 import Properties from './Properties';
 import Clients from './Clients';
+import FAQs from './FAQs';
 
 export default function App() {
   const [active, setActive] = useState('dashboard');
@@ -60,6 +61,7 @@ export default function App() {
               onOpenEvent={openEvent}
             />
           )}
+          {active === 'faqs' && <FAQs />}
           {active === 'documents' && (
             <div className="page-view">
               <div className="page-h">

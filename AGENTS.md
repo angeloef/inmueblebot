@@ -737,3 +737,36 @@ Key test files and their focus:
 - ✅ Import test (AppointmentService + format_appointment_confirmation)
 - ✅ `get_user_appointments(upcoming=True)` filters by `status == "confirmed"` — cancelled old appointment excluded
 - ✅ `get_upcoming_appointments()` filters by `status in_(["scheduled", "confirmed"])` — cancelled old appointment excluded
+
+### Sprint 18 — FAQ Feature: Chatbot responde preguntas frecuentes (May 10, 2026)
+
+**Goal:** Que el chatbot pueda responder preguntas sobre la inmobiliaria (horarios, formas de pago, financiación, políticas) de manera fluida y conversacional, con gestión desde el dashboard.
+
+**Files changed:**
+
+| Layer | File | What was added |
+|-------|------|----------------|
+| **DB Model** | `app/db/models/faq.py` (NEW) | `FAQ` model: question, answer, category, tags (Text[]), order, active, timestamps |
+| **DB Export** | `app/db/models/__init__.py` | Exported `FAQ` |
+| **Service** | `app/services/faq_service.py` (NEW) | `FAQService` singleton with `search_faqs(query, category)` via ILIKE on question+answer+tags, `get_all_faqs()`, `get_categories()` |
+| **Admin API** | `app/api/routes/admin.py` | Full CRUD: `GET /admin/faqs` (with search/category/active filters), `POST /admin/faqs`, `PATCH /admin/faqs/{id}`, `DELETE /admin/faqs/{id}`, `GET /admin/faqs/categories/list` |
+| **Agent Tool** | `app/agents/tools.py` | New `get_faq_answer(question)` function + registered in `TOOL_FUNCTIONS`. Returns formatted FAQ matches or `"NO_FAQ_MATCH"` sentinel. |
+| **Tool Def** | `app/agents/prompts.py` | Added `get_faq_answer` to `TOOL_DEFINITIONS` (OpenAI function schema) + added to `HERRAMIENTAS DISPONIBLES` in system prompt |
+| **Dashboard API** | `dashboard/src/api.js` | `faqApi` object + `useFaqs`, `useCreateFaq`, `useUpdateFaq`, `useDeleteFaq` hooks |
+| **Dashboard UI** | `dashboard/src/FAQs.jsx` (NEW) | Full CRUD page: table of FAQs with search, create/edit modal (question, answer, category, tags, order, active toggle), delete with confirmation |
+| **Dashboard Routing** | `dashboard/src/App.jsx` | Added `active === 'faqs'` render |
+| **Dashboard Sidebar** | `dashboard/src/Shell.jsx` | Added "FAQ" nav item after "Clientes" |
+
+**How it works:**
+1. Admin carga FAQs desde el dashboard (pregunta + respuesta + categoría + tags)
+2. Cuando un usuario de WhatsApp pregunta algo que NO es sobre propiedades específicas (ej: "¿a qué hora abren?", "¿aceptan débito?"), el LLM llama `get_faq_answer(question)`
+3. El tool busca por ILIKE en `question`, `answer` y `tags` de las FAQ activas
+4. Si encuentra matches, las devuelve formateadas → el LLM responde conversacionalmente
+5. Si no encuentra (`NO_FAQ_MATCH`), el LLM dice naturalmente que no tiene esa información
+
+**Verification:**
+- ✅ Syntax check (ast.parse) en todos los archivos Python modificados/creados
+- ✅ `FAQService` importa y singleton funciona
+- ✅ `get_faq_answer` registrada en `TOOL_FUNCTIONS`
+- ✅ `get_faq_answer` registrada en `TOOL_DEFINITIONS`
+- ✅ `get_faq_answer` mencionada en `SYSTEM_PROMPT`

@@ -1053,6 +1053,49 @@ async def get_property_images(property_id: str) -> str:
         return json.dumps({"images": []})
 
 
+async def get_faq_answer(question: str = None, phone: str = None) -> str:
+    """
+    Responde preguntas frecuentes (FAQ) sobre la inmobiliaria.
+    
+    Args:
+        question: Pregunta del usuario (ej: "¿A qué hora abren?", "¿Aceptan tarjetas?")
+        phone: Número de teléfono del usuario
+    
+    Returns:
+        Respuesta de FAQ o mensaje de "no encontrado"
+    """
+    from app.services.faq_service import faq_service
+
+    if not question or not question.strip():
+        return "¿Qué querés saber? Preguntame sobre horarios, formas de pago, financiación, o cualquier otra duda."
+
+    query = question.strip()
+    logger.info(f"[FAQ] get_faq_answer called with question: '{query}'")
+
+    try:
+        matches = await faq_service.search_faqs(query=query)
+
+        if not matches:
+            logger.info(f"[FAQ] No FAQ matches for: '{query}'")
+            return "NO_FAQ_MATCH"
+
+        # Format the best matches for the LLM to use
+        lines = [f"Encontré {len(matches)} respuestas relacionadas:\n"]
+        for i, faq in enumerate(matches, 1):
+            lines.append(f"--- FAQ #{i} ---")
+            lines.append(f"P: {faq.question}")
+            lines.append(f"R: {faq.answer}")
+            if faq.category:
+                lines.append(f"Categoría: {faq.category}")
+            lines.append("")
+
+        return "\n".join(lines).strip()
+
+    except Exception as e:
+        logger.error(f"[FAQ] Error in get_faq_answer: {e}")
+        return "NO_FAQ_MATCH"
+
+
 TOOL_FUNCTIONS = {
     "search_properties": search_properties,
     "get_property_details": get_property_details,
@@ -1067,6 +1110,7 @@ TOOL_FUNCTIONS = {
     "request_human_assistance": request_human_assistance,
     "refine_search": refine_search,
     "get_property_images": get_property_images,
+    "get_faq_answer": get_faq_answer,
 }
 
 

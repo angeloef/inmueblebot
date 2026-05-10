@@ -1069,3 +1069,152 @@ async def resume_bot(
         message="El agente ha finalizado la atención. Volvés a estar en modo automático. ¿En qué más puedo ayudarte? 🏠"
     )
     return {"status": "resumed", "phone": phone}
+
+
+# ── FAQ Endpoints ─────────────────────────────────────────────────────────────
+
+
+class FAQCreate(BaseModel):
+    question: str
+    answer: str
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    order: int = 0
+    active: bool = True
+
+
+class FAQUpdate(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    order: Optional[int] = None
+    active: Optional[bool] = None
+
+
+def _faq_to_dict(f):
+    return {
+        "id": f.id,
+        "question": f.question,
+        "answer": f.answer,
+        "category": f.category,
+        "tags": f.tags or [],
+        "order": f.order,
+        "active": f.active,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+        "updated_at": f.updated_at.isoformat() if f.updated_at else None,
+    }
+
+
+@router.get("/faqs")
+async def list_faqs(
+    category: str = None,
+    search: str = None,
+    active: bool = None,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Lista todas las entradas FAQ."""
+    from app.db.models.faq import FAQ as FAQModel
+    query = db.query(FAQModel)
+    if category:
+        query = query.filter(FAQModel.category == category)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            FAQModel.question.ilike(like) | FAQModel.answer.ilike(like)
+        )
+    if active is not None:
+        query = query.filter(FAQModel.active == active)
+    query = query.order_by(FAQModel.order.asc(), FAQModel.id.asc())
+    faqs = query.all()
+    return {"faqs": [_faq_to_dict(f) for f in faqs]}
+
+
+@router.get("/faqs/{faq_id}")
+async def get_faq(
+    faq_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Obtiene una entrada FAQ por ID."""
+    from app.db.models.faq import FAQ as FAQModel
+    faq = db.query(FAQModel).filter(FAQModel.id == faq_id).first()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    return _faq_to_dict(faq)
+
+
+@router.post("/faqs")
+async def create_faq(
+    data: FAQCreate,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Crea una nueva entrada FAQ."""
+    from app.db.models.faq import FAQ as FAQModel
+    faq = FAQModel(
+        question=data.question,
+        answer=data.answer,
+        category=data.category,
+        tags=data.tags,
+        order=data.order,
+        active=data.active,
+    )
+    db.add(faq)
+    db.commit()
+    db.refresh(faq)
+    return _faq_to_dict(faq)
+
+
+@router.patch("/faqs/{faq_id}")
+async def update_faq(
+    faq_id: int,
+    data: FAQUpdate,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Actualiza una entrada FAQ."""
+    from app.db.models.faq import FAQ as FAQModel
+    faq = db.query(FAQModel).filter(FAQModel.id == faq_id).first()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(faq, key, value)
+    db.commit()
+    db.refresh(faq)
+    return _faq_to_dict(faq)
+
+
+@router.delete("/faqs/{faq_id}")
+async def delete_faq(
+    faq_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Elimina una entrada FAQ."""
+    from app.db.models.faq import FAQ as FAQModel
+    faq = db.query(FAQModel).filter(FAQModel.id == faq_id).first()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    db.delete(faq)
+    db.commit()
+    return {"status": "deleted", "id": faq_id}
+
+
+@router.get("/faqs/categories/list")
+async def list_faq_categories(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Lista todas las categorías de FAQ distintas."""
+    from app.db.models.faq import FAQ as FAQModel
+    categories = (
+        db.query(FAQModel.category)
+        .filter(FAQModel.category.isnot(None))
+        .distinct()
+        .order_by(FAQModel.category)
+        .all()
+    )
+    return {"categories": [c[0] for c in categories]}

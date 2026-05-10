@@ -7,6 +7,7 @@ export function Sidebar({ active, onNav }) {
     { id: 'calendar',   icon: 'calendar', label: 'Calendario' },
     { id: 'properties', icon: 'building', label: 'Propiedades' },
     { id: 'clients',    icon: 'users',    label: 'Clientes' },
+    { id: 'faqs',       icon: 'msg',      label: 'FAQ' },
   ];
   const more = [
     { id: 'documents',  icon: 'folder',   label: 'Documentos' },

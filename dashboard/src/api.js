@@ -369,6 +369,42 @@ export const useDeleteEvent = () => {
   return useMutation({ mutationFn: eventApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }) });
 };
 
+// ─── FAQ ─────────────────────────────────────────────────────────────────────
+
+export const keysFaqs = ['faqs'];
+
+export const faqApi = {
+  list:   ()        => http.get('/admin/faqs').then(r => r.data.faqs ?? r.data),
+  get:    (id)      => http.get(`/admin/faqs/${id}`).then(r => r.data),
+  create: (data)    => http.post('/admin/faqs', data).then(r => r.data),
+  update: (id, data) => http.patch(`/admin/faqs/${id}`, data).then(r => r.data),
+  remove: (id)      => http.delete(`/admin/faqs/${id}`).then(r => r.data),
+};
+
+export const useFaqs = () =>
+  useQuery({ queryKey: keysFaqs, queryFn: faqApi.list });
+
+export const useCreateFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: faqApi.create,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }),
+  });
+};
+
+export const useUpdateFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }) => faqApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }),
+  });
+};
+
+export const useDeleteFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: faqApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }) });
+};
+
 // ─── Google Calendar ──────────────────────────────────────────────────────────
 
 export const useCalendarStatus = () =>

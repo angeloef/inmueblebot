@@ -7,6 +7,7 @@ from app.db.models.property import Property
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message
 from app.db.models.appointment import Appointment
+from app.db.models.faq import FAQ
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "Conversation",
     "Message",
     "Appointment",
+    "FAQ",
 ]

@@ -107,6 +107,7 @@ Mostrá máximo 4-5 opciones en formato compacto. Después de mostrar, preguntá
 - get_property_details: Muestra detalles completos por ID
 - get_property_images: Obtiene imágenes de una propiedad. Las imágenes se envían solas — solo decí algo como "Acá van las fotos de [título]"
 - recommend_properties: Recomienda basado en preferencias guardadas
+- get_faq_answer: Responde preguntas frecuentes sobre la inmobiliaria (horarios, formas de pago, financiación, políticas). **Usá esta herramienta cuando el usuario pregunte algo que NO sea sobre propiedades específicas** — por ejemplo "¿a qué hora abren?", "¿aceptan tarjetas?", "¿cómo financio?", "¿cuánto tarda el trámite?". Si el resultado dice "NO_FAQ_MATCH", respondé naturalmente que no tenés esa información.
 - schedule_visit: Agenda visita (requiere property_id + fecha + hora)
 - reschedule_appointment: Reprograma una cita existente
 - cancel_appointment: Cancela una cita existente
@@ -434,6 +435,23 @@ TOOL_DEFINITIONS = [
                     }
                 },
                 "required": ["refinement"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_faq_answer",
+            "description": "Responde preguntas frecuentes sobre la inmobiliaria. **Usá esta herramienta cuando el usuario pregunte algo que NO sea sobre propiedades específicas** — ej: horarios, formas de pago, financiación, políticas. Si el resultado es 'NO_FAQ_MATCH', no hay información disponible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "La pregunta exacta del usuario, sin modificar (ej: '¿a qué hora abren?', 'aceptan tarjetas?')"
+                    }
+                },
+                "required": ["question"]
             }
         }
     }
