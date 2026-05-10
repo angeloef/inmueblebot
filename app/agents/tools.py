@@ -134,8 +134,13 @@ def format_property_list(properties: List) -> str:
 
         location = _get_attr(prop, "location", "Sin ubicación")
 
-        # Minimalist one-line format: 🏠 Title | $Price | Location | ID:N
-        line = f"🏠 {title} | {price_str} | {location} | ID:{prop_id}"
+        # Minimalist one-line format: 🏠 Title | $Price | N hab | Location | ID:N
+        bedroom_str = ""
+        if bedrooms:
+            bedroom_str = f" {bedrooms} hab |"
+        else:
+            bedroom_str = " |"
+        line = f"🏠 {title} | {price_str}{bedroom_str} {location} | ID:{prop_id}"
 
         lines.append(line)
     
