@@ -1,38 +1,14 @@
-"""
-InmuebleBot - Asistente de bienes raíces por WhatsApp
-Main application entry point
-"""
-import sys
-import os
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
-from loguru import logger
+from contextlib import asynccontextmanager
+import logging
+import os
 
-# ============================================================================
-# LOGGING JSON - Configuración simple y robusta
-# ============================================================================
-logger.remove()
-env = os.environ.get("ENVIRONMENT", "production").lower()
-level = "DEBUG" if env == "development" else "INFO"
-logger.add(
-    sys.stdout,
-    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function} - {message}",
-    level=level,
-    serialize=True,
-    enqueue=True,
-)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("app.main")
 
-logger.info("InmuebleBot starting")
-
-# ============================================================================
-# IMPORTS
-# ============================================================================
-from app.core.config import get_settings
-from app.api.routes.webhook import router as webhook_router
-
+# ── App ──────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,21 +43,18 @@ async def lifespan(app: FastAPI):
                     f"WHERE table_name='users' AND column_name='{col}'"
                 ))
                 row = result.fetchone()
-                if row and row[0] == "jsonb":
-                    logger.warning(
-                        f"[Migration] users.{col} is JSONB — migrating to varchar[]"
-                    )
+                if row and row[0] in ("jsonb", "json"):
+                    logger.info(f"Migrating users.{col} from JSONB to varchar[]")
                     await session.execute(text(
-                        f"ALTER TABLE users ALTER COLUMN {col} "
-                        f"TYPE character varying[] "
-                        f"USING ARRAY(SELECT jsonb_array_elements_text({col}))::varchar[]"
+                        f"ALTER TABLE users ALTER COLUMN {col} TYPE varchar[] "
+                        f"USING {col}::varchar[];"
                     ))
                     await session.commit()
-                    logger.info(f"[Migration] users.{col} migrated to varchar[] ✓")
+                    logger.info(f"  → users.{col} migrated to varchar[]")
     except Exception as e:
-        logger.warning(f"[Migration] varchar[] column check failed (non-fatal): {e}")
+        logger.warning("Column migration failed: {}", e)
 
-    # Auto-seed properties only if the table is empty (never force on startup)
+    # Seed data (development only)
     try:
         from app.db.seed import seed_properties
         await seed_properties(force=False)
@@ -104,79 +77,55 @@ async def lifespan(app: FastAPI):
         await memory_manager.reset_user_context(reset_phone)
         logger.info(f"[Startup] Context auto-reset for test phone {reset_phone}")
     except Exception as e:
-        logger.warning(f"[Startup] Context reset skipped (non-fatal): {e}")
+        logger.warning(f"[Startup] Context auto-reset failed: {e}")
 
     yield
-    # Graceful shutdown: close Redis connections before event loop closes
+
     logger.info("Shutting down")
-    try:
-        from app.core.memory import memory_manager
-        from app.core.classifier import intent_classifier
-        from app.core.state_machine import state_machine
-        await memory_manager.close()
-        await intent_classifier.close()
-        await state_machine.close()
-    except Exception as e:
-        logger.warning("Redis shutdown error: {}", e)
 
 
-# ============================================================================
-# FASTAPI
-# ============================================================================
-app = FastAPI(
-    title="InmuebleBot",
-    description="Asistente inmobiliario por WhatsApp / WhatsApp AI Real Estate Assistant",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
+from fastapi import FastAPI
+app = FastAPI(title="InmuebleBot", lifespan=lifespan)
 
-# Static files
-if os.path.isdir("imagenes"):
-    app.mount("/static/imagenes", StaticFiles(directory="imagenes"), name="imagenes")
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://inmueblebot-api.onrender.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8051",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/")
-def root():
-    return {
-        "message": "InmuebleBot API",
-        "version": "0.1.0",
-        "docs": "/docs",
-        "health": "/health",
-    }
-
+# ── Health ───────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
     from app.core.memory import memory_manager
-    redis_status = await memory_manager.check_health()
-    return {
-        "status": "healthy" if redis_status.get("status") != "degraded" else "degraded",
-        "service": "inmueblebot",
-        "redis": redis_status,
-    }
-
+    result = await memory_manager.check_health()
+    return {"status": "healthy", "service": "inmueblebot", "redis": result}
 
 @app.get("/health/redis")
 async def health_redis():
     from app.core.memory import memory_manager
     result = await memory_manager.check_health()
     return result
+
+
+# ── Media endpoint (serves property images stored as base64 in DB) ──
+
+# Minimal 1x1 grey JPEG placeholder for fallback (WhatsApp rejects 404 on media URLs)
+_PLACEHOLDER_JPEG = (
+    b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
+    b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\x09\x09\x08\x0a\x0c\x14\x0d\x0c\x0b\x0b\x0c\x19\x12\x13\x0f'
+    b'\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c\x20\x24\x2e\x27\x20\x22\x2c\x23\x1c\x1c\x28\x37\x29\x2c\x30\x31\x34\x34'
+    b'\x1f\x27\x39\x3d\x38\x32\x3c\x2e\x33\x34\x32\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9'
+)
+
+
+def _detect_mime_from_bytes(raw: bytes) -> str:
+    """Detect image MIME type from magic bytes."""
+    if raw[:2] == b'\xff\xd8':
+        return "image/jpeg"
+    if raw[:4] == b'\x89PNG':
+        return "image/png"
+    if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return "image/webp"
+    if raw[:2] in (b'G\x49', b'G\x38'):
+        return "image/gif"
+    if raw[:4] == b'\x00\x00\x01\x00':
+        return "image/x-icon"
+    return "image/jpeg"
 
 
 @app.get("/media/property/{property_id}/{image_index}", include_in_schema=False)
@@ -186,17 +135,9 @@ async def serve_property_image(property_id: str, image_index: int):
     Images stored as data:image/...;base64,... in the DB are decoded on-the-fly
     so WhatsApp (which only accepts public HTTPS URLs) can fetch them.
     """
-    import re
     import base64
+    import re
     from fastapi.responses import Response, RedirectResponse
-
-    # Minimal 1x1 grey JPEG placeholder for fallback (WhatsApp can't handle 404 on media URLs)
-    _PLACEHOLDER_JPEG = (
-        b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
-        b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\x09\x09\x08\x0a\x0c\x14\x0d\x0c\x0b\x0b\x0c\x19\x12\x13\x0f'
-        b'\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c\x20\x24\x2e\x27\x20\x22\x2c\x23\x1c\x1c\x28\x37\x29\x2c\x30\x31\x34\x34'
-        b'\x1f\x27\x39\x3d\x38\x32\x3c\x2e\x33\x34\x32\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9'
-    )
     from app.db.session import async_session_factory
     from app.db.repository import BaseRepository
     from app.db.models import Property
@@ -230,75 +171,65 @@ async def serve_property_image(property_id: str, image_index: int):
             if image_index < 0 or image_index >= len(images):
                 return Response(status_code=404)
 
-            image_data = images[image_index]
+            raw = images[image_index]
+            if not isinstance(raw, str) or not raw.strip():
+                return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
-            # Force convert WebP to JPEG (WhatsApp doesn't accept WebP)
-            # Normalize: if image is raw base64 (no data: prefix), try to detect mime type from magic bytes
-            if isinstance(image_data, str):
-                if not image_data.startswith("data:") and not image_data.startswith("http"):
-                    # Detect mime type from base64-decoded header magic bytes
+            raw = raw.strip()
+
+            # ── Parse data URI or raw base64 ────────────────────────
+            binary = None
+            mime = "image/jpeg"
+
+            if raw.startswith("data:"):
+                # data:image/xxx;base64,<payload>
+                match = re.match(r"data:([^;]+);base64,(.+)", raw, re.DOTALL)
+                if match:
+                    mime = match.group(1).strip()
                     try:
-                        raw_bytes = base64.b64decode(image_data[:100])
-                        if raw_bytes[:2] == b'\xff\xd8':
-                            mime = "image/jpeg"
-                        elif raw_bytes[:4] == b'\x89PNG':
-                            mime = "image/png"
-                        elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
-                            mime = "image/webp"
-                        elif raw_bytes[:2] == b'G\x49' or raw_bytes[:2] == b'G\x38':
-                            mime = "image/gif"
-                        elif raw_bytes[:4] == b'\x00\x00\x01\x00':
-                            mime = "image/x-icon"
-                        else:
-                            mime = "image/jpeg"
+                        binary = base64.b64decode(match.group(2).strip())
                     except Exception:
-                        mime = "image/jpeg"
-                    image_data = f"data:{mime};base64,{image_data}"
-
-            # data:image/jpeg;base64,<payload>
-            if image_data.startswith("data:"):
-                match = re.match(r"data:([^;]+);base64,(.+)$", image_data, re.DOTALL)
-                if not match:
-                    logger.warning(f"[Media] Bad data URI for property {property_id} image {image_index}")
-                    # Fallback: return a minimal 1x1 JPEG placeholder so WhatsApp doesn't hang
+                        logger.warning(f"[Media] base64 decode failed for {property_id}/{image_index}")
+                        return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+                else:
+                    logger.warning(f"[Media] Bad data URI format for {property_id}/{image_index}")
                     return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
-                mime_type = match.group(1).strip()
-                b64_payload = match.group(2).strip()
+            elif raw.startswith("http"):
+                return RedirectResponse(url=raw)
+            else:
+                # Raw base64 — detect mime and decode
                 try:
-                    binary = base64.b64decode(b64_payload)
+                    raw_bytes = base64.b64decode(raw[:120])
+                    mime = _detect_mime_from_bytes(raw_bytes)
+                    binary = base64.b64decode(raw)
                 except Exception:
-                    logger.warning(f"[Media] Base64 decode failed for property {property_id} image {image_index}")
-                    # Fallback: return a placeholder so WhatsApp doesn't hang
+                    logger.warning(f"[Media] base64 decode failed for {property_id}/{image_index} raw")
                     return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
-                # If the image is WebP, convert to JPEG (WhatsApp restriction)
-                if mime_type in ("image/webp", "image/webp;"):
-                    try:
-                        from PIL import Image
-                        import io
-                        webp_img = Image.open(io.BytesIO(binary))
-                        # Convert RGBA to RGB for JPEG compatibility
-                        if webp_img.mode == "RGBA":
-                            webp_img = webp_img.convert("RGB")
-                        jpeg_buf = io.BytesIO()
-                        webp_img.save(jpeg_buf, format="JPEG", quality=85)
-                        binary = jpeg_buf.getvalue()
-                        mime_type = "image/jpeg"
-                    except Exception as e:
-                        logger.warning(f"[Media] WebP→JPEG conversion failed for property {property_id}: {e}")
-                        # Fallback: serve it anyway, WhatsApp may accept or not
-                # Validate min image size (at least 100 bytes of valid image data)
-                if len(binary) < 100:
-                    logger.warning(f"[Media] Image too small ({len(binary)} bytes) for property {property_id}")
+
+            if binary is None or len(binary) < 100:
+                logger.warning(f"[Media] Image too small for {property_id}/{image_index}")
+                return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+
+            # ── Convert WebP → JPEG if needed (WhatsApp restriction) ─
+            if mime == "image/webp":
+                try:
+                    from PIL import Image
+                    import io
+                    webp_img = Image.open(io.BytesIO(binary))
+                    if webp_img.mode == "RGBA":
+                        webp_img = webp_img.convert("RGB")
+                    jpeg_buf = io.BytesIO()
+                    webp_img.save(jpeg_buf, format="JPEG", quality=85)
+                    binary = jpeg_buf.getvalue()
+                    mime = "image/jpeg"
+                except ImportError:
+                    logger.warning("[Media] Pillow not installed — serving placeholder for WebP image")
                     return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
-                return Response(content=binary, media_type=mime_type)
+                except Exception as e:
+                    logger.warning(f"[Media] WebP→JPEG conversion failed: {e}")
+                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
-            # Regular URL — redirect WhatsApp to it
-            if image_data.startswith("http"):
-                return RedirectResponse(url=image_data)
-
-            # Unknown format
-            logger.warning(f"[Media] Unknown image format for property {property_id} image {image_index}")
-            return Response(status_code=404)
+            return Response(content=binary, media_type=mime)
 
     except Exception as e:
         logger.error(f"[Media] Error serving property {property_id} image {image_index}: {e}")
@@ -313,8 +244,8 @@ from starlette.requests import Request
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch unhandled exceptions, log them, and return a friendly response."""
-    logger.opt(exception=True).error(
-        "Unhandled exception on {} {}: {}",
+    logger.exception(
+        "Unhandled exception on %s %s: %s",
         request.method,
         request.url.path,
         repr(exc),
@@ -328,9 +259,21 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
+# ── Static Files ─────────────────────────────────────────────────
+
+# Serve dashboard SPA from dashboard/dist (if exists)
+dashboard_dir = os.path.join(os.path.dirname(__file__), "..", "dashboard", "dist")
+if os.path.isdir(dashboard_dir):
+    app.mount("/assets", StaticFiles(directory=os.path.join(dashboard_dir, "assets")), name="assets")
+    logger.info("Dashboard SPA served from dashboard/dist")
+else:
+    logger.warning(f"Dashboard dist not found at {dashboard_dir}")
+
+
 # ── Routers ─────────────────────────────────────────────────────────────────
 
 # WhatsApp webhook
+from app.api.routes.webhook import router as webhook_router
 app.include_router(webhook_router, prefix="/webhook", tags=["whatsapp"])
 
 # Admin dashboard API
@@ -346,28 +289,18 @@ _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 app.include_router(_api_compat)
 
-logger.info("Admin router registered")
+# Serve dashboard SPA index.html for all unmatched routes
+from fastapi.responses import FileResponse
+import os
 
-# ── Dashboard SPA ───────────────────────────────────────────────────────────
-# Build dashboard: cd dashboard && npm install && npm run build
-# Render multi-stage Dockerfile builds it automatically
-_DASHBOARD_DIST = Path(__file__).parent.parent / "dashboard" / "dist"
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard/{full_path:path}", include_in_schema=False)
+async def serve_dashboard(full_path: str = ""):
+    dashboard_index = os.path.join(dashboard_dir, "index.html")
+    if os.path.isfile(dashboard_index):
+        return FileResponse(dashboard_index)
+    return JSONResponse(status_code=404, content={"detail": "Dashboard not built"})
 
-if _DASHBOARD_DIST.exists():
-    from fastapi.responses import FileResponse
-
-    app.mount("/assets", StaticFiles(directory=str(_DASHBOARD_DIST / "assets")), name="dashboard-assets")
-
-    @app.get("/dashboard/{full_path:path}", include_in_schema=False)
-    async def serve_dashboard(full_path: str):
-        return FileResponse(str(_DASHBOARD_DIST / "index.html"))
-
-    @app.get("/dashboard", include_in_schema=False)
-    async def serve_dashboard_root():
-        return FileResponse(str(_DASHBOARD_DIST / "index.html"))
-
-    logger.info("Dashboard SPA served from dashboard/dist")
-else:
-    logger.info("Dashboard dist not found — run 'cd dashboard && npm install && npm run build' to enable")
-
-logger.info("InmuebleBot ready")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
