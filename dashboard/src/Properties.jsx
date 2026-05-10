@@ -122,14 +122,41 @@ function ImageGallery({ images }) {
   const [idx, setIdx] = useState(0);
   const img = images[idx];
   if (!img) return null;
+  const prev = () => setIdx(i => (i === 0 ? images.length - 1 : i - 1));
+  const next = () => setIdx(i => (i === images.length - 1 ? 0 : i + 1));
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3', background: 'var(--gray-100)', marginBottom: images.length > 1 ? 8 : 0 }}>
+      <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3', background: 'var(--gray-100)', marginBottom: images.length > 1 ? 8 : 0 }}>
+        {images.length > 1 && (
+          <>
+            <button onClick={prev}
+              style={{ position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',zIndex:2,
+                       border:'none',background:'rgba(0,0,0,0.45)',color:'white',width:32,height:32,
+                       borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',
+                       justifyContent:'center',fontSize:16,lineHeight:1 }}>
+              ‹
+            </button>
+            <button onClick={next}
+              style={{ position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',zIndex:2,
+                       border:'none',background:'rgba(0,0,0,0.45)',color:'white',width:32,height:32,
+                       borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',
+                       justifyContent:'center',fontSize:16,lineHeight:1 }}>
+              ›
+            </button>
+          </>
+        )}
         {isImg(img) ? (
           <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display:'flex',alignItems:'center',justifyContent:'center',color:'var(--fg-tertiary)',fontSize:13 }}>
             {img}
+          </div>
+        )}
+        {images.length > 1 && (
+          <div style={{ position:'absolute',bottom:8,left:'50%',transform:'translateX(-50%)',
+                        background:'rgba(0,0,0,0.55)',color:'white',fontSize:11,
+                        padding:'2px 10px',borderRadius:10,whiteSpace:'nowrap' }}>
+            {idx + 1} / {images.length}
           </div>
         )}
       </div>

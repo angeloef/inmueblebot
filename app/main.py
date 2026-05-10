@@ -224,10 +224,26 @@ async def serve_property_image(property_id: str, image_index: int):
 
             image_data = images[image_index]
 
-            # Normalize: if image is raw base64 (no data: prefix), add it
-            if not image_data.startswith("data:") and not image_data.startswith("http"):
-                # Assume JPEG base64 — add the data: prefix
-                image_data = f"data:image/jpeg;base64,{image_data}"
+            # Normalize: if image is raw base64 (no data: prefix), try to detect mime type from magic bytes
+            if isinstance(image_data, str) and not image_data.startswith("data:") and not image_data.startswith("http"):
+                # Detect mime type from base64-decoded header magic bytes
+                try:
+                    raw_bytes = base64.b64decode(image_data[:100])
+                    if raw_bytes[:2] == b'\xff\xd8':
+                        mime = "image/jpeg"
+                    elif raw_bytes[:4] == b'\x89PNG':
+                        mime = "image/png"
+                    elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+                        mime = "image/webp"
+                    elif raw_bytes[:2] == b'G\x49' or raw_bytes[:2] == b'G\x38':
+                        mime = "image/gif"
+                    elif raw_bytes[:4] == b'\x00\x00\x01\x00':
+                        mime = "image/x-icon"
+                    else:
+                        mime = "image/jpeg"  # default fallback
+                except Exception:
+                    mime = "image/jpeg"
+                image_data = f"data:{mime};base64,{image_data}"
 
             # data:image/jpeg;base64,<payload>
             if image_data.startswith("data:"):
@@ -241,6 +257,10 @@ async def serve_property_image(property_id: str, image_index: int):
                     binary = base64.b64decode(b64_payload)
                 except Exception:
                     logger.warning(f"[Media] Base64 decode failed for property {property_id} image {image_index}")
+                    return Response(status_code=404)
+                # Validate min image size (at least 100 bytes of valid image data)
+                if len(binary) < 100:
+                    logger.warning(f"[Media] Image too small ({len(binary)} bytes) for property {property_id}")
                     return Response(status_code=404)
                 return Response(content=binary, media_type=mime_type)
 
