@@ -29,6 +29,8 @@ def _run_startup_migration(engine):
       4. Rename properties.operation_type → type  (Frankfurt→Oregon column rename fix)
       5. Migrate properties.property_type → extra_data['building_type']  (old Enum → JSONB)
       6. Change properties.images to TEXT[]  (VARCHAR(255)[] truncates base64 URIs)
+      7. Rename properties.latitude → lat  (Frankfurt→Oregon column rename fix)
+      8. Rename properties.longitude → lng  (Frankfurt→Oregon column rename fix)
     """
     global _migration_done
     if _migration_done:
@@ -87,6 +89,30 @@ def _run_startup_migration(engine):
                           AND udt_name = '_varchar'
                     ) THEN
                         ALTER TABLE properties ALTER COLUMN images TYPE TEXT[] USING images::text[];
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 4: Rename latitude → lat (Frankfurt→Oregon column rename) ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'latitude'
+                    ) THEN
+                        ALTER TABLE properties RENAME COLUMN latitude TO lat;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 5: Rename longitude → lng (Frankfurt→Oregon column rename) ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'longitude'
+                    ) THEN
+                        ALTER TABLE properties RENAME COLUMN longitude TO lng;
                     END IF;
                 END $$;
             """))
