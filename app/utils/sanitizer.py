@@ -329,5 +329,7 @@ _OUTPUT_LEAK_PATTERNS = [
     re.compile(r'[A-Za-z]:\\[^\s]+'),
     # Tool call artifacts
     re.compile(r'<tool[_\\s][^>]*>'),
-    re.compile(r'\[function[^\]]*\]'),
+    re.compile(r'\\[function[^\\]]*\\]'),
+    # HTML comments with CONFIRMED metadata (LLM consumption only)
+    re.compile(r'<!--CONFIRMED:[^>]+-->'),
 ]

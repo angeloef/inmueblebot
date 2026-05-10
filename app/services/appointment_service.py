@@ -487,13 +487,14 @@ class AppointmentService:
         return dt
 
 
-def format_appointment_confirmation(appointment: Appointment, property_title: str = None) -> str:
+def format_appointment_confirmation(appointment: Appointment, property_title: str = None, action_type: str = 'new') -> str:
     """
     Formatea un mensaje de confirmación de cita para WhatsApp.
     
     Args:
         appointment: Cita a formatear
         property_title: Título de la propiedad (opcional)
+        action_type: 'new' para cita nueva, 'reschedule' para reprogramación
     
     Returns:
         Mensaje formateado listo para enviar (incluye metadata estructurada para el LLM)
@@ -519,8 +520,10 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
     }
     type_label = type_labels.get(appointment.type, "cita")
     
+    header = "📅 *¡Cita Reprogramada!*" if action_type == 'reschedule' else "📅 *¡Cita Agendada!*"
+    
     lines = [
-        "📅 *¡Cita Agendada!*",
+        header,
         "",
         f"✅ *Tipo:* {type_label}",
         f"📆 *Fecha:* {date_str}",

@@ -856,7 +856,7 @@ async def reschedule_appointment_tool(
         
         appointment = await appointment_service.reschedule_appointment(apt_uuid, new_start)
         
-        return format_appointment_confirmation(appointment)
+        return format_appointment_confirmation(appointment, action_type='reschedule')
         
     except ValueError as e:
         return str(e)
