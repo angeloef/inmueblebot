@@ -224,18 +224,33 @@ async def serve_property_image(property_id: str, image_index: int):
 
             image_data = images[image_index]
 
+            # Normalize: if image is raw base64 (no data: prefix), add it
+            if not image_data.startswith("data:") and not image_data.startswith("http"):
+                # Assume JPEG base64 — add the data: prefix
+                image_data = f"data:image/jpeg;base64,{image_data}"
+
             # data:image/jpeg;base64,<payload>
             if image_data.startswith("data:"):
                 match = re.match(r"data:([^;]+);base64,(.+)", image_data, re.DOTALL)
                 if not match:
-                    return Response(status_code=400)
+                    logger.warning(f"[Media] Bad data URI for property {property_id} image {image_index}")
+                    return Response(status_code=404)
                 mime_type = match.group(1).strip()
                 b64_payload = match.group(2).strip()
-                binary = base64.b64decode(b64_payload)
+                try:
+                    binary = base64.b64decode(b64_payload)
+                except Exception:
+                    logger.warning(f"[Media] Base64 decode failed for property {property_id} image {image_index}")
+                    return Response(status_code=404)
                 return Response(content=binary, media_type=mime_type)
 
             # Regular URL — redirect WhatsApp to it
-            return RedirectResponse(url=image_data)
+            if image_data.startswith("http"):
+                return RedirectResponse(url=image_data)
+
+            # Unknown format
+            logger.warning(f"[Media] Unknown image format for property {property_id} image {image_index}")
+            return Response(status_code=404)
 
     except Exception as e:
         logger.error(f"[Media] Error serving property {property_id} image {image_index}: {e}")
