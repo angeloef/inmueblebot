@@ -189,6 +189,14 @@ async def serve_property_image(property_id: str, image_index: int):
     import re
     import base64
     from fastapi.responses import Response, RedirectResponse
+
+    # Minimal 1x1 grey JPEG placeholder for fallback (WhatsApp can't handle 404 on media URLs)
+    _PLACEHOLDER_JPEG = (
+        b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
+        b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\x09\x09\x08\x0a\x0c\x14\x0d\x0c\x0b\x0b\x0c\x19\x12\x13\x0f'
+        b'\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c\x20\x24\x2e\x27\x20\x22\x2c\x23\x1c\x1c\x28\x37\x29\x2c\x30\x31\x34\x34'
+        b'\x1f\x27\x39\x3d\x38\x32\x3c\x2e\x33\x34\x32\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9'
+    )
     from app.db.session import async_session_factory
     from app.db.repository import BaseRepository
     from app.db.models import Property
@@ -224,44 +232,64 @@ async def serve_property_image(property_id: str, image_index: int):
 
             image_data = images[image_index]
 
+            # Force convert WebP to JPEG (WhatsApp doesn't accept WebP)
             # Normalize: if image is raw base64 (no data: prefix), try to detect mime type from magic bytes
-            if isinstance(image_data, str) and not image_data.startswith("data:") and not image_data.startswith("http"):
-                # Detect mime type from base64-decoded header magic bytes
-                try:
-                    raw_bytes = base64.b64decode(image_data[:100])
-                    if raw_bytes[:2] == b'\xff\xd8':
+            if isinstance(image_data, str):
+                if not image_data.startswith("data:") and not image_data.startswith("http"):
+                    # Detect mime type from base64-decoded header magic bytes
+                    try:
+                        raw_bytes = base64.b64decode(image_data[:100])
+                        if raw_bytes[:2] == b'\xff\xd8':
+                            mime = "image/jpeg"
+                        elif raw_bytes[:4] == b'\x89PNG':
+                            mime = "image/png"
+                        elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+                            mime = "image/webp"
+                        elif raw_bytes[:2] == b'G\x49' or raw_bytes[:2] == b'G\x38':
+                            mime = "image/gif"
+                        elif raw_bytes[:4] == b'\x00\x00\x01\x00':
+                            mime = "image/x-icon"
+                        else:
+                            mime = "image/jpeg"
+                    except Exception:
                         mime = "image/jpeg"
-                    elif raw_bytes[:4] == b'\x89PNG':
-                        mime = "image/png"
-                    elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
-                        mime = "image/webp"
-                    elif raw_bytes[:2] == b'G\x49' or raw_bytes[:2] == b'G\x38':
-                        mime = "image/gif"
-                    elif raw_bytes[:4] == b'\x00\x00\x01\x00':
-                        mime = "image/x-icon"
-                    else:
-                        mime = "image/jpeg"  # default fallback
-                except Exception:
-                    mime = "image/jpeg"
-                image_data = f"data:{mime};base64,{image_data}"
+                    image_data = f"data:{mime};base64,{image_data}"
 
             # data:image/jpeg;base64,<payload>
             if image_data.startswith("data:"):
-                match = re.match(r"data:([^;]+);base64,(.+)", image_data, re.DOTALL)
+                match = re.match(r"data:([^;]+);base64,(.+)$", image_data, re.DOTALL)
                 if not match:
                     logger.warning(f"[Media] Bad data URI for property {property_id} image {image_index}")
-                    return Response(status_code=404)
+                    # Fallback: return a minimal 1x1 JPEG placeholder so WhatsApp doesn't hang
+                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
                 mime_type = match.group(1).strip()
                 b64_payload = match.group(2).strip()
                 try:
                     binary = base64.b64decode(b64_payload)
                 except Exception:
                     logger.warning(f"[Media] Base64 decode failed for property {property_id} image {image_index}")
-                    return Response(status_code=404)
+                    # Fallback: return a placeholder so WhatsApp doesn't hang
+                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+                # If the image is WebP, convert to JPEG (WhatsApp restriction)
+                if mime_type in ("image/webp", "image/webp;"):
+                    try:
+                        from PIL import Image
+                        import io
+                        webp_img = Image.open(io.BytesIO(binary))
+                        # Convert RGBA to RGB for JPEG compatibility
+                        if webp_img.mode == "RGBA":
+                            webp_img = webp_img.convert("RGB")
+                        jpeg_buf = io.BytesIO()
+                        webp_img.save(jpeg_buf, format="JPEG", quality=85)
+                        binary = jpeg_buf.getvalue()
+                        mime_type = "image/jpeg"
+                    except Exception as e:
+                        logger.warning(f"[Media] WebP→JPEG conversion failed for property {property_id}: {e}")
+                        # Fallback: serve it anyway, WhatsApp may accept or not
                 # Validate min image size (at least 100 bytes of valid image data)
                 if len(binary) < 100:
                     logger.warning(f"[Media] Image too small ({len(binary)} bytes) for property {property_id}")
-                    return Response(status_code=404)
+                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
                 return Response(content=binary, media_type=mime_type)
 
             # Regular URL — redirect WhatsApp to it
