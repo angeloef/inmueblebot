@@ -138,6 +138,7 @@ def _detect_mime_from_bytes(raw: bytes) -> str:
 
 
 @app.get("/media/property/{property_id}/{image_index}", include_in_schema=False)
+@app.head("/media/property/{property_id}/{image_index}", include_in_schema=False)
 async def serve_property_image(property_id: str, image_index: int):
     """
     Serve a property image as binary.
@@ -257,26 +258,33 @@ async def serve_property_image(property_id: str, image_index: int):
                 logger.warning(f"[Media] Magic byte detection failed for {property_id}/{image_index}")
                 return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
-            # ── Convert WebP → JPEG if needed (WhatsApp restriction) ─
-            if mime == "image/webp":
+            # ── Convert format to WhatsApp-compatible JPEG if needed ─
+            # WhatsApp only accepts image/jpeg and image/png
+            if mime in ("image/webp", "image/gif"):
                 try:
                     from PIL import Image
                     import io
-                    webp_img = Image.open(io.BytesIO(binary))
-                    if webp_img.mode == "RGBA":
-                        webp_img = webp_img.convert("RGB")
+                    img = Image.open(io.BytesIO(binary))
+                    if img.mode == "RGBA":
+                        img = img.convert("RGB")
                     jpeg_buf = io.BytesIO()
-                    webp_img.save(jpeg_buf, format="JPEG", quality=85)
+                    img.save(jpeg_buf, format="JPEG", quality=85)
                     binary = jpeg_buf.getvalue()
                     mime = "image/jpeg"
                 except ImportError:
-                    logger.warning("[Media] Pillow not installed — serving placeholder for WebP image")
+                    logger.warning("[Media] Pillow not installed — serving placeholder")
                     return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
                 except Exception as e:
-                    logger.warning(f"[Media] WebP→JPEG conversion failed: {e}")
+                    logger.warning(f"[Media] {mime}→JPEG conversion failed: {e}")
                     return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
-            return Response(content=binary, media_type=mime)
+            # No-cache headers: prevent WhatsApp from caching placeholder JPEGs
+            headers = {
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+            return Response(content=binary, media_type=mime, headers=headers)
 
     except Exception as e:
         logger.error(f"[Media] Error serving property {property_id} image {image_index}: {e}")

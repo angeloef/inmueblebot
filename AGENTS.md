@@ -672,4 +672,18 @@ Key test files and their focus:
 1. **Generalized `<!--CONFIRMED:` short-circuit** (line 193): Now catches confirmation from ANY tool, not just schedule/reschedule. Any tool returning `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` skips the 2nd LLM iteration.
 2. **Search/recommend short-circuit** (line 290): After rich content extraction + property memory saving, `search_properties`/`recommend_properties` results are used directly — no 2nd LLM call to reformat already-formatted text.
 
+---
+
+### Sprint 15 — WhatsApp Multi-Image Final Fixes (May 11, 2026)
+
+**Remaining bugs after Sprint 14:**
+1. **GIF served as `image/gif` → WhatsApp rejects with error 131053.** The media endpoint's format conversion only handled WebP, not GIF. WhatsApp only accepts `image/jpeg` and `image/png`. Fixed by expanding the Pillow conversion block to handle both `image/webp` AND `image/gif` — both are converted to JPEG.
+2. **No Cache-Control on media endpoint responses** — WhatsApp may cache a placeholder JPEG and never re-fetch when a real image is uploaded later. Fixed by adding `Cache-Control: no-cache, no-store, must-revalidate` to all media endpoint responses.
+3. **No HEAD handler for media endpoint** — Render health probes using HEAD would get 405. Fixed by adding `@app.head()` decorator alongside `@app.get()`.
+4. **`send_whatsapp_images()` dead code** — had wrong limit (3 not 4), no rate-limiting delay, no error isolation. Brought in line with webhook.py's actual sending logic (4 images max, 1s delay, error logging).
+
+**Files changed:**
+- `app/main.py:serve_property_image()` — GIF→JPEG conversion, Cache-Control headers, HEAD handler
+- `app/integrations/whatsapp.py:send_whatsapp_images()` — fixed limit to 4, added 1s delay, error logging, asyncio import
+
 **Savings:** ~1 LLM call per search turn (~450 completion tokens saved per search). No behavioral change — tool format strings are already user-facing WhatsApp text.

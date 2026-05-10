@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 from typing import Optional, List
 from loguru import logger
@@ -142,12 +143,16 @@ async def send_whatsapp_message(phone: str, message: str) -> bool:
 
 
 async def send_whatsapp_images(phone: str, image_urls: List[str], caption: str = "") -> bool:
-    """Send up to 3 images via WhatsApp."""
+    """Send up to 4 images via WhatsApp with rate-limiting delay (1s between sends)."""
     if not image_urls:
         return True
     try:
-        for url in image_urls[:3]:
-            await whatsapp_client.send_image(to=phone, image_url=url, caption=caption)
+        for i, url in enumerate(image_urls[:4]):
+            result = await whatsapp_client.send_image(to=phone, image_url=url, caption=caption)
+            if result is None or (isinstance(result, dict) and result.get("error")):
+                logger.warning(f"WhatsApp image send failed (index {i}): {result}")
+            if i < len(image_urls[:4]) - 1:
+                await asyncio.sleep(1.0)
         return True
     except Exception as e:
         logger.error(f"WhatsApp image send failed: {e}")
