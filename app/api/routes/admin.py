@@ -270,12 +270,13 @@ class PropertyCreate(BaseModel):
     building_type: Optional[str] = None   # 'apartment','house',… → Property.extra_data
     operation: Optional[str] = "venta"    # 'venta' or 'alquiler' → Property.type
     location: Optional[str] = None        # Property.location
-    price: Optional[int] = 0             # Property.price (integer cents/USD)
+    city: Optional[str] = None            # City name → Property.extra_data['city']
+    price: Optional[int] = 0              # Property.price (integer cents/USD)
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     area_m2: Optional[int] = None
     currency: str = "USD"
-    status: str = "available"            # 'available','reserved','sold','rented'
+    status: str = "available"             # 'available','reserved','sold','rented'
     images: Optional[List[str]] = None    # List of image URLs
 
 
@@ -330,13 +331,15 @@ def _user_to_dict(u):
 def _prop_to_dict(p):
     """Serializa Property al shape que espera el dashboard (compatible con toProperty())."""
     extra = p.extra_data or {}
+    city = extra.get("city", "")
     return {
         "id": p.id,
         "title": p.title,
         "description": p.description,
         "property_type": extra.get("building_type", ""),   # toProperty() reads property_type
         "address": p.location,                             # toProperty() reads address/location
-        "city": extra.get("city", ""),
+        "city": city,                                      # toProperty() reads city → neigh
+        "neigh": city,                                     # Extra alias so the dashboard Neighborhood field is populated
         "price": p.price,
         "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms,
@@ -501,19 +504,30 @@ def create_property(
 ):
     from app.db.models import Property
     op = data.operation if data.operation in ("venta", "alquiler") else "venta"
+
+    # Build location string — include city suffix if city was provided
+    # but not already embedded in the location
+    location = data.location or ""
+    if data.city and data.city.strip():
+        city_str = data.city.strip()
+        if city_str.lower() not in location.lower():
+            # Append city to location, e.g. "calle eight 222, centro → "calle eight 222, centro, Oberá"
+            separator = ", " if location else ""
+            location = f"{location}{separator}{city_str}"
+
     prop = Property(
         id=_next_property_id(db),
         title=data.title or data.location or "Sin título",
         description=data.description,
         type=op,
-        location=data.location or "",
+        location=location,
         price=data.price or 0,
         currency=data.currency,
         bedrooms=data.bedrooms,
         bathrooms=data.bathrooms,
         area_m2=data.area_m2,
         status=data.status if data.status in ("available", "reserved", "sold", "rented") else "available",
-        extra_data={"building_type": data.building_type, "city": ""},
+        extra_data={"building_type": data.building_type, "city": data.city or ""},
         images=data.images,
     )
     db.add(prop)
@@ -556,6 +570,10 @@ def update_property(
     if "building_type" in updates:
         extra = dict(prop.extra_data or {})
         extra["building_type"] = updates.pop("building_type")
+        prop.extra_data = extra
+    if "city" in updates:
+        extra = dict(prop.extra_data or {})
+        extra["city"] = updates.pop("city")
         prop.extra_data = extra
     if "currency" in updates:
         prop.currency = updates.pop("currency")
@@ -984,6 +1002,34 @@ async def agent_reply(
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result))
     return {"status": "sent", "to": phone_to}
+
+
+@router.post("/users/{phone}/reset")
+async def reset_user_context(
+    phone: str,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Reset conversation context for a user by phone number.
+    
+    Deletes all Redis keys (context, messages, summary) for the given
+    phone, clears in-memory fallback caches, and resets PostgreSQL
+    user preferences (location, budget, property type, lead score) to
+    defaults so the next conversation starts completely fresh.
+    
+    Useful for testing — especially the test phone 5493754455340.
+    """
+    from app.core.memory import memory_manager
+    try:
+        success = await memory_manager.reset_user_context(phone)
+        if success:
+            return {
+                "status": "reset",
+                "phone": phone,
+                "message": f"Contexto reseteado para {phone}",
+            }
+        return {"status": "error", "phone": phone, "message": "Reset failed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/resume/{phone}")

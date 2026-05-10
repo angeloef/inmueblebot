@@ -371,7 +371,8 @@ async def insert_property(conn, data: dict) -> bool:
     """
     # Check if this original_id already exists
     existing = await conn.fetchrow(
-        "SELECT id FROM properties WHERE original_id = $1", data["original_id"]
+        "SELECT id FROM properties WHERE CAST(original_id AS text) = CAST($1 AS text)",
+        str(data["original_id"])
     )
     if existing:
         print(f"  ⏭  Property #{data['id']} ({data['title']}) — already exists, skipping.")

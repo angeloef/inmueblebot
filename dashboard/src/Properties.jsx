@@ -231,6 +231,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       return {
         addr:      initialData.addr      || '',
         neigh:     initialData.neigh     || '',
+        city:      initialData.city      || initialData.neigh || '',
         type:      initialData.type      || 'Departamento',
         operation: initialData.operation || 'rent',
         status:    initialData.status    || 'available',
@@ -246,7 +247,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       };
     }
     return {
-      addr: '', neigh: '', type: 'Departamento', operation: 'rent', status: 'available',
+      addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
       rooms: '2 amb', m2: '', baths: 1, parking: 0,
       price: '', currency: 'ARS', agent: 'M. Pereyra',
       notes: '', photos: [],
@@ -292,6 +293,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
     onSave({
       addr:      form.addr,
       neigh:     form.neigh,
+      city:      form.city,
       type:      form.type,
       operation: form.operation,
       status:    form.status,
@@ -330,6 +332,10 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
             <div className="field">
               <label>Barrio / zona</label>
               <input placeholder="Belgrano" value={form.neigh} onChange={e => set('neigh', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Ciudad</label>
+              <input placeholder="Oberá" value={form.city} onChange={e => set('city', e.target.value)} />
             </div>
             <div className="field">
               <label>Código interno</label>

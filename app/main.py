@@ -96,6 +96,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass  # Calendar not configured, that's fine
 
+    # Auto-reset context for test phone so every deploy starts fresh
+    try:
+        import os
+        reset_phone = os.environ.get("RESET_PHONE_ON_STARTUP") or "5493754455340"
+        from app.core.memory import memory_manager
+        await memory_manager.reset_user_context(reset_phone)
+        logger.info(f"[Startup] Context auto-reset for test phone {reset_phone}")
+    except Exception as e:
+        logger.warning(f"[Startup] Context reset skipped (non-fatal): {e}")
+
     yield
     # Graceful shutdown: close Redis connections before event loop closes
     logger.info("Shutting down")

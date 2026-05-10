@@ -715,6 +715,58 @@ class MemoryManager:
             logger.error(f"Error al limpiar memoria de {phone}: {e}")
             return False
     
+    async def reset_user_context(self, phone: str) -> bool:
+        """
+        Delete all Redis keys for a user + clear fallback caches.
+        More aggressive than clear_short_term_memory — also resets
+        the PostgreSQL user preferences to defaults so the next
+        conversation starts fresh.
+
+        Returns True on success (even if PostgreSQL cleanup fails).
+        """
+        # 1. Always clear in-memory fallback first
+        self._fallback_context.pop(phone, None)
+        self._fallback_messages.pop(phone, None)
+
+        # 2. Clear Redis keys
+        try:
+            r = await self._get_redis_with_retry()
+            keys = [
+                f"user:{phone}:context",
+                f"user:{phone}:messages",
+                f"user:{phone}:summary",
+            ]
+            for key in keys:
+                await r.delete(key)
+            logger.info(f"[Memory] Redis context reset for {phone}")
+        except Exception as e:
+            logger.debug(f"[Memory] Redis unavailable for reset, fallback cleared: {e}")
+
+        # 3. Reset PostgreSQL user preferences
+        try:
+            from app.db.session import async_session_factory
+            async with async_session_factory() as session:
+                from app.db.repository import UserRepository
+                from app.db.models import User
+                repo = UserRepository(User, session)
+                user = await repo.get_by_phone(phone)
+                if user:
+                    user.location_preferences = None
+                    user.property_type = None
+                    user.budget_min = None
+                    user.budget_max = None
+                    user.last_interaction = None
+                    user.lead_score = 0
+                    await session.commit()
+                    logger.info(f"[Memory] PostgreSQL preferences reset for {phone}")
+                else:
+                    logger.info(f"[Memory] No user record found for {phone}, nothing to reset in DB")
+        except Exception as e:
+            logger.warning(f"[Memory] PostgreSQL reset failed for {phone}: {e}")
+
+        logger.info(f"[Memory] Contexto completamente reseteado para {phone}")
+        return True
+
     async def clear_user(self, phone: str) -> bool:
         """
         Limpia toda la memoria del usuario (Redis + PostgreSQL).

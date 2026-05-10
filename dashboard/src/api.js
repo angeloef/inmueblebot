@@ -124,7 +124,8 @@ function toProperty(p) {
   return {
     id:        String(p.id),
     addr:      p.location ?? p.address ?? '',
-    neigh:     p.city ?? '',
+    neigh:     p.neigh ?? p.city ?? '',
+    city:      p.city ?? p.neigh ?? '',
     // building type lives in property_type (from _prop_to_dict.extra_data.building_type)
     type:      PROP_TYPE_TO_LABEL[p.property_type] ?? p.property_type ?? '—',
     rooms:     bedrooms > 0 ? `${bedrooms} amb` : '—',
@@ -146,12 +147,15 @@ function toProperty(p) {
 function fromProperty(d) {
   // building_type → stored in Property.extra_data by admin.py
   // operation → maps to Property.type ('venta'/'alquiler') via PropertyCreate.operation
+  // city → stored in Property.extra_data['city'] by admin.py
+  const cityStr = d.city || d.neigh || '';
   return {
     title:         d.addr ?? '',
     description:   d.notes ?? '',
     building_type: PROP_LABEL_TO_TYPE[d.type] ?? 'apartment',
     operation:     d.operation === 'rent' ? 'alquiler' : 'venta',
     location:      [d.addr, d.neigh].filter(Boolean).join(', ') || d.addr || '',
+    city:          cityStr,
     price:         Number(d.price) || 0,
     currency:      d.currency ?? 'USD',
     bedrooms:      d.rooms ? parseInt(d.rooms) || null : null,
