@@ -113,13 +113,28 @@ const STATUS_TO_ROLE = {
   lost:      'lost',
 };
 
+/** Normalize an image URL: if it's raw base64 (no data: prefix), add it so <img> can render it */
+function normalizeImgUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/')) return url;
+  // Raw base64 — detect mime from first few decoded bytes if possible, default to JPEG
+  try {
+    const first = url.slice(0, 100);
+    const raw = atob(first.replace(/[^A-Za-z0-9+/=]/g, '').slice(0, 12));
+    if (raw.charCodeAt(0) === 0xff && raw.charCodeAt(1) === 0xd8) return `data:image/jpeg;base64,${url}`;
+    if (raw.charCodeAt(0) === 0x89 && raw.slice(1, 4) === 'PNG') return `data:image/png;base64,${url}`;
+    if (raw.charCodeAt(0) === 0x52 && raw.charCodeAt(1) === 0x49 && raw.slice(8, 12) === 'WEBP') return `data:image/webp;base64,${url}`;
+  } catch {}
+  return `data:image/jpeg;base64,${url}`;
+}
+
 function toProperty(p) {
   const bedrooms = p.bedrooms ?? 0;
   let photo = '';
   if (Array.isArray(p.images) && p.images.length > 0) {
-    photo = p.images[0];
+    photo = normalizeImgUrl(p.images[0]);
   } else if (typeof p.images === 'string' && p.images) {
-    try { photo = JSON.parse(p.images)[0] ?? p.images; } catch { photo = p.images; }
+    try { photo = normalizeImgUrl(JSON.parse(p.images)[0] ?? p.images); } catch { photo = normalizeImgUrl(p.images); }
   }
   return {
     id:        String(p.id),
@@ -139,7 +154,7 @@ function toProperty(p) {
     baths:     p.bathrooms ?? 0,
     parking:   0,
     photo,
-    images:    p.images || (photo ? [photo] : []),
+    images:    p.images ? p.images.map(normalizeImgUrl) : (photo ? [photo] : []),
     notes:     p.description ?? '',
     _createdAt: p.created_at ?? null,
   };
@@ -163,7 +178,7 @@ function fromProperty(d) {
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
-    images:        d.images && d.images.length > 0 ? d.images : (d.photo ? [d.photo] : []),
+    images:        d.images && d.images.length > 0 ? d.images.map(normalizeImgUrl) : (d.photo ? [normalizeImgUrl(d.photo)] : []),
   };
 }
 

@@ -5,7 +5,13 @@ import { useProperties, useClients, useEvents, useCreateProperty, useUpdatePrope
 import { KIND_META } from './EventPopover';
 
 /** Devuelve true si el string es una URL de imagen (base64 o http) */
-const isImg = (s) => s && (s.startsWith('data:') || s.startsWith('http') || s.startsWith('/'));
+const isImg = (s) => s && (
+  s.startsWith('data:') ||
+  s.startsWith('http') ||
+  s.startsWith('/') ||
+  // Raw base64: long string of base64 chars (no spaces/newlines)
+  (s.length > 50 && /^[A-Za-z0-9+/=]+$/.test(s.slice(0, 100)))
+);
 
 function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onDelete }) {
   const { data: clients = [] }   = useClients();
