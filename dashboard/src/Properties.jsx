@@ -310,6 +310,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
         price:     initialData.price     != null ? String(initialData.price) : '',
         currency:  initialData.currency  || 'ARS',
         agent:     initialData.agent     || 'M. Pereyra',
+        desc:      initialData.desc || initialData.notes || '',
         notes:     initialData.notes     || '',
         photos:    [],
       };
@@ -318,7 +319,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
       rooms: '2 amb', m2: '', baths: 1, parking: 0,
       price: '', currency: 'ARS', agent: 'M. Pereyra',
-      notes: '', photos: [],
+      desc: '', notes: '', photos: [],
     };
   });
   const [priceDisplay, setPriceDisplay] = useState(() =>
@@ -374,7 +375,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       price:     Number(form.price) || 0,
       currency:  form.currency,
       agent:     form.agent,
-      notes:     form.notes,
+      notes:     form.desc || form.notes,
       photo,
       images: allImages,
     });
@@ -503,6 +504,13 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
                 <option value="USD">USD — dólares</option>
               </select>
             </div>
+          </div>
+
+          <div className="field">
+            <label>Descripción</label>
+            <textarea placeholder="Descripción para mostrar a los clientes, ej: 'Departamento luminoso con balcón y vista al parque...'"
+              value={form.desc} onChange={e => set('desc', e.target.value)} rows={3}
+              style={{resize:'vertical',width:'100%'}} />
           </div>
 
           <div className="field">

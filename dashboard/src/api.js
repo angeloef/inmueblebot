@@ -156,6 +156,7 @@ function toProperty(p) {
     photo,
     images:    p.images ? p.images.map(normalizeImgUrl) : (photo ? [photo] : []),
     notes:     p.description ?? '',
+    desc:      p.description ?? '',
     _createdAt: p.created_at ?? null,
   };
 }
@@ -167,7 +168,7 @@ function fromProperty(d) {
   const cityStr = d.city || d.neigh || '';
   return {
     title:         d.addr ?? '',
-    description:   d.notes ?? '',
+    description:   (d.desc || d.notes) ?? '',
     building_type: PROP_LABEL_TO_TYPE[d.type] ?? 'apartment',
     operation:     d.operation === 'rent' ? 'alquiler' : 'venta',
     location:      [d.addr, d.neigh].filter(Boolean).join(', ') || d.addr || '',

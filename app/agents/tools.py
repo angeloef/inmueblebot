@@ -62,17 +62,15 @@ def format_property(prop) -> str:
     features_str = " | ".join(features) if features else "Sin especificar"
 
     lines = [
-        f"{title}",
-        f"Precio: {price_str}",
-        ""
+        f"🏠 {title}",
+        f"💰 {price_str} | {location}",
+        f"📐 {features_str}",
     ]
 
     if description:
-        lines.append(f"Descripcion: {description[:200]}")
-        lines.append("")
+        lines.append(f"📝 {description[:300]}")
 
-    lines.append(f"Caracteristicas: {features_str}")
-    lines.append(f"Ubicacion: {location}")
+    lines.append("")
     lines.append(f"ID: {prop_id}")
 
     return "\n".join(lines)
