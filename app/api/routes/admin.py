@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
 from typing import Optional, List
 from pydantic import BaseModel
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import get_settings
+from app.core.memory import MemoryManager
 import uuid as _uuid
+
+# Admin API uses a global MemoryManager for operations like user context reset
+memory_manager = MemoryManager()
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -482,6 +486,24 @@ def delete_lead(
     db.delete(user)
     db.commit()
     return {"status": "deleted", "lead_id": lead_id}
+
+
+@router.post("/users/{phone}/reset")
+def reset_user_context(
+    phone: str,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Reset conversation context for a user by phone number.
+    Clears Redis keys, in-memory fallback, and PostgreSQL preferences.
+    Useful for testing — ensures the bot starts fresh on next message."""
+    import asyncio
+    try:
+        asyncio.run(memory_manager.reset_user_context(phone))
+        return {"status": "reset", "phone": phone}
+    except Exception as exc:
+        import traceback
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
+
 
 
 # ── Properties ─────────────────────────────────────────────────────────────────
