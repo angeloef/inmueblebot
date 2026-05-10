@@ -27,10 +27,9 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
           <span className="close"><IconButton name="x" onClick={onClose} /></span>
         </div>
         <div className="drawer-body">
-          {isImg(property.photo) ? (
-            <div style={{ marginBottom: 14, borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3', background: 'var(--gray-100)' }}>
-              <img src={property.photo} alt={property.addr} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            </div>
+          {/* ── Image Gallery ── */}
+          {(property.images?.length > 0 || property.photo) ? (
+            <ImageGallery images={property.images || (property.photo ? [property.photo] : [])} />
           ) : (
             <div className="prop-photo" style={{ background: property.photo || 'var(--gray-100)', marginBottom: 14 }}>Foto · {property.type}</div>
           )}
@@ -116,6 +115,42 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
         </div>
       </div>
     </Fragment>
+  );
+}
+
+function ImageGallery({ images }) {
+  const [idx, setIdx] = useState(0);
+  const img = images[idx];
+  if (!img) return null;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3', background: 'var(--gray-100)', marginBottom: images.length > 1 ? 8 : 0 }}>
+        {isImg(img) ? (
+          <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display:'flex',alignItems:'center',justifyContent:'center',color:'var(--fg-tertiary)',fontSize:13 }}>
+            {img}
+          </div>
+        )}
+      </div>
+      {images.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {images.map((url, i) => (
+            <div key={i} onClick={() => setIdx(i)}
+                 style={{ width: 56, height: 44, borderRadius: 6, overflow: 'hidden', cursor: 'pointer',
+                          border: i === idx ? '2px solid var(--primary-500)' : '2px solid transparent',
+                          opacity: i === idx ? 1 : 0.55, transition: 'all 0.15s',
+                          background: 'var(--gray-100)' }}>
+              {isImg(url) ? (
+                <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'var(--fg-tertiary)' }}>📷</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -289,7 +324,9 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
   const submit = () => {
     setTouched({ addr: true, price: true });
     if (!canSave) return;
-    const photo = form.photos[0]?.url || (mode === 'edit' ? initialData?.photo || '' : '');
+    const imagesUrls = form.photos.map(p => p.url);
+    const photo = imagesUrls[0] || (mode === 'edit' ? initialData?.photo || '' : '');
+    const allImages = imagesUrls.length > 0 ? imagesUrls : (mode === 'edit' ? (initialData?.images || []) : []);
     onSave({
       addr:      form.addr,
       neigh:     form.neigh,
@@ -306,6 +343,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       agent:     form.agent,
       notes:     form.notes,
       photo,
+      images: allImages,
     });
   };
   return (

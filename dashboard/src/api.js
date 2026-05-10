@@ -139,6 +139,7 @@ function toProperty(p) {
     baths:     p.bathrooms ?? 0,
     parking:   0,
     photo,
+    images:    p.images || (photo ? [photo] : []),
     notes:     p.description ?? '',
     _createdAt: p.created_at ?? null,
   };
@@ -162,7 +163,7 @@ function fromProperty(d) {
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
-    images:        d.photo ? [d.photo] : [],
+    images:        d.images && d.images.length > 0 ? d.images : (d.photo ? [d.photo] : []),
   };
 }
 
