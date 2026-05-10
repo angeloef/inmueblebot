@@ -429,7 +429,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
             # Send images if any, with rate-limiting delay and error isolation
             images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
-            for i, url in enumerate(images[:3]):
+            for i, url in enumerate(images[:4]):
                 try:
                     result = await whatsapp_client.send_image(
                         to=phone_to,
@@ -443,8 +443,8 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 except Exception as e:
                     logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
                 # Rate-limiting delay between image sends
-                if i < len(images[:3]) - 1:
-                    await asyncio.sleep(0.5)
+                if i < len(images[:4]) - 1:
+                    await asyncio.sleep(1.0)
 
             # Full response_time: from webhook receive → WhatsApp send complete
             response_time = time.time() - start_time

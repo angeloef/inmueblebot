@@ -237,13 +237,24 @@ async def serve_property_image(property_id: str, image_index: int):
                 logger.warning(f"[Media] Image too small for {property_id}/{image_index}")
                 return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
-            # Validate: if the detected mime doesn't match the actual magic bytes,
-            # the data is corrupt (likely truncated VARCHAR(255) storage). Serve placeholder.
-            if mime == "image/jpeg" and not (binary[:2] == b'\xff\xd8'):
-                logger.warning(f"[Media] Corrupt image (claimed JPEG, no SOI) for {property_id}/{image_index}")
-                return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
-            if mime == "image/png" and not (binary[:4] == b'\x89PNG'):
-                logger.warning(f"[Media] Corrupt image (claimed PNG, no header) for {property_id}/{image_index}")
+            # OVERRIDE mime with actual magic bytes — don't trust data URI's stated mime
+            # (images may be WebP labeled as JPEG/PNG)
+            try:
+                actual_mime = _detect_mime_from_bytes(binary[:32])
+                if actual_mime == "image/jpeg" and binary[:2] == b'\xff\xd8':
+                    mime = "image/jpeg"
+                elif actual_mime == "image/png" and binary[:4] == b'\x89PNG':
+                    mime = "image/png"
+                elif actual_mime == "image/webp":
+                    mime = "image/webp"
+                elif actual_mime == "image/gif":
+                    mime = "image/gif"
+                else:
+                    # Unknown format — serve placeholder
+                    logger.warning(f"[Media] Unknown image format for {property_id}/{image_index} (magic={binary[:4].hex()})")
+                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+            except Exception:
+                logger.warning(f"[Media] Magic byte detection failed for {property_id}/{image_index}")
                 return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
             # ── Convert WebP → JPEG if needed (WhatsApp restriction) ─
