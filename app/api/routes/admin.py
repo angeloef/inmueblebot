@@ -31,6 +31,9 @@ def _run_startup_migration(engine):
       6. Change properties.images to TEXT[]  (VARCHAR(255)[] truncates base64 URIs)
       7. Rename properties.latitude → lat  (Frankfurt→Oregon column rename fix)
       8. Rename properties.longitude → lng  (Frankfurt→Oregon column rename fix)
+      9. Rename properties.total_area → area_m2  (Frankfurt→Oregon column rename fix)
+      10. Migrate properties.city → extra_data['city']  (old flat column → JSONB)
+      11. Cast properties.extra_data from TEXT to JSONB  (Oregon schema uses JSONB)
     """
     global _migration_done
     if _migration_done:
@@ -113,6 +116,46 @@ def _run_startup_migration(engine):
                         WHERE table_name = 'properties' AND column_name = 'longitude'
                     ) THEN
                         ALTER TABLE properties RENAME COLUMN longitude TO lng;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 6: Rename total_area → area_m2 (Frankfurt→Oregon column rename) ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'total_area'
+                    ) THEN
+                        ALTER TABLE properties RENAME COLUMN total_area TO area_m2;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 7: Migrate city → extra_data['city'] + drop city column ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'city'
+                    ) THEN
+                        UPDATE properties
+                        SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object('city', city)
+                        WHERE city IS NOT NULL AND city != '';
+                        ALTER TABLE properties DROP COLUMN IF EXISTS city;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 8: Cast extra_data from TEXT to JSONB if needed ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'extra_data'
+                          AND udt_name = 'text'
+                    ) THEN
+                        ALTER TABLE properties ALTER COLUMN extra_data TYPE JSONB USING extra_data::jsonb;
                     END IF;
                 END $$;
             """))
