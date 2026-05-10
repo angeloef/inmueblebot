@@ -189,9 +189,10 @@ class RealEstateAgent:
 
                     # SHORT-CIRCUIT: if tool result IS the final answer, skip remaining LLM iterations
                     if isinstance(tool_result, str):
-                        if tool_name in ("schedule_visit", "reschedule_appointment") and "<!--CONFIRMED:" in tool_result:
+                        # General: any tool result with <!--CONFIRMED:--> is a final confirmation message
+                        if "<!--CONFIRMED:" in tool_result:
                             response_text = tool_result
-                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
+                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded with confirmation, using result directly")
                             break_out = True
                             break
                         if tool_name == "cancel_appointment" and "Cita Cancelada" in tool_result:
@@ -199,42 +200,41 @@ class RealEstateAgent:
                             logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
                             break_out = True
                             break
-                        if tool_name in ("search_properties", "recommend_properties") and "No encontré" in tool_result:
-                            response_text = tool_result
-                            logger.info(f"[Agent] Short-circuit: {tool_name} returned no results")
-                            break_out = True
-                            break
 
-                    # Reschedule failure counter: max 2 consecutive failures
+                    # Reschedule failure counter: max 3 consecutive failures
                     if tool_name == "reschedule_appointment":
                         if not isinstance(tool_result, str) or "<!--CONFIRMED:" not in str(tool_result):
                             reschedule_failures += 1
                             logger.warning(
-                                f"[Agent] reschedule_appointment failed ({reschedule_failures}/2): "
+                                f"[Agent] reschedule_appointment failed ({reschedule_failures}/3): "
                                 f"no CONFIRMED in result"
                             )
-                            if reschedule_failures >= 2:
+                            if reschedule_failures >= 3:
                                 response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
-                                logger.warning("[Agent] Reschedule failure limit reached — breaking out")
+                                logger.warning("[Agent] Reschedule failure limit reached (3) — breaking out")
                                 break_out = True
                                 break
                         else:
                             # Success — reset counter
                             reschedule_failures = 0
 
-                    # Detect tool loops — same tool + same args called twice = break
+                    # Detect tool loops — same tool called twice consecutively = break
                     if len(tools_used) >= 2:
                         last_two = tools_used[-2:]
                         if last_two[0] == last_two[1]:
                             logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
-                            # If it's a scheduling tool that already succeeded, use the success response
+                            # If it's a scheduling tool, propagate success or break failure loop
                             if last_two[0] in ("schedule_visit", "reschedule_appointment", "cancel_appointment"):
                                 result_str = str(tool_result)
                                 if "<!--CONFIRMED:" in result_str or "Cita Reprogramada" in result_str or "Cita Cancelada" in result_str or "Cita Agendada" in result_str:
                                     response_text = tool_result
                                     logger.info(f"[Agent] Scheduling tool {last_two[0]} succeeded despite loop — confirmation used")
-                                    break_out = True
-                                    break
+                                else:
+                                    # Tool failed and is looping — break BOTH loops with friendly fallback
+                                    response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
+                                    logger.info(f"[Agent] Scheduling tool {last_two[0]} failed in loop — breaking outer loop too")
+                                break_out = True
+                                break
                             break
 
                     messages.append({
@@ -273,19 +273,30 @@ class RealEstateAgent:
                                     break
                         rich_content = new_rich
                         
-                        # Save last_shown_properties for context
+                        # Save last_shown_properties for context (compressed: id + title only)
                         last_props = rich_content.get("properties", [])
                         if last_props:
-                            logger.info(f"[Agent] Saving {len(last_props)} properties to context")
+                            compressed = [
+                                {"id": p.get("id", p.get("property_id", "N/A")), "title": p.get("title", "N/A")}
+                                for p in last_props
+                            ]
+                            logger.info(f"[Agent] Saving {len(compressed)} properties to context (compressed to id+title)")
                             # Save to memory for next turn
                             try:
                                 await memory_manager.update_context_field(
                                     phone, 
                                     "last_shown_properties", 
-                                    last_props
+                                    compressed
                                 )
                             except Exception as e:
                                 logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
+                    
+                    # SHORT-CIRCUIT: search/recommend result is a complete formatted response — skip LLM regeneration
+                    if isinstance(tool_result, str) and tool_name in ("search_properties", "recommend_properties"):
+                        response_text = tool_result
+                        logger.info(f"[Agent] Short-circuit: {tool_name} complete, using formatted result directly")
+                        break_out = True
+                        break
                     
                     if "get_property_images" in tool_name:
                         new_rich = self._extract_rich_content(tool_args, tool_result)
@@ -329,45 +340,61 @@ class RealEstateAgent:
             # Clean response - remove forbidden words/patterns
             response_text = self._clean_response(response_text, tools_used)
             
-            try:
-                await memory_manager.save_message(phone, "assistant", response_text)
-            except Exception as e:
-                logger.warning(f"Error guardando mensaje: {e}")
-            
             next_state = self._determine_next_state(
                 intent=intent,
                 tools_used=tools_used,
                 current_state=merged_context.get("current_state", "idle")
             )
             
-            # Run post-processing tasks in PARALLEL for ~6s speedup
-            post_tasks = []
-            post_tasks.append(state_machine.set_state(phone, next_state, allow_invalid=True))
-            post_tasks.append(self._update_lead_score(phone, tools_used, user_message))
-            if user_prefs:
-                post_tasks.append(self._extract_and_save_preferences(phone, user_message, user_prefs))
-            results = await asyncio.gather(*post_tasks, return_exceptions=True)
-            for i, r in enumerate(results):
-                if isinstance(r, Exception):
-                    task_names = ["set_state", "lead_score", "extract_preferences"]
-                    logger.warning(f"Error en post-processing [{task_names[i]}]: {r}")
-            
-            if cumulative_tokens["calls"] > 0:
-                logger.info(
-                    f"[Tokens] phone={phone[-4:]} | CUMULATIVE | "
-                    f"calls={cumulative_tokens['calls']} | "
-                    f"prompt={cumulative_tokens['prompt']} | "
-                    f"completion={cumulative_tokens['completion']} | "
-                    f"total={cumulative_tokens['total']}"
-                )
-            logger.info(f"Agent respondió: {response_text[:50]}... (tools: {tools_used})")
-            
-            return {
+            # Build result dict BEFORE background post-processing
+            result = {
                 "response_text": response_text,
                 "rich_content": rich_content if rich_content else None,
                 "tools_used": tools_used,
                 "next_state": next_state
             }
+            
+            # ── Background post-processing (runs AFTER WhatsApp send) ──
+            async def _background_post_processing():
+                """Save state, lead score, preferences — runs after response is sent to WhatsApp."""
+                try:
+                    # Save assistant message to memory
+                    try:
+                        await memory_manager.save_message(phone, "assistant", response_text)
+                    except Exception as e:
+                        logger.warning(f"Error guardando mensaje en background: {e}")
+                    
+                    # State machine + lead score + preferences in parallel
+                    post_tasks = []
+                    post_tasks.append(state_machine.set_state(phone, next_state, allow_invalid=True))
+                    post_tasks.append(self._update_lead_score(phone, tools_used, user_message))
+                    if user_prefs:
+                        post_tasks.append(self._extract_and_save_preferences(phone, user_message, user_prefs))
+                    results = await asyncio.gather(*post_tasks, return_exceptions=True)
+                    for i, r in enumerate(results):
+                        if isinstance(r, Exception):
+                            task_names = ["set_state", "lead_score", "extract_preferences"]
+                            logger.warning(f"Error en background post-processing [{task_names[i]}]: {r}")
+                    
+                    # Token usage summary
+                    if cumulative_tokens["calls"] > 0:
+                        logger.info(
+                            f"[Tokens] phone={phone[-4:]} | CUMULATIVE | "
+                            f"calls={cumulative_tokens['calls']} | "
+                            f"prompt={cumulative_tokens['prompt']} | "
+                            f"completion={cumulative_tokens['completion']} | "
+                            f"total={cumulative_tokens['total']}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error in background post-processing: {e}")
+            
+            # Fire background task immediately — webhook sends WhatsApp response first,
+            # then this finishes asynchronously (~6s speedup on user-perceived latency)
+            asyncio.create_task(_background_post_processing())
+            
+            logger.info(f"Agent respondió: {response_text[:50]}... (tools: {tools_used})")
+            
+            return result
             
         except Exception as e:
             import traceback

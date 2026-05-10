@@ -405,9 +405,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 user_message=text
             )
 
-            elapsed = time.time() - start_time
+            turn_time = time.time() - start_time
             tools_used = result.get("tools_used", []) if result else []
-            logger.info(f"[Timing] phone={phone[-4:]} | total={elapsed:.2f}s | tools={tools_used}")
+            logger.info(f"[Timing] phone={phone[-4:]} | turn={turn_time:.2f}s | tools={tools_used}")
 
             if not result:
                 logger.warning(f"Agent returned None for {phone}, skipping")
@@ -445,6 +445,10 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 # Rate-limiting delay between image sends
                 if i < len(images[:3]) - 1:
                     await asyncio.sleep(0.5)
+
+            # Full response_time: from webhook receive → WhatsApp send complete
+            response_time = time.time() - start_time
+            logger.info(f"[Timing] phone={phone[-4:]} | response_time={response_time:.2f}s | turn={turn_time:.2f}s | tools={tools_used}")
 
         except Exception as e:
             logger.error(f"Error processing: {e}")

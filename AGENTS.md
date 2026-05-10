@@ -131,8 +131,9 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 | Optimization | Files Changed | Measured Impact |
 |-------------|--------------|-----------------|
 | **Prompt reduction**: History 10→5 messages, compressed property context (id+title only), few-shot examples inlined into SYSTEM_PROMPT | `real_estate_agent.py`, `prompts.py` | ~2,900 fewer prompt tokens per LLM call (from 4,800→1,900) |
-| **Short-circuit LLM iterations**: schedule_visit/reschedule/cancel with confirmation → use tool result directly, skip iteration 2 | `real_estate_agent.py` | 2→1 LLM calls on scheduling (~50% reduction, saves ~1.5s) |
-| **Parallel post-agent saves**: State machine, lead score, preferences now run via `asyncio.gather()` | `real_estate_agent.py` | Post-processing ~4-5s→1-2s |
+|| **Short-circuit LLM iterations**: schedule_visit + reschedule_appointment + cancel_appointment with confirmation → use tool result directly, skip iteration 2 | `real_estate_agent.py` | 2→1 LLM calls on all scheduling flows (~50% reduction, saves ~1.5s) |
+|| **Parallel post-agent saves**: State machine, lead score, preferences via `asyncio.gather()` | `real_estate_agent.py` | Post-processing ~4-5s→1-2s |
+|| **Background post-processing**: Post-processing moved AFTER WhatsApp send via `asyncio.create_task()` — user gets response immediately, saves run asynchronously | `real_estate_agent.py` | Eliminates remaining 1-2s user-perceived latency |
 | **Calendar OAuth pre-warm**: Service initialized at startup via `calendar_service.service` access in `lifespan()` | `main.py` | Eliminates 2s cold start on first appointment |
 | **Response time logging**: `[Timing] phone=XXXX total=3.45s` logged per webhook | `webhook.py` | New observability |
 | **DD/MM/YYYY + natural language dates**: 3-stage parsing in reschedule (YYYY-MM-DD → DD/MM/YYYY → parse_spanish_datetime) | `tools.py` | Fixes infinite reschedule loop |
@@ -143,9 +144,16 @@ The codebase underwent a comprehensive 3-phase architecture sprint following ini
 | Scenario | Before | After | Improvement |
 |----------|--------|-------|-------------|
 | Schedule visit | ~14s, 2 LLM calls | ~7s, **1 LLM call** | **−50%** |
+| Reschedule | ~10s, 2 LLM calls | ~5-7s, **1 LLM call** | **−30%** |
 | Search | ~12s | ~8s | **−33%** |
 | Generic reply | ~6s | ~3-4s | **−33%** |
-| Tokens per turn | ~19K | ~3.3K (scheduling) | **−83%** |
+| Tokens per scheduling turn | ~19K | ~3,323 | **−83%** |
+| LLM calls per scheduling turn | 2 | 1 | **−50%** |
+
+**Remaining bottlenecks (confirmed):**
+| Post-agent processing: eliminated from user-perceived path | `real_estate_agent.py` | **Now 0s** (runs in background after WhatsApp send) |
+| LLM API latency 1.0-1.3s (OpenAI GPT-4o-mini floor — can't change)
+- WhatsApp send ~0.5s (Meta API — out of control)
 
 ### Sprint 9 — Infrastructure Migration (May 10, 2026)
 
@@ -200,6 +208,17 @@ All column rename issues from Frankfurt→Oregon migration. Auto-migration DO bl
 | **`<!--CONFIRMED:...-->` leaks to WhatsApp** | Added CONFIRMED pattern to `_OUTPUT_LEAK_PATTERNS` in sanitizer | `sanitizer.py` |
 | **Reschedule says "Cita Agendada" instead of "Cita Reprogramada"** | Added `action_type='new'|'reschedule'` param to `format_appointment_confirmation()` | `appointment_service.py`, `tools.py` |
 
+### Sprint 13 — Smart Location Search: property_type DB Filter (May 11, 2026)
+
+**Problem:** `property_type` filter (LLM sends Spanish: "casa", "departamento", "terreno") was extracted in `_search_with_repo()` but NEVER passed to `repo.search()`. The method didn't even have a parameter for it. Property type filtering silently did nothing in the DB path - it only worked via the fallback.
+
+**Fix:**
+- `app/utils/sanitizer.py`: Added `_PROPERTY_TYPE_MAP` (Spanish->English mapping) + `map_property_type_to_building_type()` function
+- `app/db/repository.py::search()`: Added `property_type` parameter, filters `extra_data['building_type']` via JSONB path
+- `app/services/property_service.py::_search_with_repo()`: Now passes `property_type` to `repo.search()`
+
+**Mapping:** casa->house, departamento->apartment, terreno->land, local->commercial, oficina->office, ph/duplex->apartment, cabana/quincho->house. Unknown types silently skipped (no crash, no filter applied).
+
 ### Open Issues (NOT Fixed)
 
 | Issue | Severity | Status |
@@ -250,11 +269,24 @@ Single provider: **OpenAI GPT-4o-mini** via `AsyncOpenAI`. No more multi-provide
 - Token logging: per-call + cumulative for cost tracking
 - Temperature: currently 0.7 (consider 0.3 for tool decisions)
 
-### 4. Tool Calling (no forced search, loop detection)
+### 4. Tool Calling + Background Post-Processing
 The forced search bypass (keyword-based `is_clear_search`) was **removed** in Sprint 3. LLM tool calling is now the only path for search intent detection. The agent iterates up to 5 tool calls per turn with loop detection:
 - If same tool called twice consecutively → inner break + check if success message exists
 - If scheduling tool succeeded (`Cita Agendada`, `Cita Reprogramada`, `Confirmado`) → use success response, break outer loop
 - If not a scheduling tool or failed → break inner, continue outer loop
+
+**After the response is determined**, `process_turn()` returns immediately with the response text, then fires post-processing as a background task:
+- State machine update, lead score, preference extraction all run via `asyncio.gather()` inside `asyncio.create_task()`
+- This eliminates 1-2s of user-perceived latency since the WhatsApp message is sent BEFORE saves complete
+- Token usage logging also runs in the background
+
+**Timing breakdown (production):**
+| Stage | Latency |
+|-------|---------|
+| LLM reasoning + tool calls | 1.0-1.3s |
+| WhatsApp API send | ~0.5s |
+| **User perceives** | **~1.5-2s** |
+| Background saves (async) | ~1-2s (not user-facing) |
 
 ### 5. Property ID System (Integer PK)
 The `Property` model uses an **integer primary key** (seeded from JSON data, `autoincrement=False`). The `original_id` field mirrors it for backward compatibility. All tools now validate IDs early:
@@ -619,3 +651,15 @@ Key test files and their focus:
 | `request_human_assistance` | phone, reason | Escalate to human |
 | `refine_search` | refinement, previous_criteria | Narrow results |
 | `get_property_images` | property_id | Get property images |
+
+---
+
+### Sprint 11 — B3: LLM Iteration Reduction (May 10, 2026)
+
+**Problem:** Every turn made 2 LLM calls even when the first produced the right result. Search: iter 0→tool→iter 1→LLM reformats. Schedule: iter 0→tool→iter 1→LLM confirms. 50% wasted LLM calls.
+
+**Changes in `real_estate_agent.py`:**
+1. **Generalized `<!--CONFIRMED:` short-circuit** (line 193): Now catches confirmation from ANY tool, not just schedule/reschedule. Any tool returning `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` skips the 2nd LLM iteration.
+2. **Search/recommend short-circuit** (line 290): After rich content extraction + property memory saving, `search_properties`/`recommend_properties` results are used directly — no 2nd LLM call to reformat already-formatted text.
+
+**Savings:** ~1 LLM call per search turn (~450 completion tokens saved per search). No behavioral change — tool format strings are already user-facing WhatsApp text.

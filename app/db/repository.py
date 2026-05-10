@@ -164,6 +164,7 @@ class PropertyRepository(BaseRepository):
         bedrooms_min: Optional[int] = None,
         bathrooms_min: Optional[int] = None,
         area_min: Optional[int] = None,
+        property_type: Optional[str] = None,
         status: str = "available",
         limit: int = 20,
         offset: int = 0,
@@ -178,6 +179,14 @@ class PropertyRepository(BaseRepository):
         
         if type:
             query = query.where(Property.type == type)
+
+        if property_type:
+            from app.utils.sanitizer import map_property_type_to_building_type
+            building_type = map_property_type_to_building_type(property_type)
+            if building_type:
+                query = query.where(
+                    Property.extra_data[('building_type',)].as_string() == building_type
+                )
         
         if location:
             from app.utils.sanitizer import normalize_location

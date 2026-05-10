@@ -120,6 +120,33 @@ _STREET_PREFIXES = [
     "boulevard", "bvar", "ruta", "camino", "autopista",
 ]
 
+# Spanish → English mapping for property_type to extra_data['building_type']
+# LLM sends Spanish types ("casa", "departamento"), DB stores English ("house", "apartment")
+_PROPERTY_TYPE_MAP = {
+    "casa": "house",
+    "departamento": "apartment",
+    "terreno": "land",
+    "local": "commercial",
+    "oficina": "office",
+    "galpón": "commercial",
+    "galpon": "commercial",
+    "ph": "apartment",
+    "duplex": "apartment",
+    "cabaña": "house",
+    "cabana": "house",
+    "quincho": "house",
+}
+
+
+def map_property_type_to_building_type(property_type: str) -> Optional[str]:
+    """
+    Converts Spanish property_type from LLM to English building_type in extra_data.
+    Returns None if no mapping exists — filter is skipped.
+    """
+    if not property_type:
+        return None
+    return _PROPERTY_TYPE_MAP.get(property_type.strip().lower())
+
 
 def normalize_location(location: str) -> str:
     """

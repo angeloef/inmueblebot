@@ -1,0 +1,706 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║          HERMES AGENT — GUÍA ÓPTIMA DE USO Y PROMPTEO               ║
+║          Optimizado para InmuebleBot + Full-Stack Dev               ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TABLA DE CONTENIDOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1.  Entendiendo tu Hermes Agent (tu instalación)
+  2.  Filosofía de trabajo: Cómo sacarle el máximo provecho
+  3.  Patrones de prompteo para desarrollo full-stack
+  4.  Herramientas clave y cuándo usarlas
+  5.  Skills activos + optional-skills que ya moviste
+  6.  Características recién habilitadas
+  7.  Gateway + Plataformas: llevá Hermes al celular
+  8.  Kanban + Subagentes: trabajo en paralelo
+  9.  Gestión de memoria y skills de procedimiento
+  10. Troubleshooting: prompts que evitan loops y errores
+  11. Estructura de prompts para tareas complejas
+  12. Compatibilidad multi-LLM: que funcione en cualquier modelo
+  13. Checklist rápido de referencia
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1.  ENTENDIENDO TU HERMES AGENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Versión:    v2026.5.7 (actualizado con main)
+  Provider:   DeepSeek (deepseek-v4-flash)
+  UI actual:  WebUI (browser-based)
+  SO:         WSL (Ubuntu en Windows)
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  TU CONFIGURACIÓN ACTIVA YA INCLUYE:                            │
+  │                                                                  │
+  │  ✅ Terminal local + Docker (nikolaik/python-nodejs)            │
+  │  ✅ Delegación de tareas (delegate_task, hasta 5 workers)      │
+  │  ✅ Kanban (orquestación multi-worker)                         │
+  │  ✅ Context compression automática                             │
+  │  ✅ Memory (memoria persistente SQLite)                        │
+  │  ✅ Session search (búsqueda en conversaciones pasadas)         │
+  │  ✅ Skills (26 built-in + inmueblebot + 3 nuevos)              │
+  │  ✅ Context checkpointing (✨ NUEVO)                           │
+  │  ✅ Browser automation (npx agent-browser + Chromium) (✨ NUEVO)│
+  │  ✅ Web Development skill (✨ NUEVO)                           │
+  │  ✅ Migration skill (✨ NUEVO)                                 │
+  │  ✅ Autonomous Agents skill (✨ NUEVO)                         │
+  │  ⬜ Observability / Langfuse (necesita keys - opcional)        │
+  │  ⬜ Gateway / Telegram / Discord (necesita config)              │
+  └─────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2.  FILOSOFÍA DE TRABAJO CON HERMES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Basado en tu patrón de trabajo (InmuebleBot ➔ debugging ➔ DB
+  migrations ➔ full-stack fixes), estos son los principios clave:
+
+  ─── PRINCIPIO #1: "Resultado, no proceso" ─────────────────────────
+
+  ✓ "Haz el push a git mediante comandos" → Comando listo para copiar
+  ✗ "¿Puedes hacer un commit y push?" → Demasiado vago
+
+  Hermes entiende contexto. Dale la meta, no las instrucciones paso
+  a paso. Confiá en que va a leer los archivos, entender el proyecto
+  y ejecutar la solución óptima.
+
+  ─── PRINCIPIO #2: "Contexto completo desde el vamos" ──────────────
+
+  ✓ "El dashboard add-property está roto después de la migración.
+      Log: column properties.lat does not exist. AGENTS.md dice que
+      se renombraron columnas durante la migración Frankfurt→Oregon."
+
+  ✗ "El dashboard no funciona, revisá los logs."
+
+  Hermes tiene session_search para recordar conversaciones pasadas,
+  pero el contexto actual es más preciso. Incluí el error, el archivo
+  relevante y cualquier pista de causa raíz que ya tengas.
+
+  ─── PRINCIPIO #3: "Paralleliza siempre que puedas" ────────────────
+
+  En vez de una sola tarea larga, dividí en sub-tareas paralelas:
+
+  ✓ "Creá 2 tasks en kanban: T1 investiga logs de Render, T2 aplica
+      fix y verifica. Máximo 2 sub-workers por task."
+
+  Hermes tiene delegate_task con hasta 5 workers concurrentes y
+  kanban con dispatcher automático. Usalos.
+
+  ─── PRINCIPIO #4: "Auditoría después del fix" ─────────────────────
+
+  ✓ "Al finalizar la task, realizar un audit independiente de los
+      cambios realizados."
+
+  Siempre pedí una verificación post-fix. Hermes puede compilar los
+  archivos, correr tests, y confirmar que los cambios son correctos.
+
+  ─── PRINCIPIO #5: "Documentá en AGENTS.md + skills" ───────────────
+
+  ✓ "También actualizar AGENTS.md con los cambios que realizamos"
+  ✓ "Si es un workflow recurrente, guardalo como skill"
+
+  Hermes tiene memoria persistente y sistema de skills. Los fixes
+  complejos o workflows que se repiten merecen un skill.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3.  PATRONES DE PROMPTEO PARA FULL-STACK DEV
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── A. DEBUGGING DE PRODUCCIÓN ─────────────────────────────────────
+
+  Plantilla:
+  """
+  [error o síntoma]. Analizá los logs y creá una task en kanban
+  con [N] workers para fixearlo de raíz. Logs: [pegá los logs aquí]
+  """
+
+  Ejemplo real:
+  """
+  the dashboard is unable to manually add a new property to the db.
+  it is broken after db migration, research the problem, propose a
+  plan and create 2 task in kanban orquestrator with maximum 2 sub
+  workers per task as you see fit to solve the problem and have a
+  seamless db migration.
+  """
+
+  ─── B. FIXES MULTI-ARCHIVO ────────────────────────────────────────
+
+  Plantilla:
+  """
+  [Descripción del bug]. Cambios necesarios en [archivos].
+  Creá una task con [N] workers. Al finalizar, audit independiente.
+  """
+
+  ─── C. ANÁLISIS DE LOGS ──────────────────────────────────────────
+
+  Plantilla:
+  """
+  new error, research and analyse the logs ans create a task with
+  variable workers in kanban to fix the problem at its root.
+  logs: [pegá los logs aquí]
+  """
+
+  ─── D. CONFIGURACIÓN DE HERMES ────────────────────────────────────
+
+  Usá comandos directos (Hermes entiende su propia CLI):
+
+  ✓ "activá context checkpointing"
+  ✓ "instalá browser automation"
+  ✓ "mové los skills de web-development, migration y autonomous
+      agents de optional-skills a skills activos"
+
+  ─── E. MEJORAS DE COMPORTAMIENTO ──────────────────────────────────
+
+  Plantilla:
+  """
+  [comportamiento no deseado]. Acá están los logs de lo que pasó.
+  Creá una task en kanban para solucionar estos [N] problemas,
+  con [N] sub-workers. Al finalizar, realizá un audit independiente
+  de los cambios realizados. También actualizá AGENTS.md.
+  """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  4.  HERRAMIENTAS CLAVE Y CUÁNDO USARLAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  HERRAMIENTA          │  USALO CUANDO...                       │
+  ├─────────────────────────────────────────────────────────────────┤
+  │  terminal()           │  Builds, git, npm, docker, scripts     │
+  │  read_file()          │  Leer archivos (¡NO uses cat!)         │
+  │  write_file()         │  Crear/escribir archivos               │
+  │  patch()              │  Editar archivos con find+replace      │
+  │  search_files()       │  Buscar código (greps)                 │
+  │  delegate_task()      │  Tareas en paralelo (hasta 5)         │
+  │  kanban_create()      │  Multi-worker orchestrator             │
+  │  skill_view()         │  Cargar un skill antes de trabajar     │
+  │  skill_manage()       │  Crear/actualizar skills               │
+  │  memory()             │  Guardar facts durables                │
+  │  session_search()     │  Recordar conversaciones pasadas       │
+  │  cronjob()            │  Tareas programadas/recurrentes        │
+  │  todo()               │  Trackear tareas complejas (3+ pasos)  │
+  │  execute_code()       │  Python con lógica entre tool calls    │
+  │  text_to_speech()     │  Convertir texto a audio               │
+  │  vision_analyze()     │  Analizar imágenes                     │
+  │  browse_web()         │  Navegar páginas web (✨ NUEVO!)       │
+  │  checkpoint_save()    │  Guardar punto de restauración         │
+  │  checkpoint_rollback()│  Volver a un checkpoint previo         │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ─── REGLA DE ORO: NO USES COMANDOS DE SHELL PARA LO QUE HERMES   ──
+  ─── YA TIENE HERRAMIENTAS ESPECÍFICAS                           ──
+
+  ✗ cat / leer archivos         → ✓ read_file()
+  ✗ grep / rg / find            → ✓ search_files()
+  ✗ sed / awk                   → ✓ patch()
+  ✗ echo "texto" > archivo      → ✓ write_file()
+  ✗ ls                          → ✓ search_files(target="files")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  5.  SKILLS — ACTIVOS + RECIÉN AGREGADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── SKILLS YA ACTIVOS ────────────────────────────────────────────
+
+  Categorías: autonomous-ai-agents, creative, data-science, devops,
+  diagramming, dogfood, domain, email, gaming, gifs, github, mcp,
+  media, mlops, note-taking, productivity, red-teaming, research,
+  smart-home, social-media, software-development, yuanbao
+
+  ─── SKILLS INMUEBLEBOT ──────────────────────────────────────────
+
+  • inmueblebot — contexto completo de la app
+  • whatsapp-images-fix — fix de imágenes WhatsApp
+
+  ─── SKILLS RECIÉN AGREGADOS (desde optional-skills) ────────────
+
+  ★ WEB-DEVELOPMENT
+    - page-agent: Generación de landing pages y sitios web
+    - Full-stack web app scaffolding
+    Útil para: prototipar dashboards, landing pages, SPAs
+
+  ★ MIGRATION
+    - openclaw-migration: Migraciones de datos entre schemas
+    Útil para: migraciones DB complejas, transformación de datos
+
+  ★ AUTONOMOUS-AI-AGENTS
+    - blackbox: Spawning de agentes autónomos
+    - honcho: Memoria persistente con vector store
+    Útil para: workflows multi-agente, memoria semántica
+
+  ─── CÓMO USAR UN SKILL ──────────────────────────────────────────
+
+  Antes de trabajar en algo relacionado, Hermes carga skills
+  automáticamente. Para forzar la carga:
+
+  "cargá el skill de migration antes de arrancar"
+
+  O escribí directamente y Hermes detecta qué skill cargar
+  según el contexto del prompt.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  6.  CARACTERÍSTICAS RECIÉN HABILITADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── CONTEXT CHECKPOINTING ────────────────────────────────────────
+
+  Qué hace: Guarda snapshots de la sesión actual cada ~1 hora.
+  Si Hermes se cierra o crashea, podés restaurar el estado exacto.
+
+  Activado: ✅ (max 20 snapshots, auto-prune cada 7 días)
+
+  Cómo usarlo:
+  - "/checkpoint save" en WebUI/CLI → guarda manualmente
+  - "/checkpoint list" → ver snapshots disponibles
+  - "/checkpoint rollback <id>" → restaurar estado anterior
+
+  ─── BROWSER AUTOMATION ──────────────────────────────────────────
+
+  Qué hace: Hermes puede navegar páginas web, hacer clicks, llenar
+  formularios, tomar screenshots.
+
+  Activado: ✅ (engine: auto → npx agent-browser + Chromium)
+
+  Cómo usarlo:
+  - "navegá a https://..." → Hermes abre el navegador
+  - "hacé click en el botón de login"
+  - "sacá un screenshot de la página de propiedades"
+  - "llená el formulario con los datos de esta propiedad"
+
+  Para qué sirve en InmuebleBot:
+  - Testear el dashboard automáticamente
+  - Verificar que propiedades nuevas aparecen en la UI
+  - Navegar Render Dashboard para ver logs/deploys
+
+  ─── WEB DEVELOPMENT SKILL ────────────────────────────────────────
+
+  Para qué sirve: Generación de páginas web, landing pages,
+  prototipos de dashboards, componentes React.
+
+  ─── MIGRATION SKILL ─────────────────────────────────────────────
+
+  Para qué sirve: Migraciones de esquemas DB, transformación de
+  datos entre schemas, scripts ETL.
+
+  ─── AUTONOMOUS AGENTS SKILL ─────────────────────────────────────
+
+  Para qué sirve: Spawnear agentes autónomos que trabajan sin
+  supervisión, memoria vector store con Honcho.
+
+  ─── OBSERVABILITY / LANGFUSE ────────────────────────────────────
+
+  Estado: ⬜ Disponible pero necesita configuración
+  (registrarse en langfuse.com, obtener keys, instalar SDK)
+
+  Si querés activarlo en el futuro:
+    1. Crear cuenta en https://langfuse.com
+    2. Obtener HERMES_LANGFUSE_PUBLIC_KEY y SECRET_KEY
+    3. Agregarlas a ~/.hermes/.env
+    4. Ejecutar: hermes tools → Langfuse Observability
+
+  ─── TELEGRAM / DISCORD GATEWAY ──────────────────────────────────
+
+  Estado: ⬜ No configurado
+
+  Si querés hablar con Hermes desde el celular:
+    1. Crear bot en @BotFather (Telegram)
+    2. Configurar token en config.yaml
+    3. Iniciar hermes gateway
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  7.  GATEWAY + PLATAFORMAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Hermes puede correr como un servicio 24/7 que responde en múltiples
+  plataformas de mensajería. Actualmente no está configurado.
+
+  Plataformas disponibles (solo necesitan config):
+
+  Telegram    →  Crear bot con @BotFather, configurar token
+  Discord     →  Crear app en dev portal, invitar bot al server
+  Slack       →  Crear app en api.slack.com
+  WhatsApp    →  Meta Business API / Twilio
+  Signal      →  Señalar registro (signal-cli)
+  Matrix      →  Cuenta en matrix.org
+  Email       →  IMAP/SMTP config
+  SMS         →  Twilio
+  DingTalk    →  App en open.dingtalk.com
+  WeCom       →  App en work.weixin.qq.com
+  Feishu      →  App en open.feishu.cn
+  QQ Bot      →  Configuración en qq.com
+  HomeAssistant →  Configuración en Home Assistant
+  BlueBubbles →  Servidor BlueBubbles
+
+  Para iniciar el gateway:  hermes gateway start
+
+  ─── PARA QUÉ USAR EL GATEWAY EN INMUEBLEBOT ──────────────────────
+
+  • Monitorear logs de producción desde Telegram
+  • Recibir alertas cuando Render redeploya
+  • Ejecutar comandos de mantenimiento desde el celular
+  • Kanban dispatching automático (el gateway hostea el dispatcher)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  8.  KANBAN + SUBAGENTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── CUÁNDO USAR KANBAN VS DELEGATE_TASK ─────────────────────────
+
+  Usá KANBAN cuando:
+  ✓ Necesitás que el trabajo sobreviva a crashes/restarts
+  ✓ Querés human-in-the-loop (revisar antes de continuar)
+  ✓ Múltiples especialistas trabajando en paralelo
+  ✓ Audit trail importa (todo queda en SQLite)
+  ✓ Review/iteration cycle esperado
+
+  Usá DELEGATE_TASK cuando:
+  ✓ Tarea rápida (< 5 min) que no necesita persistencia
+  ✓ Resultado entra en el contexto sin flood
+  ✓ No necesitás seguimiento post-sesión
+
+  ─── PATRÓN: KANBAN + DELEGATE_TASK HÍBRIDO ─────────────────────
+
+  1. Creás la kanban task desde tu sesión
+  2. Disparás delegate_task con instrucciones de completar el kanban
+  3. El sub-agent ejecuta y hace "hermes kanban complete"
+  4. El orquestrador monitorea el progreso
+
+  ─── KANBAN DISPATCHER ───────────────────────────────────────────
+
+  Si querés que los workers se disparen automáticamente:
+
+  hermes kanban daemon
+
+  O si tenés el gateway corriendo, el dispatcher está integrado
+  (dispatch_interval_seconds: 60).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  9.  MEMORIA Y SKILLS DE PROCEDIMIENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── MEMORIA PERSISTENTE ─────────────────────────────────────────
+
+  Hermes guarda facts en dos tipos de memoria:
+
+  • memory(target="user") → perfil del usuario (preferencias, nombre)
+  • memory(target="memory") → notas del agente (convenciones, datos)
+
+  SE GUARDA:
+  ✓ Preferencias del usuario ("Angelo prefiere respuestas concisas")
+  ✓ Hechos sobre el entorno ("Render deploy auto en push a main")
+  ✓ Workflows recurrentes (guardar como SKILL)
+
+  NO SE GUARDA:
+  ✗ Progreso de tareas (usá session_search para eso)
+  ✗ PR numbers, commit SHAs, issue IDs
+  ✗ TODO lists temporales
+
+  ─── SKILLS DE PROCEDIMIENTO ─────────────────────────────────────
+
+  Después de una tarea compleja (5+ tool calls) o un fix tricky,
+  ofrecé guardarlo como skill:
+
+  "guardá esto como un skill para usarlo después"
+
+  Hermes crea el skill automáticamente. Después podés cargarlo con:
+
+  skill_view(name="mi-skill")
+
+  ─── AGENTS.MD ────────────────────────────────────────────────────
+
+  InmuebleBot tiene un AGENTS.md en la raíz del proyecto. Es el
+  documento de handoff para Claude Code y otros agentes.
+
+  MANTENELO ACTUALIZADO CON:
+  ✓ Sprint logs (fecha, qué se fixeó, archivos tocados)
+  ✓ Arquitectura (esquema DB, entrypoints, env vars)
+  ✓ Decisiones de diseño importantes
+  ✓ Workarounds y pitfalls conocidos
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  10. TROUBLESHOOTING — PROMTS QUE EVITAN LOOPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── PROBLEMA: Hermes se Loop en Tool Calls ───────────────────────
+
+  Solución: Usá la herramienta execute_code para lógica procedural
+  en vez de tool calls secuenciales.
+
+  ✓ "Usá execute_code para leer los 3 archivos, compararlos, y
+      generar el diff"
+
+  ✗ "Leé el primer archivo, ahora el segundo, ahora comparalos"
+
+  ─── PROBLEMA: El error es el mismo siempre ──────────────────────
+
+  Solución: Después del segundo intento fallido, cambiá de estrategia.
+  Pedile a Hermes que investigue primero antes de aplicar fixes.
+
+  ✓ "Analizá la causa raíz primero, proponé un plan, después ejecutá"
+  ✓ "Investigá los logs de Render antes de tocar código"
+
+  ─── PROBLEMA: Hermes hace lo que no le pediste ──────────────────
+
+  Solución: Sé explícito sobre lo que NO querés.
+
+  ✓ "Creá una task en kanban, NO ejecutes nada vos mismo"
+  ✓ "Solo investigá y reportá, no apliques cambios todavía"
+
+  ─── PROBLEMA: El contexto se pierde en tareas largas ────────────
+
+  Solución: Activaste checkpointing ✓. Usalo.
+
+  "/checkpoint save" → antes de arrancar una tarea compleja
+  "/checkpoint rollback <id>" → si algo sale mal
+
+  También: dividí en sub-tareas con delegate_task en vez de una
+  sola sesión larga.
+
+  ─── PROBLEMA: El sub-agent no completa el kanban task ───────────
+
+  Solución: Pasá el comando explícito en el context del delegate.
+
+  Context: "Después de fixear, ejecutá:
+    cd /path && hermes kanban complete t_xxxx --summary 'Done'"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  11. ESTRUCTURA DE PROMPTS PARA TAREAS COMPLEJAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ─── PLANTILLA COMPLETA (COPY-PASTE READY) ───────────────────────
+
+  """
+  [CONTEXTO]
+  [2-3 líneas explicando qué pasó, incluyendo errores si hay]
+
+  [OBJETIVO]
+  [qué querés lograr]
+
+  [PLAN]
+  [si ya tenés idea de cómo, contala; si no, pedí que la propongan]
+
+  [EJECUCIÓN]
+  - Usá kanban con [N] workers si es multi-paso
+  - parallelizá donde sea posible
+  - Al final: audit independiente
+  - Actualizá AGENTS.md
+
+  [LOGS / EVIDENCIA]
+  [logs, errores, screenshots]
+  """
+
+  ─── EJEMPLO REAL (debugging DB) ─────────────────────────────────
+
+  """
+  La dashboard no puede agregar propiedades después de la migración
+  DB a Oregon. El log muestra: column properties.lat does not exist.
+
+  Investigá el problema, proponé un plan, y creá 2 tasks en kanban
+  con máximo 2 sub-workers cada una para:
+
+  1. Fixear el add-property en el dashboard
+  2. Recuperar las 9 propiedades que no se copiaron a la nueva DB
+
+  Al finalizar, audit independiente de los cambios.
+  """
+
+  ─── EJEMPLO REAL (mejora de comportamiento) ─────────────────────
+
+  """
+  El bot responde con "Cita Agendada" cuando reprograma una cita,
+  y también leakea <!--CONFIRMED:...--> en los mensajes de WhatsApp.
+
+  Acá están los logs de lo que pasó:
+  [logs]
+
+  Creá una task en kanban con 2 sub-workers para solucionar:
+
+  1. Que el <!--CONFIRMED:...--> no llegue al usuario
+  2. Que diga "Cita Reprogramada" en vez de "Cita Agendada"
+
+  Al finalizar, realizá un audit independiente de los cambios
+  realizados. También actualizá AGENTS.md.
+  """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  12. COMPATIBILIDAD MULTI-LLM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Estos principios funcionan con cualquier modelo (DeepSeek, Claude,
+  GPT, Gemini, etc.) porque se basan en el diseño de herramientas de
+  Hermes, no en tricks de prompt:
+
+  ─── FUNCIONA SIEMPRE ────────────────────────────────────────────
+
+  ✅ "investigá el error en los logs" (open-ended reasoning)
+  ✅ "creá tasks en kanban" (tool calling)
+  ✅ "analizá la causa raíz" (reasoning)
+  ✅ "reportá los hallazgos" (structured output)
+  ✅ "usá execute_code para..." (deterministic execution)
+  ✅ "paralelizá con delegate_task" (multi-agent)
+
+  ─── PUEDE VARIAR SEGÚN EL MODELO ────────────────────────────────
+
+  ⚠️ "hacé el push a git" → modelos con tool calling fuerte lo
+     hacen mejor (Claude, DeepSeek, GPT-4o)
+
+  ⚠️ "creá un plan detallado" → modelos reasoning (o3, DeepSeek-R1,
+     Claude Sonnet) dan planes más profundos
+
+  ⚠️ "sacá conclusiones de estos logs" → funciona en todos, pero
+     modelos grandes (70B+) son más precisos
+
+  ─── ESTRATEGIAS QUE NO DEPENDEN DEL MODELO ─────────────────────
+
+  1. Descomponé en pasos pequeños
+  2. Usá execute_code para lógica procedural (no depende del LLM)
+  3. Validá outputs con herramientas (read_file, terminal)
+  4. Skills codifican conocimiento que cualquier modelo puede usar
+  5. Session search es cross-model (los datos persisten en SQLite)
+  6. La memoria es cross-model (facts sobreviven a cambios de modelo)
+
+  ─── CAMBIAR DE MODELO SOBRE LA MARCHA ──────────────────────────
+
+  /model deepseek-chat      → cambiar temporalmente
+  /model claude-sonnet-4    → si tenés Anthropic key configurada
+  /model gpt-4o             → si tenés OpenAI key configurada
+
+  hermes config set model.default claude-sonnet-4   → cambio permanente
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  13. CHECKLIST RÁPIDO DE REFERENCIA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  ANTES DE EMPEZAR UNA TAREA COMPLEJA:                          │
+  │                                                                 │
+  │  ☐ Cargué los skills relevantes? (skill_view)                  │
+  │  ☐ Guardé checkpoint? (/checkpoint save)                       │
+  │  ☐ Definí el objetivo claramente?                              │
+  │  ☐ Incluí logs/errores si los hay?                             │
+  │  ☐ Separé en sub-tareas paralelizables?                        │
+  │                                                                 │
+  │  DURANTE LA TAREA:                                             │
+  │                                                                 │
+  │  ☐ Usá delegate_task para trabajo en paralelo                  │
+  │  ☐ Usá execute_code para lógica procedural (evita loops)       │
+  │  ☐ Pedí audit independiente al finalizar                       │
+  │  ☐ Ofrecé guardar como skill si es workflow recurrente         │
+  │                                                                 │
+  │  DESPUÉS DE LA TAREA:                                          │
+  │                                                                 │
+  │  ☐ Actualizé AGENTS.md?                                        │
+  │  ☐ Guardé facts en memoria si aplica?                          │
+  │  ☐ Verifiqué que todo funciona?                                │
+  │  ☐ Hice push a git?                                            │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ─── COMANDOS ÚTILES ──────────────────────────────────────────────
+
+  hermes --tui                    → Terminal UI (recomendado)
+  hermes dashboard                → Web dashboard
+  hermes gateway start            → Iniciar gateway
+  hermes kanban daemon            → Iniciar dispatcher kanban
+  hermes config show              → Ver configuración actual
+  hermes config set <k> <v>       → Cambiar config
+  hermes logs                     → Ver logs (--follow para live)
+  hermes setup                    → Setup wizard
+  hermes update                   → Actualizar Hermes
+  /checkpoint save                → Guardar checkpoint
+  /checkpoint list                → Listar checkpoints
+  /model <name>                   → Cambiar modelo temporalmente
+
+  ─── SLASH COMMANDS EN WEBUI/CLI ──────────────────────────────────
+
+  /help          → Ayuda general
+  /clear         → Limpiar pantalla
+  /new           → Nueva sesión
+  /resume        → Retomar sesión anterior
+  /copy          → Copiar último output
+  /paste         → Pegar clipboard
+  /checkpoint    → Gestionar checkpoints
+  /model         → Cambiar modelo
+  /session       → Gestionar sesiones
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  EPÍLOGO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Hermes Agent es una herramienta tan poderosa como los prompts que
+  le des. No hace magia — hace lo que le pedís, de la forma más
+  eficiente posible con las herramientas que tiene.
+
+  Las 3 reglas de oro:
+
+  1. DALE CONTEXTO COMPLETO — incluí errores, logs, y archivos
+     relevantes desde el primer mensaje
+
+  2. PARALELIZÁ — separá en sub-tareas, usá kanban, usá delegate
+     task. No hagas una cosa a la vez si podés hacer 5
+
+  3. PEDÍ AUDITORÍA — después de fixes complejos, pedí que verifique
+     los cambios. Hermes es bueno ejecutando pero mejor si revisa
+
+  ─── CREADO PARA: InmuebleBot Full-Stack Development ─────────────
+  ─── Angelo — Mayo 2026 ───────────────────────────────────────────
+  ─── Compatible con: DeepSeek, Claude, GPT, Gemini, cualquier LLM ──
+
+══════════════════════════════════════════════════════════════════════
+  14.  /OPTIMIZE_PROMPT — COMANDO PERSONALIZADO
+══════════════════════════════════════════════════════════════════════
+
+  Hermes tiene un comando slash personalizado que optimiza cualquier
+  prompt automáticamente.
+
+  ─── CÓMO USARLO ─────────────────────────────────────────────────
+
+  1. Simplemente escribí:
+
+     /optimize-prompt <tu tarea o problema>
+
+  2. Hermes:
+     a) Lee este archivo (HERMES_AGENT_GUIDE.txt) para entender las
+        mejores prácticas de prompteo
+     b) Analiza tu requerimiento en profundidad
+     c) Decide la mejor estrategia de workers:
+        - delegate_task para tareas rápidas y simples
+        - kanban para trabajo complejo multi-worker
+     d) Crea las tasks optimizadas con la cantidad correcta de workers
+     e) Usa los skills disponibles automáticamente:
+        - inmueblebot (contexto del proyecto)
+        - web-development (UI/frontend)
+        - migration (DB/data)
+        - browser (navegación web)
+        - terminal (builds, deploy, git)
+     f) Al finalizar: audit independiente + ofrece guardar como skill
+
+  ─── EJEMPLOS ─────────────────────────────────────────────────────
+
+  ✓ "/optimize-prompt the dashboard add-property is broken. logs say
+     column lat does not exist. research and fix it."
+
+     → Crea 2 kanban tasks: análisis de logs + fix de columnas
+
+  ✓ "/optimize-prompt I need to add a new feature: a search filter
+     by price range in the dashboard frontend"
+
+     → Crea 3 delegate_task workers: API endpoint → frontend filter
+     → integration test
+
+  ✓ "/optimize-prompt recover 9 properties lost in db migration"
+
+     → Crea 2 workers: 1 intenta dump si existe, 1 crea seed script
+
+  ─── REQUISITOS ──────────────────────────────────────────────────
+
+  • Este archivo (HERMES_AGENT_GUIDE.txt) debe estar presente para
+    que Hermes lea las recomendaciones de optimización.
+  • Los skills relevantes deben estar instalados (todos lo están).
+  • Funciona con cualquier LLM (DeepSeek, Claude, GPT, Gemini...).
+
+  ─── COMANDOS RELACIONADOS ────────────────────────────────────────
+
+  /skill optimize_prompt     → Cargar el skill manualmente
+  /optimize-prompt <texto>   → Atajo directo (recomendado)
+  /reload-skills             → Recargar skills si no aparece
