@@ -357,6 +357,7 @@ from fastapi.responses import FileResponse
 import os
 
 @app.get("/", include_in_schema=False)
+@app.head("/", include_in_schema=False)
 @app.get("/dashboard", include_in_schema=False)
 @app.get("/dashboard/{full_path:path}", include_in_schema=False)
 async def serve_dashboard(full_path: str = ""):
