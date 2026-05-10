@@ -419,6 +419,18 @@ async def process_messages(messages: List[Dict[str, Any]]):
             # Strip image URLs and internal paths from text before sending
             response_text = sanitize_bot_response(response_text)
 
+            # When images will be sent separately, strip the numbered list the LLM generates
+            # (e.g. "1.\n2.\n3.\n4." ) since WhatsApp will send them as separate image messages
+            images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
+            if images and response_text:
+                import re
+                # Remove bare numbered lines: "1. ", "1.\n", "2.  \n", etc.
+                response_text = re.sub(r'^\d+\.\s*\n?', '', response_text, flags=re.MULTILINE)
+                # Remove image URLs the LLM may have included
+                response_text = re.sub(r'https?://[^\s]+/media/property/[^\s]+', '', response_text)
+                # Clean up double newlines left after removal
+                response_text = re.sub(r'\n{3,}', '\n\n', response_text).strip()
+
             # Send text response
             if response_text:
                 logger.info(f"Sending to {phone_to}: {response_text[:30]}...")
