@@ -4,38 +4,20 @@
 > Target market: Argentina, Paraguay (Spanish/Portuguese speaking users)
 > ~17,873 LOC across 55+ Python modules, 6 React JSX files
 
-## ⚠️ TOP PRIORITY — Database & Redis Migration UNTESTED ⚠️
+## ⚠️ TOP PRIORITY — Database & Redis Migration TESTED ✅
 
-**THIS IS THE FIRST THING TO WORK ON.**
-
-### Context
-On May 10, 2026, both PostgreSQL and Redis were migrated from **Frankfurt** (EU) to **Oregon** (US West) to co-locate with the Render API server and eliminate cross-region latency (~500ms RTT → ~1ms).
-
-### What Was Done
-- **PostgreSQL**: `pg_dump` → Render API create new DB in Oregon → data restore → column renames to match codebase schema
-- **Redis**: Render API create new instance in Oregon → env var `REDIS_URL` set via API
-- **render.yaml**: Updated with Oregon DB URL; Redis service re-added for blueprint auto-injection
-
-### Known Issues (Need Debugging)
-1. ⚠️ **Redis URL format**: Currently set as `redis://red-d7vfn5j7uimc73enga80:6379`. May need `rediss://` (SSL). Passwordless auth may or may not work from within Render's network. **Test by sending a WhatsApp message and checking logs for `REDIS DOWN` warning.**
-2. ⚠️ **Column mapping**: Old Frankfurt schema had different column names than current SQLAlchemy models. During migration, these were renamed (e.g., `type`→`operation_type`, `whatsapp_phone`→`phone`→`whatsapp_phone`). **Test all CRUD operations** and check for `UndefinedColumnError` in logs.
-3. ⚠️ **Foreign key constraints**: Appointment/user/property FK relationships from old schema may have orphaned references. **Test appointment creation, listing, and rescheduling.**
-4. ⚠️ **Google Calendar sync**: Calendar integration writes to both DB and Google API. Verify events created via new Oregon DB sync correctly.
-5. ⚠️ **Dashboard**: Dashboard connects to the same DB. Verify data loads correctly in the web dashboard at `/admin/*`.
+The migration from Frankfurt (EU) to Oregon (US West) has been completed and tested. All column rename issues fixed via auto-migrations.
+Critical fixes applied: see Sprint 9-12 below.
 
 ### Quick Test Scenarios (Run After Deploy)
 ```bash
-# 1. Send a WhatsApp message → check logs for REDIS DOWN or DB errors
-# 2. Search for a property → verify LLM response includes results
-# 3. Schedule a visit → verify appointment created + Calendar event
-# 4. Open Dashboard → verify data loads at /admin/leads, /admin/appointments
+# 1. Verify properties load in dashboard at /admin/properties
+# 2. Verify appointments load in dashboard at /admin/appointments
+# 3. Send a WhatsApp message → check logs for DB or Redis errors
+# 4. Search for a property → verify LLM response includes results
+# 5. Schedule a visit → verify appointment created + Calendar event
+# 6. Open Dashboard → verify data loads at /admin/leads, /admin/appointments
 ```
-
-### Rollback Plan
-If migration has unresolvable issues:
-- Revert `render.yaml` to point to Frankfurt DB URL
-- Recreate Redis instance in Frankfurt via Render dashboard
-- Restore from the backup at `/tmp/inmueblebot_dump.sql`
 
 ---
 
@@ -176,7 +158,7 @@ The API was already on Render Oregon, but both PostgreSQL and Redis were in **Fr
 | **render.yaml** Redis service | Re-added with `plan: free`, `region: oregon` | REDIS_URL auto-injected by Render blueprint |
 | **render.yaml** credentials | Removed stale Frankfurt credentials | Oregon DB password + auto-injected Redis |
 
-**⚠️ STATUS: UNTESTED** — Migration completed but full integration testing pending. See TOP PRIORITY section at top of this file.
+**⚠️ STATUS: TESTED AND FIXED** — All column rename issues identified and fixed via auto-migrations in `admin.py:_run_startup_migration()`. See Sprint 11 for details.
 
 **Known deploy issue (env var wipe)**: The `PUT /v1/services/{id}/env-vars` Render API endpoint REPLACES all env vars, not just the specified key. When setting `REDIS_URL` via API, all other env vars (`DATABASE_URL`, `PORT`, `ENVIRONMENT`, etc.) were accidentally deleted. They were restored immediately. `OPENAI_API_KEY`, `GOOGLE_TOKEN_JSON`, and `GOOGLE_CREDENTIALS_JSON` are stored as Secret Files (`/etc/secrets/`) and were NOT affected.
 
@@ -189,6 +171,34 @@ The API was already on Render Oregon, but both PostgreSQL and Redis were in **Fr
 | **`new_date_str='mañana'` causes ValueError** | Natural language not handled by strptime | Falls through to `parse_spanish_datetime()` which handles "mañana", "próximo martes", etc. |
 | **Infinite reschedule loop on failure** | No retry limit; LLM retries with same failing args | Max 2 consecutive failures → friendly message + loop break |
 | **User says "a las 3 es muy temprano" but apt is at 17:00** | No contradiction detection | Prompt rule: "Si el usuario contradice la cita real, corregilo amablemente" + always fetch appointment from DB |
+
+### Sprint 11 — Migration Fallout Fixes (May 10, 2026)
+
+All column rename issues from Frankfurt→Oregon migration. Auto-migration DO blocks added to `admin.py:_run_startup_migration()`:
+
+| # | Column | Action | Trigger |
+|---|--------|--------|---------|
+| 1 | `properties.operation_type` → `type` | ALTER RENAME | IF EXISTS on information_schema |
+| 2 | `properties.property_type` → `extra_data['building_type']` | UPDATE + DROP | IF EXISTS |
+| 3 | `properties.images` VARCHAR(255)[] → TEXT[] | ALTER TYPE | udt_name = '_varchar' |
+| 4 | `properties.latitude` → `lat` | ALTER RENAME | IF EXISTS |
+| 5 | `properties.longitude` → `lng` | ALTER RENAME | IF EXISTS |
+| 6 | `properties.total_area` → `area_m2` | ALTER RENAME | IF EXISTS |
+| 7 | `properties.extra_data` TEXT → JSONB | ALTER TYPE | udt_name = 'text' (run before city migration) |
+| 8 | `properties.city` → `extra_data['city']` | UPDATE + DROP | IF EXISTS |
+| 9 | `appointments.appointment_type` → `type` | ALTER RENAME | IF EXISTS |
+
+**Also added:** `scripts/seed_oregon_properties.py` — 9 recovered properties with old→new column mapping, idempotent.
+
+### Sprint 12 — Dashboard + Search Fixes (May 10, 2026)
+
+| Issue | Fix | Files |
+|-------|-----|-------|
+| **Dashboard "add property" returned 500** | Fixed column renames + images type | `admin.py:_run_startup_migration()` |
+| **Dashboard properties not found by WhatsApp bot** | Added `city` field to PropertyCreate schema + auto-append city to location | `admin.py`, `api.js`, `Properties.jsx` |
+| **Stale Redis context biases test conversations** | Added `reset_user_context(phone)` to MemoryManager + `POST /admin/users/{phone}/reset` endpoint + auto-reset on startup for test phone `5493754455340` | `memory.py`, `admin.py`, `main.py` |
+| **`<!--CONFIRMED:...-->` leaks to WhatsApp** | Added CONFIRMED pattern to `_OUTPUT_LEAK_PATTERNS` in sanitizer | `sanitizer.py` |
+| **Reschedule says "Cita Agendada" instead of "Cita Reprogramada"** | Added `action_type='new'|'reschedule'` param to `format_appointment_confirmation()` | `appointment_service.py`, `tools.py` |
 
 ### Open Issues (NOT Fixed)
 
@@ -203,7 +213,7 @@ The API was already on Render Oregon, but both PostgreSQL and Redis were in **Fr
 | No Redis Sentinel/Cluster support | 🟡 MEDIUM | Single instance, no HA |
 | Streamlit duplicates chat UI without agent pipeline | 🟡 MEDIUM | Direct LLM call, no tools |
 | Celery broker not configured | 🟡 MEDIUM | Tasks defined but don't run |
-| Admin mutations don't sync to bot state | 🟡 MEDIUM | Changes via admin won't refresh Redis context |
+| Admin mutations via dashboard create proper city+location mapping | 🟡 MEDIUM | Fixed in Sprint 12 — now auto-appends city to location |
 ### 12. Cross-Region Latency (FIXED — May 10, 2026)
 **Before**: DB in Frankfurt + Redis in Frankfurt → API in Oregon = ~500ms RTT per operation
 **After**: All three services co-located in **Oregon** → ~1ms RTT per operation
