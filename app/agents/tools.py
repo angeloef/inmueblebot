@@ -39,6 +39,12 @@ def format_property(prop) -> str:
     area_m2 = _get_attr(prop, "area_m2")
     description = _get_attr(prop, "description")
     
+    # Defensive: force price to int to prevent scientific notation ($1.2E+5)
+    try:
+        price = int(float(str(price)))
+    except (ValueError, TypeError):
+        price = 0
+    
     if prop_type == "alquiler":
         price_str = f"${price:,}/mes"
     else:
@@ -75,6 +81,7 @@ def format_property(prop) -> str:
 def format_property_list(properties: List) -> str:
     """
     Formatea una lista de propiedades en texto legible para WhatsApp.
+    Formato minimalista, una línea por propiedad.
     
     Args:
         properties: Lista de objetos Property o dicts
@@ -86,7 +93,7 @@ def format_property_list(properties: List) -> str:
         return "No encontré propiedades que coincidan con tu búsqueda."
     
     lines = []
-    lines.append(f"Encontre {len(properties)} propiedades:\n")
+    lines.append(f"Encontré {len(properties)} propiedades:\n")
 
     for i, prop in enumerate(properties, 1):
         # Use original_id (integer) if available
@@ -100,6 +107,12 @@ def format_property_list(properties: List) -> str:
         title = title[:50] + "..." if len(title) > 50 else title
 
         price = _get_attr(prop, "price", 0)
+        # Defensive: force price to int to prevent scientific notation ($1.2E+5)
+        try:
+            price = int(float(str(price)))
+        except (ValueError, TypeError):
+            price = 0
+        
         prop_type = _get_attr(prop, "type", "venta")
         if prop_type == "alquiler":
             price_str = f"${price:,}/mes"
@@ -121,14 +134,12 @@ def format_property_list(properties: List) -> str:
 
         location = _get_attr(prop, "location", "Sin ubicación")
 
-        line = f"{i}. {title}\n"
-        line += f"   {price_str} | {features_str}\n"
-        line += f"   {location}\n"
-        line += f"   ID: {prop_id}"
+        # Minimalist one-line format: 🏠 Title | $Price | Location | ID:N
+        line = f"🏠 {title} | {price_str} | {location} | ID:{prop_id}"
 
         lines.append(line)
     
-    return "\n\n".join(lines)
+    return "\n".join(lines)
 
 
 def _get_attr(obj, attr: str, default=None):
@@ -474,7 +485,12 @@ async def get_user_preferences(phone: str) -> str:
         if prefs.get("location_preferences"):
             parts.append(f"📍 Ubicación: {prefs['location_preferences']}")
         if prefs.get("budget_max"):
-            parts.append(f"💰 Presupuesto: hasta ${prefs['budget_max']:,}")
+            budget_val = prefs['budget_max']
+            try:
+                budget_val = int(float(str(budget_val)))
+            except (ValueError, TypeError):
+                pass
+            parts.append(f"💰 Presupuesto: hasta ${budget_val:,}")
         if prefs.get("property_type"):
             parts.append(f"🏠 Tipo: {prefs['property_type']}")
         if prefs.get("operation_type"):

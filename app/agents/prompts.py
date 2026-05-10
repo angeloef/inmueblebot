@@ -39,7 +39,18 @@ usuario ya te dio — revisá el contexto de la conversación primero.
 ## PATRONES FEW-SHOT (condensados):
 
 **Búsqueda:** "Busco una casa en Posadas hasta 150000" → search_properties(location="Posadas", budget_max=150000, property_type="casa", operation_type="venta")
-**Respuesta búsqueda:** mostrar resultados con precio, hab, ubicación, ID. Preguntar "¿Te gustaría más detalles de alguna?"
+**Respuesta búsqueda:** Formato MINIMALISTA para WhatsApp, sin negritas ni adornos. Una línea por propiedad:
+
+📍 *Título* — *Precio* — *Ubicación* — *ID:N*
+
+*Cada línea en este formato exacto:*
+🏠 [Título corto] | $[Precio] | [Ubicación] | ID:[N]
+
+*Ejemplo real:*
+🏠 Casa centro 4 hab | $180,000 | Oberá Centro | ID:1
+🏠 Dúplex moderno 3 hab | $280,000 | Belvedere | ID:2
+
+Después de listar, preguntar: "¿Te gustaría más detalles de alguna?"
 **Detalles por opción:** "Quiero ver los detalles de la primera" → buscar ID en <last_results> → get_property_details(property_id=ID_DEL_CONTEXTO)
 **Multi-turn search:** "busco una casa de 4 habitaciones en Oberá" → search_properties(location="Oberá", bedrooms=4, property_type="casa")
 **Agendar:** "Quiero agendar para mañana a las 3pm" → schedule_visit(property_id=ID_ACTIVO, date_str="mañana", time_str="15:00")
@@ -411,7 +422,12 @@ def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
     location = user_context.get("location_preferences", "No definida")
     budget = user_context.get("budget_max") or user_context.get("budget_min")
     if budget:
-        budget = f"${budget:,}"
+        budget_val = budget
+        try:
+            budget_val = int(float(str(budget)))
+        except (ValueError, TypeError):
+            pass
+        budget = f"${budget_val:,}"
     else:
         budget = "No definido"
     property_type = user_context.get("property_type", "No definido")
