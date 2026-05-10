@@ -21,11 +21,14 @@ _migration_done = False
 def _run_startup_migration(engine):
     """One-time schema migrations so admin endpoints work correctly.
 
-    Idempotent — uses IF NOT EXISTS / IF EXISTS guards throughout.
+    Idempotent — uses IF NOT EXISTS / IF EXISTS / DO blocks throughout.
     Migrations:
       1. Add extra_data JSONB to users  (stores email / role / notes for admin-created leads)
       2. Make appointments.user_id nullable  (admin can create events without a linked contact)
       3. Drop ck_appointment_type constraint  (allow 'call' and custom types, not just visit/signing/meeting)
+      4. Rename properties.operation_type → type  (Frankfurt→Oregon column rename fix)
+      5. Migrate properties.property_type → extra_data['building_type']  (old Enum → JSONB)
+      6. Change properties.images to TEXT[]  (VARCHAR(255)[] truncates base64 URIs)
     """
     global _migration_done
     if _migration_done:
@@ -47,6 +50,46 @@ def _run_startup_migration(engine):
             conn.execute(text(
                 "ALTER TABLE appointments DROP CONSTRAINT IF EXISTS ck_appointment_status"
             ))
+            # ── Fix 1: Rename operation_type → type ─────────────────────
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'operation_type'
+                    ) THEN
+                        ALTER TABLE properties RENAME COLUMN operation_type TO type;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 2: Migrate property_type (old Enum) → extra_data ────
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'property_type'
+                    ) THEN
+                        UPDATE properties
+                        SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object('building_type', property_type::text)
+                        WHERE property_type IS NOT NULL;
+                        ALTER TABLE properties DROP COLUMN IF EXISTS property_type;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 3: Widen images column from VARCHAR(255)[] to TEXT[] ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'properties' AND column_name = 'images'
+                          AND udt_name = '_varchar'
+                    ) THEN
+                        ALTER TABLE properties ALTER COLUMN images TYPE TEXT[] USING images::text[];
+                    END IF;
+                END $$;
+            """))
             conn.commit()
         _migration_done = True
     except Exception as exc:

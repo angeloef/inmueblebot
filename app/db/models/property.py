@@ -4,7 +4,7 @@ Representa inmobiliarias disponibles (venta/alquiler).
 """
 from datetime import datetime
 from typing import Optional, List, Dict
-from sqlalchemy import String, Integer, Float, DateTime, Index, CheckConstraint, func
+from sqlalchemy import String, Integer, Float, DateTime, Index, CheckConstraint, func, Text
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -107,11 +107,11 @@ class Property(Base):
         comment="Área en metros cuadrados"
     )
 
-    # Imágenes (URLs de S3)
+    # Imágenes (base64 data URIs or S3 URLs)
     images: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String),
+        ARRAY(Text),
         nullable=True,
-        comment="Lista de URLs de imágenes"
+        comment="Lista de imágenes (data URIs base64 o URLs S3)"
     )
 
     # Estado de la propiedad
