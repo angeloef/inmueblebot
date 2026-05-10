@@ -687,3 +687,29 @@ Key test files and their focus:
 - `app/integrations/whatsapp.py:send_whatsapp_images()` — fixed limit to 4, added 1s delay, error logging, asyncio import
 
 **Savings:** ~1 LLM call per search turn (~450 completion tokens saved per search). No behavioral change — tool format strings are already user-facing WhatsApp text.
+
+### Sprint 16 — Conversational Tone Overhaul (May 10, 2026)
+
+**Problem:** Bot responses felt "apático y poco conversacional" — it dumped raw property data lines (e.g. `"🏠 Departamento en Av. Corrientes 1200 | $85,000 | ID:14"`) without conversational framing. Like a catalog, not a person.
+
+**Root cause:** The system prompt's few-shot examples only showed DRY DATA formats, and REGLA 4 was vague ("conversacional, amigable y conciso"). The LLM replicated the exact format it saw in examples — no intro, no warmth, no personality.
+
+**Changes:**
+
+1. **`app/agents/prompts.py:SYSTEM_PROMPT`** — Complete rewrite of tone guidance:
+   - Added **TU PERSONALIDAD** section: defines bot as "agente inmobiliario entusiasta y cercano" with specific do/don't examples
+   - Added **Ejemplos de TONO CONVERSACIONAL vs TONO CATÁLOGO**: 3 ✅ examples (básico, intermedio, detalles) + 3 ❌ examples (catálogo, robótico, exagerado)
+   - REGLA 4 now says: "**SIEMPRE introducí los datos con una frase cálida. NUNCA tires los datos solos.**"
+   - Renamed PATRONES FEW-SHOT → FORMATO DE RESPUESTAS with explicit two-part structure: (1) warm intro + (2) compact data
+   - All examples rewritten to show COMPLETE conversational responses (e.g. "¡Encontré 3 casas en Oberá! Mirá cuál te gusta más:" followed by data)
+   - Changed voice from "Eres" to "Soy" (first-person, warmer)
+   - Updated "Sin resultados" to "ofrecé alternativas con onda... tirá sugerencias"
+
+2. **No code changes needed** — the tool return format (`format_property_list()`) stayed the same. The LLM now wraps it conversationally per the new instructions.
+
+**Verification:**
+- ✅ Syntax check passed (ast.parse)
+- ✅ SYSTEM_PROMPT imports correctly (8685 chars)
+- ✅ `get_system_prompt()` renders without errors
+- ✅ `format_messages_for_llm()` produces 3 messages with all key phrases present
+- ✅ All 6 key tone checks pass (cálido, conversacional, regla de no datos solos, ejemplos catálogo, ejemplo conversacional, cierre)
