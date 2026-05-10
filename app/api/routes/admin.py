@@ -34,6 +34,7 @@ def _run_startup_migration(engine):
       9. Rename properties.total_area → area_m2  (Frankfurt→Oregon column rename fix)
       10. Cast properties.extra_data from TEXT to JSONB  (MUST happen before Fix 11)
       11. Migrate properties.city → extra_data['city']  (old flat column → JSONB, needs JSONB extra_data)
+      12. Rename appointments.appointment_type → type  (Frankfurt→Oregon column rename fix)
     """
     global _migration_done
     if _migration_done:
@@ -169,6 +170,18 @@ def _run_startup_migration(engine):
                         SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object('city', city)
                         WHERE city IS NOT NULL AND city != '';
                         ALTER TABLE properties DROP COLUMN IF EXISTS city;
+                    END IF;
+                END $$;
+            """))
+            # ── Fix 9: Rename appointments.appointment_type → type ─
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'appointments' AND column_name = 'appointment_type'
+                    ) THEN
+                        ALTER TABLE appointments RENAME COLUMN appointment_type TO type;
                     END IF;
                 END $$;
             """))
