@@ -713,3 +713,27 @@ Key test files and their focus:
 - ✅ `get_system_prompt()` renders without errors
 - ✅ `format_messages_for_llm()` produces 3 messages with all key phrases present
 - ✅ All 6 key tone checks pass (cálido, conversacional, regla de no datos solos, ejemplos catálogo, ejemplo conversacional, cierre)
+
+### Sprint 17 — Reschedule: Cancel Old Appointment + Create New (May 10, 2026)
+
+**Problem:** When rescheduling an appointment, the bot returned "cita reprogramada" and created the new time correctly, but left the old appointment active in the DB. This resulted in 2 confirmed appointments for the same client.
+
+**Root cause:** `appointment_service.reschedule_appointment()` was updating the existing appointment's `start_time`/`end_time` IN PLACE instead of canceling the old one and creating a new one. The old appointment remained with status "confirmed" — it just had a new time. If the LLM also called `schedule_visit` in the same turn (creating yet another new appointment), the client ended up with 2+ active appointments.
+
+**Fix:**
+1. **`app/services/appointment_service.py:reschedule_appointment()`** — Complete rewrite:
+   - Cancel old appointment: `status = "cancelled"`
+   - Cancel old Google Calendar event via `calendar_service.cancel_visit()`
+   - Create NEW `Appointment` row with `uuid4()` and the new `start_time`/`end_time`
+   - Create new Google Calendar event via `calendar_service.create_visit_event()`
+   - Update lead score via `_update_user_score()`
+   - Return the NEW appointment (not the updated old one)
+   - Removed `exclude_appointment_id` from `_check_conflict` since we're creating fresh
+
+2. **No changes needed in tools.py** — `reschedule_appointment_tool()` already passes the result to `format_appointment_confirmation(action_type='reschedule')` which works with either old or new appointment objects.
+
+**Verification:**
+- ✅ Syntax check (ast.parse)
+- ✅ Import test (AppointmentService + format_appointment_confirmation)
+- ✅ `get_user_appointments(upcoming=True)` filters by `status == "confirmed"` — cancelled old appointment excluded
+- ✅ `get_upcoming_appointments()` filters by `status in_(["scheduled", "confirmed"])` — cancelled old appointment excluded

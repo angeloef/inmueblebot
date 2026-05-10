@@ -230,7 +230,7 @@ class AppointmentService:
         sync_calendar: bool = True
     ) -> Appointment:
         """
-        Reprograma una cita existente.
+        Reprograma una cita: cancela la vieja y crea una nueva.
         
         Args:
             appointment_id: ID de la cita a reprogramar
@@ -238,7 +238,7 @@ class AppointmentService:
             sync_calendar: Sincronizar con Google Calendar
         
         Returns:
-            Cita actualizada
+            Nueva cita creada
         
         Raises:
             ValueError: Si la cita no existe, la fecha ya pasó, o hay conflicto
@@ -246,15 +246,16 @@ class AppointmentService:
         db: AsyncSession = self._get_session()
         
         try:
+            # 1. Fetch old appointment
             result = await db.execute(
                 select(Appointment).where(Appointment.id == appointment_id)
             )
-            appointment = result.scalar_one_or_none()
+            old_appointment = result.scalar_one_or_none()
             
-            if not appointment:
+            if not old_appointment:
                 raise ValueError("No encontré esa cita. ¿Podrías verificar el ID?")
             
-            if appointment.status == "cancelled":
+            if old_appointment.status == "cancelled":
                 raise ValueError("No se puede reprogramar una cita cancelada.")
             
             new_start_time = self._ensure_timezone(new_start_time)
@@ -263,37 +264,81 @@ class AppointmentService:
                 raise ValueError("La nueva fecha y hora ya pasaron. Por favor selecciona una fecha futura.")
             
             conflict = await self._check_conflict(
-                db, appointment.property_id, new_start_time, exclude_appointment_id=appointment_id
+                db, old_appointment.property_id, new_start_time
             )
             if conflict:
                 raise ValueError("Ya existe otra cita en ese horario. Por favor elige otro momento.")
             
+            # 2. Cancel old appointment
+            old_appointment.status = "cancelled"
+            old_appointment.updated_at = datetime.now(tz.utc)
+            logger.info(f"[Appointment] Marked old appointment {old_appointment.id} as cancelled for reschedule")
+            
+            # 3. Cancel old Google Calendar event
+            old_calendar_event_id = old_appointment.calendar_event_id
+            if sync_calendar and calendar_service.is_configured and old_calendar_event_id:
+                cal_cancel = await calendar_service.cancel_visit(
+                    event_id=old_calendar_event_id,
+                    reason="Reprogramada por el cliente"
+                )
+                if cal_cancel.get("success"):
+                    logger.info(f"[Appointment] Cancelled old Google Calendar event: {old_calendar_event_id}")
+                else:
+                    logger.warning(f"[Appointment] Failed to cancel old calendar event: {cal_cancel.get('error')}")
+            
+            # 4. Create new appointment
             new_end_time = new_start_time + self.DEFAULT_VISIT_DURATION
             
-            # Sync with Google Calendar if configured
-            if sync_calendar and calendar_service.is_configured and appointment.calendar_event_id:
-                cal_result = await calendar_service.reschedule_visit(
-                    event_id=appointment.calendar_event_id,
-                    new_start_time=new_start_time,
-                    new_end_time=new_end_time,
-                    notes=f"Reprogramada el {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-                )
-                
-                if cal_result.get("success"):
-                    logger.info(f"[Appointment] Rescheduled Google Calendar event: {appointment.calendar_event_id}")
-                else:
-                    logger.warning(f"[Appointment] Failed to reschedule calendar event: {cal_result.get('error')}")
+            new_appointment = Appointment(
+                id=uuid4(),
+                user_id=old_appointment.user_id,
+                property_id=old_appointment.property_id,
+                start_time=new_start_time,
+                end_time=new_end_time,
+                type=old_appointment.type,
+                status="confirmed",
+                notes=old_appointment.notes,
+                calendar_event_id=None,
+            )
+            db.add(new_appointment)
+            await db.flush()  # Ensure new_appointment.id is available
             
-            appointment.start_time = new_start_time
-            appointment.end_time = new_end_time
-            appointment.updated_at = datetime.now(tz.utc)
+            # 5. Create new Google Calendar event
+            new_calendar_event_id = None
+            if sync_calendar and calendar_service.is_configured:
+                try:
+                    prop_result = await db.execute(
+                        select(Property).where(Property.id == old_appointment.property_id)
+                    )
+                    property_obj = prop_result.scalar_one_or_none()
+                    property_title = property_obj.title if property_obj else f"Propiedad {old_appointment.property_id}"
+                    
+                    cal_result = await calendar_service.create_visit_event(
+                        user_phone="Reprogramación",
+                        property_id=old_appointment.property_id,
+                        property_title=property_title,
+                        start_time=new_start_time,
+                        end_time=new_end_time,
+                        notes=f"Cita reprogramada desde la original {old_appointment.id}"
+                    )
+                    
+                    if cal_result.get("success"):
+                        new_calendar_event_id = cal_result.get("event_id")
+                        new_appointment.calendar_event_id = new_calendar_event_id
+                        logger.info(f"[Appointment] Created new Google Calendar event: {new_calendar_event_id}")
+                    else:
+                        logger.warning(f"[Appointment] Failed to create new calendar event: {cal_result.get('error')}")
+                except Exception as e:
+                    logger.warning(f"[Appointment] Error creating new calendar event: {e}")
             
             await db.commit()
-            await db.refresh(appointment)
+            await db.refresh(new_appointment)
             
-            logger.info(f"Cita reprogramada: {appointment.id} para {new_start_time}")
+            await self._update_user_score(old_appointment.user_id, db)
             
-            return appointment
+            logger.info(f"Cita reprogramada: {old_appointment.id} -> nueva {new_appointment.id} para {new_start_time}")
+            
+            return new_appointment
             
         except Exception as e:
             await db.rollback()
