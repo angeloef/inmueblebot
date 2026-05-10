@@ -104,12 +104,24 @@ async def health_redis():
 
 # ── Media endpoint (serves property images stored as base64 in DB) ──
 
-# Minimal 1x1 grey JPEG placeholder for fallback (WhatsApp rejects 404 on media URLs)
+# Proper minimal 1x1 grey JPEG placeholder (327 bytes) for fallback
+# WhatsApp rejects 404s on media URLs — must serve a valid image
 _PLACEHOLDER_JPEG = (
     b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
-    b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\x09\x09\x08\x0a\x0c\x14\x0d\x0c\x0b\x0b\x0c\x19\x12\x13\x0f'
-    b'\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c\x20\x24\x2e\x27\x20\x22\x2c\x23\x1c\x1c\x28\x37\x29\x2c\x30\x31\x34\x34'
-    b'\x1f\x27\x39\x3d\x38\x32\x3c\x2e\x33\x34\x32\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9'
+    b'\xff\xdb\x00C\x00\x10\x0b\x0a\x10\x18(3=\x0c\x0c\x0e\x13\x1a:<7\x0e'
+    b'\x0d\x10\x18(9E8\x0e\x11\x16\x1d3WP>\x12\x16%8DmgM\x18#7@Qhq\\'
+    b'1@NWgyxeH\\_bpdgc\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00'
+    b'\xff\xc4\x00\xd2\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00'
+    b'\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x10'
+    b'\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00\x01}\x01\x02'
+    b'\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142\x81\x91\xa1\x08#'
+    b'B\xb1\xc1\x15R\xd1\xf0$3br\x82\x09\x0a\x16\x17\x18\x19\x1a%&\'()'
+    b'*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86\x87\x88'
+    b'\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4\xa5\xa6\xa7'
+    b'\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2\xc3\xc4\xc5\xc6'
+    b'\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xe1\xe2\xe3\xe4'
+    b'\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa'
+    b'\xff\xda\x00\x08\x01\x01\x00\x00?\x00(\xff\xd9'
 )
 
 
@@ -192,8 +204,21 @@ async def serve_property_image(property_id: str, image_index: int):
                         logger.warning(f"[Media] base64 decode failed for {property_id}/{image_index}")
                         return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
                 else:
-                    logger.warning(f"[Media] Bad data URI format for {property_id}/{image_index}")
-                    return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+                    # data: URI but regex didn't match — try manual extraction
+                    logger.warning(f"[Media] Unusual data URI format for {property_id}/{image_index}")
+                    # Fallback: split on first ;base64, or ,base64
+                    for sep in (";base64,", ":base64,", ",base64,"):
+                        if sep in raw:
+                            mime = "image/jpeg"
+                            b64_part = raw.split(sep, 1)[1]
+                            try:
+                                binary = base64.b64decode(b64_part.strip())
+                                break
+                            except Exception:
+                                binary = None
+                    if binary is None:
+                        logger.warning(f"[Media] Can't parse data URI for {property_id}/{image_index}")
+                        return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
             elif raw.startswith("http"):
                 return RedirectResponse(url=raw)
             else:
@@ -208,6 +233,15 @@ async def serve_property_image(property_id: str, image_index: int):
 
             if binary is None or len(binary) < 100:
                 logger.warning(f"[Media] Image too small for {property_id}/{image_index}")
+                return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+
+            # Validate: if the detected mime doesn't match the actual magic bytes,
+            # the data is corrupt (likely truncated VARCHAR(255) storage). Serve placeholder.
+            if mime == "image/jpeg" and not (binary[:2] == b'\xff\xd8'):
+                logger.warning(f"[Media] Corrupt image (claimed JPEG, no SOI) for {property_id}/{image_index}")
+                return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
+            if mime == "image/png" and not (binary[:4] == b'\x89PNG'):
+                logger.warning(f"[Media] Corrupt image (claimed PNG, no header) for {property_id}/{image_index}")
                 return Response(content=_PLACEHOLDER_JPEG, media_type="image/jpeg")
 
             # ── Convert WebP → JPEG if needed (WhatsApp restriction) ─
