@@ -73,8 +73,12 @@ usuario ya te dio — revisá el contexto de la conversación primero.
 Cuando el usuario pida buscar propiedades:
 - Extraé CADA criterio que mencione: ubicación, tipo de propiedad (casa/departamento/terreno), cantidad de dormitorios, presupuesto, etc. Pasalos TODOS a search_properties.
 - **Por defecto asumí que busca ALQUILER**, salvo que diga explícitamente "comprar" o "venta".
-- Si el usuario dice "económico", "barato", "accesible", "económico" o "no muy caro" → usá sort_by="price_asc" para ordenar del más barato al más caro.
-- Si pide "departamento para estudiantes" → buscá departamentos con sort_by="price_asc" y budget_max conservador (~100000).
+- **Si el usuario usa términos vagos de presupuesto** ("económico", "barato", "accesible", "normal", "estándar", "lujo", "caro", "premium"), **NO inventes un número en budget_max**. Usá el parámetro `price_tier` con el valor correspondiente ("economico", "normal", "premium"). El sistema calcula automáticamente los rangos de precio desde la base de datos.
+  - ✅ "económico" → price_tier="economico" (el sistema calcula el P33 de la DB)
+  - ✅ "normal" → price_tier="normal"
+  - ✅ "caro" o "lujo" → price_tier="premium"
+  - ❌ "económico" → budget_max=100000 (NUNCA — no inventes números)
+- Si pide "departamento para estudiantes" → usá property_type="departamento" con price_tier="economico"
 - Las propiedades tienen precio en USD o ARS — el sistema muestra la moneda automáticamente.
 - **NUNCA devuelvas propiedades de VENTA si el usuario no dijo explícitamente que quiere comprar.**
 
@@ -231,7 +235,7 @@ TOOL_DEFINITIONS = [
                     "price_tier": {
                         "type": "string",
                         "enum": ["economico", "normal", "premium"],
-                        "description": "Tier de precio cuando el usuario usa terminos vagos. 'economico' = barato/accesible, 'normal' = precio medio/estandar, 'premium' = caro/lujo/exclusivo. Si el usuario dio un numero concreto, USA budget_max/budget_min en vez de esto."
+                        "description": "PREFERIDO sobre budget_max/budget_min cuando el usuario usa términos vagos de precio (económico, barato, normal, caro, lujo, premium). NO uses budget_max para términos vagos. 'economico' = barato/accesible (calculado del P33 de la DB), 'normal' = precio medio/estandar (P33-P66), 'premium' = caro/lujo/exclusivo (>P66). Solo usa budget_max/budget_min si el usuario da un número concreto (ej: 'hasta 150000')."
                     },
                     "limit": {
                         "type": "number",
