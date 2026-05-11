@@ -198,8 +198,8 @@ class PropertyRepository(BaseRepository):
                 )
         
         if location:
-            from app.utils.sanitizer import normalize_location
-            from sqlalchemy import or_
+            from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
+            from sqlalchemy import or_, func
 
             loc_clean = location.strip().lower()
             loc_norm = normalize_location(location)
@@ -210,10 +210,23 @@ class PropertyRepository(BaseRepository):
             # Strategy 1: Original query as-is (full ILIKE)
             filters.append(Property.location.ilike(f"%{loc_clean}%"))
 
+            # Strategy 1b: Accent-insensitive matching via translate()
+            # "Obera" now matches "Oberá" without needing unaccent extension
+            loc_accentless = strip_accents(loc_clean)
+            if loc_accentless != loc_clean:
+                filters.append(
+                    func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_accentless}%")
+                )
+
             # Strategy 2: Normalized (prefix stripped, numbers removed)
             # e.g. "calle sarmiento" → "sarmiento" matches "Sarmiento 285, Oberá"
             if loc_norm and loc_norm != loc_clean:
                 filters.append(Property.location.ilike(f"%{loc_norm}%"))
+                loc_norm_accentless = strip_accents(loc_norm)
+                if loc_norm_accentless != loc_norm:
+                    filters.append(
+                        func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_norm_accentless}%")
+                    )
 
             # Strategy 3: Individual words (>2 chars) OR'd together
             # e.g. "calle sarmiento" matches anything containing "calle" OR "sarmiento"

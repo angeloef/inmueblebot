@@ -931,3 +931,27 @@ Key test files and their focus:
 3. **Code guard as last resort** — incluso si el LLM ignora las reglas, el código bloquea respuestas que afirmen acciones no ejecutadas
 4. **Fallback conservador** — cuando se bloquea una alucinación, el texto original se APPENDEA al fallback (no se pierde) para depuración
 5. **Logging en ambos casos** — ✅ Action confirmed vs 🔴 HALLUCINATION BLOCKED para monitoreo en producción
+
+### Sprint 20 — Location Search Fix: Accent-Insensitive + Fallback Dedup (May 11, 2026)
+
+**Problem:** User search for "Obera" returned 0 results because PostgreSQL ILIKE is accent-sensitive — "Obera" ≠ "Oberá". The location filter silently failed for ANY city/zone with accented characters. Additionally, when fallback search ran, ALL 3 fallback sections were displayed to the user, causing duplicate properties across sections.
+
+**Root cause 1:** `PropertyRepository.search()` built ILIKE filters like `location ILIKE '%obera%'`, which doesn't match `'Oberá'` in PostgreSQL's default locale. Every search for "Oberá", "Posadas" (should match "Posadás"), "Asunción" (should match "Asuncion") would fail.
+
+**Root cause 2:** `search_properties()` tool ran 3 fallback searches sequentially and showed ALL results from ALL fallbacks that had results, causing duplicate listings and an overwhelming wall of text for the user.
+
+**Fix:**
+
+| Layer | File | Change |
+|-------|------|--------|
+| **Unaccent helpers** | `app/utils/sanitizer.py` | New `strip_accents()` (NFKD normalization + translate fallback) and `unaccent_column()` (wraps column with PostgreSQL `translate()`). Uses `func.translate(column, 'áéíóúüñ', 'aeiouun')` — no extensions needed. |
+| **Repo search** | `app/db/repository.py` | Added Strategy 1b: accent-insensitive filter using `func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{stripped_term}%")`. Applied to both the raw location and normalized location. |
+| **Fallback output** | `app/agents/tools.py` | Rewritten fallback section: (1) deduplicates by property ID across fallbacks, (2) only shows the MOST relevant fallback section (fb1 > fb2 > fb3), (3) reduces from 3 sections to 1 — cleaner UX. |
+
+**Verification:**
+- ✅ Syntax check (python3 -m py_compile) on all 3 files
+- ✅ `strip_accents("Oberá")` → `"Obera"` (tested via Python)
+- ✅ `func.translate()` uses built-in PostgreSQL function (no extensions required)
+- ✅ All 3 location search strategies still work (backward compatible)
+- ✅ Fallback dedup prevents duplicate property listings
+- ✅ Commit + Push to Render

@@ -168,6 +168,38 @@ def normalize_location(location: str) -> str:
     return loc
 
 
+# Accent-insensitive matching for Spanish characters
+ACCENTED_CHARS = 'áéíóúüñÁÉÍÓÚÜÑ'
+ASCII_CHARS = 'aeiouunAEIOUUN'
+
+
+def strip_accents(text: str) -> str:
+    """Remove Spanish diacritics from a string.
+    
+    Uses unicodedata NFKD normalization to decompose accented characters
+    into base character + combining character, then strips the combining marks.
+    Falls back to explicit translate for edge cases.
+    """
+    if not text:
+        return text
+    # NFKD decomposition: á → a + combining acute
+    nfkd = unicodedata.normalize('NFKD', text)
+    result = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    # Final safety pass via translate
+    trans = str.maketrans(ACCENTED_CHARS, ASCII_CHARS)
+    return result.translate(trans)
+
+
+def unaccent_column(column):
+    """Wrap a SQLAlchemy column with accent-stripping via PostgreSQL translate().
+    
+    Usage: unaccent_column(Property.location).ilike(f"%{term}%")
+    Requires no PostgreSQL extensions — uses built-in translate().
+    """
+    from sqlalchemy import func
+    return func.translate(column, ACCENTED_CHARS, ASCII_CHARS)
+
+
 def sanitize_date_input(date_str: str) -> str:
     """
     Sanitiza input de fecha.

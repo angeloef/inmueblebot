@@ -305,28 +305,48 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             logger.info(f"[TOOL] Fallback 2: no location/budget, type={fb2_criteria.get('property_type')}")
             fb2_results = await property_service.search_properties(fb2_criteria)
             
-            # Fallback 3: only operation_type
+            # Fallback 3: only operation_type (broadest)
             fb3_criteria = {"operation_type": search_criteria.get("operation_type", "alquiler")}
             logger.info(f"[TOOL] Fallback 3: only operation_type='{fb3_criteria['operation_type']}'")
             fb3_results = await property_service.search_properties(fb3_criteria)
             
-            # Build response
-            parts = [f"No encontr\u00e9 {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo alternativas:\n"]
+            # Deduplicate: track property IDs across fallbacks
+            seen_ids = set()
+            def _dedup(results):
+                unique = []
+                for p in results:
+                    pid = str(getattr(p, "id", "")) or str(getattr(p, "external_id", ""))
+                    if pid and pid in seen_ids:
+                        continue
+                    if pid:
+                        seen_ids.add(pid)
+                    unique.append(p)
+                return unique
             
+            fb1_results = _dedup(fb1_results)
+            fb2_results = _dedup(fb2_results)
+            fb3_results = _dedup(fb3_results)
+            
+            # Build response: show most relevant fallback only (avoid duplicate sections)
+            parts = [f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo alternativas:\n"]
+            
+            # If Fallback 1 found results, show those (closest to what user asked)
             if fb1_results:
                 budget_str = f" (hasta ${fb1_criteria.get('budget_max', 0):,})" if fb1_criteria.get("budget_max") else ""
-                parts.append(f"\ud83d\udd31 Subiendo un poco el presupuesto{budget_str}:")
+                parts.append(f"🔱 Subiendo un poco el presupuesto{budget_str}:")
                 parts.append(format_property_list(fb1_results))
-                parts.append("")
-            
-            if fb2_results:
-                parts.append(f"\ud83d\udd31 {fb2_criteria.get('property_type', 'Propiedades').capitalize()} en cualquier zona:")
+            # If no budget-adjusted results, show Fallback 2 (same type, any location)
+            elif fb2_results:
+                type_label = fb2_criteria.get('property_type', 'propiedades').capitalize()
+                if search_criteria.get('location'):
+                    parts.append(f"🔱 {type_label} disponibles:")
+                else:
+                    parts.append(f"🔱 {type_label} en cualquier zona:")
                 parts.append(format_property_list(fb2_results))
-                parts.append("")
-            
-            if fb3_results:
+            # Last resort: show all rentals
+            elif fb3_results:
                 op_type = fb3_criteria.get("operation_type", "alquiler")
-                parts.append(f"\ud83d\udd31 Todas las opciones en {op_type}:")
+                parts.append(f"🔱 Todas las opciones en {op_type}:")
                 parts.append(format_property_list(fb3_results))
             
             return "\n".join(parts)
