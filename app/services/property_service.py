@@ -120,12 +120,7 @@ class PropertyService:
         
         logger.info(f"[PropertyService] Repo retornó: {total} total, {len(props)} propiedades")
         
-        # If no results from DB, use fallback properties
-        if not props:
-            logger.warning("[PropertyService] NO se encontraron propiedades - usando fallback")
-            return self._get_fallback_properties(criteria)
-        
-        # Log each property found
+        # Log results (even empty — let the tool layer handle fallback logic)
         if props:
             logger.info(f"[PropertyService] Propiedades encontradas ({len(props)}):")
             for i, prop in enumerate(props, 1):
