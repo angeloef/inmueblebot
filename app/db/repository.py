@@ -169,6 +169,7 @@ class PropertyRepository(BaseRepository):
         limit: int = 20,
         offset: int = 0,
         sort_by: str = "price_desc",
+        title_search: Optional[str] = None,
     ) -> tuple[list["Property"], int]:
         """
         Busca propiedades con filtros.
@@ -178,6 +179,8 @@ class PropertyRepository(BaseRepository):
             - "price_desc" (default): Most expensive first
             - "price_asc": Cheapest first
             - "newest": Most recently added first
+        
+        title_search: Busca por título con ILIKE (búsqueda parcial)
         """
         from app.db.models import Property
         
@@ -240,6 +243,22 @@ class PropertyRepository(BaseRepository):
         
         if area_min is not None:
             query = query.where(Property.area_m2 >= area_min)
+
+        # Buscar por título (fuzzy ILIKE) — útil para búsquedas por nombre/dirección
+        if title_search:
+            from sqlalchemy import or_
+            search_terms = title_search.strip().lower()
+            # Search title AND location AND description for flexibility
+            title_filters = [
+                Property.title.ilike(f"%{search_terms}%"),
+                Property.location.ilike(f"%{search_terms}%"),
+            ]
+            # Word-level search for multi-word queries
+            words = [w.strip() for w in search_terms.split() if len(w.strip()) > 2]
+            for word in words:
+                title_filters.append(Property.title.ilike(f"%{word}%"))
+                title_filters.append(Property.location.ilike(f"%{word}%"))
+            query = query.where(or_(*title_filters))
         
         # Contar total
         count_query = select(func.count()).select_from(query.subquery())

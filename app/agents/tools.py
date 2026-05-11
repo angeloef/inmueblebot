@@ -374,17 +374,18 @@ async def refine_search(refinement: str = None, previous_criteria: Dict[str, Any
 
 async def get_property_details(property_id: str) -> str:
     """
-    Obtiene los detalles de una propiedad específica por su ID.
+    Obtiene los detalles de una propiedad específica por su ID o nombre.
     Soporta:
     - Integer ID (1, 2, 3... from seed data)
     - UUID (database primary key)  
     - Referencia ("opcion 5", "la primera")
+    - Nombre o dirección ("San Martín 850", "casa centro") — búsqueda difusa
     
     Args:
-        property_id: ID de la propiedad (integer 1-50, UUID, o referencia)
+        property_id: ID de la propiedad (integer 1-50, UUID, nombre o referencia)
     
     Returns:
-        String formateado con los detalles de la propiedad
+        String formateado con los detalles de la propiedad o lista de candidatos
     """
     logger.info("=" * 60)
     logger.info(f"[get_property_details] SOLICITADO para ID: {property_id}")
@@ -397,47 +398,69 @@ async def get_property_details(property_id: str) -> str:
         # Validate format — catch clearly hallucinated IDs early
         is_numeric = property_id.isdigit()
         is_uuid_like = len(property_id) == 36 and property_id.count('-') == 4
-        if not is_numeric and not is_uuid_like:
-            logger.warning(f"[get_property_details] ⚠️ Posible ID alucinado: '{property_id}'")
-            return (f"El ID '{property_id}' no es válido. "
-                    f"Usá el ID numérico exacto que aparece en <last_results>. "
-                    f"NUNCA inventes IDs.")
-
+        
         prop = None
         
-        # Try integer ID first - use the integer 'id' field directly
-        try:
-            int_id = int(property_id)
-            if 1 <= int_id <= 100:
-                logger.info(f"[get_property_details] Buscando por integer ID: {int_id}")
-                # Use the service with direct ID lookup
-                from app.db.repository import BaseRepository
-                from app.db.models import Property
-                from app.db.session import async_session_factory
-                
-                async with async_session_factory() as session:
-                    repo = BaseRepository(Property, session)
-                    prop = await repo.get(int_id)  # Direct integer ID lookup
-                
-                if prop:
-                    logger.info(f"[get_property_details] Encontrada por ID: {prop.id} - {prop.title}")
-                    return format_property(prop)
-        except Exception as e:
-            logger.warning(f"[get_property_details] Integer lookup failed: {e}")
+        # Try integer ID first
+        if is_numeric:
+            try:
+                int_id = int(property_id)
+                if 1 <= int_id <= 1000:
+                    logger.info(f"[get_property_details] Buscando por integer ID: {int_id}")
+                    from app.db.repository import BaseRepository
+                    from app.db.models import Property
+                    from app.db.session import async_session_factory
+                    
+                    async with async_session_factory() as session:
+                        repo = BaseRepository(Property, session)
+                        prop = await repo.get(int_id)
+                    
+                    if prop:
+                        logger.info(f"[get_property_details] Encontrada por ID: {prop.id} - {prop.title}")
+                        return format_property(prop)
+            except Exception as e:
+                logger.warning(f"[get_property_details] Integer lookup failed: {e}")
         
         # If not found, try UUID
-        if not prop:
+        if not prop and is_uuid_like:
             try:
                 prop_uuid = UUID(property_id)
                 prop = await property_service.get_property_details(prop_uuid)
             except (ValueError, Exception) as e:
                 logger.warning(f"[get_property_details] UUID lookup failed: {e}")
         
-        # If still not found, try title search
-        if not prop:
-            logger.info(f"[get_property_details] Buscando por título: {property_id}")
-            props = await property_service.search_properties({"title_ilike": f"%{property_id}%", "limit": 1})
-            prop = props[0] if props else None
+        # If numeric UUID failed AND input looks like a name/address → fuzzy search
+        if not prop and not is_numeric:
+            logger.info(f"[get_property_details] Buscando por nombre/dirección: '{property_id}'")
+            candidates = await property_service.search_properties({
+                "title_search": property_id,
+                "limit": 5,
+                "sort_by": "price_desc",
+            })
+            
+            if not candidates:
+                return (
+                    f"No encontré ninguna propiedad que coincida con '{property_id}'. "
+                    "¿Podrías darme más detalles? ¿Recordás el ID o alguna dirección exacta?"
+                )
+            
+            # If exactly one match, return details
+            if len(candidates) == 1:
+                logger.info(f"[get_property_details] Coincidencia exacta por nombre: {candidates[0].title}")
+                return format_property(candidates[0])
+            
+            # Multiple matches — return list for LLM to ask user
+            logger.info(f"[get_property_details] {len(candidates)} candidatos encontrados por nombre")
+            lines = [f"Encontré varias propiedades que coinciden con '{property_id}'. ¿Cuál de estas es?:\n"]
+            for i, p in enumerate(candidates, 1):
+                pid = p.original_id or p.id
+                price = int(float(str(getattr(p, "price", 0))))
+                loc = getattr(p, "location", "")
+                op = getattr(p, "type", "venta")
+                price_str = f"${price:,}/mes" if op == "alquiler" else f"${price:,}"
+                lines.append(f"{i}. {p.title} | {price_str} | {loc} | ID:{pid}")
+            
+            return "\n".join(lines)
         
         if not prop:
             logger.warning(f"[get_property_details] Propiedad no encontrada: {property_id}")

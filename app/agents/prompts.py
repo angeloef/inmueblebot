@@ -253,7 +253,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_property_details",
-            "description": "Muestra todos los detalles de una propiedad específica. **Invocation Condition:** Invocar esta herramienta SOLO cuando el usuario solicite 'más detalles', 'ver más información', o proporcione un ID de propiedad específico para ver.",
+            "description": "Muestra todos los detalles de una propiedad especifica. **Invocation Condition:** Invocar esta herramienta cuando el usuario pida ver una propiedad por su ID, nombre, o direccion - acepta tanto numeros (ID=5) como texto ('San Martin 850', 'casa centro'). Si hay multiples coincidencias, devuelve una lista para que el usuario elija.",
             "parameters": {
                 "type": "object",
                 "properties": {
