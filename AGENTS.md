@@ -871,3 +871,63 @@ Key test files and their focus:
 - ✅ `get_faq_answer` registrada en `TOOL_FUNCTIONS`
 - ✅ `get_faq_answer` registrada en `TOOL_DEFINITIONS`
 - ✅ `get_faq_answer` mencionada en `SYSTEM_PROMPT`
+
+
+### Sprint 19 — Anti-Hallucination Guard: Bot nunca dice lo que no ejecuta (May 11, 2026)
+
+**Problem:** El bot ocasionalmente escribía "Agendando tu visita..." o "Cita cancelada" como texto generado por LLM sin haber llamado el tool correspondiente. El usuario recibía confirmaciones falsas de acciones que nunca ocurrieron en la DB.
+
+**Root cause:** El system prompt no separaba HABLAR de HACER explícitamente. El LLM generaba narraciones de acciones como parte natural del texto conversacional, asumiendo que "contar lo que va a hacer" era equivalente a hacerlo. Las tool descriptions no tenían advertencias contra esto.
+
+**3-Layer Defense Architecture:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 1: System Prompt (REGLA 0)                        │
+│ "NUNCA digas 'agendando' sin llamar schedule_visit()"  │
+│ + 4 few-shot ejemplos (2 ✅, 2 ❌)                      │
+├─────────────────────────────────────────────────────────┤
+│ Layer 2: Tool Definitions (CRÍTICO warnings)            │
+│ "CRÍTICO: NO DIGAS 'agendando' sin llamar esta func."   │
+│ schedule_visit, reschedule_appointment,                 │
+│ cancel_appointment, request_human_assistance            │
+├─────────────────────────────────────────────────────────┤
+│ Layer 3: Code Guard (_detect_action_hallucination)      │
+│ Post-process: si response CLAIMA schedule/cancel/save   │
+│ pero tool NO fue llamado → BLOQUEA respuesta            │
+│ + logging 🔴 HALLUCINATION BLOCKED                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Files changed:**
+
+| Layer | File | Changes |
+|-------|------|---------|
+| **Prompt** | `app/agents/prompts.py` | Nueva REGLA 0 — HABLAR vs HACER (insertada antes de REGLAS DE ORO). 5 reglas específicas (schedule_visit, save_lead_info, cancel, reschedule, handoff). 4 ejemplos few-shot (2 correctos, 2 prohibidos). |
+| **Tool Defs** | `app/agents/prompts.py` | schedule_visit, reschedule_appointment, cancel_appointment, request_human_assistance — todas con prefijo `CRÍTICO: NO DIGAS '[acción]' sin llamar esta función. La acción SOLO ocurre llamando esta herramienta.` |
+| **Code Guard** | `app/agents/real_estate_agent.py` | Nueva `_detect_action_hallucination()`: 5 action-claim patterns (schedule/reschedule/cancel/save/handoff) mapeados a sus tools requeridos. Si el texto CLAIMA una acción pero el tool no se llamó → BLOQUEA + fallback honesto. |
+
+**Test Results (5 scenarios via webhook against live Render API):**
+
+| # | Scenario | Messages | HTTP Status | Expected Behavior |
+|---|----------|----------|-------------|-------------------|
+| 1 | Búsqueda → Detalles → Agendar (full flow) | 3 turns | 200 ✅✅✅ | schedule_visit called before confirmation text |
+| 2 | Cancelación de cita | 2 turns | 200 ✅✅ | cancel_appointment called before "cita cancelada" |
+| 3 | FAQ (sin alucinación de acción) | 1 turn | 200 ✅ | No action-claim tool calls |
+| 4 | Búsqueda sin resultados (Tokyo) | 1 turn | 200 ✅ | No properties invented |
+| 5 | Reprogramación de cita | 2 turns | 200 ✅✅ | reschedule_appointment called before "reprogramada" |
+
+**Verification:**
+- ✅ Syntax check (python3 -m py_compile) en prompts.py y real_estate_agent.py
+- ✅ Commit 7e1e980 + Push a GitHub → Render auto-deploy
+- ✅ Skill guardado: `anti-hallucination-guard` (para re-aplicación si se pierde por git pull --force)
+- ✅ 5 escenarios de conversación enviados contra la API en producción
+- ✅ Nueva REGLA 0 en system prompt (34 líneas añadidas)
+- ✅ 4 tool descriptions reforzadas con CRÍTICO
+- ✅ Code guard: ~70 líneas de Python con 5 patrones de detección
+
+**Key design decisions:**
+1. **Prompt first** — la REGLA 0 es la defensa primaria; el LLM debe internalizar que no se narra lo que no se ejecuta
+2. **Tool descriptions as second line** — cada tool que cambia estado tiene una advertencia visible en el schema
+3. **Code guard as last resort** — incluso si el LLM ignora las reglas, el código bloquea respuestas que afirmen acciones no ejecutadas
+4. **Fallback conservador** — cuando se bloquea una alucinación, el texto original se APPENDEA al fallback (no se pierde) para depuración
+5. **Logging en ambos casos** — ✅ Action confirmed vs 🔴 HALLUCINATION BLOCKED para monitoreo en producción
