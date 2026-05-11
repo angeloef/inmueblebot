@@ -316,6 +316,46 @@ User question → LLM → get_faq_answer(question) → faq_service.search_faqs()
 
 **Important note:** The LLM drives which parameters it passes. The tool definition and REGLA 6 guide it, but the LLM's training + these prompts determine the actual behavior. The system is now **capable** of correct behavior — verify with actual WhatsApp tests.
 
+### Sprint 20 — UX Quick Wins (May 11 2026)
+
+**5 features implemented for smarter search + personalization:**
+
+| # | Feature | Files | Description |
+|---|---------|-------|-------------|
+| **A** | No-results recovery | `tools.py:272-314` | When search returns 0 results, auto-executes 3 fallback searches (+30% budget, remove location, only operation_type) and shows alternatives |
+| **B** | Property comparison | `tools.py:1163-1262`, `prompts.py:484-501,120` | New tool `compare_properties(property_ids)` — fetches 2-3 properties and formats a markdown comparison table (price, size, bedrooms, bathrooms, location) |
+| **C** | REGLA 7 — Ambiguous queries | `prompts.py:81-85` | If user gives only 1 vague criterion (e.g. just "departamento"), LLM asks for operation and location before searching |
+| **D** | Returning user greeting | `real_estate_agent.py:113-129,447-457` | Detects returning users via Redis context (selected_property_id/last_shown_properties + empty history), injects personalized "¡Bienvenido de nuevo!" greeting |
+| **E** | Budget inference | `app/agents/budget_tiers.py`, `tools.py:242-260`, `prompts.py:230-234` | New module calculates P33/P66 percentiles from DB prices with 5-min cache. LLM can pass `price_tier="economico|normal|premium"` which maps to dynamic budget ranges. |
+
+**Architecture:**
+```
+User: "quiero un depto economico"
+  → LLM passes: property_type="departamento", price_tier="economico"
+  → search_properties resolves price_tier via get_budget_tiers()
+  → P33=$95k → budget_max=$95k, sort_by="price_asc"
+  → Returns cheapest departments
+  → If 0 results → fallback 1 (+30% budget), fallback 2 (any zone), fallback 3 (any type)
+
+User (returning): "hola de vuelta"
+  → process_turn() detects Redis context + empty history
+  → Injects "USUARIO RECURRENTE" system message
+  → LLM: "¡Bienvenido de nuevo! La última vez viste [propiedad]..."
+
+User: "compara la 1 y la 3"
+  → LLM calls compare_properties(property_ids=["1", "3"])
+  → Returns formatted table comparing price, size, bedrooms, bathrooms, zone
+```
+
+**Budget tiers (dynamic from DB):**
+| Tier | Range | price_tier value | Sort |
+|------|-------|------------------|------|
+| Low (P0-P33) | $45k - $95k | `"economico"` | price_asc |
+| Medium (P33-P66) | $96k - $180k | `"normal"` | price_desc |
+| High (P66+) | $181k+ | `"premium"` | price_desc |
+
+Tiers recalculate every 5 minutes from actual property prices. Falls back to $100k/$250k if DB unavailable.
+
 ### 1. The Webhook Double-Prefix Bug
 The webhook router is mounted at `/webhook` and route paths must NOT include `/webhook/`:
 ```python

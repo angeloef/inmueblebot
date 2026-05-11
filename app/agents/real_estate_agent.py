@@ -110,6 +110,24 @@ class RealEstateAgent:
             # Get last_shown_properties from context for reference
             last_props = merged_context.get("last_shown_properties", [])
             
+            # Check if returning user (has context from previous session but no history yet)
+            last_context = merged_context
+            has_context = bool(last_context.get("selected_property_id") or last_context.get("last_shown_properties"))
+            is_new_session = len(history) == 0
+
+            if has_context and is_new_session:
+                # Inject returning user context
+                user_prefs["is_returning"] = True
+                last_prop = last_context.get("selected_property_id", None)
+                last_props_list = last_context.get("last_shown_properties", [])
+                if last_prop:
+                    user_prefs["last_reference"] = last_prop
+                elif last_props_list:
+                    # Use the first property title as reference
+                    first_prop = last_props_list[0].get("title", "propiedades") if isinstance(last_props_list[0], dict) else str(last_props_list[0])
+                    user_prefs["last_reference"] = first_prop
+                logger.info(f"[Agent] Returning user detected for {phone}, last_ref: {user_prefs.get('last_reference')}")
+            
             messages = self._build_messages(
                 user_message=user_message,
                 history=history,
@@ -425,6 +443,18 @@ class RealEstateAgent:
         
         system_prompt = get_system_prompt(user_context)
         messages.append({"role": "system", "content": system_prompt})
+
+        # Inject returning user greeting if applicable
+        if user_context.get("is_returning"):
+            last_ref = user_context.get("last_reference", "propiedades")
+            returning_msg = (
+                f"\n### USUARIO RECURRENTE\n"
+                f"Este usuario ya ha conversado antes. "
+                f"Su última referencia fue: {last_ref}\n"
+                f"Saludalo con un mensaje cálido tipo: '¡Bienvenido de nuevo! La última vez viste [referencia]...'\n"
+            )
+            messages.append({"role": "system", "content": returning_msg})
+            logger.info(f"[Agent] Injected returning user greeting for {phone}, ref={last_ref}")
 
         # Inject active/selected property for context continuity — BEFORE history
         selected_id = user_context.get("selected_property_id")

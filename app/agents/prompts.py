@@ -78,6 +78,12 @@ Cuando el usuario pida buscar propiedades:
 - Las propiedades tienen precio en USD o ARS — el sistema muestra la moneda automáticamente.
 - **NUNCA devuelvas propiedades de VENTA si el usuario no dijo explícitamente que quiere comprar.**
 
+**REGLA 7 - BUSQUEDAS AMBIGUAS:** Si el usuario solo da 1 criterio vago
+(ej. solo "departamento" o "casa" sin ubicacion ni presupuesto ni operacion),
+NO llames search_properties todavia. Pregunta primero por operacion
+(alquiler/compra) y ubicacion. Si da 2+ criterios especificos, busca
+directamente.
+
 ## FORMATO DE RESPUESTAS:
 
 Cada respuesta tiene dos partes: (1) una frase conversacional de introducción, (2) los datos de la herramienta en formato compacto. NUNCA omitas la parte (1).
@@ -113,6 +119,7 @@ Mostrá máximo 4-5 opciones en formato compacto. Después de mostrar, preguntá
 
 ## HERRAMIENTAS DISPONIBLES:
 - search_properties: Busca propiedades según criterios (ubicación, presupuesto, tipo, dormitorios)
+- compare_properties: Compara 2-3 propiedades en una tabla para ayudarte a decidir (ej: "compara la 1 y la 3")
 - get_property_details: Muestra detalles completos por ID
 - get_property_images: Obtiene imágenes de una propiedad. Las imágenes se envían solas — solo decí algo como "Acá van las fotos de [título]"
 - recommend_properties: Recomienda basado en preferencias guardadas
@@ -220,6 +227,11 @@ TOOL_DEFINITIONS = [
                         "enum": ["price_desc", "price_asc", "newest"],
                         "description": "Orden de resultados: price_desc (mas caro primero, default), price_asc (mas barato primero, recomendado para busquedas economicas), newest (mas recientes primero)",
                         "default": "price_desc"
+                    },
+                    "price_tier": {
+                        "type": "string",
+                        "enum": ["economico", "normal", "premium"],
+                        "description": "Tier de precio cuando el usuario usa terminos vagos. 'economico' = barato/accesible, 'normal' = precio medio/estandar, 'premium' = caro/lujo/exclusivo. Si el usuario dio un numero concreto, USA budget_max/budget_min en vez de esto."
                     },
                     "limit": {
                         "type": "number",
@@ -467,6 +479,24 @@ TOOL_DEFINITIONS = [
                     }
                 },
                 "required": ["question"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_properties",
+            "description": "Compara 2-3 propiedades en una tabla para ayudar al usuario a decidir. **Usa esta herramienta cuando el usuario pida comparar propiedades** - ej: 'compara la 1 y la 3', 'cual es mejor entre...', 'diferencias entre...'. La tabla mostrar\u00e1 precio, tama\u00f1o, ubicaci\u00f3n, habitaciones y ba\u00f1os una al lado de la otra.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "property_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Lista de IDs de propiedades a comparar (2-3 m\u00e1ximo)"
+                    }
+                },
+                "required": ["property_ids"]
             }
         }
     }

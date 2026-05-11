@@ -240,6 +240,24 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             search_criteria["sort_by"] = criteria["sort_by"]
             logger.info(f"[TOOL] Sort by: '{search_criteria['sort_by']}'")
         
+        # Handle price_tier for vague budget terms (economico, normal, premium)
+        price_tier = criteria.get("price_tier")
+        if price_tier:
+            try:
+                from app.agents.budget_tiers import get_budget_tiers
+                tiers = await get_budget_tiers()
+                logger.info(f"[TOOL] price_tier='{price_tier}' -> tiers: low_max={tiers['low_max']}, med_max={tiers['med_max']}")
+                if price_tier == "economico":
+                    search_criteria["budget_max"] = tiers["low_max"]
+                    search_criteria["sort_by"] = "price_asc"
+                elif price_tier == "normal":
+                    search_criteria["budget_min"] = tiers["low_max"] + 1
+                    search_criteria["budget_max"] = tiers["med_max"]
+                elif price_tier == "premium":
+                    search_criteria["budget_min"] = tiers["med_max"] + 1
+            except Exception as e:
+                logger.warning(f"[TOOL] Could not resolve price_tier '{price_tier}': {e}")
+        
         # Ensure limit is at least 6 for better UX
         search_criteria["limit"] = max(criteria.get("limit", 8), 6)
         logger.info(f"[TOOL] Limit final: {search_criteria['limit']}")
@@ -269,6 +287,50 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             except Exception as e:
                 logger.warning(f"[TOOL] Could not save last_shown_properties: {e}")
 
+        # If no results, try fallback searches with relaxed criteria
+        if not properties:
+            logger.info("[TOOL] No results found — trying fallback searches")
+            
+            # Fallback 1: +30% budget_max, keep same criteria
+            fb1_criteria = dict(search_criteria)
+            if fb1_criteria.get("budget_max"):
+                fb1_criteria["budget_max"] = int(fb1_criteria["budget_max"] * 1.3)
+            logger.info(f"[TOOL] Fallback 1: +30% budget -> {fb1_criteria.get('budget_max')}")
+            fb1_results = await property_service.search_properties(fb1_criteria)
+            
+            # Fallback 2: same operation_type + property_type, remove location + budget
+            fb2_criteria = {"operation_type": search_criteria.get("operation_type", "alquiler")}
+            if search_criteria.get("property_type"):
+                fb2_criteria["property_type"] = search_criteria["property_type"]
+            logger.info(f"[TOOL] Fallback 2: no location/budget, type={fb2_criteria.get('property_type')}")
+            fb2_results = await property_service.search_properties(fb2_criteria)
+            
+            # Fallback 3: only operation_type
+            fb3_criteria = {"operation_type": search_criteria.get("operation_type", "alquiler")}
+            logger.info(f"[TOOL] Fallback 3: only operation_type='{fb3_criteria['operation_type']}'")
+            fb3_results = await property_service.search_properties(fb3_criteria)
+            
+            # Build response
+            parts = [f"No encontr\u00e9 {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo alternativas:\n"]
+            
+            if fb1_results:
+                budget_str = f" (hasta ${fb1_criteria.get('budget_max', 0):,})" if fb1_criteria.get("budget_max") else ""
+                parts.append(f"\ud83d\udd31 Subiendo un poco el presupuesto{budget_str}:")
+                parts.append(format_property_list(fb1_results))
+                parts.append("")
+            
+            if fb2_results:
+                parts.append(f"\ud83d\udd31 {fb2_criteria.get('property_type', 'Propiedades').capitalize()} en cualquier zona:")
+                parts.append(format_property_list(fb2_results))
+                parts.append("")
+            
+            if fb3_results:
+                op_type = fb3_criteria.get("operation_type", "alquiler")
+                parts.append(f"\ud83d\udd31 Todas las opciones en {op_type}:")
+                parts.append(format_property_list(fb3_results))
+            
+            return "\n".join(parts)
+        
         return format_property_list(properties)
         
     except Exception as e:
@@ -1123,8 +1185,104 @@ async def get_faq_answer(question: str = None, phone: str = None) -> str:
         return "NO_FAQ_MATCH"
 
 
+async def compare_properties(property_ids: list) -> str:
+    """
+    Compara 2-3 propiedades en una tabla para que el usuario decida.
+    
+    Args:
+        property_ids: Lista de IDs de propiedades a comparar (2-3 máximo)
+    
+    Returns:
+        String con tabla comparativa formateada
+    """
+    if not property_ids:
+        return "No especificaste ninguna propiedad para comparar."
+    
+    if len(property_ids) > 3:
+        property_ids = property_ids[:3]
+    
+    from app.db.repository import BaseRepository
+    from app.db.models import Property
+    from app.db.session import async_session_factory
+    
+    props = []
+    for pid in property_ids:
+        try:
+            int_id = int(pid)
+            async with async_session_factory() as session:
+                repo = BaseRepository(Property, session)
+                prop = await repo.get(int_id)
+                if prop:
+                    props.append(prop)
+        except (ValueError, Exception) as e:
+            logger.warning(f"[compare_properties] Error fetching property {pid}: {e}")
+    
+    if not props:
+        return "No encontré las propiedades especificadas para comparar."
+    
+    # Build comparison table
+    def safe(val, default="—"):
+        return val if val is not None else default
+    
+    def price_fmt(prop) -> str:
+        price = getattr(prop, "price", 0)
+        try:
+            price = int(float(str(price)))
+        except (ValueError, TypeError):
+            price = 0
+        op_type = getattr(prop, "type", "venta") or "venta"
+        cur = getattr(prop, "currency", "USD")
+        prefix = "" if cur == "USD" else f"{cur} "
+        if op_type == "alquiler":
+            return f"{prefix}${price:,}/mes"
+        return f"{prefix}${price:,}"
+    
+    # Headers
+    headers = ["Característica"] + [getattr(p, "title", f"Propiedad {i+1}")[:20] for i, p in enumerate(props)]
+    
+    # Build rows
+    rows = [
+        ("💰 Precio", [price_fmt(p) for p in props]),
+        ("📐 Tamaño", [f"{safe(getattr(p, 'area_m2', None))}m²" if getattr(p, 'area_m2', None) else "—" for p in props]),
+        ("🛏️ Dormitorios", [f"{safe(getattr(p, 'bedrooms', None))} hab" if getattr(p, 'bedrooms', None) else "—" for p in props]),
+        ("🚿 Baños", [f"{safe(getattr(p, 'bathrooms', None))}" if getattr(p, 'bathrooms', None) else "—" for p in props]),
+        ("🚗 Cochera", ["Sí" if getattr(p, 'parking', False) else "No" for p in props]),
+        ("📌 Zona", [safe(getattr(p, 'location', None), "—") for p in props]),
+        ("📋 Tipo", [safe(getattr(p, 'property_type', None), "—") for p in props]),
+    ]
+    
+    # Format table
+    col_widths = [len(h) for h in headers]
+    for row_name, vals in rows:
+        col_widths[0] = max(col_widths[0], len(row_name))
+        for i, v in enumerate(vals):
+            col_widths[i + 1] = max(col_widths[i + 1], len(v))
+    
+    # Clamp widths
+    col_widths = [min(w, 30) for w in col_widths]
+    
+    def pad(text, width):
+        text = str(text)
+        if len(text) > width:
+            return text[:width-1] + "…"
+        return text.ljust(width)
+    
+    table_lines = ["Aquí tenés la comparación:\n"]
+    # Header row
+    table_lines.append("  " + " | ".join(pad(h, w) for h, w in zip(headers, col_widths)))
+    # Separator
+    table_lines.append("  " + "-|-".join("-" * w for w in col_widths))
+    # Data rows
+    for row_name, vals in rows:
+        cells = [pad(row_name, col_widths[0])] + [pad(v, w) for v, w in zip(vals, col_widths[1:])]
+        table_lines.append("  " + " | ".join(cells))
+    
+    return "\n".join(table_lines)
+
+
 TOOL_FUNCTIONS = {
     "search_properties": search_properties,
+    "compare_properties": compare_properties,
     "get_property_details": get_property_details,
     "recommend_properties": recommend_properties,
     "update_user_preferences": update_user_preferences,
@@ -1194,6 +1352,7 @@ async def execute_tool(tool_name: str, arguments: dict, phone: str = None) -> st
 
 __all__ = [
     "search_properties",
+    "compare_properties",
     "get_property_details", 
     "recommend_properties",
     "update_user_preferences",
