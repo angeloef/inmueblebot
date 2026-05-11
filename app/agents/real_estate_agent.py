@@ -407,7 +407,11 @@ class RealEstateAgent:
             
             # Clean response - remove forbidden words/patterns
             response_text = self._clean_response(response_text, tools_used)
-            
+
+            # Anti-hallucination guard: detect if LLM claims actions (schedule/cancel/etc.)
+            # without having called the corresponding tool. If detected, replace with honesty.
+            response_text = self._detect_action_hallucination(response_text, tools_used)
+
             next_state = self._determine_next_state(
                 intent=intent,
                 tools_used=tools_used,
@@ -772,7 +776,69 @@ class RealEstateAgent:
             logger.info(f"[Agent] ✓ Response cleaned: {len(cleaned)} chars")
         
         return cleaned or "Encontré propiedades que pueden interesarte. ¿Querés más detalles?"
-    
+
+    @staticmethod
+    def _detect_action_hallucination(text: str, tools_used: List[str]) -> str:
+        """
+        Anti-hallucination guard: if the LLM claims to have performed an action
+        (e.g., "Cita Agendada", "cancelé tu cita", "guardé tus datos") but the
+        corresponding tool was NOT called, replace the response with an honest
+        fallback. This prevents the bot from lying to the user about actions
+        that never happened in the DB.
+
+        Returns the original text (safe), or a corrected fallback (haltucination blocked).
+        """
+        text_lower = text.lower()
+
+        # Mapping: action claim phrases → required tool that must have been called
+        HALLUCINATION_CHECKS = [
+            # schedule_visit
+            (["agendada", "agendé", "agendamos", "visita agendada", "cita agendada", "turno agendado",
+              "te esperamos", "te agendé", "quedó agendada"],
+             "schedule_visit",
+             "Lo siento, tuve un problema al agendar la visita. ¿Podrías intentar de nuevo?"),
+
+            # reschedule_appointment
+            (["reprogramada", "reprogramé", "reprogramamos", "cita reprogramada",
+              "cambio la fecha", "cambié la fecha", "nueva fecha para tu cita",
+              "modifiqué tu cita", "modificada"],
+             "reschedule_appointment",
+             "Lo siento, tuve un problema al reprogramar la cita. ¿Podrías intentar de nuevo?"),
+
+            # cancel_appointment
+            (["cancelada", "cancelé", "cancelamos", "cita cancelada", "turno cancelado",
+              "anulada", "anulé"],
+             "cancel_appointment",
+             "Lo siento, tuve un problema al cancelar la cita. ¿Podrías intentar de nuevo?"),
+
+            # save_lead_info
+            (["guardé tus datos", "guardamos tus datos", "te registré", "te registramos",
+              "datos guardados", "quedaste registrado"],
+             "save_lead_info",
+             "Lo siento, tuve un problema al guardar tus datos. ¿Podrías intentar de nuevo?"),
+
+            # request_human_assistance
+            (["pasé con un agente", "transfiero a un agente", "te paso con un agente",
+              "conectando con un agente"],
+             "request_human_assistance",
+             "Lo siento, tuve un problema al transferirte. Por favor pedí hablar con un agente de nuevo."),
+        ]
+
+        for claim_phrases, required_tool, fallback_msg in HALLUCINATION_CHECKS:
+            any_claim_matched = any(phrase in text_lower for phrase in claim_phrases)
+            if any_claim_matched and required_tool not in tools_used:
+                logger.warning(
+                    f"[Agent] 🔴 HALLUCINATION BLOCKED: text claims '{required_tool}' action "
+                    f"but tool was not called. Tools used: {tools_used}"
+                )
+                return f"{fallback_msg}\n\n{text}"
+            elif any_claim_matched and required_tool in tools_used:
+                logger.info(
+                    f"[Agent] ✅ Action '{required_tool}' correctly confirmed with tool call"
+                )
+
+        return text
+
     def _detect_handoff_request(self, message: str) -> bool:
         """Detecta si el usuario está pidiendo hablar con un humano."""
         handoff_keywords = [
