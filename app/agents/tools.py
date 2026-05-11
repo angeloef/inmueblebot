@@ -249,7 +249,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 logger.info(f"[TOOL] price_tier='{price_tier}' -> tiers: low_max={tiers['low_max']}, med_max={tiers['med_max']}")
                 if price_tier == "economico":
                     search_criteria["budget_max"] = tiers["low_max"]
-                    search_criteria["sort_by"] = "price_asc"
+                    search_criteria["sort_by"] = "price_desc"
                 elif price_tier == "normal":
                     search_criteria["budget_min"] = tiers["low_max"] + 1
                     search_criteria["budget_max"] = tiers["med_max"]

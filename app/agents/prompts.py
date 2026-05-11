@@ -127,6 +127,7 @@ Mostrá máximo 4-5 opciones en formato compacto. Después de mostrar, preguntá
 - get_property_details: Muestra detalles completos por ID
 - get_property_images: Obtiene imágenes de una propiedad. Las imágenes se envían solas — solo decí algo como "Acá van las fotos de [título]"
 - recommend_properties: Recomienda basado en preferencias guardadas
+- save_lead_info: Guarda nombre, email, presupuesto y notas del usuario en la base de datos
 - get_faq_answer: Responde preguntas frecuentes sobre la inmobiliaria (horarios, formas de pago, financiación, políticas). **Usá esta herramienta cuando el usuario pregunte algo que NO sea sobre propiedades específicas** — por ejemplo "¿a qué hora abren?", "¿aceptan tarjetas?", "¿cómo financio?", "¿cuánto tarda el trámite?". Si el resultado dice "NO_FAQ_MATCH", respondé naturalmente que no tenés esa información.
 - schedule_visit: Agenda visita (requiere property_id + fecha + hora)
 - reschedule_appointment: Reprograma una cita existente
@@ -153,10 +154,11 @@ Cambiá SOLO cuando el usuario menciona explícitamente otra propiedad o hace nu
    - El contexto tiene el ID real de la propiedad activa en `<last_results>`
    - Ejemplo: si ves `ID=6` en el contexto, usá `property_id="6"`, NO `"abc-123"` ni ningún ID inventado
    - ❌ property_id="abc-123" (NUNCA — este ID no existe)
-5. Llamá schedule_visit SOLO con datos claros. Si falta info, preguntá una cosa a la vez.
-6. Cuando el tool confirme → usá la HORA EXACTA del resultado (<!--CONFIRMED:...-->) para responder.
-7. Horario ocupado → ofrecé 2-3 alternativas sin reintentar el mismo horario.
-8. Error técnico → "Tuve un problema técnico, ¿podrías intentar en unos minutos?"
+5. **ANTES de llamar schedule_visit, preguntá el nombre del usuario si no lo sabés.** Usá save_lead_info(name="...") para guardarlo. Revisá si ya tenés su nombre en el perfil del usuario (más arriba en el contexto). Si ya lo sabés, no preguntes de nuevo.
+6. Llamá schedule_visit SOLO con datos claros. Si falta info, preguntá una cosa a la vez.
+7. Cuando el tool confirme → usá la HORA EXACTA del resultado (<!--CONFIRMED:...-->) para responder.
+8. Horario ocupado → ofrecé 2-3 alternativas sin reintentar el mismo horario.
+9. Error técnico → "Tuve un problema técnico, ¿podrías intentar en unos minutos?"
 
 ## FLUJO DE REPROGRAMACIÓN:
 1. **USÁ reschedule_appointment con el UUID real de la cita**, no inventes IDs
@@ -229,7 +231,7 @@ TOOL_DEFINITIONS = [
                     "sort_by": {
                         "type": "string",
                         "enum": ["price_desc", "price_asc", "newest"],
-                        "description": "Orden de resultados: price_desc (mas caro primero, default), price_asc (mas barato primero, recomendado para busquedas economicas), newest (mas recientes primero)",
+                        "description": "Orden de resultados: price_desc (mas caro primero, default), price_asc (mas barato primero), newest (mas recientes primero)",
                         "default": "price_desc"
                     },
                     "price_tier": {
@@ -533,6 +535,7 @@ def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
         budget = f"${budget_val:,}"
     else:
         budget = "No definido"
+    user_name = user_context.get("name") or user_context.get("user_name") or ""
     property_type = user_context.get("property_type", "No definido")
     operation_type = user_context.get("operation_type", "No definida")
     bedrooms = user_context.get("bedrooms", "No-specified")
@@ -562,7 +565,11 @@ def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
     )
     
     prompt += "\n\n¡Listo para ayudar!"
-    
+
+    # Inject known user name if available
+    if user_name:
+        prompt += f"\n\n### DATOS DEL USUARIO\nNombre: {user_name}\n"
+
     return prompt
 
 
