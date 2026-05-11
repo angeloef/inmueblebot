@@ -686,26 +686,29 @@ async def schedule_visit(
     property_id: str,
     date_str: str,
     time_str: str = None,
-    phone: str = None
+    phone: str = None,
+    client_name: str = None
 ) -> str:
     """
     Agenda una visita a una propiedad.
-    
+
     GUÍA PARA EL LLM:
     - Intenta enviar la fecha en formato DD/MM/YYYY cuando sea posible (ej: "29/04/2026")
     - También soporta expresiones naturales: "mañana a las 15hs", "el viernes a las 10 de la mañana"
     - Si date_str o time_str viene vacío pero hay contexto previo, úsalo
     - Si no puedes determinar la fecha/hora, PREGUNTA al usuário antes de llamar
-    
+    - SIEMPRE incluir client_name con el nombre y apellido del usuario
+
     Esta función pode receber:
     - property_id: ID de la propiedad (número o UUID)
     - date_str: "29/04/2026", "mañana", "el viernes", etc
     - time_str: "15:00", "a las 15hs", "10am", etc (opcional)
     - phone: Número de teléfono del usuário
-    
+    - client_name: Nombre y apellido del usuario (OBLIGATORIO si no se conoce)
+
     Returns:
         Mensaje de confirmación ou mensaje de erro/ambigüedad
-        
+
     NOTA: Esta función verifica disponibilidad en Google Calendar antes de agendar.
     """
     logger.info("=" * 60)
@@ -813,12 +816,30 @@ async def schedule_visit(
                 user_repo = UserRepository(User, session)
                 user = await user_repo.get_by_phone(phone)
                 if not user:
-                    return "No te encontré en el sistema. ¿Podrías darme tu nombre?"
-                logger.info(f"[schedule_visit] User found: {user.id}")
+                    return "No te encontré en el sistema. ¿Podrías darme tu nombre y apellido?"
+                logger.info(f"[schedule_visit] User found: {user.id}, name={user.name!r}")
+
+                # ── Nombre obligatorio antes de agendar ──────────────────────
+                effective_name = client_name or user.name
+                if not effective_name or not effective_name.strip():
+                    return (
+                        "Antes de confirmar la visita necesito tu nombre y apellido. "
+                        "¿Me los decís?"
+                    )
+
+                # Si el usuario no tenía nombre guardado, guardarlo ahora
+                if not user.name and effective_name:
+                    try:
+                        await user_repo.update(user.id, name=effective_name.strip())
+                        await session.commit()
+                        logger.info(f"[schedule_visit] Nombre guardado: {effective_name!r} para {phone}")
+                    except Exception as e:
+                        logger.warning(f"[schedule_visit] No se pudo guardar el nombre: {e}")
+
             except Exception as e:
                 logger.error(f"[schedule_visit] Error getting user: {e}")
-                return f"Tuve un problema al buscarte en el sistema. ¿Podrías intentar de nuevo?"
-        
+                return "Tuve un problema al buscarte en el sistema. ¿Podrías intentar de nuevo?"
+
         # Create appointment in separate session
         if user:
             try:

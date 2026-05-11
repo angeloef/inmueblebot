@@ -188,8 +188,12 @@ Cambiá SOLO cuando el usuario menciona explícitamente otra propiedad o hace nu
    - El contexto tiene el ID real de la propiedad activa en `<last_results>`
    - Ejemplo: si ves `ID=6` en el contexto, usá `property_id="6"`, NO `"abc-123"` ni ningún ID inventado
    - ❌ property_id="abc-123" (NUNCA — este ID no existe)
-5. **ANTES de llamar schedule_visit, preguntá el nombre del usuario si no lo sabés.** Usá save_lead_info(name="...") para guardarlo. Revisá si ya tenés su nombre en el perfil del usuario (más arriba en el contexto). Si ya lo sabés, no preguntes de nuevo.
-6. **CRÍTICO: Cuando tengas TODOS los datos (property_id + fecha + hora + nombre), llamá schedule_visit INMEDIATAMENTE.** NO digas "agendando", "voy a agendar", "dame un momento" sin llamar la herramienta. La visita SOLO se agenda si llamás la función schedule_visit.
+5. **ANTES de llamar schedule_visit, verificá si ya sabés el nombre y apellido del usuario.**
+   - Si ya aparece en el perfil del usuario (más arriba en el contexto), no preguntes de nuevo.
+   - Si no lo sabés, preguntá: "¿Me podés dar tu nombre y apellido para registrar la visita?"
+   - Una vez que te lo diga, incluí `client_name` en la llamada a schedule_visit.
+   - NO llames schedule_visit sin `client_name` a menos que ya esté guardado en el perfil.
+6. **CRÍTICO: Cuando tengas TODOS los datos (property_id + fecha + hora + nombre y apellido), llamá schedule_visit INMEDIATAMENTE.** NO digas "agendando", "voy a agendar", "dame un momento" sin llamar la herramienta. La visita SOLO se agenda si llamás la función schedule_visit.
 7. Llamá schedule_visit SOLO con datos claros. Si falta info, preguntá una cosa a la vez.
 8. Cuando el tool confirme → usá la HORA EXACTA del resultado (<!--CONFIRMED:...-->) para responder.
 9. Horario ocupado → ofrecé 2-3 alternativas sin reintentar el mismo horario.
@@ -239,9 +243,9 @@ Bot: "¡Buena elección! Acá tenés toda la data:
 
 --- Ejemplo 3: Agenda exitosa ---
 Usuario: "si, mañana a las 10"
-Bot: "Perfecto, primero decime tu nombre así te registro."
+Bot: "Perfecto, para registrar la visita ¿me podés dar tu nombre y apellido?"
 Usuario: "Juan Pérez"
-Bot: (llama schedule_visit con todos los datos → tool confirma)
+Bot: (llama schedule_visit con property_id, date_str, time_str y client_name="Juan Pérez" → tool confirma)
 Bot: "¡Listo Juan! Te esperamos mañana a las 10hs en Oberá Centro para ver el Departamento 2 ambientes. ¿Necesitás algo más?"
 
 --- Ejemplo 4: Despedida cordial ---
@@ -414,7 +418,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "schedule_visit",
-            "description": "CRÍTICO: NO DIGAS 'agendando' ni 'voy a agendar' sin llamar esta función. La visita SOLO se agenda llamando esta herramienta. Agenda una visita a una propiedad. GUÍA: Intenta enviar fecha en formato DD/MM/YYYY (ej: '29/04/2026') o expresiones naturales ('mañana a las 15hs', 'el viernes a las 10'). Si no tienes la fecha/hora clara, PREGUNTA al usuario antes de llamar.",
+            "description": "CRÍTICO: NO DIGAS 'agendando' ni 'voy a agendar' sin llamar esta función. La visita SOLO se agenda llamando esta herramienta. Agenda una visita a una propiedad. GUÍA: Intenta enviar fecha en formato DD/MM/YYYY (ej: '29/04/2026') o expresiones naturales ('mañana a las 15hs', 'el viernes a las 10'). Si no tienes la fecha/hora clara, PREGUNTA al usuario antes de llamar. SIEMPRE incluir client_name con el nombre y apellido completo del usuario — si no lo sabés, preguntá antes de llamar.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -429,9 +433,13 @@ TOOL_DEFINITIONS = [
                     "time_str": {
                         "type": "string",
                         "description": "Hora opcional: '15:00', 'a las 15hs', '10am'"
+                    },
+                    "client_name": {
+                        "type": "string",
+                        "description": "Nombre y apellido completo del usuario. OBLIGATORIO si no está en el perfil. Nunca inventarlo — preguntar al usuario si no lo sabés."
                     }
                 },
-                "required": ["property_id", "date_str"]
+                "required": ["property_id", "date_str", "client_name"]
             }
         }
     },
