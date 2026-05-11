@@ -185,42 +185,44 @@ export default function FAQs() {
         <Button kind="primary" icon="plus" onClick={() => setShowNew(true)}>Nueva FAQ</Button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <input
-          className="search-input"
-          placeholder="Buscar por pregunta, respuesta, categoría o tag..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '10px 14px',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            fontSize: 14,
-            background: 'var(--bg)',
-            color: 'var(--fg)',
-          }}
-        />
-      </div>
+      <div className="page-body" style={{ paddingTop: 0 }}>
+        <div style={{ marginBottom: 16 }}>
+          <input
+            className="search-input"
+            placeholder="Buscar por pregunta, respuesta, categoría o tag..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              fontSize: 14,
+              background: 'var(--bg)',
+              color: 'var(--fg)',
+            }}
+          />
+        </div>
 
-      {isLoading ? (
-        <div className="muted" style={{ textAlign: 'center', padding: 40 }}>Cargando...</div>
-      ) : filtered.length === 0 ? (
-        <div className="muted" style={{ textAlign: 'center', padding: 40 }}>
-          {search ? 'Sin resultados para esa búsqueda.' : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
-        </div>
-      ) : (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {filtered.map(faq => (
-            <FaqRow
-              key={faq.id}
-              faq={faq}
-              onEdit={setEditing}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      )}
+        {isLoading ? (
+          <div className="muted" style={{ textAlign: 'center', padding: 40 }}>Cargando...</div>
+        ) : filtered.length === 0 ? (
+          <div className="muted" style={{ textAlign: 'center', padding: 40 }}>
+            {search ? 'Sin resultados para esa búsqueda.' : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
+          </div>
+        ) : (
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {filtered.map(faq => (
+              <FaqRow
+                key={faq.id}
+                faq={faq}
+                onEdit={setEditing}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {showNew && <FaqModal onClose={() => setShowNew(false)} />}
       {editing && <FaqModal faq={editing} onClose={() => setEditing(null)} />}
