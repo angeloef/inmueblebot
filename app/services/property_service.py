@@ -100,8 +100,9 @@ class PropertyService:
         property_type = criteria.get("property_type")
         operation_type = criteria.get("operation_type") or criteria.get("type")
         limit = criteria.get("limit", 8)
+        sort_by = criteria.get("sort_by", "price_desc")
         
-        logger.info(f"[PropertyService] Repo search - location: '{location}', bedrooms_min: {bedrooms}")
+        logger.info(f"[PropertyService] Repo search - location: '{location}', bedrooms_min: {bedrooms}, sort_by: '{sort_by}'")
         
         # Llamar al repositorio
         props, total = await repo.search(
@@ -113,7 +114,8 @@ class PropertyService:
             bathrooms_min=bathrooms,
             property_type=property_type,
             status="available",
-            limit=limit
+            limit=limit,
+            sort_by=sort_by,
         )
         
         logger.info(f"[PropertyService] Repo retornó: {total} total, {len(props)} propiedades")

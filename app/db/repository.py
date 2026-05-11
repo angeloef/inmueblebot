@@ -168,10 +168,16 @@ class PropertyRepository(BaseRepository):
         status: str = "available",
         limit: int = 20,
         offset: int = 0,
+        sort_by: str = "price_desc",
     ) -> tuple[list["Property"], int]:
         """
         Busca propiedades con filtros.
         Retorna (lista, total).
+        
+        sort_by options:
+            - "price_desc" (default): Most expensive first
+            - "price_asc": Cheapest first
+            - "newest": Most recently added first
         """
         from app.db.models import Property
         
@@ -240,8 +246,14 @@ class PropertyRepository(BaseRepository):
         total_result = await self.session.execute(count_query)
         total = total_result.scalar_one()
         
-        # Aplicar paginación
-        query = query.order_by(Property.price.desc()).limit(limit).offset(offset)
+        # Aplicar paginación + ordenamiento dinámico
+        if sort_by == "price_asc":
+            query = query.order_by(Property.price.asc()).limit(limit).offset(offset)
+        elif sort_by == "newest":
+            query = query.order_by(Property.created_at.desc().nullslast()).limit(limit).offset(offset)
+        else:
+            # Default: most expensive first
+            query = query.order_by(Property.price.desc()).limit(limit).offset(offset)
         result = await self.session.execute(query)
         
         return list(result.scalars().all()), total

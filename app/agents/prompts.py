@@ -69,6 +69,15 @@ La clave: **SIEMPRE introducí los datos con una frase cálida. NUNCA tires los 
 hora, PREGUNTÁ al usuario. No asumas ni adivines. Pero tampoco preguntes info que el
 usuario ya te dio — revisá el contexto de la conversación primero.
 
+**REGLA 6 - BUSQUEDAS: Extraé TODOS los criterios y ordená inteligentemente.**
+Cuando el usuario pida buscar propiedades:
+- Extraé CADA criterio que mencione: ubicación, tipo de propiedad (casa/departamento/terreno), cantidad de dormitorios, presupuesto, etc. Pasalos TODOS a search_properties.
+- **Por defecto asumí que busca ALQUILER**, salvo que diga explícitamente "comprar" o "venta".
+- Si el usuario dice "económico", "barato", "accesible", "económico" o "no muy caro" → usá sort_by="price_asc" para ordenar del más barato al más caro.
+- Si pide "departamento para estudiantes" → buscá departamentos con sort_by="price_asc" y budget_max conservador (~100000).
+- Las propiedades tienen precio en USD o ARS — el sistema muestra la moneda automáticamente.
+- **NUNCA devuelvas propiedades de VENTA si el usuario no dijo explícitamente que quiere comprar.**
+
 ## FORMATO DE RESPUESTAS:
 
 Cada respuesta tiene dos partes: (1) una frase conversacional de introducción, (2) los datos de la herramienta en formato compacto. NUNCA omitas la parte (1).
@@ -172,43 +181,49 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_properties",
-            "description": "Busca propiedades en la base de datos según criterios del usuario (ubicación, presupuesto, tipo, etc). **Invocation Condition:** Invocar esta herramienta INMEDIATAMENTE cuando el usuario mencione criterios de búsqueda como ubicación, presupuesto, tipo de propiedad, cantidad de habitaciones, o cualquier combinación de estos. NO preguntar antes de buscar.",
+            "description": "Busca propiedades en la base de datos segun criterios del usuario (ubicacion, presupuesto, tipo, etc). **Invocation Condition:** Invocar esta herramienta INMEDIATAMENTE cuando el usuario mencione criterios de busqueda como ubicacion, presupuesto, tipo de propiedad, cantidad de habitaciones, precio, o cualquier combinacion de estos. NO preguntar antes de buscar. **IMPORTANTE:** Extrae TODOS los criterios que el usuario menciono y pasalos como parametros. Si el usuario no especifica 'venta' o 'alquiler', el sistema por defecto busca alquiler. Si el usuario pide algo economico/barato/accesible, usa sort_by='price_asc' para ordenar de menor a mayor precio.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "Ciudad o zona donde busca la propiedad (ej: 'Posadas', 'Asunción', 'Encarnación'). Valores comunes: Oberá, Posadas, Asunción, Encarnación."
+                        "description": "Ciudad o zona donde busca la propiedad (ej: 'Posadas', 'Asuncion', 'Encarnacion'). Valores comunes: Obera, Posadas, Asuncion, Encarnacion."
                     },
                     "budget_max": {
                         "type": "number",
-                        "description": "Presupuesto máximo en USD (ej: 150000)"
+                        "description": "Presupuesto maximo en USD (ej: 150000). Si el usuario dice 'economico', 'barato', 'accesible', usa un budget_max bajo (~100000)."
                     },
                     "budget_min": {
                         "type": "number",
-                        "description": "Presupuesto mínimo en USD"
+                        "description": "Presupuesto minimo en USD"
                     },
                     "bedrooms": {
                         "type": "number",
-                        "description": "Número de dormitorios requeridos"
+                        "description": "Numero de dormitorios requeridos"
                     },
                     "bathrooms": {
                         "type": "number",
-                        "description": "Número de baños requeridos"
+                        "description": "Numero de banos requeridos"
                     },
                     "property_type": {
                         "type": "string",
-                        "enum": ["casa", "departamento", "terreno", "oficina", "local", "galpón"],
-                        "description": "Tipo de propiedad"
+                        "enum": ["casa", "departamento", "terreno", "oficina", "local", "galpon"],
+                        "description": "Tipo de propiedad (casa, departamento, terreno, oficina, local, galpon)"
                     },
                     "operation_type": {
                         "type": "string",
                         "enum": ["venta", "alquiler"],
-                        "description": "Tipo de operación: venta o alquiler"
+                        "description": "Tipo de operacion: venta o alquiler. Si el usuario no especifica, el sistema por defecto busca alquiler."
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["price_desc", "price_asc", "newest"],
+                        "description": "Orden de resultados: price_desc (mas caro primero, default), price_asc (mas barato primero, recomendado para busquedas economicas), newest (mas recientes primero)",
+                        "default": "price_desc"
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Número de resultados (default 8)",
+                        "description": "Numero de resultados (default 8)",
                         "default": 8
                     }
                 },

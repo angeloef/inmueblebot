@@ -34,24 +34,35 @@ def format_property(prop) -> str:
     price = _get_attr(prop, "price", 0)
     prop_type = _get_attr(prop, "type", "venta")
     location = _get_attr(prop, "location", "Ubicación no disponible")
+    cur = _get_attr(prop, "currency", "USD")
     bedrooms = _get_attr(prop, "bedrooms")
     bathrooms = _get_attr(prop, "bathrooms")
     area_m2 = _get_attr(prop, "area_m2")
     description = _get_attr(prop, "description")
-    
+
     # Defensive: force price to int to prevent scientific notation ($1.2E+5)
     try:
         price = int(float(str(price)))
     except (ValueError, TypeError):
         price = 0
+
+    if cur != "USD":
+        currency_label = cur
+    else:
+        currency_label = ""
     
     if prop_type == "alquiler":
-        price_str = f"${price:,}/mes"
+        price_str = f"${price:,}/mes" if not currency_label else f"{currency_label} ${price:,}/mes"
     else:
-        price_str = f"${price:,}"
-    
+        price_str = f"${price:,}" if not currency_label else f"{currency_label} ${price:,}"
+
     title = title[:60] + "..." if len(title) > 60 else title
-    
+
+    if currency_label:
+        location_display = f"{location} | {currency_label}"
+    else:
+        location_display = location
+
     features = []
     if bedrooms:
         features.append(f"{bedrooms} hab")
@@ -63,7 +74,7 @@ def format_property(prop) -> str:
 
     lines = [
         f"🏠 {title}",
-        f"💰 {price_str} | {location}",
+        f"💰 {price_str} | {location_display}",
         f"📐 {features_str}",
     ]
 
@@ -111,11 +122,16 @@ def format_property_list(properties: List) -> str:
         except (ValueError, TypeError):
             price = 0
         
+        cur = _get_attr(prop, "currency", "USD")
         prop_type = _get_attr(prop, "type", "venta")
-        if prop_type == "alquiler":
-            price_str = f"${price:,}/mes"
+        if cur != "USD":
+            currency_prefix = f"{cur} "
         else:
-            price_str = f"${price:,}"
+            currency_prefix = ""
+        if prop_type == "alquiler":
+            price_str = f"{currency_prefix}${price:,}/mes"
+        else:
+            price_str = f"{currency_prefix}${price:,}"
 
         bedrooms = _get_attr(prop, "bedrooms")
         bathrooms = _get_attr(prop, "bathrooms")
@@ -164,9 +180,10 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             - bedrooms: Número de dormitorios (MÍNIMO)
             - bathrooms: Número de baños
             - property_type: Tipo de propiedad (casa, departamento, terreno)
-            - operation_type: Tipo de operación (venta o alquiler)
-            - limit: Número de resultados (default 8)
-    
+            - operation_type: Tipo de operacion (venta o alquiler) - DEFAULT alquiler
+            - limit: Numero de resultados (default 8)
+            - sort_by: Ordenamiento (price_desc, price_asc, newest) - DEFAULT price_desc
+
     Returns:
         String formateado con las propiedades encontradas o mensaje de sin resultados
     """
@@ -212,6 +229,16 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             search_criteria["operation_type"] = criteria["operation_type"]
         elif criteria.get("type"):
             search_criteria["operation_type"] = criteria["type"]
+        else:
+            # Default to "alquiler" (rental) when user doesn't specify
+            # Most users contact the bot looking to rent, not buy
+            search_criteria["operation_type"] = "alquiler"
+            logger.info("[TOOL] No operation_type specified — defaulting to 'alquiler'")
+        
+        # Pass sort_by if provided (price_desc, price_asc, newest)
+        if criteria.get("sort_by"):
+            search_criteria["sort_by"] = criteria["sort_by"]
+            logger.info(f"[TOOL] Sort by: '{search_criteria['sort_by']}'")
         
         # Ensure limit is at least 6 for better UX
         search_criteria["limit"] = max(criteria.get("limit", 8), 6)

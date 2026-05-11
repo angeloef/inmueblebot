@@ -288,6 +288,34 @@ User question → LLM → get_faq_answer(question) → faq_service.search_faqs()
 - The `request_human_assistance` tool is available for the LLM to suggest handoff when needed
 - The FAQ system is **inmobiliaria-editable** via the Dashboard FAQ tab — any agency can add/edit/delete entries
 
+### Sprint 19 — Smart Search: sort_by, Default Alquiler, Currency Display (May 11 2026)
+
+**Problem:** The chatbot returned properties in the wrong order (most expensive first for "económico" queries), didn't apply filters properly, defaulted to no operation_type (showing all), and didn't display currency.
+
+**Changes:**
+
+| Area | Files | What changed |
+|------|-------|-------------|
+| **sort_by pipeline** | `repository.py`, `property_service.py`, `tools.py` | Added `sort_by` param (`price_desc`, `price_asc`, `newest`) flowing through all three layers. LLM can now control ordering. |
+| **Default alquiler** | `tools.py:search_properties()` | When no `operation_type` specified, defaults to `"alquiler"` — most users want to rent. LLM still overrides via prompt. |
+| **Currency display** | `tools.py:format_property()`, `format_property_list()` | Shows `ARS $xxx` prefix for non-USD properties. USD stays clean (`$xxx`). |
+| **Tool definition** | `prompts.py:TOOL_DEFINITIONS` | Added `sort_by` enum param, enhanced descriptions with search guidance, updated property_type enum (simplified accents) |
+| **System prompt** | `prompts.py:SYSTEM_PROMPT` | Added **REGLA 6** — extract ALL criteria, default to alquiler, use price_asc for cheap queries, never return "venta" unless user explicitly says "comprar" |
+| **Repository ordering** | `repository.py:search()` | Dynamic ordering: `price_desc` (default, was hardcoded), `price_asc` (cheapest), `newest` (recent) |
+
+**How the LLM should now behave:**
+- User: "quiero un departamento economico para estudiantes"
+  → LLM extracts: property_type="departamento", sort_by="price_asc", budget_max=100000, operation_type="alquiler" (default)
+  → Returns 5 cheapest rental apartments
+- User: "casas en venta en Obera"
+  → LLM extracts: property_type="casa", operation_type="venta", location="Obera"
+  → Returns sale houses in Obera
+- User: "departamento"
+  → LLM extracts: property_type="departamento", operation_type="alquiler" (default)
+  → Returns rental apartments sorted by price desc (default)
+
+**Important note:** The LLM drives which parameters it passes. The tool definition and REGLA 6 guide it, but the LLM's training + these prompts determine the actual behavior. The system is now **capable** of correct behavior — verify with actual WhatsApp tests.
+
 ### 1. The Webhook Double-Prefix Bug
 The webhook router is mounted at `/webhook` and route paths must NOT include `/webhook/`:
 ```python
