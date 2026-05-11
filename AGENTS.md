@@ -255,6 +255,39 @@ All column rename issues from Frankfurt→Oregon migration. Auto-migration DO bl
 3. **`app/main.py`** — Added `/static` mount (`StaticFiles(directory="static")`) so the `/static/imagenes/` files are actually served (for local dev / any direct access).
 4. **`static/imagenes/img1-4.jpg`** — Created 4 proper placeholder JPEG images (~19KB each, 800×600, distinct colors with "Propiedad N" text) for fallback display.
 
+### Sprint 18 — FAQ System (May 11, 2026)
+
+| Feature | Files | Description |
+|---------|-------|-------------|
+| **FAQ DB Model** | `app/db/models/faq.py` | `faq_entries` table: id, question (TEXT), answer (TEXT), category, tags (TEXT[]), order, active, created_at, updated_at |
+| **FAQ Service** | `app/services/faq_service.py` | Keyword-scored search (question=3x, answer=2x, tags=2x), full CRUD, singleton `faq_service` |
+| **FAQ Tool** | `app/agents/tools.py:1060-1096` | `get_faq_answer(question)` — returns formatted matches or `"NO_FAQ_MATCH"` if none found |
+| **FAQ Tool Definition** | `app/agents/prompts.py:441-457` | Tool defined with description: "Responde preguntas frecuentes sobre la inmobiliaria. Usá esta herramienta cuando el usuario pregunte algo que NO sea sobre propiedades específicas" |
+| **Admin API (FAQ CRUD)** | `app/api/routes/admin.py:1077-1220` | `GET/POST /admin/faqs`, `GET/PATCH/DELETE /admin/faqs/{id}`, `GET /admin/faqs/categories/list` — all auth-protected |
+| **Auto-migration** | `admin.py:192-205` | Fix 13: `CREATE TABLE IF NOT EXISTS faq_entries` on first admin request |
+| **Dashboard FAQ Tab** | `dashboard/src/FAQs.jsx` | Full CRUD UI: search, add/edit drawer, delete with confirm, category/tag pills, active/inactive toggle |
+| **API Hooks** | `dashboard/src/api.js:372-406` | `useFaqs`, `useCreateFaq`, `useUpdateFaq`, `useDeleteFaq` with React Query cache invalidation |
+| **Seed Script** | `scripts/seed_faqs.py` | 22 FAQs across 6 categories (horarios, proceso, financiación, visitas, servicios, generales) — run via `python scripts/seed_faqs.py` |
+
+**Architecture:**
+```
+User question → LLM → get_faq_answer(question) → faq_service.search_faqs()
+                                                              ↓
+                                            keyword scoring (question>answer>tags)
+                                                              ↓
+                                        Matches found? → Yes → Formatted to LLM → User
+                                                              ↓
+                                               No → "NO_FAQ_MATCH" → LLM says "no tengo esa info"
+```
+
+**Key behavior:**
+- The LLM calls `get_faq_answer` when the user asks a non-property question (horarios, pagos, proceso, etc.)
+- The tool returns up to 5 best-matching FAQs ranked by keyword overlap
+- Question keywords score 3x, answer keywords 2x, category/tags 2x
+- If no match → `"NO_FAQ_MATCH"` → LLM responds naturally that it doesn't have that information
+- The `request_human_assistance` tool is available for the LLM to suggest handoff when needed
+- The FAQ system is **inmobiliaria-editable** via the Dashboard FAQ tab — any agency can add/edit/delete entries
+
 ### 1. The Webhook Double-Prefix Bug
 The webhook router is mounted at `/webhook` and route paths must NOT include `/webhook/`:
 ```python

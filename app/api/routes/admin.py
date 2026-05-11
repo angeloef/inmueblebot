@@ -189,6 +189,20 @@ def _run_startup_migration(engine):
                     END IF;
                 END $$;
             """))
+            # ── Fix 13: Create faq_entries table if not exists ──────────
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS faq_entries (
+                    id SERIAL PRIMARY KEY,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    category VARCHAR(100),
+                    tags TEXT[],
+                    "order" INTEGER DEFAULT 0,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ
+                )
+            """))
             conn.commit()
         _migration_done = True
     except Exception as exc:
