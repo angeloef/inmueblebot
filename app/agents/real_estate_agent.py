@@ -277,6 +277,56 @@ class RealEstateAgent:
                         "content": str(tool_result)
                     })
                     
+                    # ── Plan B: Inject contextual next-step guidance ──
+                    if tool_name == "search_properties":
+                        # After showing search results, suggest next step
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "Acabas de mostrar resultados de búsqueda. "
+                                "SIEMPRE terminá tu respuesta preguntando al usuario "
+                                "si quiere ver los detalles de alguna propiedad en particular. "
+                                "Ej: '¿Querés ver los detalles de alguna?'"
+                            )
+                        })
+                    elif tool_name == "get_property_details":
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "Acabas de mostrar los detalles de una propiedad. "
+                                "Preguntale al usuario si quiere agendar una visita "
+                                "o ver las fotos de la propiedad. "
+                                "Ej: '¿Querés agendar una visita para verla?'"
+                            )
+                        })
+                    elif tool_name == "compare_properties":
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "Mostraste una comparación de propiedades. "
+                                "Preguntale al usuario cuál le interesa más "
+                                "para mostrarle los detalles."
+                            )
+                        })
+                    elif tool_name == "get_faq_answer":
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "Respondiste una pregunta frecuente. "
+                                "Después de dar la respuesta, preguntale al usuario "
+                                "si necesita algo más o si está buscando alguna propiedad."
+                            )
+                        })
+                    elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "La cita se agendó con éxito. Confirmale al usuario "
+                                "los detalles (día y hora) y preguntale si necesita "
+                                "algo más. Si dice que no, despedite cordialmente."
+                            )
+                        })
+                    
                     if "search_properties" in tool_name or "recommend_properties" in tool_name:
                         new_rich = self._extract_rich_content(tool_args, tool_result)
                         # Preserve images from previous get_property_images calls
@@ -538,6 +588,18 @@ class RealEstateAgent:
             content = msg.get("content", "")
             if content:
                 messages.append({"role": role, "content": content})
+        
+        # If no history and no tools used yet, user is starting fresh — guide the conversation
+        if not history and not user_context.get("is_returning"):
+            messages.append({
+                "role": "system",
+                "content": (
+                    "IMPORTANTE: Este es el primer mensaje del usuario. "
+                    "Respondé con un saludo cálido y preguntale activamente "
+                    "qué está buscando. No esperes a que te den todos los detalles. "
+                    "Ej: '¡Hola! ¿Estás buscando alquilar o comprar? ¿En qué zona?'"
+                )
+            })
         
         messages.append({"role": "user", "content": user_message})
         
