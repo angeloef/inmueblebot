@@ -419,7 +419,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   );
 }
 
-export default function Calendar() {
+export default function Calendar({ onOpenClient, onOpenProperty }) {
   const { data: events = [] }                 = useEvents();
   const createEventMut                        = useCreateEvent();
   const updateEventMut                        = useUpdateEvent();
@@ -617,6 +617,8 @@ export default function Calendar() {
           onReschedule={handleReschedule}
           onCancel={handleCancel}
           onDelete={handleDelete}
+          onOpenClient={onOpenClient}
+          onOpenProperty={onOpenProperty}
         />
       )}
       {editor && (

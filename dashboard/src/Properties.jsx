@@ -536,7 +536,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
   );
 }
 
-export default function Properties({ onOpenClient }) {
+export default function Properties({ onOpenClient, initialProperty }) {
   const { data: properties = [] } = useProperties();
   const createProperty  = useCreateProperty();
   const updateProperty  = useUpdateProperty();
@@ -545,7 +545,7 @@ export default function Properties({ onOpenClient }) {
   const [op, setOp] = useState('all');
   const [search, setSearch] = useState('');
   const [view, setView] = useState('grid');
-  const [open, setOpen] = useState(null);
+  const [open, setOpen] = useState(initialProperty || null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);

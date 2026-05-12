@@ -143,7 +143,7 @@ input, select, textarea { font-family: inherit; }
 .cal-month { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border-default); }
 .cal-dow { font-size: 11px; color: var(--fg-tertiary); padding: 6px 10px; text-transform: uppercase; letter-spacing: 0.04em; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-default); background: var(--gray-25); font-weight: 500; display: flex; align-items: center; position: sticky; top: 0; z-index: 10; }
 .cal-dow:last-child { border-right: none; }
-.cal-day { min-height: 120px; padding: 6px 8px; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 3px; background: white; cursor: pointer; transition: background var(--dur-fast); }
+.cal-day { min-height: 120px; padding: 6px 8px; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 3px; background: white; cursor: pointer; transition: background var(--dur-fast); min-width: 0; overflow: hidden; }
 .cal-day:hover { background: var(--gray-25); }
 .cal-day:nth-child(7n) { border-right: none; }
 .cal-day.other { background: var(--gray-25); color: var(--fg-muted); }

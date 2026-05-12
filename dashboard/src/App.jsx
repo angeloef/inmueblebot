@@ -12,6 +12,7 @@ import FAQs from './FAQs';
 export default function App() {
   const [active, setActive] = useState('dashboard');
   const [clientToOpen, setClientToOpen] = useState(null);
+  const [propertyToOpen, setPropertyToOpen] = useState(null);
   const [globalPopover, setGlobalPopover] = useState(null);
 
   const updateEventMut = useUpdateEvent();
@@ -25,6 +26,11 @@ export default function App() {
   const openClient = (client) => {
     setClientToOpen(client);
     setActive('clients');
+  };
+
+  const openProperty = (prop) => {
+    setPropertyToOpen(prop);
+    setActive('properties');
   };
 
   const openEvent = (event, rect) => {
@@ -52,8 +58,8 @@ export default function App() {
           {active === 'dashboard' && (
             <Dashboard onNav={navTo} onOpenEvent={openEvent} onOpenClient={openClient} />
           )}
-          {active === 'calendar' && <Calendar />}
-          {active === 'properties' && <Properties onOpenClient={openClient} />}
+          {active === 'calendar' && <Calendar onOpenClient={openClient} onOpenProperty={openProperty} />}
+          {active === 'properties' && <Properties onOpenClient={openClient} initialProperty={propertyToOpen} />}
           {active === 'clients' && (
             <Clients
               initialClient={clientToOpen}
@@ -90,7 +96,7 @@ export default function App() {
           onCancel={handleGlobalCancel}
           onDelete={handleGlobalDelete}
           onOpenClient={openClient}
-          onOpenProperty={() => setActive('properties')}
+          onOpenProperty={openProperty}
         />
       )}
       <ToastStack />
