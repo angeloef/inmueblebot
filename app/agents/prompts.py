@@ -48,6 +48,9 @@ NO hace nada. La acción solo ocurre si llamás la función correspondiente.
 - NUNCA digas "cancelando" / "te cancelo la cita" sin llamar cancel_appointment()
 - NUNCA digas "reprogramando" / "te cambio la fecha" sin llamar reschedule_appointment()
 - NUNCA digas "te paso con un agente" sin llamar request_human_assistance()
+- NUNCA digas "voy a buscar" / "buscando" / "déjame buscar" / "un momento" sin llamar search_properties()
+- NUNCA digas "encontré" / "resultados" / "acá tenés propiedades" sin llamar search_properties()
+- TRAS CADA tool call: usá SOLO los datos que retornó el tool, NUNCA inventes ni reuses datos de respuestas anteriores.
 **CÓMO FUNCIONA:**
 1. Recolectá TODA la información que necesitás preguntando al usuario
 2. Cuando tengas cada dato, llamá la función INMEDIATAMENTE (sin anunciarlo)
@@ -275,7 +278,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_properties",
-            "description": "Busca propiedades en la base de datos segun criterios del usuario (ubicacion, presupuesto, tipo, etc). **Invocation Condition:** Invocar esta herramienta INMEDIATAMENTE cuando el usuario mencione criterios de busqueda como ubicacion, presupuesto, tipo de propiedad, cantidad de habitaciones, precio, o cualquier combinacion de estos. NO preguntar antes de buscar. **IMPORTANTE:** Extrae TODOS los criterios que el usuario menciono y pasalos como parametros. Si el usuario no especifica 'venta' o 'alquiler', el sistema por defecto busca alquiler. Si el usuario pide algo economico/barato/accesible, usa sort_by='price_asc' para ordenar de menor a mayor precio.",
+            "description": "CRÍTICO: NO DIGAS 'voy a buscar' ni 'buscando' sin llamar esta función. Los resultados SOLO existen si llamás esta herramienta. Busca propiedades en la base de datos segun criterios del usuario (ubicacion, presupuesto, tipo, etc). **Invocation Condition:** Invocar esta herramienta INMEDIATAMENTE cuando el usuario mencione criterios de busqueda como ubicacion, presupuesto, tipo de propiedad, cantidad de habitaciones, precio, o cualquier combinacion de estos. NO preguntar antes de buscar. **IMPORTANTE:** Extrae TODOS los criterios que el usuario menciono y pasalos como parametros. Si el usuario no especifica 'venta' o 'alquiler', el sistema por defecto busca alquiler. Si el usuario pide algo economico/barato/accesible, usa sort_by='price_asc' para ordenar de menor a mayor precio.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -334,7 +337,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_property_details",
-            "description": "Muestra todos los detalles de una propiedad especifica. **Invocation Condition:** Invocar esta herramienta cuando el usuario pida ver una propiedad por su ID, nombre, o direccion - acepta tanto numeros (ID=5) como texto ('San Martin 850', 'casa centro'). Si hay multiples coincidencias, devuelve una lista para que el usuario elija.",
+            "description": "CRÍTICO: NO DIGAS los detalles ni los muestres sin llamar esta función. Los detalles SOLO existen si llamás esta herramienta. Muestra todos los detalles de una propiedad especifica. **Invocation Condition:** Invocar esta herramienta cuando el usuario pida ver una propiedad por su ID, nombre, o direccion - acepta tanto numeros (ID=5) como texto ('San Martin 850', 'casa centro'). Si hay multiples coincidencias, devuelve una lista para que el usuario elija.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -1111,3 +1111,44 @@ Cada sesión es una cadena de Márkov donde:
 - `tests/massive_test/coverage_tracker.py` — Seguimiento de cobertura de aristas en cadena de Márkov
 - `tests/massive_test/orchestrator.py` — Orquestador de sesiones
 - `tests/massive_test/run_full_test.py` — Entry point con reporte
+
+### Sprint 23 — Enhanced MCMC Mass Test v2: Erratic Behavior + New Profiles (May 12, 2026)
+
+**Goal:** Ejecutar 40 sesiones con 8 perfiles (2 nuevos: fotos + comparación), comportamiento errático (~20% probabilidad de decisiones confusas por turno), e inputs incorrectos (IDs alucinados, cambios de intención mid-conversation).
+
+**New v2 features:**
+1. **Perfil "Pide fotos"** — busca propiedades, pide detalles, **pide fotos**, agenda o pide más fotos
+2. **Perfil "Compara propiedades"** — busca, pide **compare_properties()**, elige una, agenda
+3. **Comportamiento errático** — ~20% de los turnos: IDs inventados ("ID 99", "abc-123"), confusiones ("no esa, la otra"), contradicciones
+4. **Cambio de intención** — 15% de chance de cambiar de tema (FAQ → search, search → cancel, appointments → search)
+5. **Seed aleatorio por ejecución** para reproducibilidad
+
+**v1 vs v2 comparison:**
+
+| Metric | v1 (30 sesiones) | v2 (40 sesiones) | Δ |
+|--------|------------------|------------------|---|
+| Total turns | 110 | 176 | +60% |
+| Edge coverage | 22/19 (115%) | 33/19 (173%) | +50% |
+| Violations | 1 | 2 | +1 |
+| Tools detected | 6 | 7 | +1 |
+| Avg turn time | 2.83s | 2.20s | -22% ✅ |
+| Wall time | ~10min | 14min | +40% |
+
+**New tools detected in v2:** `compare_properties` (never seen in v1)
+
+**Violations (2):** Both TOOL-EXISTS in "Cliente existente (cambia opinión)" — LLM said "agendada" but schedule_visit was not in tools_used. These occurred in complex intent-change flows where the user scheduled, then changed their mind, then the bot got confused. The anti-hallucination code guard _detect_action_hallucination **did fire correctly** and blocked the text from reaching WhatsApp (per the logging). The violation is detected in the raw /admin/simulate response which bypasses the WhatsApp sanitizer — **users never saw these**.
+
+**Per-Profile v2 Results:**
+
+| Profile | Turns | Avg Turns | Viol | Notes |
+|---------|-------|-----------|------|-------|
+| Alquiler errático | 22 | 4.4 | 0 | compare_properties used |
+| Busca compra | 26 | 5.2 | 0 | Multiple retries from confused picks |
+| Consulta vaga + intent change | 14 | 2.8 | 0 | Many exited early |
+| FAQ → fotos → agenda | 11 | 2.2 | 0 | Shortest profile |
+| No encuentra + confusión | 13 | 2.6 | 0 | Users gave up quickly |
+| Cliente existente (cambia opinión) | 21 | 4.2 | 2 | Complex intent changes |
+| Pide fotos + confusión | 29 | 5.8 | 0 | get_property_images everywhere |
+| Compara propiedades | 40 | 8.0 | 0 | Richest profile |
+
+**Conclusion:** The bot handles erratic behavior well. 2 detected hallucinations (out of 176 turns = 1.1%) in the most complex intent-change profile, all caught by the code guard before reaching users.

@@ -191,7 +191,8 @@ class RealEstateAgent:
                     else:
                         response_text = llm_response.content
                     break
-                
+
+                # PHASE 1.5: Execute tool calls
                 for tool_call in llm_response.tool_calls:
                     tool_name = tool_call.name
                     tool_args = tool_call.arguments
@@ -290,12 +291,21 @@ class RealEstateAgent:
                             )
                         })
                     elif tool_name == "get_property_details":
+                        # Extract property data from tool result for the system message
+                        _prop_info = ""
+                        if isinstance(tool_result, str) and tool_result:
+                            # Extract first line or key info for context
+                            _first_line = tool_result.split('\n')[0] if '\n' in tool_result else tool_result[:60]
+                            _prop_info = f" Los datos REALES de la propiedad son: {_first_line}"
                         messages.append({
                             "role": "system",
                             "content": (
-                                "Acabas de mostrar los detalles de una propiedad. "
-                                "Preguntale al usuario si quiere agendar una visita "
-                                "o ver las fotos de la propiedad. "
+                                "Acabas de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
+                                "IGNORÁ cualquier descripción, precio o título que hayas escrito antes. "
+                                "Usá EXACTAMENTE los datos que devolvió el tool, palabra por palabra."
+                                f"{_prop_info}"
+                                "Presentalos de forma conversacional y preguntale al usuario "
+                                "si quiere agendar una visita o ver las fotos. "
                                 "Ej: '¿Querés agendar una visita para verla?'"
                             )
                         })
