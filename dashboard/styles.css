@@ -482,302 +482,193 @@ input, select, textarea { font-family: inherit; }
 /* Sidebar close button: hidden on desktop */
 .sb-close { display: none; }
 
-@media (max-width: 768px) {
-  /* ── Liberar scroll: en mobile todo el body scrollea ── */
+/* ═══════════════════════════════════════════════════════════
+   SCROLL LIBERATION  ≤ 1280 px  (mobile + tablet)
+   El app scrollea verticalmente; layout fijo solo en desktop.
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 1280px) {
+  /* ── Body + shell: scroll vertical liberado ── */
   body { overflow-y: auto; }
-  .app  { height: auto; min-height: 100vh; overflow: visible; grid-template-columns: 1fr; }
+  .app  { height: auto; min-height: 100vh; overflow: visible; }
   .main { height: auto; overflow: visible; grid-template-rows: var(--topbar-h) auto; }
   .canvas, .canvas-flush { height: auto; overflow: visible; }
 
-  /* Page views: crecen al contenido, sin scroll interno */
+  /* Page views: crecen al contenido */
   .page-view  { height: auto; padding-bottom: 32px; }
   .page-body  { overflow: visible; height: auto; flex: none; }
   .scroll-surface { overflow: visible; height: auto; }
   .tbl-scroll { overflow: visible; height: auto; }
 
-  /* Calendario: toolbar visible, time-grid con scroll propio acotado */
+  /* Calendario: time-grid con scroll propio acotado */
   .cal-page   { height: auto; }
   .cal-surface { overflow: visible; height: auto; }
   .cal-tg-wrap { overflow: visible; height: auto; }
   .cal-tg-body { height: 65vh; overflow-y: auto; }
   .cal-month  { height: auto; }
 
-  /* App shell: sidebar removed from grid, content takes full width */
+  /* ── Overflow-x: doble candado ── */
+  html { overflow-x: hidden; }
+  body { overflow-x: hidden; }
+  .page-view, .page-body, .page-kpis { overflow-x: hidden; }
 
-  /* Sidebar: fixed slide-out overlay */
+  /* ── min-width:0 para evitar que tablas rompan tracks ── */
+  .dashboard-grid > *,
+  .kpi-grid > *,
+  .field-row > *,
+  .page-body > *,
+  .scroll-surface > * { min-width: 0; }
+
+  /* ── Tablas: clip horizontal estricto ── */
+  .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .surface { overflow-x: hidden; }
+  .surface:not(.scroll-surface) { overflow: hidden; }
+
+  /* ── Calendar toolbar: wrappear en pantallas angostas ── */
+  .cal-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .cal-toolbar h2 { font-size: 14px; min-width: 0; flex: 1 1 auto; }
+  .cal-toolbar .nav { flex-shrink: 0; }
+
+  /* ── Filter bar: input full width ── */
+  .filter-bar { flex-wrap: wrap; }
+  .filter-bar input { max-width: 100%; flex: 1 1 100%; }
+
+  /* ── Topbar: evitar overflow ── */
+  .tb { min-width: 0; overflow: hidden; }
+  .tb-notif-wrap { position: static; }
+  .notif-panel { width: calc(100vw - 32px); right: auto; left: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TABLET  769 px – 1280 px
+   Sidebar fijo. Solo layouts rotos corregidos.
+   ═══════════════════════════════════════════════════════════ */
+@media (min-width: 769px) and (max-width: 1280px) {
+  /* ── Clientes: vista card (igual que mobile) ── */
+  .clients-tbl thead { display: none; }
+  .clients-tbl tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center;
+    padding: 10px 14px; gap: 2px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: white; cursor: pointer;
+  }
+  .clients-tbl tbody tr:hover { background: var(--gray-25); }
+  .clients-tbl td { display: block; padding: 0; border: none; font-size: 13px; }
+  .clients-tbl td:nth-child(1) { flex: 1; min-width: 0; order: 1; }
+  .clients-tbl td:nth-child(2) { order: 2; align-self: center; }
+  .clients-tbl td:nth-child(3) { order: 3; width: 100%; font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
+  .clients-tbl td:nth-child(6) { order: 4; font-size: 11px; color: var(--fg-muted); width: 100%; }
+  .clients-tbl td:nth-child(4),
+  .clients-tbl td:nth-child(5),
+  .clients-tbl td:nth-child(7) { display: none; }
+
+  /* ── Calendario: semana + día (sin mes) ── */
+  .cal-view-month { display: none; }
+
+  /* ── Propiedades: grids 2 columnas ── */
+  .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Tablet pequeña 769–960 px: dashboard y KPIs a columna única ── */
+@media (min-width: 769px) and (max-width: 960px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE  ≤ 768 px
+   Layout exclusivo de pantalla chica.
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* ── App shell: sidebar fuera del grid, contenido full-width ── */
+  .app { grid-template-columns: 1fr; }
+
+  /* ── Sidebar: overlay slide-out ── */
   .sb {
-    position: fixed;
-    top: 0; left: 0; bottom: 0;
-    width: 290px;
-    z-index: 200;
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 290px; z-index: 200;
     transform: translateX(-100%);
     transition: transform var(--dur-slow) var(--ease-out);
     box-shadow: var(--shadow-lg);
   }
   .sb.open { transform: translateX(0); }
-
-  /* Backdrop behind open sidebar */
   .sb-backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--bg-overlay);
-    z-index: 199;
+    position: fixed; inset: 0;
+    background: var(--bg-overlay); z-index: 199;
     animation: fade-in var(--dur-base) var(--ease-out);
   }
 
-  /* Show hamburger in topbar */
+  /* ── Hamburger y cierre ── */
   .tb-menu-btn { display: inline-flex; }
-
-  /* Show close button inside sidebar */
   .sb-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: auto;
-    width: 28px;
-    height: 28px;
-    border: none;
-    background: transparent;
-    border-radius: 6px;
-    color: var(--fg-secondary);
-    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: auto; width: 28px; height: 28px;
+    border: none; background: transparent; border-radius: 6px;
+    color: var(--fg-secondary); cursor: pointer;
   }
   .sb-close:hover { background: var(--bg-hover); color: var(--fg-primary); }
 
-  /* Reduce page padding */
+  /* ── Padding reducido ── */
   .page-view { padding: 14px 14px 0; }
 
-  /* KPI grid: 2 columns instead of 4 */
+  /* ── KPI grid: 2 columnas ── */
   .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
 
-  /* Form field rows: single column */
+  /* ── Form fields: columna única ── */
   .field-row { grid-template-columns: 1fr; }
 
-  /* Popover: constrain to viewport */
+  /* ── Popover, drawer, toast ── */
   .popover { width: calc(100vw - 32px); max-width: 380px; left: 16px !important; }
-
-  /* Drawer: full width on mobile */
   .drawer, .drawer.wide { width: 100%; }
-
-  /* Calendar: only show Day view button */
-  .cal-view-month, .cal-view-week { display: none; }
-
-  /* Toast stack: stretch to screen edges */
   .toast-stack { left: 16px; right: 16px; bottom: 16px; }
   .toast { width: 100%; }
 
-  /* Page header: wrap actions below title */
+  /* ── Calendario: solo vista Día ── */
+  .cal-view-month, .cal-view-week { display: none; }
+
+  /* ── Page header: wrap acciones ── */
   .page-h { flex-wrap: wrap; gap: 8px; }
   .page-h-actions { margin-left: 0; width: 100%; }
 
-  /* ── Prevenir overflow horizontal (doble candado) ── */
-  html { overflow-x: hidden; }
-  body { overflow-x: hidden; }
-
-  /* Grid/flex items: min-width:0 para que no expandan más allá de su track */
-  .dashboard-grid > *,
-  .kpi-grid > *,
-  .field-row > *,
-  .page-body > *,
-  .scroll-surface > * { min-width: 0; }
-
-  /* Tablas: scroll horizontal dentro de su contenedor, no el body */
-  .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .surface { overflow-x: hidden; }
-
-  /* Superficies que contienen tablas: clip estricto */
-  .surface:not(.scroll-surface) { overflow: hidden; }
-  .page-view, .page-body, .page-kpis { overflow-x: hidden; }
-
-  /* Calendar toolbar: wrappear cuando no entra */
-  .cal-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
-  .cal-toolbar h2 { font-size: 14px; min-width: 0; flex: 1 1 auto; }
-  .cal-toolbar .nav { flex-shrink: 0; }
-
-  /* Filter bar: input full width en mobile */
-  .filter-bar { flex-wrap: wrap; }
-  .filter-bar input { max-width: 100%; flex: 1 1 100%; }
-
-  /* Dashboard: colapsar a columna única */
+  /* ── Dashboard: columna única ── */
   .dashboard-grid { grid-template-columns: 1fr; }
 
-  /* Agenda de hoy: ocultar columnas secundarias en mobile */
+  /* ── Ocultar columnas desktop en agenda ── */
   .col-desktop { display: none !important; }
 
-  /* ── Clientes: tabla → cards de 2 filas en mobile ── */
+  /* ── Clientes: tabla → cards ── */
   .clients-tbl thead { display: none; }
-
   .clients-tbl tbody tr {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    padding: 10px 14px;
-    gap: 2px 8px;
+    display: flex; flex-wrap: wrap; align-items: center;
+    padding: 10px 14px; gap: 2px 8px;
     border-bottom: 1px solid var(--border-subtle);
-    background: white;
-    cursor: pointer;
+    background: white; cursor: pointer;
   }
   .clients-tbl tbody tr:hover { background: var(--gray-25); }
-
-  /* Todos los td se resetean a bloque sin padding de tabla */
-  .clients-tbl td {
-    display: block;
-    padding: 0;
-    border: none;
-    font-size: 13px;
-  }
-
-  /* Fila 1: Cliente (flex:1) + Tipo (pill) */
+  .clients-tbl td { display: block; padding: 0; border: none; font-size: 13px; }
   .clients-tbl td:nth-child(1) { flex: 1; min-width: 0; order: 1; }
   .clients-tbl td:nth-child(2) { order: 2; align-self: center; }
-
-  /* Fila 2: Teléfono · Último contacto — ancho completo */
-  .clients-tbl td:nth-child(3) {
-    order: 3;
-    width: 100%;
-    font-size: 12px;
-    color: var(--fg-tertiary);
-    margin-top: 2px;
-  }
-  .clients-tbl td:nth-child(6) {
-    order: 4;
-    font-size: 11px;
-    color: var(--fg-muted);
-    width: 100%;
-  }
-
-  /* Ocultar columnas secundarias (Agente, Visitas, Acciones) */
+  .clients-tbl td:nth-child(3) { order: 3; width: 100%; font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
+  .clients-tbl td:nth-child(6) { order: 4; font-size: 11px; color: var(--fg-muted); width: 100%; }
   .clients-tbl td:nth-child(4),
   .clients-tbl td:nth-child(5),
   .clients-tbl td:nth-child(7) { display: none; }
 
-  /* Property grids: 2 cols en mobile */
+  /* ── Propiedades: grids 2 cols ── */
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
-
-  /* Photo upload grid: 2 cols */
   .dz-grid { grid-template-columns: repeat(2, 1fr); }
 
-  /* Topbar: contener elementos */
-  .tb { min-width: 0; overflow: hidden; }
-  .tb-notif-wrap { position: static; }
-
-  /* Notification panel: ancho del viewport */
-  .notif-panel { width: calc(100vw - 32px); right: auto; left: 0; }
-
-  /* ── Iconos y botones: tamaño touch-friendly en mobile ── */
-
-  /* Botones icon-only (x de modales, acciones de tabla, etc.) */
-  .btn-icon {
-    width: 40px;
-    height: 40px;
-    padding: 8px;
-  }
+  /* ── Iconos touch-friendly ── */
+  .btn-icon { width: 40px; height: 40px; padding: 8px; }
   .btn-icon svg { width: 20px; height: 20px; }
-
-  /* Hamburger (abrir menú lateral) */
-  .tb-menu-btn {
-    display: inline-flex;
-    width: 40px;
-    height: 40px;
-    padding: 8px;
-  }
+  .tb-menu-btn { width: 40px; height: 40px; padding: 8px; }
   .tb-menu-btn svg { width: 22px; height: 22px; }
-
-  /* Campana de notificaciones e ícono de info */
   .tb-icon { width: 40px; height: 40px; }
   .tb-icon svg { width: 22px; height: 22px; }
   .tb-avatar { width: 36px; height: 36px; font-size: 13px; }
-
-  /* X de cierre del menú lateral */
-  .sb-close {
-    display: inline-flex;
-    width: 36px;
-    height: 36px;
-  }
+  .sb-close { width: 36px; height: 36px; }
   .sb-close svg { width: 20px; height: 20px; }
-
-  /* Botones pequeños (btn-sm): mismo tamaño que btn base en mobile */
   .btn-sm { font-size: 13px; padding: 7px 13px; }
   .btn-sm svg { width: 16px; height: 16px; }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   TABLET  769 px – 1280 px
-   Sidebar fijo permanece. Solo se corrigen los layouts rotos.
-   ═══════════════════════════════════════════════════════════ */
-@media (min-width: 769px) and (max-width: 1280px) {
-
-  /* ── Overflow-x: mismo candado que mobile ── */
-  html { overflow-x: hidden; }
-  body { overflow-x: hidden; }
-  .page-view, .page-body, .page-kpis { overflow-x: hidden; }
-
-  /* ── min-width:0 en grid/flex para que tablas no rompan tracks ── */
-  .dashboard-grid > *,
-  .kpi-grid > *,
-  .field-row > *,
-  .page-body > *,
-  .scroll-surface > * { min-width: 0; }
-
-  /* ── Clientes: misma vista card que mobile ── */
-  .clients-tbl thead { display: none; }
-
-  .clients-tbl tbody tr {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    padding: 10px 14px;
-    gap: 2px 8px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: white;
-    cursor: pointer;
-  }
-  .clients-tbl tbody tr:hover { background: var(--gray-25); }
-
-  .clients-tbl td {
-    display: block;
-    padding: 0;
-    border: none;
-    font-size: 13px;
-  }
-
-  /* Fila 1: Nombre + Tipo */
-  .clients-tbl td:nth-child(1) { flex: 1; min-width: 0; order: 1; }
-  .clients-tbl td:nth-child(2) { order: 2; align-self: center; }
-
-  /* Fila 2: Teléfono */
-  .clients-tbl td:nth-child(3) {
-    order: 3;
-    width: 100%;
-    font-size: 12px;
-    color: var(--fg-tertiary);
-    margin-top: 2px;
-  }
-
-  /* Fila 3: Último contacto */
-  .clients-tbl td:nth-child(6) {
-    order: 4;
-    font-size: 11px;
-    color: var(--fg-muted);
-    width: 100%;
-  }
-
-  /* Ocultar: Agente, Visitas, Acciones */
-  .clients-tbl td:nth-child(4),
-  .clients-tbl td:nth-child(5),
-  .clients-tbl td:nth-child(7) { display: none; }
-
-  /* ── Calendario: ocultar vista mensual, mantener semana + día ── */
-  .cal-view-month { display: none; }
-
-  /* ── Propiedades: grids a 2 columnas ── */
-  .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
-}
-
-/* ── Tablet pequeña (769–960 px): colapsar dashboard grid y KPIs ── */
-@media (min-width: 769px) and (max-width: 960px) {
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
 }
