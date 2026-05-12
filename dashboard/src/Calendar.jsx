@@ -15,10 +15,12 @@ function isPast(dateISO, timeStr = '00:00') {
 
 const ROW_H = 56;
 const GUTTER_W = 60;
+const START_HOUR = 6;   // 6 AM
+const END_HOUR   = 20;  // 8 PM
 
 function snapHours(h, snapMin = 15) {
   const factor = 60 / snapMin;
-  return Math.max(0, Math.min(23.75, Math.round(h * factor) / factor));
+  return Math.max(START_HOUR, Math.min(END_HOUR - 0.25, Math.round(h * factor) / factor));
 }
 
 function hoursToStr(h) {
@@ -122,7 +124,7 @@ function layoutDayEvents(dayEvents) {
 }
 
 function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onMoveEvent, tzLabel, properties, clients }) {
-  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => i + START_HOUR);
   const cols = days.length;
   const template = `${GUTTER_W}px repeat(${cols}, minmax(0, 1fr))`;
 
@@ -136,12 +138,12 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   const todayCol = days.indexOf(today);
 
   React.useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = 7 * ROW_H;
+    if (bodyRef.current) bodyRef.current.scrollTop = (8 - START_HOUR) * ROW_H;
   }, [view]);
 
   function yToHours(clientY) {
     const r = gridRef.current ? gridRef.current.getBoundingClientRect() : null;
-    return r ? (clientY - r.top) / ROW_H : 0;
+    return r ? (clientY - r.top) / ROW_H + START_HOUR : START_HOUR;
   }
 
   function xToColIdx(clientX) {
@@ -227,7 +229,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
         const h = snapHours(yToHours(e.clientY));
         const finalStart = snapHours(Math.min(d.startH, h));
         const rawEnd   = d.moved ? snapHours(Math.max(d.startH, h)) : d.startH + 1;
-        const finalEnd = Math.max(finalStart + 0.25, Math.min(23.75, rawEnd));
+        const finalEnd = Math.max(finalStart + 0.25, Math.min(END_HOUR, rawEnd));
         const date = days[Math.max(0, Math.min(cols - 1, xToColIdx(e.clientX)))];
         onSlotInteract && onSlotInteract(date, hoursToStr(finalStart), hoursToStr(finalEnd));
 
@@ -236,7 +238,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
           onEventClick && onEventClick(d.event, d.elemRect);
         } else {
           const date = days[d.curCol];
-          const newEndH = Math.min(23.75, d.curStartH + d.durationH);
+          const newEndH = Math.min(END_HOUR, d.curStartH + d.durationH);
           onMoveEvent && onMoveEvent(d.event, date, hoursToStr(d.curStartH), hoursToStr(newEndH));
         }
       }
@@ -258,7 +260,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
     const endH   = drag.moved ? Math.max(drag.startH, drag.curH) : drag.startH + 1;
     ghostCreate  = {
       col: drag.col,
-      top: topH * ROW_H,
+      top: (topH - START_HOUR) * ROW_H,
       height: Math.max(ROW_H * 0.25, (endH - topH) * ROW_H),
       labelStart: hoursToStr(topH),
       labelEnd: hoursToStr(endH),
@@ -269,11 +271,11 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   if (drag && drag.type === 'move' && drag.moved) {
     ghostMove = {
       col: drag.curCol,
-      top: drag.curStartH * ROW_H + 1,
+      top: (drag.curStartH - START_HOUR) * ROW_H + 1,
       height: Math.max(18, drag.durationH * ROW_H - 2),
       event: drag.event,
       labelStart: hoursToStr(drag.curStartH),
-      labelEnd: hoursToStr(Math.min(23.75, drag.curStartH + drag.durationH)),
+      labelEnd: hoursToStr(Math.min(END_HOUR, drag.curStartH + drag.durationH)),
     };
   }
 
@@ -301,7 +303,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
 
           {hours.map((h, hi) => (
             <div key={`g-${h}`} className="cal-tg-gutter" style={{ gridRow: hi + 1, gridColumn: 1 }}>
-              {hi === 0 ? '' : <span>{h < 12 ? h : h === 12 ? 12 : h - 12} {h < 12 ? 'AM' : 'PM'}</span>}
+              <span>{h < 12 ? h : h === 12 ? 12 : h - 12} {h < 12 ? 'AM' : 'PM'}</span>
             </div>
           ))}
 
@@ -315,9 +317,9 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
             ))
           ))}
 
-          {todayCol >= 0 && (
+          {todayCol >= 0 && nowHour >= START_HOUR && nowHour <= END_HOUR && (
             <div className="cal-tg-now"
-                 style={{ gridColumn: todayCol + 2, gridRow: '1 / -1', top: nowHour * ROW_H }}>
+                 style={{ gridColumn: todayCol + 2, gridRow: '1 / -1', top: (nowHour - START_HOUR) * ROW_H }}>
               <span className="dot" />
             </div>
           )}
@@ -340,9 +342,13 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
 
                 {laid.map(ev => {
                   const startF = parseTime(ev.start);
-                  const endF = parseTime(ev.end);
-                  const top = startF * ROW_H + 1;
-                  const height = Math.max(18, (endF - startF) * ROW_H - 2);
+                  const endF   = parseTime(ev.end);
+                  // Clampear al rango visible 6am-8pm; saltar si queda fuera
+                  const visStart = Math.max(START_HOUR, Math.min(END_HOUR, startF));
+                  const visEnd   = Math.max(START_HOUR, Math.min(END_HOUR, endF));
+                  if (visStart >= visEnd) return null;
+                  const top    = (visStart - START_HOUR) * ROW_H + 1;
+                  const height = Math.max(18, (visEnd - visStart) * ROW_H - 2);
                   const widthPct = 100 / ev._total;
                   const leftPct = ev._col * widthPct;
                   const rightPct = 100 - leftPct - widthPct;
