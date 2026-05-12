@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, IconButton, pushToast } from './Primitives';
 import { parseTime, padDate, fmtTime12 } from './data';
-import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus } from './api';
+import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus, useProperties, useClients } from './api';
 import { EventPopover, EventEditor } from './EventPopover';
 
 const DOWS = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
@@ -363,7 +363,16 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
                         {ev.status === 'cancelled' ? <span className="cancel-prefix">Cancelado: </span> : null}
                         {(() => {
                           const label = KIND_LABEL[ev.kind] ?? ev.kind;
-                          const sub = ev.title ? ev.title.replace(/^(Visita|Llamada)\s·\s/, '').trim() : '';
+                          let sub = ev.title ? ev.title.replace(/^(Visita|Llamada)\s·\s/, '').trim() : '';
+                          if (!sub) {
+                            if (ev.kind === 'visit' && ev.propId) {
+                              const p = properties.find(p => String(p.id) === String(ev.propId));
+                              if (p) sub = p.addr ?? p.title ?? '';
+                            } else if (ev.kind === 'call' && ev.clientId) {
+                              const c = clients.find(c => c.id === ev.clientId);
+                              if (c) sub = c.name ?? '';
+                            }
+                          }
                           return sub ? <>{label} <span style={{opacity:0.75}}>· {sub}</span></> : label;
                         })()}
                       </div>
@@ -416,6 +425,8 @@ export default function Calendar() {
   const updateEventMut                        = useUpdateEvent();
   const deleteEventMut                        = useDeleteEvent();
   const { data: calStatus }                   = useCalendarStatus();
+  const { data: properties = [] }             = useProperties();
+  const { data: clients = [] }                = useClients();
 
   const tzLabel = calStatus?.label ?? 'GMT-3';
 
