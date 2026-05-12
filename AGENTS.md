@@ -1198,3 +1198,26 @@ Cada sesión es una cadena de Márkov donde:
    - search_properties: aclara que requiere 3+ criterios y es la ÚNICA forma de buscar
 
 **NO commitear — Angelo hace `git push origin main` manualmente después de cambiar el .env**
+
+### Sprint 27 — GPT-5.5 Full Prompt Rewrite (No Backward Compat) (May 12, 2026)
+
+**Estado:** DEPLOYED. Render ya tiene MODEL_NAME=gpt-5.5. Commit `50cd3bb`.
+
+**Qué cambió:**
+
+SYSTEM_PROMPT rewrite completo (-63%, de 14K a 5.2K chars):
+- Eliminadas: REGLA 0, REGLAS DE ORO 1-8, TU PERSONALIDAD, FORMATO redundante
+- Eliminadas: HERRAMIENTAS DISPONIBLES list, .format() template system
+- Eliminados: todos los NUNCA/CRÍTICO/FATAL del prompt
+- Nuevo: Personality (argentino, cálido), Collaboration Style (guiar, no vomitar)
+- Nuevo: Output Format compacto, Active Property Context, Success Criteria
+- Nuevo: Stopping Conditions, Scheduling/Rescheduling/FAQ flows
+- Nuevo: 7 conversation examples (tone + tool usage)
+
+TOOL_DEFINITIONS rewrite completo:
+- 13 tool descriptions en inglés, outcome-first, sin bold markers
+- schedule_visit: REQUIRES property_id (activa) + date_str (natural) + client_name
+- search_properties: 3+ criterios requeridos, única forma de buscar
+- get_faq_answer: brokerage ≠ property questions
+
+get_system_prompt(): remove .format() — ahora inyecta contexto como User Context en una línea
