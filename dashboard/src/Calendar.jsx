@@ -431,15 +431,36 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
   const tzLabel = calStatus?.label ?? 'GMT-3';
 
   const mobileQuery = window.matchMedia('(max-width: 768px)');
-  const [view, setView] = useState(() => mobileQuery.matches ? 'day' : 'month');
+  const tabletQuery = window.matchMedia('(min-width: 769px) and (max-width: 1280px)');
 
-  // Forzar vista diaria si el usuario rota el dispositivo a portrait
+  const [view, setView] = useState(() => {
+    if (mobileQuery.matches) return 'day';
+    if (tabletQuery.matches) return 'week';
+    return 'month';
+  });
+
+  // Ajustar vista automáticamente al cambiar tamaño de ventana
   React.useEffect(() => {
-    const handler = (e) => { if (e.matches) setView('day'); };
-    mobileQuery.addEventListener('change', handler);
-    // También forzar en el mount por si matchMedia tardó en evaluarse
+    const handleMobile = (e) => { if (e.matches) setView('day'); };
+    const handleTablet = (e) => {
+      if (e.matches) {
+        // Entrando a tablet: si estaba en mes, bajar a semana
+        setView(v => v === 'month' ? 'week' : v);
+      }
+      // Saliendo de tablet (→ desktop): no forzar, dejar la vista actual
+    };
+
+    mobileQuery.addEventListener('change', handleMobile);
+    tabletQuery.addEventListener('change', handleTablet);
+
+    // Forzar en mount por si matchMedia tardó en evaluarse
     if (mobileQuery.matches) setView('day');
-    return () => mobileQuery.removeEventListener('change', handler);
+    else if (tabletQuery.matches) setView(v => v === 'month' ? 'week' : v);
+
+    return () => {
+      mobileQuery.removeEventListener('change', handleMobile);
+      tabletQuery.removeEventListener('change', handleTablet);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [popover, setPopover] = useState(null);

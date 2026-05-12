@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar, Topbar } from './Shell';
 import { ToastStack, pushToast } from './Primitives';
 import { EventPopover } from './EventPopover';
@@ -18,6 +18,14 @@ export default function App() {
 
   const updateEventMut = useUpdateEvent();
   const deleteEventMut = useDeleteEvent();
+
+  // Cerrar sidebar automáticamente al pasar a desktop
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 769px)');
+    const handler = (e) => { if (e.matches) setMenuOpen(false); };
+    query.addEventListener('change', handler);
+    return () => query.removeEventListener('change', handler);
+  }, []);
 
   const navTo = (view) => {
     setMenuOpen(false);
