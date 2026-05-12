@@ -206,6 +206,43 @@ def _run_startup_migration(engine):
                     updated_at TIMESTAMPTZ
                 )
             """))
+            # ── Fix 15: Create notifications table ───────────────────────
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id         SERIAL PRIMARY KEY,
+                    type       VARCHAR(50) NOT NULL,
+                    title      TEXT NOT NULL,
+                    body       TEXT NOT NULL DEFAULT '',
+                    read       BOOLEAN NOT NULL DEFAULT FALSE,
+                    phone      VARCHAR(20),
+                    metadata   JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_notifications_read ON notifications (read)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications (created_at DESC)"
+            ))
+            # ── Fix 14: Add session_id to conversations if missing ───────
+            # The Conversation model defines session_id as NOT NULL, but older
+            # DB instances (pre-migration) don't have this column.
+            # SQLAlchemy SELECTs it on every cascade DELETE → UndefinedColumn error.
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'conversations' AND column_name = 'session_id'
+                    ) THEN
+                        ALTER TABLE conversations
+                            ADD COLUMN session_id VARCHAR(100) NOT NULL DEFAULT 'legacy';
+                        CREATE INDEX IF NOT EXISTS ix_conversations_session_id
+                            ON conversations (session_id);
+                    END IF;
+                END $$;
+            """))
             conn.commit()
         _migration_done = True
     except Exception as exc:
@@ -1311,3 +1348,92 @@ async def list_faq_categories(
         .all()
     )
     return {"categories": [c[0] for c in categories]}
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+def _notif_to_dict(row) -> dict:
+    return {
+        "id":         row.id,
+        "type":       row.type,
+        "title":      row.title,
+        "body":       row.body,
+        "read":       row.read,
+        "phone":      row.phone,
+        "metadata":   row.metadata or {},
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@router.get("/notifications")
+def list_notifications(
+    unread: bool = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Lista notificaciones. ?unread=true filtra solo no leídas."""
+    from sqlalchemy import text as _t
+    query = "SELECT * FROM notifications"
+    params = {}
+    if unread is True:
+        query += " WHERE read = FALSE"
+    elif unread is False:
+        query += " WHERE read = TRUE"
+    query += " ORDER BY created_at DESC LIMIT :limit"
+    params["limit"] = limit
+    rows = db.execute(_t(query), params).fetchall()
+    unread_count = db.execute(_t("SELECT COUNT(*) FROM notifications WHERE read = FALSE")).scalar()
+    return {
+        "notifications": [_notif_to_dict(r) for r in rows],
+        "unread_count": unread_count,
+        "total": len(rows),
+    }
+
+
+@router.patch("/notifications/{notif_id}/read")
+def mark_notification_read(
+    notif_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Marca una notificación como leída."""
+    from sqlalchemy import text as _t
+    result = db.execute(
+        _t("UPDATE notifications SET read = TRUE WHERE id = :id"),
+        {"id": notif_id}
+    )
+    db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "ok", "id": notif_id}
+
+
+@router.post("/notifications/read-all")
+def mark_all_notifications_read(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Marca todas las notificaciones como leídas."""
+    from sqlalchemy import text as _t
+    db.execute(_t("UPDATE notifications SET read = TRUE WHERE read = FALSE"))
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/notifications/{notif_id}")
+def delete_notification(
+    notif_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Elimina una notificación."""
+    from sqlalchemy import text as _t
+    result = db.execute(
+        _t("DELETE FROM notifications WHERE id = :id"),
+        {"id": notif_id}
+    )
+    db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "deleted", "id": notif_id}

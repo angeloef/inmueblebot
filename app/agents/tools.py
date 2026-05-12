@@ -873,8 +873,25 @@ async def schedule_visit(
             appointment = result.get("appointment")
             if appointment:
                 property_title = getattr(property_obj, "title", "Propiedad") if hasattr(property_obj, "title") else "Propiedad"
+                # ── Notificación al dashboard ────────────────────────────
+                try:
+                    from app.services.notification_service import notification_service
+                    from app.utils.date_parser import format_datetime_argentina
+                    apt_type = getattr(appointment, "type", "visit")
+                    dt_str = format_datetime_argentina(appointment.start_time) if hasattr(appointment, "start_time") else ""
+                    if apt_type == "call":
+                        await notification_service.call_scheduled(phone=phone, datetime_str=dt_str)
+                    else:
+                        await notification_service.visit_scheduled(
+                            phone=phone,
+                            property_title=property_title,
+                            datetime_str=dt_str,
+                            property_id=prop_int_id,
+                        )
+                except Exception as _ne:
+                    logger.debug(f"[schedule_visit] Notif error (non-fatal): {_ne}")
                 return format_appointment_confirmation(appointment, property_title)
-            
+
             return "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
             
     except ValueError as e:
@@ -1024,7 +1041,20 @@ async def reschedule_appointment_tool(
             new_start = arg_tz.localize(datetime.combine(date_obj, datetime.min.time()))
         
         appointment = await appointment_service.reschedule_appointment(apt_uuid, new_start)
-        
+
+        # ── Notificación al dashboard ────────────────────────────────
+        try:
+            from app.services.notification_service import notification_service
+            from app.utils.date_parser import format_datetime_argentina
+            dt_str = format_datetime_argentina(appointment.start_time) if hasattr(appointment, "start_time") else ""
+            await notification_service.visit_rescheduled(
+                phone=phone or "",
+                property_title="Visita",
+                datetime_str=dt_str,
+            )
+        except Exception as _ne:
+            logger.debug(f"[reschedule] Notif error (non-fatal): {_ne}")
+
         return format_appointment_confirmation(appointment, action_type='reschedule')
         
     except ValueError as e:
@@ -1063,7 +1093,18 @@ async def cancel_appointment_tool(
             return f"El ID de cita '{appointment_id}' no es válido."
         
         await appointment_service.cancel_appointment(apt_uuid, reason)
-        
+
+        # ── Notificación al dashboard ────────────────────────────────
+        try:
+            from app.services.notification_service import notification_service
+            await notification_service.visit_cancelled(
+                phone=phone or "",
+                property_title="Visita",
+                reason=reason or "",
+            )
+        except Exception as _ne:
+            logger.debug(f"[cancel] Notif error (non-fatal): {_ne}")
+
         return "✅ *¡Cita Cancelada!*\n\nTu cita ha sido cancelada correctamente. ¿Te gustaría agendar una nueva visita o buscar otras propiedades?"
         
     except ValueError as e:
@@ -1127,7 +1168,14 @@ async def request_human_assistance(phone: str = None, reason: str = "user_reques
             return "No tengo tu información de contacto para transferirte."
         
         result = await handoff_service.trigger_handoff(phone=phone, reason=reason)
-        
+
+        # ── Notificación al dashboard ────────────────────────────────
+        try:
+            from app.services.notification_service import notification_service
+            await notification_service.handoff_requested(phone=phone, reason=reason)
+        except Exception as _ne:
+            logger.debug(f"[handoff] Notif error (non-fatal): {_ne}")
+
         if result.get("success"):
             return result.get("message", "Un agente humano te contactará pronto. Gracias por tu paciencia.")
         else:

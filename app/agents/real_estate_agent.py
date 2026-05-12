@@ -705,11 +705,20 @@ class RealEstateAgent:
             try:
                 context = await memory_manager.get_user_context(phone)
                 current_score = context.get("lead_score", 0)
+                new_score = current_score + score_increase
                 await memory_manager.update_user_preferences(
                     phone,
-                    {"lead_score": current_score + score_increase}
+                    {"lead_score": new_score}
                 )
                 logger.info(f"Lead score actualizado: +{score_increase} para {phone}")
+                # ── Notificación: lead calificado (umbral 50) ─────────
+                if current_score < 50 <= new_score:
+                    try:
+                        from app.services.notification_service import notification_service
+                        name = context.get("name") or ""
+                        await notification_service.lead_qualified(phone=phone, score=new_score, name=name)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error(f"Error actualizando lead score: {e}")
     

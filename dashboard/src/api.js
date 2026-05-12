@@ -422,3 +422,44 @@ export const useCalendarEvents = (daysAhead = 30, maxResults = 50) =>
     staleTime: 120_000,       // re-check every 2 minutes
     refetchOnWindowFocus: true,
   });
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+const notifApi = {
+  list:    (params = {}) => http.get('/admin/notifications', { params }).then(r => r.data),
+  read:    (id)          => http.patch(`/admin/notifications/${id}/read`).then(r => r.data),
+  readAll: ()            => http.post('/admin/notifications/read-all').then(r => r.data),
+  remove:  (id)          => http.delete(`/admin/notifications/${id}`).then(r => r.data),
+};
+
+export const useNotifications = () =>
+  useQuery({
+    queryKey: ['notifications'],
+    queryFn:  () => notifApi.list({ limit: 30 }),
+    refetchInterval: 30_000,   // polling cada 30s
+    refetchOnWindowFocus: true,
+  });
+
+export const useMarkNotificationRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: notifApi.read,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+};
+
+export const useMarkAllRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: notifApi.readAll,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+};
+
+export const useDeleteNotification = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: notifApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+};

@@ -1,159 +1,150 @@
 """
 Notification Service.
-Handles sending notifications via WhatsApp and other channels.
+Crea y gestiona notificaciones para el dashboard del agente inmobiliario.
+Usa la tabla `notifications` en PostgreSQL (creada vía auto-migración en admin.py).
 """
-from typing import Optional
-from datetime import datetime, timezone
 from loguru import logger
-from uuid import uuid4
 
-from app.db.models import Message
-from app.db.session import async_session_factory
+
+# ── Tipos de notificación ─────────────────────────────────────────────────────
+
+class NotifType:
+    VISIT_SCHEDULED    = "visit_scheduled"
+    VISIT_RESCHEDULED  = "visit_rescheduled"
+    VISIT_CANCELLED    = "visit_cancelled"
+    CALL_SCHEDULED     = "call_scheduled"
+    HANDOFF_REQUESTED  = "handoff_requested"
+    NEW_LEAD           = "new_lead"
+    LEAD_QUALIFIED     = "lead_qualified"
+    BOT_ERROR          = "bot_error"
 
 
 class NotificationService:
     """
-    Servicio de notificaciones.
-    
-    Currently implements:
-    - WhatsApp message logging and DB storage
-    
-    TODO: Integrate with Meta WhatsApp Business API
-    - Use WhatsApp Cloud API: https://developers.facebook.com/docs/whatsapp
-    - Template messages for proactive notifications
-    - Media attachments
+    Servicio de notificaciones del dashboard.
+    Todos los métodos son async y usan async_session_factory.
+    Falla silenciosamente para no interrumpir el flujo del bot.
     """
-    
-    def __init__(self):
-        pass
-    
-    async def send_whatsapp_message(
+
+    async def create(
         self,
-        phone: str,
-        message: str,
-        media_url: Optional[str] = None
+        type: str,
+        title: str,
+        body: str = "",
+        phone: str = None,
+        metadata: dict = None,
     ) -> bool:
-        """
-        Envía un mensaje de WhatsApp al usuario.
-        
-        Args:
-            phone: Número de teléfono del destinatario
-            message: Contenido del mensaje
-            media_url: URL de imagen/video opcional
-        
-        Returns:
-            True si se envió correctamente
-        
-        Note:
-            Esta es una implementación placeholder que:
-            1. Registra el mensaje en la base de datos
-            2. Loguea el mensaje para debugging
-            
-            Para integración real con WhatsApp:
-            1. Usar WhatsApp Cloud API (POST /v17.0/{PHONE_NUMBER_ID}/messages)
-            2. Autenticar con access token de Meta
-            3. Usar templates pre-aprobados para mensajes proactivos
-        """
+        """Inserta una notificación en la tabla `notifications`."""
         try:
-            logger.info(f"Enviando WhatsApp a {phone}: {message[:50]}...")
-            
-            async with async_session_factory() as db:
-                db_message = Message(
-                    id=uuid4(),
-                    user_id=None,
-                    phone=phone,
-                    role="assistant",
-                    content=message,
-                    media_url=media_url,
-                    created_at=datetime.now(timezone)
+            from app.db.session import async_session_factory
+            from sqlalchemy import text
+            import json
+
+            meta_json = json.dumps(metadata or {})
+
+            async with async_session_factory() as session:
+                await session.execute(
+                    text("""
+                        INSERT INTO notifications (type, title, body, phone, metadata)
+                        VALUES (:type, :title, :body, :phone, :metadata::jsonb)
+                    """),
+                    {
+                        "type": type,
+                        "title": title,
+                        "body": body or "",
+                        "phone": phone,
+                        "metadata": meta_json,
+                    }
                 )
-                
-                db.add(db_message)
-                await db.commit()
-            
-            logger.info(f"Mensaje guardado en DB para {phone}")
-            
-            # TODO: WhatsApp API Integration
-            # try:
-            #     async with httpx.AsyncClient() as client:
-            #         response = await client.post(
-            #             f"https://graph.facebook.com/v17.0/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages",
-            #             headers={
-            #                 "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
-            #                 "Content-Type": "application/json"
-            #             },
-            #             json={
-            #                 "messaging_product": "whatsapp",
-            #                 "to": phone,
-            #                 "type": "text",
-            #                 "text": {"body": message}
-            #             }
-            #         )
-            #         response.raise_for_status()
-            #         logger.info(f"WhatsApp message sent via API")
-            # except Exception as e:
-            #     logger.error(f"WhatsApp API error: {e}")
-            #     raise
-            
+                await session.commit()
+
+            logger.info(f"[Notif] {type}: {title}")
             return True
-            
+
         except Exception as e:
-            logger.error(f"Error enviando mensaje a {phone}: {e}")
-            raise
-    
-    async def send_appointment_confirmation(
-        self,
-        phone: str,
-        appointment_date: datetime,
-        property_title: str
-    ) -> bool:
-        """Envía confirmación de cita."""
-        date_str = appointment_date.strftime("%d/%m/%Y a las %H:%M")
-        
-        message = (
-            f"📅 *Confirmación de Cita*"
-            f"\n\n"
-            f"Tu visita ha sido confirmada:"
-            f"\n📆 {date_str}"
-            f"\n🏠 {property_title}"
-            f"\n\n"
-            f"¡Te esperamos! 😊"
+            logger.warning(f"[Notif] No se pudo crear notificación '{type}': {e}")
+            return False
+
+    # ── Helpers por tipo ──────────────────────────────────────────────────────
+
+    async def visit_scheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.VISIT_SCHEDULED,
+            title="Nueva visita agendada",
+            body=f"{property_title} · {datetime_str} · Cliente {client}",
+            phone=phone,
+            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str},
         )
-        
-        return await self.send_whatsapp_message(phone, message)
-    
-    async def send_reminder(
-        self,
-        phone: str,
-        hours_until: int,
-        property_title: str
-    ) -> bool:
-        """Envía recordatorio de cita."""
-        if hours_until <= 2:
-            message = f"⏰ *Tu visita es en 2 horas!*\n\n🏠 {property_title}\n\n¡Te esperamos!"
-        else:
-            message = f"📅 *Recordatorio: Tu visita es mañana*\n\n🏠 {property_title}\n\n¿Necesitas algo?"
-        
-        return await self.send_whatsapp_message(phone, message)
-    
-    async def send_followup(
-        self,
-        phone: str,
-        property_title: Optional[str] = None
-    ) -> bool:
-        """Envía mensaje de seguimiento."""
-        if property_title:
-            message = (
-                f"👋 *Hola!* ¿Qué tal con la propiedad {property_title}?"
-                f"\n\n¿Tenés alguna duda? ¿Querés agendar una visita?"
-            )
-        else:
-            message = (
-                f"👋 *Hola!* ¿Cómo vas con la búsqueda de propiedades?"
-                f"\n\n¿Puedo ayudarte en algo?"
-            )
-        
-        return await self.send_whatsapp_message(phone, message)
+
+    async def visit_rescheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.VISIT_RESCHEDULED,
+            title="Visita reprogramada",
+            body=f"{property_title} · nueva fecha {datetime_str} · Cliente {client}",
+            phone=phone,
+            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str},
+        )
+
+    async def visit_cancelled(self, phone: str, property_title: str, reason: str = "", property_id=None):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.VISIT_CANCELLED,
+            title="Visita cancelada",
+            body=f"{property_title} · Cliente {client}" + (f" · {reason}" if reason else ""),
+            phone=phone,
+            metadata={"property_id": str(property_id) if property_id else None, "reason": reason},
+        )
+
+    async def call_scheduled(self, phone: str, datetime_str: str):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.CALL_SCHEDULED,
+            title="Nueva llamada agendada",
+            body=f"{datetime_str} · Cliente {client}",
+            phone=phone,
+            metadata={"datetime": datetime_str},
+        )
+
+    async def handoff_requested(self, phone: str, reason: str = ""):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.HANDOFF_REQUESTED,
+            title="Cliente solicita atención humana",
+            body=f"Cliente {client}" + (f" · {reason}" if reason else ""),
+            phone=phone,
+            metadata={"reason": reason},
+        )
+
+    async def new_lead(self, phone: str):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.NEW_LEAD,
+            title="Nuevo cliente registrado",
+            body=f"Primer mensaje de {client}",
+            phone=phone,
+        )
+
+    async def lead_qualified(self, phone: str, score: int, name: str = ""):
+        client = name if name else (f"...{phone[-8:]}" if phone else "?")
+        await self.create(
+            type=NotifType.LEAD_QUALIFIED,
+            title="Lead calificado",
+            body=f"{client} · score {score}",
+            phone=phone,
+            metadata={"score": score},
+        )
+
+    async def bot_error(self, phone: str, error_summary: str):
+        client = f"...{phone[-8:]}" if phone else "?"
+        await self.create(
+            type=NotifType.BOT_ERROR,
+            title="Error del bot",
+            body=f"Cliente {client} · {error_summary[:120]}",
+            phone=phone,
+            metadata={"error": error_summary},
+        )
 
 
 notification_service = NotificationService()

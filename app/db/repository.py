@@ -97,11 +97,20 @@ class UserRepository(BaseRepository):
         """Obtiene usuario por phone o crea uno nuevo."""
         from app.db.models import User
         user = await self.get_by_phone(phone)
+        is_new = user is None
         if not user:
             user = User(whatsapp_phone=phone)
             self.session.add(user)
             await self.session.flush()
             await self.session.refresh(user)
+        # ── Notificación: nuevo lead ──────────────────────────────────
+        if is_new:
+            try:
+                import asyncio
+                from app.services.notification_service import notification_service
+                asyncio.ensure_future(notification_service.new_lead(phone=phone))
+            except Exception:
+                pass
         return user
     
     async def search_by_preferences(
