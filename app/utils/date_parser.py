@@ -76,7 +76,7 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
     }
     
     # === "el 25 de abril" or "25 de abril" ===
-    match = re.search(r'(\d{1,2})\s+de\s+(\w+)(?:\s+de\s+(\d{4}))?', user_text)
+    match = re.search(r'(\d{1,2})\s+(?:de|del)\s+(\w+)(?:\s+de\s+(\d{4}))?', user_text)
     if match:
         day = int(match.group(1))
         month_name = match.group(2).lower()
@@ -89,9 +89,34 @@ def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[dateti
                 return datetime(year, month, day, 10, 0), None
             except ValueError:
                 return datetime(year + 1, month, day, 10, 0), None
+        elif month_name in ("este", "éste", "corriente", "próximo", "proximo", "siguiente"):
+            # "17 de este mes" = this month, day 17
+            month = now.month
+            year = now.year
+            try:
+                dt = datetime(year, month, day, 10, 0)
+                if dt.date() < now.date():
+                    dt = dt.replace(month=month + 1) if month < 12 else dt.replace(year=year + 1, month=1)
+                return dt, None
+            except ValueError:
+                pass
     
+    # === "el 17" (standalone day of month, defaults to current month) ===
+    match = re.search(r'^el\s+(?:d[ií]a\s+)?(\d{1,2})\s*(?:de\s+este|del?\s+corriente)?$', user_text)
+    if match:
+        day = int(match.group(1))
+        if 1 <= day <= 31:
+            try:
+                dt = datetime(now.year, now.month, day, 10, 0)
+                if dt.date() < now.date():
+                    dt = dt.replace(month=now.month + 1) if now.month < 12 else dt.replace(year=now.year + 1, month=1)
+                return dt, None
+            except ValueError:
+                pass
+
     # === VAGUE expressions - ask for clarification ===
     vague_terms = ["pronto", "en unos días", "en unos dias", "la semana entrante", "próximamente"]
+
     for term in vague_terms:
         if term in user_text:
             return None, f"La expresión '{term}' es muy ambigua. ¿Podrías darme una fecha más específica?"
@@ -454,7 +479,7 @@ def parse_spanish_datetime(user_text: str) -> Tuple[Optional[datetime], Optional
             # Try to extract time from the full text
             extracted_time = _extract_time_from_text(user_text)
             
-            if extracted_time:
+            if extracted_time and extracted_time[0] is not None:
                 dt = parsed_date.replace(hour=extracted_time[0], minute=extracted_time[1], second=0)
                 dt = ARG_TZ.localize(dt) if dt.tzinfo is None else dt.astimezone(ARG_TZ)
                 logger.info(f"[DateParser] SUCCESS: '{original_input}' -> {dt.isoformat()}")
@@ -462,7 +487,7 @@ def parse_spanish_datetime(user_text: str) -> Tuple[Optional[datetime], Optional
             elif time_part:
                 # Time was extracted separately
                 parsed_time = _parse_time_advanced(time_part)
-                if parsed_time:
+                if parsed_time and parsed_time[0] is not None:
                     dt = parsed_date.replace(hour=parsed_time[0], minute=parsed_time[1], second=0)
                     dt = ARG_TZ.localize(dt) if dt.tzinfo is None else dt.astimezone(ARG_TZ)
                     logger.info(f"[DateParser] SUCCESS: '{original_input}' -> {dt.isoformat()}")
@@ -476,7 +501,7 @@ def parse_spanish_datetime(user_text: str) -> Tuple[Optional[datetime], Optional
     if parsed_date and not date_error:
         extracted_time = _extract_time_from_text(user_text)
         
-        if extracted_time:
+        if extracted_time and extracted_time[0] is not None:
             dt = parsed_date.replace(hour=extracted_time[0], minute=extracted_time[1], second=0)
             dt = ARG_TZ.localize(dt) if dt.tzinfo is None else dt.astimezone(ARG_TZ)
             logger.info(f"[DateParser] SUCCESS: '{original_input}' -> {dt.isoformat()}")
@@ -563,7 +588,7 @@ def _parse_date(user_text: str, now: datetime) -> Optional[datetime]:
     }
     
     # Match "el 25 de abril" or "25 de abril"
-    match = re.search(r'(\d{1,2})\s+de\s+(\w+)', user_text)
+    match = re.search(r'(\d{1,2})\s+(?:de|del)\s+(\w+)', user_text)
     if match:
         day = int(match.group(1))
         month_name = match.group(2).lower()
@@ -576,6 +601,20 @@ def _parse_date(user_text: str, now: datetime) -> Optional[datetime]:
             except ValueError:
                 dt = datetime(year + 1, month, day, 10, 0)
             return dt
+        elif month_name in ("este", "éste", "corriente", "próximo", "proximo", "siguiente"):
+            # "17 de este mes" = this month, day 17
+            month = now.month
+            year = now.year
+            try:
+                dt = datetime(year, month, day, 10, 0)
+                if dt.date() < now.date():
+                    if month < 12:
+                        dt = dt.replace(month=month + 1)
+                    else:
+                        dt = dt.replace(year=year + 1, month=1)
+                return dt
+            except ValueError:
+                pass
     
     # === Relative dates ===
     if user_text in ("hoy", "today"):
