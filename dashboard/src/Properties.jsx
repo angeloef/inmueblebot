@@ -55,7 +55,7 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
 
           <div className="detail-block">
             <h3>Características</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+            <div className="prop-stats-grid">
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <Icon name="bed" size={16} style={{color:'var(--fg-tertiary)'}} />
                 <div><div style={{fontSize:13,fontWeight:500}}>{property.rooms}</div><div style={{fontSize:11,color:'var(--fg-tertiary)'}}>Ambientes</div></div>
@@ -457,7 +457,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
             </div>
           </div>
 
-          <div style={{display:'grid',gridTemplateColumns:'1fr 72px 72px 1fr',gap:12}}>
+          <div className="prop-attrs-grid">
             <div className="field">
               <label>Ambientes</label>
               <select value={form.rooms} onChange={e => set('rooms', e.target.value)}>
