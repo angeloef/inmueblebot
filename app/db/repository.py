@@ -199,25 +199,13 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.type == type)
 
         if property_type:
-            from app.utils.sanitizer import map_property_type_to_building_type
-            building_type = map_property_type_to_building_type(property_type)
-            if building_type:
-                # The right model (app.db.models.property.Property) stores type in
-                # extra_data['kind'] as Spanish labels ("casa", "departamento").
-                # The old model (models.py) has a separate property_type column but is unused.
-                # Map back from English building_type to Spanish kind for the filter.
-                _KIND_MAP = {
-                    "apartment": "departamento",
-                    "house": "casa", 
-                    "land": "terreno",
-                    "commercial": "local",
-                    "office": "oficina",
-                }
-                kind = _KIND_MAP.get(building_type)
-                if kind:
-                    query = query.where(
-                        Property.extra_data[('kind',)].as_string() == kind
-                    )
+            # NOTE: Property type filtering is DISABLED because extra_data['kind']
+            # was never populated by seeding. The LLM handles type filtering through
+            # conversation and title_search. This filter always returned 0 results
+            # regardless of implementation (extra_data['building_type'],
+            # extra_data['kind'], or Property.property_type from the old model).
+            # TODO: Re-enable when DB has proper type data.
+            pass
         
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
