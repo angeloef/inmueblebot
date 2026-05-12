@@ -5,7 +5,7 @@ Proporciona una capa de abstracción sobre SQLAlchemy async.
 from uuid import UUID
 from typing import TypeVar, Generic, Type, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.orm import selectinload
 
 from app.db.base import Base
@@ -268,7 +268,6 @@ class PropertyRepository(BaseRepository):
 
         # Buscar por título (fuzzy ILIKE) — útil para búsquedas por nombre/dirección
         if title_search:
-            from sqlalchemy import or_
             search_terms = title_search.strip().lower()
             # Search title AND location AND description for flexibility
             title_filters = [
