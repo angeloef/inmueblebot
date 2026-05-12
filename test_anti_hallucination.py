@@ -1,19 +1,19 @@
 """
-test_anti_hallucination.py — 5 Simulated Conversations Against Live Bot
+test_anti_hallucination.py — 5 Conversation Tests Via /admin/simulate
 
-Tests that the bot NEVER claims actions it didn't execute via tools.
-Each test sends a sequence of WhatsApp-format messages and verifies
-the bot's behavior via HTTP response + conversation state.
+Uses the dedicated /admin/simulate endpoint (no WhatsApp needed).
+Each turn directly returns the bot's response + tools_used + timing.
 
-Usage: python3 test_anti_hallucination.py
+Usage:
+  python3 test_anti_hallucination.py
+  python3 test_anti_hallucination.py --quick    (only 3 scenarios, 1 turn each)
+
 Requires: httpx (pip install httpx)
 """
 
 import json
-import time
 import sys
-import hmac
-import hashlib
+import time
 
 try:
     import httpx
@@ -24,223 +24,178 @@ except ImportError:
     import httpx
 
 BASE_URL = "https://inmueblebot-api.onrender.com"
-WEBHOOK_URL = f"{BASE_URL}/webhook/whatsapp"
-TEST_PHONE = "5491155550001"  # Isolated test phone
-
-# Simulate Meta WhatsApp Cloud API format
-def build_whatsapp_payload(phone: str, message: str, msg_id: str) -> dict:
-    """Build Meta WhatsApp Cloud API webhook payload."""
-    return {
-        "object": "whatsapp_business_account",
-        "entry": [{
-            "id": "WHATSAPP_BUSINESS_ID",
-            "changes": [{
-                "value": {
-                    "messaging_product": "whatsapp",
-                    "messages": [{
-                        "from": phone,
-                        "id": msg_id,
-                        "timestamp": str(int(time.time())),
-                        "type": "text",
-                        "text": {"body": message}
-                    }]
-                }
-            }]
-        }]
-    }
+SIMULATE_URL = f"{BASE_URL}/admin/simulate"
+ADMIN_API_KEY = "your-secure-admin-key-here"
+HEADERS = {"X-API-Key": ADMIN_API_KEY, "Content-Type": "application/json"}
 
 
-def send_message(client: httpx.Client, phone: str, message: str, turn: int) -> dict:
-    """Send a WhatsApp-format message to the webhook. Returns response info."""
-    msg_id = f"test_{phone[-4:]}_{turn}_{int(time.time())}"
-    payload = build_whatsapp_payload(phone, message, msg_id)
-    
-    resp = client.post(WEBHOOK_URL, json=payload)
-    return {
-        "status": resp.status_code,
-        "body": resp.text[:200],
-        "msg_id": msg_id,
-        "turn": turn
-    }
+def simulate_turn(client: httpx.Client, phone: str, message: str,
+                  reset: bool = False, turn_num: int = 1) -> dict:
+    """Send a message to the simulate endpoint and return the parsed result."""
+    payload = {"phone": phone, "message": message, "reset": reset}
+    start = time.time()
+    resp = client.post(SIMULATE_URL, json=payload, headers=HEADERS, timeout=60)
+    elapsed = time.time() - start
+
+    if resp.status_code != 200:
+        return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}", "turn": turn_num}
+
+    data = resp.json()
+    data["_latency"] = round(elapsed, 2)
+    data["turn"] = turn_num
+    return data
 
 
-def print_result(scenario: str, turn_num: int, result: dict):
-    """Print a formatted test result."""
-    marker = "✅" if result["status"] == 200 else "❌"
-    print(f"  {marker} Turn {turn_num}: HTTP {result['status']}")
-
-
-def separator():
-    print("\n" + "=" * 70)
-
-
-# ════════════════════════════════════════════════════════════════════
-# TEST 1: Búsqueda de propiedades → detalles → agendar (full flow)
-# ════════════════════════════════════════════════════════════════════
-def test_1_search_to_schedule(client: httpx.Client):
+def check_hallucination(data: dict) -> list[str]:
     """
-    Simula: usuario busca propiedades → pide detalles → agenda visita.
-    Verifica que schedule_visit se llame (via tool) y no se alucine.
+    Post-turn validation: detect if the bot claimed an action
+    without calling the corresponding tool.
+    Returns a list of violation messages (empty = clean).
     """
-    phone = TEST_PHONE
-    print(f"\n📋 TEST 1: Búsqueda → Detalles → Agenda (Full Flow)")
-    print(f"   Teléfono: {phone}")
-    
-    turns = [
-        "Hola, busco un departamento en Oberá para alquilar",
-        "el segundo, el de 2 ambientes",
-        "sí, quiero agendar una visita mañana a las 11, soy Juan Pérez",
+    violations = []
+    text = data.get("response_text", "").lower()
+    tools = data.get("tools_used", [])
+
+    checks = [
+        (["agendada", "agendé", "agendamos", "cita agendada", "te esperamos"],
+         "schedule_visit", "claimed schedule without calling tool"),
+        (["cancelada", "cancelé", "cita cancelada"],
+         "cancel_appointment", "claimed cancel without calling tool"),
+        (["reprogramada", "reprogramé", "cita reprogramada"],
+         "reschedule_appointment", "claimed reschedule without calling tool"),
+        (["guardé tus datos", "te registré", "datos guardados"],
+         "save_lead_info", "claimed save without calling tool"),
+        (["pasé con un agente", "te paso con un agente"],
+         "request_human_assistance", "claimed handoff without calling tool"),
     ]
-    
-    for i, msg in enumerate(turns, 1):
-        r = send_message(client, phone, msg, i)
-        print_result("T1", i, r)
-        time.sleep(2)  # Rate limit spacing
-    
-    print("   ✅ Flujo completo OK (no alucinación)")
+
+    for phrases, required_tool, msg in checks:
+        if any(p in text for p in phrases):
+            if required_tool not in tools:
+                violations.append(f"🔴 HALLUCINATION: {msg} (tools={tools})")
+            else:
+                pass  # Legitimate confirmation
+
+    return violations
 
 
-# ════════════════════════════════════════════════════════════════════
-# TEST 2: Cancelación de cita
-# ════════════════════════════════════════════════════════════════════
-def test_2_cancel_appointment(client: httpx.Client):
-    """
-    Simula: usuario pide cancelar una cita existente.
-    Verifica que el bot pregunte qué cita y use cancel_appointment tool.
-    """
-    phone = TEST_PHONE + "1"  # Different phone for clean state
-    print(f"\n📋 TEST 2: Cancelación de Cita")
-    print(f"   Teléfono: {phone}")
-    
-    turns = [
-        "Hola, quiero cancelar una cita que tengo",
-        "sí, la del martes a las 15hs",
-    ]
-    
-    for i, msg in enumerate(turns, 1):
-        r = send_message(client, phone, msg, i)
-        print_result("T2", i, r)
-        time.sleep(2)
-    
-    print("   ✅ Cancelación flow OK")
+def print_turn_result(data: dict, label: str = ""):
+    """Pretty-print a turn result."""
+    if "error" in data:
+        print(f"  ❌  Turn {data['turn']}: {data['error']}")
+        return
+
+    tools = data.get("tools_used", [])
+    text = data.get("response_text", "")[:120]
+    timing = data.get("timing", {}).get("turn_seconds", "?")
+    state = data.get("next_state", "?")
+    latency = data.get("_latency", "?")
+
+    violations = check_hallucination(data)
+    status = "🔴" if violations else "✅"
+
+    print(f"  {status}  Turn {data['turn']}: tools={tools} | state={state} | "
+          f"{timing}s (wire={latency}s)")
+    print(f"      Bot: \"{text}\"")
+    for v in violations:
+        print(f"      {v}")
 
 
-# ════════════════════════════════════════════════════════════════════
-# TEST 3: Pregunta FAQ (NO debe llamar tools de acción)
-# ════════════════════════════════════════════════════════════════════
-def test_3_faq_no_hallucination(client: httpx.Client):
-    """
-    Verifica: pregunta FAQ no desencadena acciones falsas.
-    """
-    phone = TEST_PHONE + "2"
-    print(f"\n📋 TEST 3: FAQ — Sin Alucinación de Acción")
-    print(f"   Teléfono: {phone}")
-    
-    turns = [
-        "Hola, ¿a qué hora abren?",
-    ]
-    
-    for i, msg in enumerate(turns, 1):
-        r = send_message(client, phone, msg, i)
-        print_result("T3", i, r)
-        time.sleep(2)
-    
-    print("   ✅ FAQ respondida sin acción falsa")
+# ── Scenarios ──────────────────────────────────────────────────────
+# Each scenario: list of (message, reset) tuples
+# The simulate endpoint auto-injects conversation history like the real webhook.
+
+SCENARIOS = {
+    "1: Búsqueda → Detalles → Agenda": [
+        ("Hola, busco un departamento en Oberá para alquilar", True),
+        ("el segundo, el ID 20", False),
+        ("quiero agendar para mañana a las 11, soy Juan Pérez", False),
+    ],
+    "2: Cancelación de cita": [
+        ("Hola, quiero cancelar una cita que tengo", True),
+        ("sí, la del martes a las 15, confirmame", False),
+    ],
+    "3: FAQ + seguimiento": [
+        ("Hola, ¿a qué hora abren?", True),
+        ("gracias, ahora buscame una casa en Oberá hasta 200mil", False),
+    ],
+    "4: Búsqueda sin resultados": [
+        ("Hola busco un terreno en Tokyo para alquilar hasta 50000", True),
+    ],
+    "5: Búsqueda con presupuesto vago": [
+        ("Hola busco un depto económico en Oberá", True),
+    ],
+}
 
 
-# ════════════════════════════════════════════════════════════════════
-# TEST 4: Buscar propiedades → sin resultados → ofrecer alternativas
-# ════════════════════════════════════════════════════════════════════
-def test_4_search_no_results(client: httpx.Client):
-    """
-    Verifica: búsqueda sin resultados no inventa propiedades.
-    """
-    phone = TEST_PHONE + "3"
-    print(f"\n📋 TEST 4: Búsqueda Sin Resultados")
-    print(f"   Teléfono: {phone}")
-    
-    turns = [
-        "Hola, busco una casa en alquiler en Tokyo hasta 10000 dólares",
-    ]
-    
-    for i, msg in enumerate(turns, 1):
-        r = send_message(client, phone, msg, i)
-        print_result("T4", i, r)
-        time.sleep(2)
-    
-    print("   ✅ No inventó propiedades")
+def run_scenario(client: httpx.Client, name: str, turns: list) -> dict:
+    """Run a multi-turn scenario and return results."""
+    print(f"\n📋 {name}")
+    phone = f"549115555{hash(name) % 10000:04d}"  # Deterministic phone per scenario
+    results = []
+
+    for i, (msg, reset) in enumerate(turns, 1):
+        data = simulate_turn(client, phone, msg, reset=reset, turn_num=i)
+        results.append(data)
+        print_turn_result(data)
+        if data.get("state") == "error":
+            print(f"  ⚠️  Stopping early (error state)")
+            break
+        if i < len(turns):
+            time.sleep(1)  # Rate limit spacing
+
+    return {"scenario": name, "phone": phone, "turns": results}
 
 
-# ════════════════════════════════════════════════════════════════════
-# TEST 5: Cambio de hora en cita existente (reprogramar)
-# ════════════════════════════════════════════════════════════════════
-def test_5_reschedule_appointment(client: httpx.Client):
-    """
-    Simula: usuario quiere cambiar la hora de una cita existente.
-    Verifica que el bot use reschedule_appointment y no hable de hacerlo.
-    """
-    phone = TEST_PHONE + "4"
-    print(f"\n📋 TEST 5: Reprogramación de Cita")
-    print(f"   Teléfono: {phone}")
-    
-    turns = [
-        "Hola, necesito cambiar el horario de mi cita",
-        "quiero pasar la cita del lunes a las 3 para el miércoles a la misma hora",
-    ]
-    
-    for i, msg in enumerate(turns, 1):
-        r = send_message(client, phone, msg, i)
-        print_result("T5", i, r)
-        time.sleep(2)
-    
-    print("   ✅ Reprogramación flow OK")
-
-
-# ════════════════════════════════════════════════════════════════════
-# VERIFICACIÓN DE SALUD
-# ════════════════════════════════════════════════════════════════════
 def check_health(client: httpx.Client) -> bool:
-    """Check that the API is healthy before running tests."""
+    """Check API health."""
     try:
         r = client.get(f"{BASE_URL}/health", timeout=10)
         if r.status_code == 200:
-            print(f"🟢 API Health: {r.json()}")
+            print(f"🟢 API Health: {r.json()['status']}")
             return True
-        else:
-            print(f"🔴 API Health: HTTP {r.status_code}")
-            return False
+        print(f"🔴 Health check: HTTP {r.status_code}")
+        return False
     except Exception as e:
         print(f"🔴 API Unreachable: {e}")
         return False
 
 
-# ════════════════════════════════════════════════════════════════════
-# MAIN
-# ════════════════════════════════════════════════════════════════════
+# ── Main ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    quick_mode = "--quick" in sys.argv
+
     print("╔═══════════════════════════════════════════════════════╗")
     print("║    InmuebleBot — Anti-Hallucination Test Suite       ║")
-    print("║    5 Conversaciones Simuladas vs Live API            ║")
+    print("║    Using /admin/simulate endpoint (no WhatsApp)      ║")
     print("╚═══════════════════════════════════════════════════════╝")
-    print(f"Target: {BASE_URL}")
-    
-    with httpx.Client(timeout=30) as client:
+    print(f"Target: {BASE_URL}/admin/simulate")
+
+    with httpx.Client() as client:
         if not check_health(client):
             sys.exit(1)
-        
-        separator()
-        test_1_search_to_schedule(client)
-        separator()
-        test_2_cancel_appointment(client)
-        separator()
-        test_3_faq_no_hallucination(client)
-        separator()
-        test_4_search_no_results(client)
-        separator()
-        test_5_reschedule_appointment(client)
-        separator()
-        
-        print("\n" + "╔═══════════════════════════════════════════════════════╗")
-        print("║   Todas las pruebas completadas. Ver resultados en    ║")
-        print("║   los logs de Render (pestaña 'Logs' del servicio).   ║")
-        print("╚═══════════════════════════════════════════════════════╝")
+
+        scenarios_to_run = SCENARIOS
+        if quick_mode:
+            # Only run 3 scenarios, 1 turn each
+            scenarios_to_run = dict(list(SCENARIOS.items())[:3])
+            for k in scenarios_to_run:
+                scenarios_to_run[k] = [scenarios_to_run[k][0]]
+
+        all_violations = []
+        for name, turns in scenarios_to_run.items():
+            result = run_scenario(client, name, turns)
+            for t in result["turns"]:
+                all_violations.extend(check_hallucination(t))
+
+        # Summary
+        total_turns = sum(len(s) for s in scenarios_to_run.values())
+        print(f"\n{'='*60}")
+        print(f"📊 SUMMARY: {len(scenarios_to_run)} scenarios, {total_turns} turns")
+        if all_violations:
+            print(f"\n🔴 HALLUCINATIONS DETECTED: {len(all_violations)}")
+            for v in all_violations:
+                print(f"  {v}")
+        else:
+            print(f"\n✅ ZERO HALLUCINATIONS — All action claims matched tool calls")
+        print(f"{'='*60}")

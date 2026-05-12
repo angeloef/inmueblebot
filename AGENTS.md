@@ -1004,3 +1004,38 @@ Bot: → llama schedule_visit(property_id="5", date_str="mañana", time_str="10:
 - Todo el acceso a DB usa SQLAlchemy ORM con parámetros vinculados — sin riesgo de SQL injection
 
 **Commit:** `security: fix unauthed debug endpoint, restore CORS, add client_name to scheduling`
+
+### Sprint 21 — /admin/simulate: Mass Testing Endpoint (May 11, 2026)
+
+**Problem:** El test masivo automatizado necesitaba la respuesta del bot sin enviar por WhatsApp. 
+El webhook devuelve `{"status": "ok"}` inmediatamente y envía la respuesta por WhatsApp (que no existe en tests).
+No había forma de leer el `response_text` ni los `tools_used` desde afuera.
+
+**Solution:** Nuevo endpoint `POST /admin/simulate` en `app/api/routes/admin.py`:
+- Toma `{"phone": "...", "message": "...", "reset": false}`
+- Llama `real_estate_agent.process_turn()` exactamente como el webhook
+- **No envía a WhatsApp** — devuelve la respuesta directamente
+- Retorna `{response_text, tools_used, rich_content, next_state, timing}`
+- `reset=true` limpia el contexto del usuario (conversación fresca)
+- Protegido por `X-API-Key` (misma auth que otros endpoints admin)
+
+**Uso:**
+```bash
+curl -X POST https://inmueblebot-api.onrender.com/admin/simulate \
+  -H "X-API-Key: your-secure-admin-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "5491155550999", "message": "Hola busco un depto", "reset": true}'
+# Returns: {"response_text": "...", "tools_used": [], "timing": {"turn_seconds": 1.3}}
+```
+
+**Benchmark contra prueba real (3-turn conversation):**
+| Turn | Message | Tools | Turn Time |
+|------|---------|-------|-----------|
+| 1 | "busco un departamento en Oberá" | [] | 1.3s |
+| 2 | "el segundo, el ID 20" | [get_property_details] | 3.6s |
+| 3 | "quiero agendar mañana 11" | [schedule_visit] | 3.7s |
+
+**Updated test_anti_hallucination.py:**
+- Ahora usa `/admin/simulate` en vez del webhook de WhatsApp
+- Valida hallucinaciones por turno (check_hallucination)
+- 5 escenarios, 9 turnos — **0 hallucinaciones detectadas**
