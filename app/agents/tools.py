@@ -258,8 +258,8 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             except Exception as e:
                 logger.warning(f"[TOOL] Could not resolve price_tier '{price_tier}': {e}")
         
-        # Ensure limit is at least 6 for better UX
-        search_criteria["limit"] = max(criteria.get("limit", 8), 6)
+        # Ensure limit is at least 2 for a focused first result set
+        search_criteria["limit"] = max(criteria.get("limit", 4), 2)
         logger.info(f"[TOOL] Limit final: {search_criteria['limit']}")
         
         logger.info("[TOOL] Llamando a property_service.search_properties...")
@@ -291,24 +291,19 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
         if not properties:
             logger.info("[TOOL] No results found — trying fallback searches")
             
-            # Fallback 1: +30% budget_max, keep same criteria
+            # Fallback 1: +30% budget_max, keep all other criteria
             fb1_criteria = dict(search_criteria)
             if fb1_criteria.get("budget_max"):
                 fb1_criteria["budget_max"] = int(fb1_criteria["budget_max"] * 1.3)
             logger.info(f"[TOOL] Fallback 1: +30% budget -> {fb1_criteria.get('budget_max')}")
             fb1_results = await property_service.search_properties(fb1_criteria)
             
-            # Fallback 2: same operation_type + property_type, remove location + budget
-            fb2_criteria = {"operation_type": search_criteria.get("operation_type", "alquiler")}
-            if search_criteria.get("property_type"):
-                fb2_criteria["property_type"] = search_criteria["property_type"]
-            logger.info(f"[TOOL] Fallback 2: no location/budget, type={fb2_criteria.get('property_type')}")
+            # Fallback 2: same criteria, remove budget only (keep location, bedrooms, etc.)
+            fb2_criteria = dict(search_criteria)
+            fb2_criteria.pop("budget_max", None)
+            fb2_criteria.pop("budget_min", None)
+            logger.info(f"[TOOL] Fallback 2: remove budget, keep location={fb2_criteria.get('location')}")
             fb2_results = await property_service.search_properties(fb2_criteria)
-            
-            # Fallback 3: only operation_type (broadest)
-            fb3_criteria = {"operation_type": search_criteria.get("operation_type", "alquiler")}
-            logger.info(f"[TOOL] Fallback 3: only operation_type='{fb3_criteria['operation_type']}'")
-            fb3_results = await property_service.search_properties(fb3_criteria)
             
             # Deduplicate: track property IDs across fallbacks
             seen_ids = set()
@@ -325,31 +320,29 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             
             fb1_results = _dedup(fb1_results)
             fb2_results = _dedup(fb2_results)
-            fb3_results = _dedup(fb3_results)
             
-            # Build response: show most relevant fallback only (avoid duplicate sections)
-            parts = [f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo alternativas:\n"]
+            MAX_ALTERNATIVES = 3
             
-            # If Fallback 1 found results, show those (closest to what user asked)
+            # Show best fallback with results (closest to original query)
             if fb1_results:
                 budget_str = f" (hasta ${fb1_criteria.get('budget_max', 0):,})" if fb1_criteria.get("budget_max") else ""
-                parts.append(f"🔱 Subiendo un poco el presupuesto{budget_str}:")
-                parts.append(format_property_list(fb1_results))
-            # If no budget-adjusted results, show Fallback 2 (same type, any location)
+                parts = [
+                    f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
+                    f"🔱 Subiendo un poco el presupuesto{budget_str}:",
+                ]
+                parts.append(format_property_list(fb1_results[:MAX_ALTERNATIVES]))
+                return "\n".join(parts)
             elif fb2_results:
-                type_label = fb2_criteria.get('property_type', 'propiedades').capitalize()
-                if search_criteria.get('location'):
-                    parts.append(f"🔱 {type_label} disponibles:")
-                else:
-                    parts.append(f"🔱 {type_label} en cualquier zona:")
-                parts.append(format_property_list(fb2_results))
-            # Last resort: show all rentals
-            elif fb3_results:
-                op_type = fb3_criteria.get("operation_type", "alquiler")
-                parts.append(f"🔱 Todas las opciones en {op_type}:")
-                parts.append(format_property_list(fb3_results))
-            
-            return "\n".join(parts)
+                parts = [
+                    f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
+                    f"🔱 Opciones sin filtro de presupuesto:",
+                ]
+                parts.append(format_property_list(fb2_results[:MAX_ALTERNATIVES]))
+                return "\n".join(parts)
+            else:
+                # No results from any fallback — signal LLM to ask user for adjustments
+                logger.info("[TOOL] All fallbacks returned 0 results — returning NO_RESULTS_ASK_MORE signal")
+                return "NO_RESULTS_ASK_MORE"
         
         return format_property_list(properties)
         
