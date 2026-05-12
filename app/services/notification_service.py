@@ -46,7 +46,7 @@ class NotificationService:
                 await session.execute(
                     text("""
                         INSERT INTO notifications (type, title, body, phone, metadata)
-                        VALUES (:type, :title, :body, :phone, :metadata::jsonb)
+                        VALUES (:type, :title, :body, :phone, CAST(:metadata AS jsonb))
                     """),
                     {
                         "type": type,

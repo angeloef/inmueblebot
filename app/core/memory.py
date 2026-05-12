@@ -464,9 +464,10 @@ class MemoryManager:
                 break
         
         budget_patterns = [
-            r"(?:hasta|hasta\s+)?\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:dólares?|usd|dolares)?",
+            r"(?:hasta|hasta\s+)\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:dólares?|usd|dolares)?",
             r"presupuesto\s+(?:de\s+)?\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)",
-            r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:mil|dollars?|usd)",
+            r"(?:de\s+)?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:mil|dollars?|usd)",
+            r"\b(\d{4,6})\s*(?:dólares?|usd|dolares|pesos?|ars)\b",
         ]
         
         for pattern in budget_patterns:

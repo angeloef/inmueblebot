@@ -1152,3 +1152,25 @@ Cada sesión es una cadena de Márkov donde:
 | Compara propiedades | 40 | 8.0 | 0 | Richest profile |
 
 **Conclusion:** The bot handles erratic behavior well. 2 detected hallucinations (out of 176 turns = 1.1%) in the most complex intent-change profile, all caught by the code guard before reaching users.
+
+### Sprint 24 — Date Hallucination Fix + Budget/Notifications Bugs (May 12, 2026)
+
+**Bug 1 — Date hallucination (CRITICAL):** User said "el 16 a las 4 de la tarde" but bot scheduled for "13/05" (mañana). Root cause: LLM extracted "16" as time (16:00 = 4 PM) and dropped the date, defaulting to "mañana".
+
+**Fix (3-layer):**
+- REGLA 3: Added `**CRÍTICO: "el 16" es una FECHA, NO una hora.**` with 4 explicit ✅/❌ examples
+- FLUJO DE AGENDAMIENTO step 3: Added `"el 16 a las 4 de la tarde" → date_str="el 16", time_str="16:00"`
+- Conversation Example 4: NEW example showing the exact bug scenario (user → name → tool → correct date)
+
+**Bug 2 — price_tier Decimal*float error:** `get_budget_tiers()` returned Decimal prices from PostgreSQL (Numeric column). `_build_tiers_from_prices()` multiplied Decimal * float (33.33) → error. Fix: `_fetch_prices()` now converts to int.
+
+**Bug 3 — notifications INSERT syntax error:** `:metadata::jsonb` used `:` named params alongside `$1` positional params (asyncpg). Fix: replaced with `CAST(:metadata AS jsonb)`.
+
+**Bug 4 — budget_max wrongly extracted:** Regex pattern `(?:hasta)?\s*$?(\d{1,3})` matched bare numbers like "16" from "el 16". Fix: made `hasta` required, added `\b(\d{4,6})\s*(dólares|usd)` for standalone amounts.
+
+| Bug | File | Lines changed |
+|-----|------|-------------|
+| Date hallucination | `app/agents/prompts.py` | +15 lines (REGLA 3, FLUJO, example 4) |
+| Decimal*float | `app/agents/budget_tiers.py` | 1 line |
+| Notifications SQL | `app/services/notification_service.py` | 1 line |
+| Budget regex | `app/core/memory.py` | 5 lines |

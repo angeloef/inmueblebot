@@ -84,7 +84,7 @@ async def _fetch_prices() -> list[float]:
     async with async_session_factory() as session:
         stmt = select(Property.price).where(Property.status == "available")
         result = await session.execute(stmt)
-        prices = [row[0] for row in result.all() if row[0] is not None]
+        prices = [int(row[0]) for row in result.all() if row[0] is not None]
     return prices
 
 
