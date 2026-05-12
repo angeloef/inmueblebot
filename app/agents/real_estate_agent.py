@@ -205,18 +205,22 @@ class RealEstateAgent:
                              "departamento", "local", "oficina"])
                         
                         if _said_search and _user_wants_search and not search_was_called:
-                            # Force-inject a system message: don't accept the response, tell LLM to search!
-                            logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
-                            messages.append({
-                                "role": "system",
-                                "content": (
-                                    "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
-                                    "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
-                                    "LLAMÁ search_properties() AHORA con los criterios del usuario. "
-                                    "No sigas conversando sin buscar."
-                                )
-                            })
-                            continue  # Go to next iteration (force the LLM to search)
+                            # Only force search if the LLM is NOT asking a question.
+                            # If the response has "?" or "¿", the LLM is guiding the conversation (REGLA 7).
+                            _is_question = "?" in _resp_lower or "¿" in _resp_lower
+                            if not _is_question:
+                                # Force-inject a system message: correct the LLM
+                                logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
+                                        "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
+                                        "LLAMÁ search_properties() AHORA con los criterios del usuario. "
+                                        "No sigas conversando sin buscar."
+                                    )
+                                })
+                                continue  # Go to next iteration (force the LLM to search)
                         
                         response_text = llm_response.content
                     break
