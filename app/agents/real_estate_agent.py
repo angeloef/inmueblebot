@@ -189,6 +189,30 @@ class RealEstateAgent:
                         logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
                         response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
                     else:
+                        # Search hallucination guard: if LLM said "voy a buscar"/"buscando"
+                        # without actually calling search, force it to search.
+                        _resp_lower = (llm_response.content or "").lower()
+                        _said_search = any(p in _resp_lower for p in
+                            ["voy a buscar", "buscando", "déjame buscar", "un momento",
+                             "voy a revisar", "voy a consultar"])
+                        _user_wants_search = any(p in (user_message or "").lower() for p in
+                            ["busco", "buscar", "quiero", "necesito", "departamento",
+                             "casa", "alquilar", "comprar", "terreno", "propiedad"])
+                        
+                        if _said_search and _user_wants_search and not search_was_called:
+                            # Force-inject a system message: don't accept the response, tell LLM to search!
+                            logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
+                                    "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
+                                    "LLAMÁ search_properties() AHORA con los criterios del usuario. "
+                                    "No sigas conversando sin buscar."
+                                )
+                            })
+                            continue  # Go to next iteration (force the LLM to search)
+                        
                         response_text = llm_response.content
                     break
 
