@@ -544,7 +544,7 @@ export default function Properties({ onOpenClient }) {
   const [filter, setFilter] = useState('all');
   const [op, setOp] = useState('all');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState('list');
+  const [view, setView] = useState('grid');
   const [open, setOpen] = useState(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
