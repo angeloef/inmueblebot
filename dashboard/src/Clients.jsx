@@ -160,6 +160,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
               <h3>Datos</h3>
               <dl className="def-list">
                 <dt>DNI</dt><dd className="tabular">{client.dni || '—'}</dd>
+                <dt>Email</dt><dd>{client.email ? <a href={`mailto:${client.email}`}>{client.email}</a> : '—'}</dd>
                 <dt>Cliente desde</dt><dd>{client.since}</dd>
                 <dt>Agente asignado</dt><dd>{client.agent || '—'}</dd>
                 <dt>Último contacto</dt><dd>{client.lastContact}</dd>
