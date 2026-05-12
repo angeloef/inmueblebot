@@ -193,11 +193,16 @@ class RealEstateAgent:
                         # without actually calling search, force it to search.
                         _resp_lower = (llm_response.content or "").lower()
                         _said_search = any(p in _resp_lower for p in
-                            ["voy a buscar", "buscando", "déjame buscar", "un momento",
-                             "voy a revisar", "voy a consultar"])
+                            ["voy a buscar", "vamos a buscar", "vamos a encontrar",
+                             "buscando", "déjame buscar", "un momento",
+                             "voy a revisar", "voy a consultar",
+                             "voy a fijarme", "voy a ver", "vamos a ver",
+                             "voy a chequear"])
                         _user_wants_search = any(p in (user_message or "").lower() for p in
-                            ["busco", "buscar", "quiero", "necesito", "departamento",
-                             "casa", "alquilar", "comprar", "terreno", "propiedad"])
+                            ["busco", "buscar", "buscando", "quiero", "necesito",
+                             "departamento", "casa", "alquilar", "alquiler",
+                             "comprar", "terreno", "propiedad", "ph",
+                             "departamento", "local", "oficina"])
                         
                         if _said_search and _user_wants_search and not search_was_called:
                             # Force-inject a system message: don't accept the response, tell LLM to search!
