@@ -469,6 +469,10 @@ input, select, textarea { font-family: inherit; }
 .notif-item:hover .notif-delete { opacity: 1; }
 .notif-delete:hover { color: var(--danger-500, #e53e3e); }
 
+/* ───── Property grids (extracted from inline styles) ───── */
+.prop-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.prop-attrs-grid { display: grid; grid-template-columns: 1fr 72px 72px 1fr; gap: 12px; }
+
 /* ───── Mobile Responsive ───── */
 
 /* Hamburger button: hidden on desktop */
@@ -564,4 +568,34 @@ input, select, textarea { font-family: inherit; }
   /* Page header: wrap actions below title */
   .page-h { flex-wrap: wrap; gap: 8px; }
   .page-h-actions { margin-left: 0; width: 100%; }
+
+  /* ── Prevenir overflow horizontal ── */
+  body { overflow-x: hidden; }
+
+  /* Tablas: scroll horizontal contenido, no el body */
+  .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .surface { overflow-x: hidden; }
+
+  /* Calendar toolbar: wrappear cuando no entra */
+  .cal-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .cal-toolbar h2 { font-size: 14px; min-width: 0; flex: 1 1 auto; }
+  .cal-toolbar .nav { flex-shrink: 0; }
+
+  /* Filter bar: input full width en mobile */
+  .filter-bar { flex-wrap: wrap; }
+  .filter-bar input { max-width: 100%; flex: 1 1 100%; }
+
+  /* Property grids: 2 cols en mobile */
+  .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Photo upload grid: 2 cols */
+  .dz-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Topbar: contener elementos */
+  .tb { min-width: 0; overflow: hidden; }
+  .tb-notif-wrap { position: static; }
+
+  /* Notification panel: ancho del viewport */
+  .notif-panel { width: calc(100vw - 32px); right: auto; left: 0; }
 }
