@@ -269,7 +269,8 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
     if (search) {
       const q = search.toLowerCase();
       const matchName = c.name?.toLowerCase().includes(q);
-      const matchPhone = c.phone?.includes(search.replace(/\D/g, ''));
+      const strippedPhone = search.replace(/\D/g, '');
+      const matchPhone = strippedPhone.length > 0 && c.phone?.includes(strippedPhone);
       if (!matchName && !matchPhone) return false;
     }
     return true;
