@@ -430,7 +430,18 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
 
   const tzLabel = calStatus?.label ?? 'GMT-3';
 
-  const [view, setView] = useState(() => window.innerWidth < 768 ? 'day' : 'month');
+  const mobileQuery = window.matchMedia('(max-width: 768px)');
+  const [view, setView] = useState(() => mobileQuery.matches ? 'day' : 'month');
+
+  // Forzar vista diaria si el usuario rota el dispositivo a portrait
+  React.useEffect(() => {
+    const handler = (e) => { if (e.matches) setView('day'); };
+    mobileQuery.addEventListener('change', handler);
+    // También forzar en el mount por si matchMedia tardó en evaluarse
+    if (mobileQuery.matches) setView('day');
+    return () => mobileQuery.removeEventListener('change', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [popover, setPopover] = useState(null);
   const [editor, setEditor] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
