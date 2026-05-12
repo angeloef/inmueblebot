@@ -570,12 +570,24 @@ input, select, textarea { font-family: inherit; }
   .page-h { flex-wrap: wrap; gap: 8px; }
   .page-h-actions { margin-left: 0; width: 100%; }
 
-  /* ── Prevenir overflow horizontal ── */
+  /* ── Prevenir overflow horizontal (doble candado) ── */
+  html { overflow-x: hidden; }
   body { overflow-x: hidden; }
 
-  /* Tablas: scroll horizontal contenido, no el body */
+  /* Grid/flex items: min-width:0 para que no expandan más allá de su track */
+  .dashboard-grid > *,
+  .kpi-grid > *,
+  .field-row > *,
+  .page-body > *,
+  .scroll-surface > * { min-width: 0; }
+
+  /* Tablas: scroll horizontal dentro de su contenedor, no el body */
   .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .surface { overflow-x: hidden; }
+
+  /* Superficies que contienen tablas: clip estricto */
+  .surface:not(.scroll-surface) { overflow: hidden; }
+  .page-view, .page-body, .page-kpis { overflow-x: hidden; }
 
   /* Calendar toolbar: wrappear cuando no entra */
   .cal-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
