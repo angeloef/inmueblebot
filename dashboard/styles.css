@@ -26,7 +26,7 @@ input, select, textarea { font-family: inherit; }
 .sb-brand img { width: 22px; height: 22px; }
 .sb-brand span { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .sb-section { font-size: 10px; color: var(--fg-muted); font-weight: 600; padding: 14px 10px 4px; letter-spacing: 0.06em; text-transform: uppercase; }
-.sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--fg-secondary); cursor: pointer; user-select: none; transition: background var(--dur-fast); }
+.sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 15px; color: var(--fg-secondary); cursor: pointer; user-select: none; transition: background var(--dur-fast); }
 .sb-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
 .sb-item.active { background: var(--accent-50); color: var(--accent-600); font-weight: 500; box-shadow: inset 2px 0 0 var(--accent-500); border-radius: 0 6px 6px 0; }
 .sb-item .badge { margin-left: auto; background: var(--accent-500); color: white; font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 500; }
@@ -508,7 +508,7 @@ input, select, textarea { font-family: inherit; }
   .sb {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    width: 260px;
+    width: 290px;
     z-index: 200;
     transform: translateX(-100%);
     transition: transform var(--dur-slow) var(--ease-out);
@@ -673,7 +673,7 @@ input, select, textarea { font-family: inherit; }
     height: 40px;
     padding: 8px;
   }
-  .btn-icon svg { width: 18px; height: 18px; }
+  .btn-icon svg { width: 20px; height: 20px; }
 
   /* Hamburger (abrir menú lateral) */
   .tb-menu-btn {
@@ -682,11 +682,11 @@ input, select, textarea { font-family: inherit; }
     height: 40px;
     padding: 8px;
   }
-  .tb-menu-btn svg { width: 20px; height: 20px; }
+  .tb-menu-btn svg { width: 22px; height: 22px; }
 
   /* Campana de notificaciones e ícono de info */
   .tb-icon { width: 40px; height: 40px; }
-  .tb-icon svg { width: 20px; height: 20px; }
+  .tb-icon svg { width: 22px; height: 22px; }
   .tb-avatar { width: 36px; height: 36px; font-size: 13px; }
 
   /* X de cierre del menú lateral */
@@ -695,9 +695,9 @@ input, select, textarea { font-family: inherit; }
     width: 36px;
     height: 36px;
   }
-  .sb-close svg { width: 18px; height: 18px; }
+  .sb-close svg { width: 20px; height: 20px; }
 
   /* Botones pequeños (btn-sm): mismo tamaño que btn base en mobile */
   .btn-sm { font-size: 13px; padding: 7px 13px; }
-  .btn-sm svg { width: 14px; height: 14px; }
+  .btn-sm svg { width: 16px; height: 16px; }
 }
