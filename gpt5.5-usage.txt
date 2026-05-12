@@ -1,0 +1,457 @@
+================================================================================
+ GPT-5.5 USAGE GUIDE — InmuebleBot Integration
+================================================================================
+ Created: 2026-05-12
+ Source: developers.openai.com API docs — "Latest model" + "Prompt guidance"
+ Target: Replace GPT-4o-mini with GPT-5.5 for InmuebleBot (WhatsApp real estate
+         assistant chatbot with tool calling, Spanish language, Argentine market)
+================================================================================
+
+TABLE OF CONTENTS
+  1. MODEL OVERVIEW
+  2. API CONFIGURATION
+  3. PROMPT ARCHITECTURE (THE BIGGEST CHANGE)
+  4. PERSONALITY & TONE (CRITICAL)
+  5. TOOL DEFINITIONS & ORCHESTRATION
+  6. REASONING EFFORT SETTINGS
+  7. VERBOSITY & OUTPUT FORMAT
+  8. PROMPT CACHING STRATEGY
+  9. DATE/TIME HANDLING
+  10. MIGRATION CHECKLIST
+  11. EXAMPLE: FULL PROMPT REWRITE SECTIONS
+  12. TROUBLESHOOTING
+
+================================================================================
+1. MODEL OVERVIEW
+================================================================================
+
+ GPT-5.5 is NOT a drop-in replacement for GPT-4o-mini or GPT-5.4.
+ It's a new model family requiring prompt re-architecture.
+
+ KEY DIFFERENCES FROM GPT-4o-mini:
+ ┌──────────────────────────────┬──────────────────────┬──────────────────────┐
+ │ Feature                     │ GPT-4o-mini (CURRENT) │ GPT-5.5 (TARGET)     │
+ ├──────────────────────────────┼──────────────────────┼──────────────────────┤
+ │ Architecture                │ Non-reasoning         │ Reasoning model      │
+ │ Default reasoning effort    │ N/A                   │ medium               │
+ │ Prompt style                │ Step-by-step rules    │ Outcome-first goals  │
+ │ Default verbosity           │ verbose               │ medium (concise)     │
+ │ Tool following              │ Needs strict REGLAs   │ Precise with good    │
+ │                            │                       │ tool descriptions     │
+ │ Instruction following       │ Good                  │ Excellent (literal)  │
+ │ Customer-facing tone        │ Needs explicit        │ DEFAULT IS CONCISE   │
+ │                            │ personality prompt     │ Must add warmth       │
+ │                            │                       │ explicitly            │
+ │ Temperature default         │ 0.7                   │ 0.7 (same)           │
+ └──────────────────────────────┴──────────────────────┴──────────────────────┘
+
+================================================================================
+2. API CONFIGURATION
+================================================================================
+
+ When configuring the model in the .env file on Render:
+
+   MODEL_NAME=gpt-5.5          # NOT "gpt-4o-mini"
+   API_BASE=https://api.openai.com/v1  # Same endpoint
+
+ CRITICAL: The llm_router.py needs to support reasoning.effort parameter.
+ Check if the current router passes extra_body or reasoning parameters.
+ If not, you may need to add:
+
+   extra_body={
+       "reasoning": {
+           "effort": "low"   # or "medium", "high"
+       }
+   }
+
+ For the InmuebleBot use case, start with reasoning effort "low":
+   - Tool-heavy agent with 13+ tools
+   - Needs fast response times (WhatsApp users expect <5s)
+   - Tasks are well-defined (search, detail, schedule, FAQ)
+   - "low" gives good results with better latency
+   Only escalate to "medium" if tool selection quality drops.
+
+================================================================================
+3. PROMPT ARCHITECTURE — THE BIGGEST CHANGE
+================================================================================
+
+ GPT-5.5 works BEST with OUTCOME-FIRST prompts, NOT step-by-step rules.
+
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │ OLD PATTERN (GPT-4o-mini — DO NOT CARRY OVER):                            │
+ │                                                                             │
+ │ REGLA 1: Do X                                                              │
+ │ REGLA 2: Do Y                                                              │
+ │ REGLA 3: Never do Z                                                        │
+ │                                                                             │
+ │ Problem: GPT-5.5 interprets these literally. If REGLA 2 says "Do Y"        │
+ │ but the user says something that implies Z, the model may get stuck.       │
+ │ Too many NUNCA/ALWAYS/CRÍTICO instructions narrow the model's search       │
+ │ space and lead to overly mechanical answers.                               │
+ └─────────────────────────────────────────────────────────────────────────────┘
+
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │ NEW PATTERN (GPT-5.5 ✅):                                                   │
+ │                                                                             │
+ │ ## YOUR ROLE                                                               │
+ │ You are a real estate agent helping clients find properties...             │
+ │                                                                             │
+ │ ## HOW TO INTERACT                                                         │
+ │ Guide the conversation naturally...                                         │
+ │                                                                             │
+ │ ## SUCCESS CRITERIA                                                        │
+ │ ✅ The user found a property they like                                      │
+ │ ✅ If they want to schedule, all info was collected before calling tool     │
+ │ ✅ If no properties match, suggest adjustments                              │
+ │                                                                             │
+ │ ## STOPPING CONDITIONS                                                     │
+ │ After each search result, check: "Can I answer the user's core request?"   │
+ │ If yes, answer. If no, ask one more question.                              │
+ └─────────────────────────────────────────────────────────────────────────────┘
+
+ SPECIFIC CHANGES NEEDED FOR INMUEBLEBOT:
+
+ A) REPLACE "REGLA 0 — HABLAR vs HACER" with a clean tool-use section:
+    Instead of 37 lines of NUNCA/CRÍTICO/FATAL, write:
+
+    ## TOOL USE RULES
+    Only the following functions perform actions. Text alone never does:
+      - schedule_visit() → creates the appointment
+      - cancel_appointment() → cancels it
+      - reschedule_appointment() → changes it
+      - save_lead_info() → saves user data
+      - search_properties() → searches the database
+    If the user asks for something that requires one of these, call the
+    function directly. Don't announce the call beforehand.
+
+ B) REPLACE "REGLA 1 through REGLA 8" with OUTCOME DEFINITIONS:
+    Old (8 reglas × 40+ lines):
+      REGLA 1 - Datos exactos: NUNCA inventes precios...
+      REGLA 2 - Contexto activo: Mantené...
+      ...
+    New (compact):
+      ## OUTPUT RULES
+      - Property data must come from tool results, never invented.
+      - The "active property" is the last one the user saw details/photos of.
+      - Dates: pass them exactly as the user said them. The parser handles
+        conversion (supports: "mañana", "el 16", "17/05/2026", "próximo martes").
+      - Keep a warm, conversational tone (see #Personality below).
+      - If you're unsure about something, ask one question at a time.
+
+ C) TOOL DESCRIPTIONS CARRY THE WEIGHT:
+    GPT-5.5 reads tool descriptions more carefully. Move tool-specific
+    guidance INTO the tool description, not into the system prompt:
+
+    Old (prompts.py):
+      search_properties: "CRÍTICO: NO DIGAS 'voy a buscar'..."
+      schedule_visit: "CRÍTICO: NO DIGAS 'agendando'..."
+
+    New (tool description in TOOL_DEFINITIONS):
+      search_properties:
+        description: >
+          Searches properties by location, budget, type, bedrooms, etc.
+          Call this when the user provides at LEAST 3 criteria (location +
+          operation + type/budget/bedrooms). If 1-2 criteria, ask more
+          questions first. Returns formatted property list or empty.
+          IMPORTANT: This function is the ONLY way to find properties.
+          Text saying "I found properties" means nothing without this call.
+      schedule_visit:
+        description: >
+          Schedules a property visit. Requires: property_id (from context),
+          date_str (natural language like "mañana", "el 16"), time_str,
+          client_name. This is the ONLY function that actually creates
+          appointments. Text saying "I scheduled" means nothing without it.
+
+================================================================================
+4. PERSONALITY & TONE — CRITICAL FOR CHATBOT
+================================================================================
+
+ WARNING: GPT-5.5's DEFAULT style is EFFICIENT, DIRECT, and TASK-ORIENTED.
+ Without explicit personality, it will sound robotic/transactional.
+ This is the OPPOSITE of what InmuebleBot needs (warm, conversational).
+
+ YOU MUST ADD AN EXPLICIT PERSONALITY BLOCK:
+
+ ```
+ # Personality
+ You are a friendly Argentine real estate agent. Warm, approachable,
+ and natural — like you're chatting on WhatsApp with a client.
+ Use "vos" or "tuteo" naturally. Be enthusiastic about helping.
+ Ask questions like a real agent would.
+ ```
+
+ Recommended personality for InmuebleBot (replace current TU PERSONALIDAD):
+
+   # Personality
+   Sos un agente inmobiliario argentino, cercano y con onda.
+   Hablás como si estuvieras mostrando propiedades en persona:
+   cálido, conversacional, entusiasta.
+   - Usá frases naturales: "Acá tenés", "Te muestro", "Mirá esta"
+   - Mostrá empatía cuando no hay resultados exactos
+   - NUNCA suenes a catálogo ni a robot
+   - Si el usuario te trata como una inmobiliaria (no un bot),
+     respondé como tal: "Nuestra oficina está en..."
+   - Mantené la conversación fluida, sin formalismos ni jerga técnica
+
+ Also add COLLABORATION STYLE:
+
+   # Collaboration Style
+   - Guiá la conversación preguntando UN DATO POR VEZ
+   - No busques propiedades hasta tener al menos 3 criterios claros
+   - Si falta info, preguntá de forma natural, no como checklist
+   - Ofrecé alternativas cuando no haya resultados exactos
+   - El usuario puede corregirte, cambiar de opinión, o pedir algo
+     diferente — adaptate sin problema
+
+================================================================================
+5. TOOL DEFINITIONS & ORCHESTRATION
+================================================================================
+
+ GPT-5.5 is better at tool selection than GPT-4o-mini. Put MOST guidance
+ inside tool descriptions themselves:
+
+   "what the tool does, when to use it, required inputs, side effects,
+    retry safety, and common error modes"
+
+ Only put cross-tool guidance in system instructions.
+
+ FOR INMUEBLEBOT:
+ - Keep all 13+ tools
+ - Review each tool description to ensure it's:
+   1. Clear about WHEN to call it
+   2. Clear about REQUIRED vs OPTIONAL parameters  
+   3. Clear about SIDE EFFECTS (e.g., schedule_visit creates a DB record)
+   4. Clear about COMMON ERRORS (e.g., "fecha ocupada, no disponible")
+ - The tool description is the primary instruction source for GPT-5.5
+
+ The system prompt should only have:
+   - Personality & collaboration style
+   - Cross-cutting rules (output format, active property tracking)
+   - Success criteria & stopping conditions
+
+ HOSTED TOOLS NOTE:
+ GPT-5.5 supports OpenAI-hosted tools (web_search, file_search, code_interpreter).
+ Not relevant for InmuebleBot (uses custom function tools), but good to know.
+
+================================================================================
+6. REASONING EFFORT SETTINGS
+================================================================================
+
+ Default: medium (set by API when not specified)
+
+ For InmuebleBot STARTING POINT → USE "low":
+
+   reasoning = {"effort": "low"}
+
+ Why "low" for a chatbot?
+ ┌──────────────┬──────────┬─────────────────────────────────────────────────┐
+ │ Setting      │ Use When │ Chatbot Fit                                      │
+ ├──────────────┼──────────┼─────────────────────────────────────────────────┤
+ │ none         │ Voice    │ ❌ Too low — needs multi-tool decisions          │
+ │              │ turns    │                                                   │
+ │ low  ✅      │ Most     │ ✅ Good balance for WhatsApp chatbot:            │
+ │              │ agents   │   - Fast responses (<5s goal)                    │
+ │              │          │   - Tool selection still accurate                │
+ │              │          │   - Low token cost                              │
+ │ medium       │ Balanced │ ⚠️ Test if low isn't enough — but watch latency  │
+ │ high         │ Complex  │ ❌ Too slow for WhatsApp real-time               │
+ │              │ agents   │                                                   │
+ │ xhigh        │ Hardest  │ ❌ Way too slow and expensive for chatbot        │
+ └──────────────┴──────────┴─────────────────────────────────────────────────┘
+
+ If tool selection quality drops with "low", escalate to "medium".
+ Monitor: avg response time, tool call accuracy, user corrections.
+
+================================================================================
+7. VERBOSITY & OUTPUT FORMAT
+================================================================================
+
+ GPT-5.5 default verbosity is "medium" — which is CONCISE by default.
+ This is good for InmuebleBot (don't need verbose explanations).
+
+ RECOMMENDED: Keep `text.verbosity` at default (medium) for the chatbot.
+ Only change to "low" if responses feel too wordy.
+
+ The format is set via API parameter:
+   extra_body = {
+       "text": {
+           "verbosity": "medium"  # or "low"
+       }
+   }
+
+ Important: verbosity affects RESPONSE LENGTH, not reasoning quality.
+ The model can still reason well even at "low" verbosity.
+
+ OUTPUT FORMAT GUIDANCE:
+ - For search results: short intro + compact property list
+ - For property details: one enthused line + emoji-prefixed data
+ - For scheduling: confirmation with date/time/property/name
+ - For errors/alternatives: natural, not apologetic
+ Keep the current format_property_list() output format — it's good.
+
+================================================================================
+8. PROMPT CACHING STRATEGY
+================================================================================
+
+ GPT-5.5 supports automatic prompt caching. This REDUCES COST and LATENCY.
+
+ OPTIMIZATION RULES:
+ 1. Put STATIC content at the BEGINNING of the prompt
+    ✅ Correct order:
+       - Personality block (always same)
+       - Collaboration style (always same)
+       - Cross-cutting rules (always same)
+       - Tool descriptions (always same)
+       - Conversation history / user context (CHANGES per turn)
+
+ 2. Use `prompt_cache_key` consistently (check if llm_router supports it)
+
+ 3. Monitor `usage.prompt_tokens_details.cached_tokens` in API responses
+    to verify caching is working.
+
+ For InmuebleBot, the system prompt is ~6000 tokens. With caching:
+   - First request: pay full prompt cost
+   - Subsequent requests: pay only for changed parts (user message + history)
+   - Estimated 40-60% cost reduction per turn
+
+================================================================================
+9. DATE/TIME HANDLING
+================================================================================
+
+ GPT-5.5 is better at literal interpretation. The current date_parser.py
+ handles Spanish date expressions well. Keep it unchanged.
+
+ However, GPT-5.5 is MORE LIKELY to follow instructions precisely:
+ - If you say "pass the date EXACTLY as the user said it", it WILL do so
+ - Previously GPT-4o-mini sometimes converted "el 16" to "mañana" despite rules
+ - With GPT-5.5, STRONGER instruction following means this is less likely
+
+ But: verify this behavior. If GPT-5.5 still misinterprets dates, add a
+ simple example to the tool description of schedule_visit:
+
+   Examples of date_str:
+   - "mañana" → tomorrow
+   - "el 16" → day 16 of current/next month
+   - "17/05/2026" → specific date
+   - "próximo martes" → next Tuesday
+   - "dentro de 4 días" → 4 days from now
+   NEVER convert to a different date. Pass exactly as user said.
+
+================================================================================
+10. MIGRATION CHECKLIST
+================================================================================
+
+ ┌───┬──────────────────────────────────────────────────────┬──────────┐
+ │ # │ Action                                                │ Status   │
+ ├───┼──────────────────────────────────────────────────────┼──────────┤
+ │ 1 │ Change env: MODEL_NAME=gpt-5.5 on Render             │ MANUAL   │
+ │ 2 │ Add reasoning.effort="low" to llm_router.py           │ NEED FIX │
+ │ 3 │ Update prompts.py SYSTEM_PROMPT:                     │ NEED FIX │
+ │   │ - Remove REGLA 0 (all NUNCA/CRÍTICO/FATAL block)    │          │
+ │   │ - Add # Personality + # Collaboration Style blocks  │          │
+ │   │ - Replace REGLAS 1-8 with compact OUTPUT RULES       │          │
+ │   │ - Add ## SUCCESS CRITERIA section                    │          │
+ │   │ - Add STOPPING CONDITIONS section                    │          │
+ │ 4 │ Review tool descriptions in prompts.py:               │ NEED FIX │
+ │   │ - Add when-to-call, required params, side effects   │          │
+ │   │ - Remove "CRÍTICO:" prefix from descriptions        │          │
+ │   │ - Add example date_str patterns for schedule_visit  │          │
+ │ 5 │ Verify output format_replies are natural, not lists │ REVIEW   │
+ │ 6 │ Test with 3-5 conversation flows against Render     │ AFTER     │
+ │ 7 │ Monitor: avg response time, tool accuracy, errors   │ CONTINUOUS│
+ │ 8 │ Optionally: adjust temperature (start with 0.7)     │ AS NEEDED │
+ └───┴──────────────────────────────────────────────────────┴──────────┘
+
+================================================================================
+11. EXAMPLE: KEY PROMPT REWRITE SECTIONS
+================================================================================
+
+ The following shows what SPECIFIC changes to make in prompts.py
+ for GPT-4o-mini → GPT-5.5 migration.
+
+ === SECTION 1: REMOVE REGLA 0 entirely ===
+ Delete lines starting at:
+   ## REGLA 0 — HABLAR vs HACER (LA MÁS IMPORTANTE):
+ All the way through the examples (about 35-40 lines).
+ Replace with 3-4 lines of clean tool rules (see section 3A).
+
+ === SECTION 2: TU ROL rewrite ===
+ OLD:
+   ## TU ROL:
+   Ayudar a encontrar propiedades...
+   Si el usuario da criterios parciales, BUSCÁ inmediatamente...
+   Mostrá máximo 4-5 opciones...
+
+ NEW:
+   # Personality
+   Sos un agente inmobiliario argentino, cálido y cercano...
+   
+   # Collaboration Style
+   Guiá la conversación preguntando UN DATO POR VEZ...
+   No busques hasta tener 3 criterios claros...
+   
+   # Success Criteria
+   ✅ The user found a property that matches their needs
+   ✅ If interested, booking was completed with correct data
+   ✅ If no matches, user knows what alternatives exist
+
+   # Stopping Conditions
+   After each tool result, ask: "Can I answer the user now?"
+   If yes, answer. If no, ask ONE more question.
+   Don't keep iterating — the user will tell you if they need more.
+
+ === SECTION 3: TOOL DESCRIPTIONS ===
+ Move detailed rules INTO each tool's description string.
+ The system prompt only needs high-level guidance.
+
+ === SECTION 4: FLUJO DE CONVERSACIÓN ===
+ Keep this section but make it shorter and more outcome-oriented.
+ Instead of "Fase 1: do X, Fase 2: do Y", write:
+
+   ## Conversation Flow
+   1. Greet and understand: operation + location + property type
+   2. Ask details one at a time until you have 3+ criteria
+   3. Search and show max 3 results
+   4. If interested, offer details or photos
+   5. If they want to book, collect remaining info
+   6. Confirm and close
+
+================================================================================
+12. TROUBLESHOOTING
+================================================================================
+
+ PROBLEM: Responses are too short/robotic
+   → Add more explicit personality prompt (see section 4)
+   → Check text.verbosity setting
+   → The default GPT-5.5 tone is concise — you MUST add warmth explicitly
+
+ PROBLEM: Model doesn't follow some rules
+   → Move the rule into the TOOL DESCRIPTION (not system prompt)
+   → GPT-5.5 reads tool descriptions more carefully
+
+ PROBLEM: Tool selection is wrong (calls wrong tool)
+   → Increase reasoning.effort to "medium"
+   → Review tool descriptions for clarity
+
+ PROBLEM: Too slow / high latency
+   → Check reasoning.effort is "low" (not "medium" or "high")
+   → Verify prompt caching is working
+   → Reduce system prompt length (remove redundant instructions)
+
+ PROBLEM: Confuses property IDs
+   → GPT-5.5 is better at literal following — reinforce "use the ACTIVE
+     property ID from get_property_details" in the schedule_visit
+     tool description's "when to use" section
+
+ PROBLEM: Model gives wrong dates
+   → Add examples of valid date_str formats to schedule_visit description
+   → GPT-5.5 follows examples better than rules
+
+ PROBLEM: Hallucinates search results
+   → Move "search only works when you call the function" into the
+     search_properties tool description as a "side effect note"
+   → The code guard in real_estate_agent.py already handles this
+
+================================================================================
+ END OF GPT-5.5 USAGE GUIDE
+================================================================================

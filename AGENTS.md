@@ -1174,3 +1174,27 @@ Cada sesión es una cadena de Márkov donde:
 | Decimal*float | `app/agents/budget_tiers.py` | 1 line |
 | Notifications SQL | `app/services/notification_service.py` | 1 line |
 | Budget regex | `app/core/memory.py` | 5 lines |
+
+### Sprint 26 — GPT-5.5 Migration: Prompt Rewrite + reasoning.effort (May 12, 2026)
+
+**Estado:** Código listo, NO commitear aún. Esperar a que Angelo cambie MODEL_NAME=gpt-5.5 en Render .env, luego commitea y pushea manualmente.
+
+**Qué cambió (preparación para GPT-5.5):**
+
+**1. llm_router.py** — Added `extra_body: { reasoning: { effort: "low" } }` 
+   - GPT-5.5 requiere reasoning.effort. Se usó "low" por ser un chatbot (latencia <5s).
+   - Si la selección de tools es imprecisa, escalar a "medium".
+
+**2. prompts.py SYSTEM_PROMPT** — REGLAS DE ORO colapsadas a OUTPUT RULES
+   - Antes: 57 líneas con 8 reglas + NUNCA/CRÍTICO/FATAL
+   - Ahora: 11 líneas compactas en inglés (más compatible con GPT-5.5)
+   - Nuevas secciones: ## SUCCESS CRITERIA + ## STOPPING CONDITIONS
+   - Tono outcome-first: define el objetivo, no el camino paso a paso
+
+**3. prompts.py TOOL_DEFINITIONS** — Descripciones reescritas
+   - Eliminados todos los prefijos "CRÍTICO:" de las tool descriptions
+   - Cada descripción ahora dice: what it does, when to call, required params, side effects
+   - schedule_visit: incluye ejemplos de date_str ("mañana", "el 16", "17/05/2026")
+   - search_properties: aclara que requiere 3+ criterios y es la ÚNICA forma de buscar
+
+**NO commitear — Angelo hace `git push origin main` manualmente después de cambiar el .env**

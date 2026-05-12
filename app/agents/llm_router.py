@@ -56,7 +56,7 @@ class LLMResponse:
 
 
 class LLMRouter:
-    """Cliente LLM unico basado en el SDK oficial de OpenAI (GPT-4o-mini)."""
+    """Cliente LLM unico basado en el SDK oficial de OpenAI."""
 
     _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
@@ -106,6 +106,12 @@ class LLMRouter:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+        }
+        # GPT-5.5 reasoning effort: low for fast chatbot responses
+        kwargs["extra_body"] = {
+            "reasoning": {
+                "effort": "low"
+            }
         }
         if tools:
             kwargs["tools"] = tools
