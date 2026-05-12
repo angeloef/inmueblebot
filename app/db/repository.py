@@ -202,9 +202,22 @@ class PropertyRepository(BaseRepository):
             from app.utils.sanitizer import map_property_type_to_building_type
             building_type = map_property_type_to_building_type(property_type)
             if building_type:
-                query = query.where(
-                    Property.property_type == building_type
-                )
+                # The right model (app.db.models.property.Property) stores type in
+                # extra_data['kind'] as Spanish labels ("casa", "departamento").
+                # The old model (models.py) has a separate property_type column but is unused.
+                # Map back from English building_type to Spanish kind for the filter.
+                _KIND_MAP = {
+                    "apartment": "departamento",
+                    "house": "casa", 
+                    "land": "terreno",
+                    "commercial": "local",
+                    "office": "oficina",
+                }
+                kind = _KIND_MAP.get(building_type)
+                if kind:
+                    query = query.where(
+                        Property.extra_data[('kind',)].as_string() == kind
+                    )
         
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
