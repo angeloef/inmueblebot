@@ -313,7 +313,7 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
           ))}
         </div>
         <div className="tbl-scroll">
-          <table className="tbl">
+          <table className="tbl clients-tbl">
             <thead><tr>
               <th>Cliente</th><th>Tipo</th><th>Teléfono</th><th>Agente</th><th>Visitas</th><th>Último contacto</th><th></th>
             </tr></thead>

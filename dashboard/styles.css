@@ -604,6 +604,53 @@ input, select, textarea { font-family: inherit; }
   /* Agenda de hoy: ocultar columnas secundarias en mobile */
   .col-desktop { display: none !important; }
 
+  /* ── Clientes: tabla → cards de 2 filas en mobile ── */
+  .clients-tbl thead { display: none; }
+
+  .clients-tbl tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 2px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: white;
+    cursor: pointer;
+  }
+  .clients-tbl tbody tr:hover { background: var(--gray-25); }
+
+  /* Todos los td se resetean a bloque sin padding de tabla */
+  .clients-tbl td {
+    display: block;
+    padding: 0;
+    border: none;
+    font-size: 13px;
+  }
+
+  /* Fila 1: Cliente (flex:1) + Tipo (pill) */
+  .clients-tbl td:nth-child(1) { flex: 1; min-width: 0; order: 1; }
+  .clients-tbl td:nth-child(2) { order: 2; align-self: center; }
+
+  /* Fila 2: Teléfono · Último contacto — ancho completo */
+  .clients-tbl td:nth-child(3) {
+    order: 3;
+    width: 100%;
+    font-size: 12px;
+    color: var(--fg-tertiary);
+    margin-top: 2px;
+  }
+  .clients-tbl td:nth-child(6) {
+    order: 4;
+    font-size: 11px;
+    color: var(--fg-muted);
+    width: 100%;
+  }
+
+  /* Ocultar columnas secundarias (Agente, Visitas, Acciones) */
+  .clients-tbl td:nth-child(4),
+  .clients-tbl td:nth-child(5),
+  .clients-tbl td:nth-child(7) { display: none; }
+
   /* Property grids: 2 cols en mobile */
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
