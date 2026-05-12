@@ -26,6 +26,9 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
         <div className="sb-brand">
           <Icon name="building" size={18} style={{ color: 'var(--accent-500)' }} />
           <span>InmuebleBot</span>
+          <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
+            <Icon name="x" size={16} />
+          </button>
         </div>
         <div className="sb-section">Principal</div>
         {items.map(it => (

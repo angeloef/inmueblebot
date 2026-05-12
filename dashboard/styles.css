@@ -474,6 +474,9 @@ input, select, textarea { font-family: inherit; }
 /* Hamburger button: hidden on desktop */
 .tb-menu-btn { display: none; }
 
+/* Sidebar close button: hidden on desktop */
+.sb-close { display: none; }
+
 @media (max-width: 768px) {
   /* App shell: sidebar removed from grid, content takes full width */
   .app { grid-template-columns: 1fr; }
@@ -501,6 +504,22 @@ input, select, textarea { font-family: inherit; }
 
   /* Show hamburger in topbar */
   .tb-menu-btn { display: inline-flex; }
+
+  /* Show close button inside sidebar */
+  .sb-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .sb-close:hover { background: var(--bg-hover); color: var(--fg-primary); }
 
   /* Reduce page padding */
   .page-view { padding: 14px 14px 0; }
