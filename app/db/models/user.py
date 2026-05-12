@@ -76,6 +76,12 @@ class User(Base):
         comment="Puntuación de lead (0-100)"
     )
 
+    extra_data: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Metadata adicional: email, role, notes (admin-created leads)"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
