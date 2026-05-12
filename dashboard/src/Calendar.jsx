@@ -121,7 +121,7 @@ function layoutDayEvents(dayEvents) {
   return result;
 }
 
-function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onMoveEvent, tzLabel }) {
+function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onMoveEvent, tzLabel, properties, clients }) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const cols = days.length;
   const template = `${GUTTER_W}px repeat(${cols}, minmax(0, 1fr))`;
@@ -587,6 +587,8 @@ export default function Calendar() {
             onSlotInteract={handleSlotInteract}
             onMoveEvent={handleMoveEvent}
             tzLabel={tzLabel}
+            properties={properties}
+            clients={clients}
           />
         )}
         {view === 'day' && (
@@ -600,6 +602,8 @@ export default function Calendar() {
             onSlotInteract={handleSlotInteract}
             onMoveEvent={handleMoveEvent}
             tzLabel={tzLabel}
+            properties={properties}
+            clients={clients}
           />
         )}
       </div>
