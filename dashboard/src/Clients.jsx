@@ -6,10 +6,10 @@ import { KIND_META } from './EventPopover';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
-  { value: 'contact',  label: 'Contacto'  },
-  { value: 'lead',     label: 'Lead'       },
-  { value: 'client',   label: 'Cliente'    },
-  { value: 'lost',     label: 'Perdido'    },
+  { value: 'tenant',  label: 'Inquilino' },
+  { value: 'Owner',     label: 'Propietario' },
+  { value: 'client',   label: 'Cliente' },
+  
 ];
 
 function ClientEditor({ client, mode, onClose, onSave }) {
