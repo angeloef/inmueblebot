@@ -220,22 +220,21 @@ class PropertyRepository(BaseRepository):
             filters.append(Property.location.ilike(f"%{loc_clean}%"))
 
             # Strategy 1b: Accent-insensitive matching via translate()
-            # "Obera" now matches "Oberá" without needing unaccent extension
+            # CRITICAL: Add this ALWAYS (not just when input has accents).
+            # "Obera" (user input) must match "Oberá" (DB) — this only works via translate().
             loc_accentless = strip_accents(loc_clean)
-            if loc_accentless != loc_clean:
-                filters.append(
-                    func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_accentless}%")
-                )
+            filters.append(
+                func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_accentless}%")
+            )
 
             # Strategy 2: Normalized (prefix stripped, numbers removed)
             # e.g. "calle sarmiento" → "sarmiento" matches "Sarmiento 285, Oberá"
             if loc_norm and loc_norm != loc_clean:
                 filters.append(Property.location.ilike(f"%{loc_norm}%"))
                 loc_norm_accentless = strip_accents(loc_norm)
-                if loc_norm_accentless != loc_norm:
-                    filters.append(
-                        func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_norm_accentless}%")
-                    )
+                filters.append(
+                    func.translate(Property.location, ACCENTED_CHARS, ASCII_CHARS).ilike(f"%{loc_norm_accentless}%")
+                )
 
             # Strategy 3: Individual words (>2 chars) OR'd together
             # e.g. "calle sarmiento" matches anything containing "calle" OR "sarmiento"
