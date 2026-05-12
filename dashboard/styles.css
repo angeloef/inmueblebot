@@ -701,3 +701,83 @@ input, select, textarea { font-family: inherit; }
   .btn-sm { font-size: 13px; padding: 7px 13px; }
   .btn-sm svg { width: 16px; height: 16px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   TABLET  769 px – 1280 px
+   Sidebar fijo permanece. Solo se corrigen los layouts rotos.
+   ═══════════════════════════════════════════════════════════ */
+@media (min-width: 769px) and (max-width: 1280px) {
+
+  /* ── Overflow-x: mismo candado que mobile ── */
+  html { overflow-x: hidden; }
+  body { overflow-x: hidden; }
+  .page-view, .page-body, .page-kpis { overflow-x: hidden; }
+
+  /* ── min-width:0 en grid/flex para que tablas no rompan tracks ── */
+  .dashboard-grid > *,
+  .kpi-grid > *,
+  .field-row > *,
+  .page-body > *,
+  .scroll-surface > * { min-width: 0; }
+
+  /* ── Clientes: misma vista card que mobile ── */
+  .clients-tbl thead { display: none; }
+
+  .clients-tbl tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 2px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: white;
+    cursor: pointer;
+  }
+  .clients-tbl tbody tr:hover { background: var(--gray-25); }
+
+  .clients-tbl td {
+    display: block;
+    padding: 0;
+    border: none;
+    font-size: 13px;
+  }
+
+  /* Fila 1: Nombre + Tipo */
+  .clients-tbl td:nth-child(1) { flex: 1; min-width: 0; order: 1; }
+  .clients-tbl td:nth-child(2) { order: 2; align-self: center; }
+
+  /* Fila 2: Teléfono */
+  .clients-tbl td:nth-child(3) {
+    order: 3;
+    width: 100%;
+    font-size: 12px;
+    color: var(--fg-tertiary);
+    margin-top: 2px;
+  }
+
+  /* Fila 3: Último contacto */
+  .clients-tbl td:nth-child(6) {
+    order: 4;
+    font-size: 11px;
+    color: var(--fg-muted);
+    width: 100%;
+  }
+
+  /* Ocultar: Agente, Visitas, Acciones */
+  .clients-tbl td:nth-child(4),
+  .clients-tbl td:nth-child(5),
+  .clients-tbl td:nth-child(7) { display: none; }
+
+  /* ── Calendario: ocultar vista mensual, mantener semana + día ── */
+  .cal-view-month { display: none; }
+
+  /* ── Propiedades: grids a 2 columnas ── */
+  .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Tablet pequeña (769–960 px): colapsar dashboard grid y KPIs ── */
+@media (min-width: 769px) and (max-width: 960px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
