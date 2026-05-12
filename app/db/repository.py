@@ -174,7 +174,6 @@ class PropertyRepository(BaseRepository):
         bedrooms_min: Optional[int] = None,
         bathrooms_min: Optional[int] = None,
         area_min: Optional[int] = None,
-        property_type: Optional[str] = None,
         status: str = "available",
         limit: int = 20,
         offset: int = 0,
