@@ -1088,11 +1088,18 @@ async def simulate_conversation_turn(
 
     elapsed = time.time() - start_time
 
+    # Apply same sanitization as webhook (strip CONFIRMED tags, base64, etc.)
+    from app.utils.sanitizer import sanitize_bot_response as _sanitize
+    response_text = _sanitize(result.get("response_text", ""))
+    tools_used = result.get("tools_used", [])
+    rich_content = result.get("rich_content")
+    next_state = result.get("next_state", "")
+
     return {
-        "response_text": result.get("response_text", ""),
-        "tools_used": result.get("tools_used", []),
-        "rich_content": result.get("rich_content"),
-        "next_state": result.get("next_state", ""),
+        "response_text": response_text,
+        "tools_used": tools_used,
+        "rich_content": rich_content,
+        "next_state": next_state,
         "timing": {"turn_seconds": round(elapsed, 3)},
     }
 

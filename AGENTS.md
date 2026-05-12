@@ -1039,3 +1039,75 @@ curl -X POST https://inmueblebot-api.onrender.com/admin/simulate \
 - Ahora usa `/admin/simulate` en vez del webhook de WhatsApp
 - Valida hallucinaciones por turno (check_hallucination)
 - 5 escenarios, 9 turnos — **0 hallucinaciones detectadas**
+
+### Sprint 22 — Monte Carlo Mass Test Suite (May 11, 2026)
+
+**Goal:** Diseñar y ejecutar un test masivo automatizado que pruebe el flujo completo del chatbot contra la API en producción, simulando 30 sesiones de usuarios reales con 6 perfiles distintos.
+
+**Method: Markov Chain Monte Carlo (MCMC)**
+Cada sesión es una cadena de Márkov donde:
+- Estados: idle, qualifying, searching, viewing_property, scheduling, faq, appointments, cancelling, exit
+- Transiciones probabilísticas según perfil de usuario
+- Variación aleatoria de inputs (fechas, ubicaciones, presupuestos, tipos)
+- 10 reglas de validación por turno:
+  1. TOOL-EXISTS: schedule_visit
+  2. TOOL-EXISTS: cancel_appointment
+  3. TOOL-EXISTS: reschedule_appointment
+  4. TOOL-EXISTS: save_lead_info
+  5. TOOL-EXISTS: search_properties
+  6. NOT-HALLUC: IDs inventados
+  7. NOT-ERROR: errores internos
+  8. NOT-CONFIRMED: tag leak
+  9. TIMING: < 30s
+  10. NOT-EMPTY: respuesta válida
+
+**6 Perfiles de Usuario:**
+| Perfil | Peso | Comportamiento |
+|--------|------|----------------|
+| Busca alquiler específico | 35% | Location + tipo + presupuesto → detalles → agenda |
+| Busca compra | 15% | Location + tipo → detalles → agenda |
+| Consulta vaga | 20% | 1 criterio → bot pregunta → especifica |
+| FAQ → búsqueda | 10% | Pregunta FAQ → busca propiedad |
+| No encuentra | 10% | Filtros extremos → fallbacks → se va |
+| Cliente existente | 10% | Ver citas → reprograma/cancela |
+
+**Endpoints creados:**
+- `POST /admin/simulate` — Simula un turno sin WhatsApp. Devuelve {response_text, tools_used, rich_content, next_state, timing}. Protegido por X-API-Key.
+
+**Resultados del test (30 sesiones, 110 turnos):**
+
+```
+┌────────────────────────────────────────────────┐
+│ COVERAGE                                       │
+├────────────────────────────────────────────────┤
+│ Sessions:      30                              │
+│ Total turns:  110                              │
+│ Edge coverage: 22/19 edges (115.8%)            │
+│ States seen:   9/9                             │
+│ Violations:    1 (CONFIRMED tag via raw API)   │
+└────────────────────────────────────────────────┘
+```
+
+**Per-Profile:**
+| Profile | Sessions | Turns | Avg | Failures |
+|---------|----------|-------|-----|----------|
+| Busca alquiler | 5 | 17 | 3.4 | 0 |
+| Busca compra | 5 | 21 | 4.2 | 0 |
+| Consulta vaga | 5 | 39 | 7.8 | 1 |
+| FAQ → búsqueda | 5 | 12 | 2.4 | 0 |
+| No encuentra | 5 | 7 | 1.4 | 0 |
+| Cliente existente | 5 | 14 | 2.8 | 0 |
+
+**Tools detectadas en test:** search_properties, get_property_details, schedule_visit, get_property_images, get_faq_answer, get_my_appointments
+
+**Timing stats (110 turns):**
+- Avg: 2.83s | Min: 0.87s | Max: 35.37s (cold start)
+
+**Fixed:** `/admin/simulate` ahora aplica `sanitize_bot_response()` antes de devolver el texto (misma sanitización que el webhook de WhatsApp). El tag `<!--CONFIRMED:...-->` ya no aparece en respuestas raw.
+
+**Archivos del test:**
+- `tests/massive_test/profiles.py` — 6 perfiles de usuario con generadores de mensajes probabilísticos
+- `tests/massive_test/validators.py` — 10 reglas de validación
+- `tests/massive_test/coverage_tracker.py` — Seguimiento de cobertura de aristas en cadena de Márkov
+- `tests/massive_test/orchestrator.py` — Orquestador de sesiones
+- `tests/massive_test/run_full_test.py` — Entry point con reporte
