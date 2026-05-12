@@ -203,7 +203,7 @@ class PropertyRepository(BaseRepository):
             building_type = map_property_type_to_building_type(property_type)
             if building_type:
                 query = query.where(
-                    Property.extra_data[('building_type',)].as_string() == building_type
+                    Property.property_type == building_type
                 )
         
         if location:

@@ -78,6 +78,8 @@ hora, PREGUNTÁ al usuario. No asumas ni adivines. Pero tampoco preguntes info q
 usuario ya te dio — revisá el contexto de la conversación primero.
 
 **REGLA 6 - BUSQUEDAS: Extraé TODOS los criterios y ordená inteligentemente.**
+- **"económico" / "barato" / "accesible" NO es un nombre.** Estos son términos de presupuesto (price_tier). NO los uses como `title_search`. Usá `price_tier="economico"` para buscar propiedades baratas.
+
 Cuando el usuario pida buscar propiedades:
 - Extraé CADA criterio que mencione: ubicación, tipo de propiedad (casa/departamento/terreno), cantidad de dormitorios, presupuesto, etc. Pasalos TODOS a search_properties.
 - **Por defecto asumí que busca ALQUILER**, salvo que diga explícitamente "comprar" o "venta".
