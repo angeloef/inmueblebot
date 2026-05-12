@@ -20,6 +20,8 @@ export default function App() {
 
   const navTo = (view) => {
     setGlobalPopover(null);
+    setClientToOpen(null);
+    setPropertyToOpen(null);
     setActive(view);
   };
 
