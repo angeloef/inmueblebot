@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
 import uuid as _uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Admin API uses a global MemoryManager for operations like user context reset
 memory_manager = MemoryManager()
@@ -1022,6 +1025,76 @@ async def handoff_to_agent(
 
 class AgentReply(BaseModel):
     message: str
+
+
+class SimulateRequest(BaseModel):
+    """Request body for the simulate endpoint (massive testing without WhatsApp)."""
+    phone: str
+    message: str
+    reset: bool = False
+    """If True, resets user context before processing (fresh conversation)."""
+
+
+@router.post("/simulate")
+async def simulate_conversation_turn(
+    body: SimulateRequest,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """
+    Simula un turno de conversación SIN enviar a WhatsApp.
+    
+    Procesa el mensaje exactamente como lo haría el webhook de WhatsApp,
+    pero devuelve la respuesta completa del agente en lugar de enviarla
+    por WhatsApp. Ideal para tests masivos automatizados.
+
+    Args:
+        phone: Número de teléfono del usuario simulado
+        message: Mensaje del usuario
+        reset: Si True, resetea el contexto del usuario antes de procesar
+
+    Returns:
+        response_text: Texto de respuesta del bot
+        tools_used: Lista de herramientas ejecutadas
+        rich_content: Contenido adicional (propiedades, imágenes)
+        next_state: Estado siguiente del state machine
+        timing: Tiempos de procesamiento
+    """
+    from app.agents.real_estate_agent import real_estate_agent
+    import time
+
+    phone = body.phone
+    message = body.message
+
+    # Opcional: resetear contexto para empezar conversación fresca
+    if body.reset:
+        try:
+            await memory_manager.reset_user_context(phone)
+            logger.info(f"[Simulate] Context reset for {phone}")
+        except Exception as e:
+            logger.warning(f"[Simulate] Context reset failed: {e}")
+
+    start_time = time.time()
+
+    try:
+        result = await real_estate_agent.process_turn(
+            phone=phone,
+            user_message=message,
+        )
+    except Exception as e:
+        logger.error(f"[Simulate] process_turn failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+    elapsed = time.time() - start_time
+
+    return {
+        "response_text": result.get("response_text", ""),
+        "tools_used": result.get("tools_used", []),
+        "rich_content": result.get("rich_content"),
+        "next_state": result.get("next_state", ""),
+        "timing": {"turn_seconds": round(elapsed, 3)},
+    }
 
 
 @router.post("/reply/{phone}")
