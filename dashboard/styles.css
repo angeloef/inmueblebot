@@ -601,6 +601,9 @@ input, select, textarea { font-family: inherit; }
   /* Dashboard: colapsar a columna única */
   .dashboard-grid { grid-template-columns: 1fr; }
 
+  /* Agenda de hoy: ocultar columnas secundarias en mobile */
+  .col-desktop { display: none !important; }
+
   /* Property grids: 2 cols en mobile */
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .prop-attrs-grid { grid-template-columns: 1fr 1fr; }

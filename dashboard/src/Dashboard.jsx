@@ -172,9 +172,9 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
               </div>
             </div>
             <div className="surface">
-              <table className="tbl">
+              <table className="tbl agenda-tbl">
                 <thead><tr>
-                  <th>Hora</th><th>Cliente</th><th>Propiedad</th><th>Agente</th><th>Estado</th><th></th>
+                  <th>Hora</th><th>Cliente</th><th>Propiedad</th><th className="col-desktop">Agente</th><th>Estado</th><th className="col-desktop"></th>
                 </tr></thead>
                 <tbody>
                   {todayEvents.map(e => {
@@ -191,12 +191,12 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
                         </td>
                         <td>{c ? c.name : <span className="muted">—</span>}</td>
                         <td className="muted">{p ? p.addr : (e.title ?? '—').replace(/^[^·]+·\s*/, '')}</td>
-                        <td className="muted">{e.agent}</td>
+                        <td className="muted col-desktop">{e.agent}</td>
                         <td>{e.status === 'confirmed'
-                          ? <Pill kind="paid">Confirmada</Pill>
-                          : <Pill kind="pending">Por confirmar</Pill>}
+                          ? <Pill kind="paid">Conf.</Pill>
+                          : <Pill kind="pending">Pend.</Pill>}
                         </td>
-                        <td><div className="row-actions"><IconButton name="phone" /><IconButton name="more" /></div></td>
+                        <td className="col-desktop"><div className="row-actions"><IconButton name="phone" /><IconButton name="more" /></div></td>
                       </tr>
                     );
                   })}
