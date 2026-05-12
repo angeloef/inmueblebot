@@ -114,7 +114,6 @@ class PropertyService:
             budget_max=budget_max,
             bedrooms_min=bedrooms,
             bathrooms_min=bathrooms,
-            property_type=property_type,
             status="available",
             limit=limit,
             sort_by=sort_by,
