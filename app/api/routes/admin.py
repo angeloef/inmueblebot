@@ -366,9 +366,23 @@ class HandoffRequest(BaseModel):
 _ROLE_TO_STATUS = {"prospect": "new", "tenant": "converted", "owner": "new", "lost": "lost"}
 
 
+def _parse_extra(raw) -> dict:
+    """Normaliza extra_data: acepta dict, str JSON, o None."""
+    import json as _json
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = _json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def _user_to_dict(u):
     """Serializa User al shape que espera el dashboard (compatible con toClient())."""
-    extra = (getattr(u, 'extra_data', None) or {})
+    extra = _parse_extra(getattr(u, 'extra_data', None))
     role = extra.get("role", "prospect")
     return {
         "id": str(u.id),
@@ -510,7 +524,7 @@ def update_lead(
         user.name = data.name
 
     updates = data.model_dump(exclude_unset=True)
-    extra = dict(getattr(user, 'extra_data', None) or {})
+    extra = dict(_parse_extra(getattr(user, 'extra_data', None)))
     for key in ("email", "role", "notes"):
         if key in updates:
             extra[key] = updates[key]
