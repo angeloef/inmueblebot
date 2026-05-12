@@ -229,6 +229,24 @@ class RealEstateAgent:
                     logger.info(f"Tool call: {tool_name} con args: {tool_args}")
                     tools_used.append(tool_name)
                     
+                    # PROPERTY_ID GUARD: if LLM calls schedule_visit with wrong property_id,
+                    # force it to use selected_property_id from context
+                    if tool_name == "schedule_visit":
+                        try:
+                            _ctx = await memory_manager.get_user_context(phone)
+                            _selected = _ctx.get("selected_property_id")
+                            _arg_pid = tool_args.get("property_id")
+                            if _selected and _arg_pid and str(_selected) != str(_arg_pid):
+                                logger.warning(
+                                    f"[Agent] 🛡️ PROPERTY_ID MISMATCH: LLM wants property_id={_arg_pid} "
+                                    f"but selected_property_id={_selected}. FORCING CORRECTION."
+                                )
+                                # Override the LLM's property_id with the active one
+                                tool_args["property_id"] = str(_selected)
+                                tool_args["_corrected_from"] = str(_arg_pid)
+                        except Exception as _e:
+                            logger.warning(f"[Agent] Property guard error (non-fatal): {_e}")
+
                     tool_result = await execute_tool(
                         tool_name=tool_name,
                         arguments=tool_args,
