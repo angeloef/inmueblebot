@@ -11,6 +11,7 @@ import FAQs from './FAQs';
 
 export default function App() {
   const [active, setActive] = useState('dashboard');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [clientToOpen, setClientToOpen] = useState(null);
   const [propertyToOpen, setPropertyToOpen] = useState(null);
   const [globalPopover, setGlobalPopover] = useState(null);
@@ -19,6 +20,7 @@ export default function App() {
   const deleteEventMut = useDeleteEvent();
 
   const navTo = (view) => {
+    setMenuOpen(false);
     setGlobalPopover(null);
     setClientToOpen(null);
     setPropertyToOpen(null);
@@ -53,9 +55,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar active={active} onNav={navTo} />
+      <Sidebar active={active} onNav={navTo} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="main">
-        <Topbar onNew={() => pushToast({ text: 'Usá el calendario para crear eventos.' })} />
+        <Topbar onMenuToggle={() => setMenuOpen(v => !v)} />
         <div className="canvas">
           {active === 'dashboard' && (
             <Dashboard onNav={navTo} onOpenEvent={openEvent} onOpenClient={openClient} />

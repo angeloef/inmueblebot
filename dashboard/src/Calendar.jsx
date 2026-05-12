@@ -430,7 +430,7 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
 
   const tzLabel = calStatus?.label ?? 'GMT-3';
 
-  const [view, setView] = useState('month');
+  const [view, setView] = useState(() => window.innerWidth < 768 ? 'day' : 'month');
   const [popover, setPopover] = useState(null);
   const [editor, setEditor] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
@@ -554,8 +554,8 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
           </div>
           <h2>{navLabel}</h2>
           <div className="views">
-            <button className={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>Mes</button>
-            <button className={view === 'week' ? 'active' : ''} onClick={() => setView('week')}>Semana</button>
+            <button className={`cal-view-month ${view === 'month' ? 'active' : ''}`} onClick={() => setView('month')}>Mes</button>
+            <button className={`cal-view-week ${view === 'week' ? 'active' : ''}`} onClick={() => setView('week')}>Semana</button>
             <button className={view === 'day' ? 'active' : ''} onClick={() => setView('day')}>Día</button>
           </div>
         </div>

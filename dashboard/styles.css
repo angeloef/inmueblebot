@@ -468,3 +468,63 @@ input, select, textarea { font-family: inherit; }
 }
 .notif-item:hover .notif-delete { opacity: 1; }
 .notif-delete:hover { color: var(--danger-500, #e53e3e); }
+
+/* ───── Mobile Responsive ───── */
+
+/* Hamburger button: hidden on desktop */
+.tb-menu-btn { display: none; }
+
+@media (max-width: 768px) {
+  /* App shell: sidebar removed from grid, content takes full width */
+  .app { grid-template-columns: 1fr; }
+
+  /* Sidebar: fixed slide-out overlay */
+  .sb {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 260px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform var(--dur-slow) var(--ease-out);
+    box-shadow: var(--shadow-lg);
+  }
+  .sb.open { transform: translateX(0); }
+
+  /* Backdrop behind open sidebar */
+  .sb-backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-overlay);
+    z-index: 199;
+    animation: fade-in var(--dur-base) var(--ease-out);
+  }
+
+  /* Show hamburger in topbar */
+  .tb-menu-btn { display: inline-flex; }
+
+  /* Reduce page padding */
+  .page-view { padding: 14px 14px 0; }
+
+  /* KPI grid: 2 columns instead of 4 */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  /* Form field rows: single column */
+  .field-row { grid-template-columns: 1fr; }
+
+  /* Popover: constrain to viewport */
+  .popover { width: calc(100vw - 32px); max-width: 380px; left: 16px !important; }
+
+  /* Drawer: full width on mobile */
+  .drawer, .drawer.wide { width: 100%; }
+
+  /* Calendar: only show Day view button */
+  .cal-view-month, .cal-view-week { display: none; }
+
+  /* Toast stack: stretch to screen edges */
+  .toast-stack { left: 16px; right: 16px; bottom: 16px; }
+  .toast { width: 100%; }
+
+  /* Page header: wrap actions below title */
+  .page-h { flex-wrap: wrap; gap: 8px; }
+  .page-h-actions { margin-left: 0; width: 100%; }
+}

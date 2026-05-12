@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Primitives';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification } from './api';
 
-export function Sidebar({ active, onNav }) {
+export function Sidebar({ active, onNav, isOpen, onClose }) {
   const items = [
     { id: 'dashboard',  icon: 'home',     label: 'Inicio' },
     { id: 'calendar',   icon: 'calendar', label: 'Calendario' },
@@ -13,43 +13,52 @@ export function Sidebar({ active, onNav }) {
   const more = [
     { id: 'documents',  icon: 'folder',   label: 'Documentos' },
   ];
+
+  const handleNav = (id) => {
+    onNav(id);
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className="sb">
-      <div className="sb-brand">
-        <Icon name="building" size={18} style={{ color: 'var(--accent-500)' }} />
-        <span>InmuebleBot</span>
-      </div>
-      <div className="sb-section">Principal</div>
-      {items.map(it => (
-        <div key={it.id}
-             className={`sb-item ${active === it.id ? 'active' : ''}`}
-             onClick={() => onNav(it.id)}>
-          <Icon name={it.icon} size={16} />
-          <span>{it.label}</span>
-          {it.badge && <span className="badge">{it.badge}</span>}
+    <>
+      {isOpen && <div className="sb-backdrop" onClick={onClose} />}
+      <aside className={`sb${isOpen ? ' open' : ''}`}>
+        <div className="sb-brand">
+          <Icon name="building" size={18} style={{ color: 'var(--accent-500)' }} />
+          <span>InmuebleBot</span>
         </div>
-      ))}
-      {more.map(it => (
-        <div key={it.id}
-             className={`sb-item ${active === it.id ? 'active' : ''}`}
-             onClick={() => onNav(it.id)}>
-          <Icon name={it.icon} size={16} />
-          <span>{it.label}</span>
+        <div className="sb-section">Principal</div>
+        {items.map(it => (
+          <div key={it.id}
+               className={`sb-item ${active === it.id ? 'active' : ''}`}
+               onClick={() => handleNav(it.id)}>
+            <Icon name={it.icon} size={16} />
+            <span>{it.label}</span>
+            {it.badge && <span className="badge">{it.badge}</span>}
+          </div>
+        ))}
+        {more.map(it => (
+          <div key={it.id}
+               className={`sb-item ${active === it.id ? 'active' : ''}`}
+               onClick={() => handleNav(it.id)}>
+            <Icon name={it.icon} size={16} />
+            <span>{it.label}</span>
+          </div>
+        ))}
+        <div className="sb-section">Sistema</div>
+        <div className={`sb-item ${active === 'settings' ? 'active' : ''}`} onClick={() => handleNav('settings')}>
+          <Icon name="settings" size={16} />
+          <span>Configuración</span>
         </div>
-      ))}
-      <div className="sb-section">Sistema</div>
-      <div className={`sb-item ${active === 'settings' ? 'active' : ''}`} onClick={() => onNav('settings')}>
-        <Icon name="settings" size={16} />
-        <span>Configuración</span>
-      </div>
-      <div className="sb-bottom">
-        <span className="av">MP</span>
-        <div className="who">
-          <b>María Pereyra</b>
-          <span>Inmobiliaria Norte</span>
+        <div className="sb-bottom">
+          <span className="av">MP</span>
+          <div className="who">
+            <b>María Pereyra</b>
+            <span>Inmobiliaria Norte</span>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -125,7 +134,7 @@ function NotificationPanel({ onClose }) {
   );
 }
 
-export function Topbar() {
+export function Topbar({ onMenuToggle }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { data } = useNotifications();
@@ -141,6 +150,9 @@ export function Topbar() {
 
   return (
     <header className="tb">
+      <button className="tb-menu-btn btn btn-ghost btn-icon" onClick={onMenuToggle} aria-label="Menú">
+        <Icon name="menu" size={16} />
+      </button>
       <div className="tb-spacer" />
       <div className="tb-notif-wrap" ref={ref}>
         <span className="tb-icon" title="Notificaciones" onClick={() => setOpen(v => !v)}>
