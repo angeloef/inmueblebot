@@ -297,7 +297,7 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
       </div>
 
       <div className="page-kpis">
-        <div className="kpi-grid" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+        <div className="kpi-grid">
           <div className="kpi"><span className="kpi-label">Prospectos activos</span><span className="kpi-value">{counts.prospect}</span><span className="kpi-delta up"><Icon name="arrowUp" size={12}/>+3 esta semana</span></div>
           <div className="kpi"><span className="kpi-label">Inquilinos</span><span className="kpi-value">{counts.tenant}</span><span className="kpi-delta">Pago al día: 100%</span></div>
           <div className="kpi"><span className="kpi-label">Propietarios</span><span className="kpi-value">{counts.owner}</span><span className="kpi-delta">5 propiedades en cartera</span></div>

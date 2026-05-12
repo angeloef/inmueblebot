@@ -469,7 +469,8 @@ input, select, textarea { font-family: inherit; }
 .notif-item:hover .notif-delete { opacity: 1; }
 .notif-delete:hover { color: var(--danger-500, #e53e3e); }
 
-/* ───── Property grids (extracted from inline styles) ───── */
+/* ───── Grids extraídos de inline styles ───── */
+.dashboard-grid  { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; }
 .prop-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .prop-attrs-grid { display: grid; grid-template-columns: 1fr 72px 72px 1fr; gap: 12px; }
 
@@ -584,6 +585,9 @@ input, select, textarea { font-family: inherit; }
   /* Filter bar: input full width en mobile */
   .filter-bar { flex-wrap: wrap; }
   .filter-bar input { max-width: 100%; flex: 1 1 100%; }
+
+  /* Dashboard: colapsar a columna única */
+  .dashboard-grid { grid-template-columns: 1fr; }
 
   /* Property grids: 2 cols en mobile */
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }

@@ -160,7 +160,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
       </div>
 
       <div className="page-body">
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20 }}>
+        <div className="dashboard-grid">
 
           {/* ── Columna izquierda ── */}
           <div>
