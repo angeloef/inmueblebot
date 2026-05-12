@@ -266,7 +266,12 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
 
   const filtered = clients.filter(c => {
     if (filter !== 'all' && c.role !== filter) return false;
-    if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const matchName = c.name?.toLowerCase().includes(q);
+      const matchPhone = c.phone?.includes(search.replace(/\D/g, ''));
+      if (!matchName && !matchPhone) return false;
+    }
     return true;
   });
   const counts = {
@@ -300,7 +305,7 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
 
       <div className="scroll-surface surface">
         <div className="filter-bar">
-          <input placeholder="Buscar por nombre..." value={search} onChange={e=>setSearch(e.target.value)} />
+          <input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e=>setSearch(e.target.value)} />
           {[['all','Todos',counts.all],['prospect','Prospectos',counts.prospect],['tenant','Inquilinos',counts.tenant],['owner','Propietarios',counts.owner]].map(([k,l,n]) => (
             <span key={k} className={`chip ${filter===k?'active':''}`} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></span>
           ))}
