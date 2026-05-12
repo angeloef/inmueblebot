@@ -85,7 +85,22 @@ async def lifespan(app: FastAPI):
 
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="InmuebleBot", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://inmueblebot-api.onrender.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8051",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Health ───────────────────────────────────────────────────────
 

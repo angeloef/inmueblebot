@@ -243,9 +243,10 @@ def verify_admin_api_key(x_api_key: str = Header(None), x_admin_api_key: str = H
 
 
 @router.get("/debug/users")
-def debug_users():
-    """Diagnóstico: ejecuta query de users y retorna el error completo."""
-    import traceback
+def debug_users(
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Diagnóstico: ejecuta query de users y retorna info básica. Requiere auth."""
     try:
         db = _get_sync_session()
         from sqlalchemy import text as _text
@@ -253,16 +254,14 @@ def debug_users():
         tables = [r[0] for r in result.fetchall()]
         try:
             from app.db.models import User
-            users = db.query(User).limit(1).all()
             user_count = db.query(User).count()
-            first = _user_to_dict(users[0]) if users else None
-            return {"tables": tables, "user_count": user_count, "first_user": first}
-        except Exception as e2:
-            return {"tables": tables, "user_error": traceback.format_exc()}
+            return {"tables": tables, "user_count": user_count}
+        except Exception:
+            return {"tables": tables, "user_error": "Query failed"}
         finally:
             db.close()
-    except Exception as e:
-        return {"fatal_error": traceback.format_exc()}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal error")
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────

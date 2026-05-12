@@ -224,9 +224,8 @@ All column rename issues from Frankfurt→Oregon migration. Auto-migration DO bl
 | Issue | Severity | Status |
 |-------|----------|--------|
 | Credential exposure (render.yaml hardcoded DB/Redis passwords) | 🔴 CRITICAL | Need rotation |
-| No auth on `/admin/debug/users` and `/webhook/debug` | 🔴 CRITICAL | Still open |
 | No CI/CD pipeline | 🔴 CRITICAL | Still open |
-| Webhook signature verification skipped | 🔴 CRITICAL | Still open |
+| Webhook signature verification skipped | 🔴 CRITICAL | Verification code exists but is a no-op — `verify_webhook_signature()` returns `True` when no signature is present (skips if `WHATSAPP_APP_SECRET` not set). To fix properly: read raw body BEFORE `request.json()`. |
 | Docker healthcheck uses curl (not in slim image) | 🟠 HIGH | Still open |
 | Loguru `serialize=True` incompatible with Render log aggregation | 🟡 MEDIUM | Still open |
 | No Redis Sentinel/Cluster support | 🟡 MEDIUM | Single instance, no HA |
@@ -755,7 +754,7 @@ Key test files and their focus:
 | `update_user_preferences` | phone, location, budget_max/min, property_type, operation_type, bedrooms | Save prefs |
 | `get_user_preferences` | phone | Read saved prefs |
 | `save_lead_info` | phone, name, email, budget, notes | Save lead info |
-| `schedule_visit` | property_id, date_str, time_str, phone | Schedule visit |
+| `schedule_visit` | property_id, date_str, time_str, phone, client_name (REQUIRED if no name in DB) | Schedule visit — asks for name+surname if missing, persists to users.name |
 | `reschedule_appointment` | appointment_id, new_date_str, new_time_str, phone | Reschedule (auto-resolves if UUID invalid) |
 | `cancel_appointment` | appointment_id, reason, phone | Cancel |
 | `get_my_appointments` | phone | List appointments |
@@ -955,3 +954,53 @@ Key test files and their focus:
 - ✅ All 3 location search strategies still work (backward compatible)
 - ✅ Fallback dedup prevents duplicate property listings
 - ✅ Commit + Push to Render
+
+### Sprint 21 — Nombre y Apellido obligatorio al agendar visita (May 11, 2026)
+
+**Problem:** El bot agendaba visitas sin pedir ni guardar el nombre y apellido del cliente. Los contactos quedaban como "Sin nombre" en la DB incluso después de hacer una reserva.
+
+**Changes:**
+
+| Layer | File | Change |
+|-------|------|--------|
+| **Tool** | `app/agents/tools.py` | `schedule_visit()` ahora acepta parámetro `client_name: str = None`. Si el usuario no tiene nombre en DB Y no se pasó `client_name` → devuelve `"Antes de confirmar la visita necesito tu nombre y apellido"`, forzando al LLM a preguntar. Si se recibe `client_name` y el usuario no tenía nombre → persiste en `users.name` vía `user_repo.update()` en la misma sesión DB. |
+| **Tool Def** | `app/agents/prompts.py` | Tool `schedule_visit` actualizado: nuevo campo `client_name` (type: string) con descripción "Nombre y apellido completo del usuario. OBLIGATORIO si no está en el perfil". Agregado a `"required"`. |
+| **System Prompt** | `app/agents/prompts.py` | Regla #5 reescrita para pedir explícitamente **nombre y apellido** (no solo nombre). Instrucción: NO llamar `schedule_visit` sin `client_name` a menos que ya esté en el perfil. |
+| **Few-shot** | `app/agents/prompts.py` | Ejemplo 3 actualizado: muestra pregunta "¿me podés dar tu nombre y apellido?" → usuario responde → `schedule_visit(..., client_name="Juan Pérez")`. |
+
+**Flow after this change:**
+```
+Usuario: "quiero visitar la propiedad 5 mañana a las 10"
+Bot: "Perfecto, para registrar la visita ¿me podés dar tu nombre y apellido?"
+Usuario: "Juan Pérez"
+Bot: → llama schedule_visit(property_id="5", date_str="mañana", time_str="10:00", client_name="Juan Pérez")
+     → DB: users.name = "Juan Pérez" (guardado si era None)
+     → "¡Listo Juan! Te esperamos mañana a las 10hs."
+```
+
+**Key design decision:** La validación ocurre en el tool (capa Python), no solo en el prompt. Si el LLM llama `schedule_visit` sin `client_name` y el usuario no tiene nombre en DB, el tool rechaza y devuelve el mensaje de solicitud — obligando al LLM a preguntar antes de reintentar.
+
+**Commit:** `b5c0674 feat: pedir nombre y apellido al agendar visita, guardarlo en DB`
+
+---
+
+### Sprint 22 — Security Hardening (May 11, 2026)
+
+**Problem:** Security audit reveló vulnerabilidades críticas: un endpoint de diagnóstico sin autenticación exponía datos de usuarios, y el `CORSMiddleware` había desaparecido del `main.py` en un refactor previo.
+
+**Findings and fixes:**
+
+| Severity | Issue | File | Fix |
+|----------|-------|------|-----|
+| 🔴 CRITICAL | `GET /admin/debug/users` sin auth — exponía teléfonos, nombres y tracebacks completos | `admin.py:245` | Agregado `Depends(verify_admin_api_key)`. Eliminada exposición de datos de usuario (`first_user`). Eliminados `traceback.format_exc()` — reemplazados por `HTTPException(500)`. |
+| 🔴 CRITICAL | `CORSMiddleware` ausente — removido en refactor previo de `main.py` | `main.py:88` | Restaurado con origins: `inmueblebot-api.onrender.com`, `localhost:5173`, `localhost:3000`, `localhost:8051`. |
+| 🟡 MEDIUM | Webhook signature verification es no-op | `webhook.py:110` | Documentado en Open Issues. Fix requiere leer raw body antes de `request.json()`. |
+
+**Security items confirmed OK (no action needed):**
+- Todos los endpoints `/admin/*` sensibles tienen `Depends(verify_admin_api_key)` correctamente
+- El endpoint `/media/property/{id}/{index}` lee de DB, no del filesystem — sin riesgo de path traversal
+- `/health` y `/health/redis` no exponen datos de usuarios — aceptable
+- `ADMIN_API_KEY` se pasa como header (`x-api-key`), no como query param
+- Todo el acceso a DB usa SQLAlchemy ORM con parámetros vinculados — sin riesgo de SQL injection
+
+**Commit:** `security: fix unauthed debug endpoint, restore CORS, add client_name to scheduling`
