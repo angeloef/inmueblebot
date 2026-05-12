@@ -478,8 +478,26 @@ input, select, textarea { font-family: inherit; }
 .sb-close { display: none; }
 
 @media (max-width: 768px) {
+  /* ── Liberar scroll: en mobile todo el body scrollea ── */
+  body { overflow-y: auto; }
+  .app  { height: auto; min-height: 100vh; overflow: visible; grid-template-columns: 1fr; }
+  .main { height: auto; overflow: visible; grid-template-rows: var(--topbar-h) auto; }
+  .canvas, .canvas-flush { height: auto; overflow: visible; }
+
+  /* Page views: crecen al contenido, sin scroll interno */
+  .page-view  { height: auto; padding-bottom: 32px; }
+  .page-body  { overflow: visible; height: auto; flex: none; }
+  .scroll-surface { overflow: visible; height: auto; }
+  .tbl-scroll { overflow: visible; height: auto; }
+
+  /* Calendario: toolbar visible, time-grid con scroll propio acotado */
+  .cal-page   { height: auto; }
+  .cal-surface { overflow: visible; height: auto; }
+  .cal-tg-wrap { overflow: visible; height: auto; }
+  .cal-tg-body { height: 65vh; overflow-y: auto; }
+  .cal-month  { height: auto; }
+
   /* App shell: sidebar removed from grid, content takes full width */
-  .app { grid-template-columns: 1fr; }
 
   /* Sidebar: fixed slide-out overlay */
   .sb {
