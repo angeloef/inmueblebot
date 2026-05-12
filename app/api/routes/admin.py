@@ -433,13 +433,14 @@ def _apt_to_dict(a):
 
 @router.get("/leads")
 def list_leads(
-    limit: int = 50,
+    limit: int = 500,
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
     from app.db.models import User
+    from sqlalchemy import func as _func
     try:
-        users = db.query(User).order_by(User.created_at.desc()).limit(limit).all()
+        users = db.query(User).order_by(User.created_at.desc().nullslast()).limit(limit).all()
         return {"leads": [_user_to_dict(u) for u in users], "total": len(users)}
     except Exception as exc:
         import traceback

@@ -304,7 +304,7 @@ export const useDeleteProperty = () => {
 // ─── Clientes (Leads) ─────────────────────────────────────────────────────────
 
 const clientApi = {
-  list:   ()         => http.get('/admin/leads').then(r => (r.data.leads ?? r.data).map(toClient)),
+  list:   ()         => http.get('/admin/leads?limit=500').then(r => (r.data.leads ?? r.data).map(toClient)),
   get:    (id)       => http.get(`/admin/leads/${id}`).then(r => toClient(r.data)),
   create: (data)     => http.post('/admin/leads', fromClient(data)).then(r => r.data),
   update: (id, data) => http.patch(`/admin/leads/${id}`, fromClient(data)).then(r => r.data),
