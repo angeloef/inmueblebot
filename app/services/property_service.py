@@ -108,6 +108,7 @@ class PropertyService:
         # Llamar al repositorio
         props, total = await repo.search(
             type=operation_type,
+            property_type=property_type,
             location=location,
             budget_min=budget_min,
             budget_max=budget_max,
@@ -119,9 +120,9 @@ class PropertyService:
             sort_by=sort_by,
             title_search=title_search,
         )
-        
+
         logger.info(f"[PropertyService] Repo retornó: {total} total, {len(props)} propiedades")
-        
+
         # Log results (even empty — let the tool layer handle fallback logic)
         if props:
             logger.info(f"[PropertyService] Propiedades encontradas ({len(props)}):")

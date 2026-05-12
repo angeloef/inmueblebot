@@ -167,6 +167,7 @@ class PropertyRepository(BaseRepository):
     async def search(
         self,
         type: Optional[str] = None,
+        property_type: Optional[str] = None,
         location: Optional[str] = None,
         budget_min: Optional[int] = None,
         budget_max: Optional[int] = None,
@@ -192,9 +193,18 @@ class PropertyRepository(BaseRepository):
         title_search: Busca por título con ILIKE (búsqueda parcial)
         """
         from app.db.models import Property
-        
+
+        # Normalize Spanish property type names → DB values (extra_data->building_type)
+        _TYPE_MAP = {
+            "departamento": "apartment", "depto": "apartment", "apartment": "apartment",
+            "casa": "house", "house": "house",
+            "ph": "ph", "duplex": "ph",
+            "local": "local", "oficina": "office", "office": "office",
+            "terreno": "land", "land": "land",
+        }
+
         query = select(Property).where(Property.status == status)
-        
+
         if type:
             query = query.where(Property.type == type)
 
@@ -206,7 +216,7 @@ class PropertyRepository(BaseRepository):
             # extra_data['kind'], or Property.property_type from the old model).
             # TODO: Re-enable when DB has proper type data.
             pass
-        
+
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
             from sqlalchemy import or_, func

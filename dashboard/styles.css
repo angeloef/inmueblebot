@@ -664,4 +664,40 @@ input, select, textarea { font-family: inherit; }
 
   /* Notification panel: ancho del viewport */
   .notif-panel { width: calc(100vw - 32px); right: auto; left: 0; }
+
+  /* ── Iconos y botones: tamaño touch-friendly en mobile ── */
+
+  /* Botones icon-only (x de modales, acciones de tabla, etc.) */
+  .btn-icon {
+    width: 40px;
+    height: 40px;
+    padding: 8px;
+  }
+  .btn-icon svg { width: 18px; height: 18px; }
+
+  /* Hamburger (abrir menú lateral) */
+  .tb-menu-btn {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    padding: 8px;
+  }
+  .tb-menu-btn svg { width: 20px; height: 20px; }
+
+  /* Campana de notificaciones e ícono de info */
+  .tb-icon { width: 40px; height: 40px; }
+  .tb-icon svg { width: 20px; height: 20px; }
+  .tb-avatar { width: 36px; height: 36px; font-size: 13px; }
+
+  /* X de cierre del menú lateral */
+  .sb-close {
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+  }
+  .sb-close svg { width: 18px; height: 18px; }
+
+  /* Botones pequeños (btn-sm): mismo tamaño que btn base en mobile */
+  .btn-sm { font-size: 13px; padding: 7px 13px; }
+  .btn-sm svg { width: 14px; height: 14px; }
 }
