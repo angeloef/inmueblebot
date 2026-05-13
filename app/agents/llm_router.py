@@ -104,9 +104,12 @@ class LLMRouter:
         kwargs = {
             "model": self._model,
             "messages": messages,
-            "temperature": temperature,
             "max_completion_tokens": max_tokens,
         }
+        # GPT-5.5 on Chat Completions only supports temperature=1 (default).
+        # Other values are rejected. Skip temperature entirely for GPT-5.x.
+        if not self._model.startswith("gpt-5."):
+            kwargs["temperature"] = temperature
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
