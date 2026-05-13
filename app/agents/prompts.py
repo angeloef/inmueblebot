@@ -129,7 +129,7 @@ TOOL_DEFINITIONS = [
                     "property_type": {
                         "type": "string",
                         "enum": ["casa", "departamento", "terreno", "oficina", "local", "galpon"],
-                        "description": "Tipo de propiedad (casa, departamento, terreno, oficina, local, galpon)"
+                        "description": "Tipo de propiedad: casa, departamento, terreno, oficina, local, o galpon. IMPORTANTE: Si el usuario dice 'cualquiera', 'no importa', 'da igual' o no especifica tipo, NO envies este parámetro. Solo enviálo si el usuario pide EXACTAMENTE 'casa', 'departamento' u otro tipo específico."
                     },
                     "operation_type": {
                         "type": "string",

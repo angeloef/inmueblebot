@@ -109,6 +109,16 @@ def sanitize_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
             if not value:
                 continue
         
+        elif key == "property_type":
+            # Validate against allowed enum. If invalid, skip (don't filter by type).
+            ALLOWED_PROPERTY_TYPES = {"casa", "departamento", "terreno", "oficina", "local", "galpon"}
+            if value not in ALLOWED_PROPERTY_TYPES:
+                logger.warning(
+                    f"[Sanitizer] Invalid property_type '{value}' (not in enum), "
+                    f"skipping property_type filter"
+                )
+                continue
+        
         sanitized[key] = value
     
     return sanitized
