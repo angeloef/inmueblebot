@@ -242,7 +242,33 @@ class MemoryManager:
         context = await self.get_user_context(phone)
         context["pending_scheduling_info"] = None
         return await self.save_user_context(phone, context)
-    
+
+    async def is_duplicate_message(self, message_id: str, ttl: int = 300) -> bool:
+        """
+        Returns True if message_id was already processed (duplicate).
+
+        Uses Redis SET NX EX for an atomic check-and-mark in a single round-trip.
+        Because the key lives in Redis (not in-process memory) it survives server
+        restarts, so a Render redeploy mid-processing can no longer cause a message
+        to be delivered twice.
+
+        Falls back to False (allow through) on any Redis error — the in-process
+        _is_duplicate() in webhook.py still guards within the same process lifetime.
+        """
+        key = f"dedup:msg:{message_id}"
+        try:
+            r = await self._get_redis_with_retry()
+            # SET key 1 NX EX ttl → returns True if key was set (first time seen)
+            #                      → returns None  if key already existed (duplicate)
+            result = await r.set(key, "1", nx=True, ex=ttl)
+            is_dup = result is None
+            if is_dup:
+                logger.info(f"[Memory] Redis dedup: duplicate message_id={message_id}")
+            return is_dup
+        except Exception as e:
+            logger.warning(f"[Memory] Redis dedup unavailable, allowing message through: {e}")
+            return False  # Fail open — in-process dict is still the last line of defence
+
     # =========================================================================
     # MÉTODOS DE MENSAJES (REDIS - CORTO PLAZO)
     # =========================================================================

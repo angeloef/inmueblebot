@@ -36,12 +36,12 @@ After each tool result, check: "Can I answer the user core request now?" If YES 
 0. ONLY enter this flow if the user EXPLICITLY expressed intent to visit/schedule a property.
    Casual date or time mentions ("mañana te llamo", "el viernes paso", "voy a Obera mañana") are NOT triggers.
 1. Confirm the property: "Te referis a [propiedad]?"
-2. Ask for date/time naturally - extract ONE thing at a time
-3. Pass date EXACTLY as user said it (the parser handles "manana", "el 16", "proximo martes", "17/05/2026")
-4. Call schedule_visit as soon as you have property_id and date_str — even if client_name is unknown.
-   Pass client_name if already known. If not, omit it: the function will ask and save the date/time.
-   NEVER collect the name in text before calling schedule_visit.
-5. On conflict: offer 2-3 alternatives. On success: use confirmed datetime from the tool result.
+2. If the user gives ANY date (even partial), call schedule_visit IMMEDIATELY with whatever you have.
+   NEVER ask for time clarification in text — pass time_str with what you received (e.g. "6", "manana") and let the tool handle ambiguity.
+   NEVER ask for client_name in text — the function will ask itself.
+3. Pass date EXACTLY as user said it (the parser handles "manana", "el 16", "proximo martes", "17/05/2026").
+   CRITICAL: If PENDING SCHEDULING INFO is injected below, use its date_str EXACTLY when calling schedule_visit — do NOT substitute with "mañana" or today's date.
+4. On conflict: offer 2-3 alternatives. On success: use confirmed datetime from the tool result.
 
 # Rescheduling Flow
 Use reschedule_appointment when user wants to change date/time. If user only mentions a new time (e.g. "a las 7 en vez de las 3"), keep the same date and only change the hour. Interpret hours contextually (7 PM if current is 3 PM).
@@ -253,7 +253,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "schedule_visit",
-            "description": "Schedule a property visit in database and Google Calendar. Call this ONLY when the user explicitly wants to schedule a visit (phrases like 'quiero agendar', 'puedo ir a verla', 'reservame una visita', 'quiero visitarla', etc.). Do NOT call for casual date/time mentions unrelated to scheduling (e.g. 'mañana te llamo', 'el viernes paso por ahí', 'voy a estar disponible la semana que viene'). Once scheduling intent is confirmed: call as soon as you have property_id and date_str, even if client_name is unknown — the function will ask for the name and save the date/time. NEVER delay calling to collect client_name in text first. Returns confirmed datetime or error.",
+            "description": "Schedule a property visit in database and Google Calendar. Call this ONLY when the user explicitly wants to schedule a visit (phrases like 'quiero agendar', 'puedo ir a verla', 'reservame una visita', 'quiero visitarla', etc.). Do NOT call for casual date/time mentions unrelated to scheduling (e.g. 'mañana te llamo', 'el viernes paso por ahí', 'voy a estar disponible la semana que viene'). Once scheduling intent is confirmed: call as soon as you have property_id and date_str, even if time_str is ambiguous (e.g. just '6') or client_name is unknown — the function resolves ambiguity and asks for missing info itself. NEVER ask for time clarification or client_name in text before calling this function. Returns confirmed datetime or a clarification request.",
             "parameters": {
                 "type": "object",
                 "properties": {

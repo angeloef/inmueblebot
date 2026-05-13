@@ -604,13 +604,27 @@ class RealEstateAgent:
         # Inject pending scheduling info for context-aware scheduling — BEFORE history
         pending = user_context.get("pending_scheduling_info")
         if pending and pending.get("date_str"):
-            schedule_context = "\n### PENDING SCHEDULING INFO\nEl usuario ya mencionó querer agendar. Tiene guardado: "
-            if pending.get("property_id"):
-                schedule_context += f"Propiedad: {pending['property_id']}, "
-            schedule_context += f"Fecha: {pending['date_str']}"
-            if pending.get("time_str"):
-                schedule_context += f", Hora: {pending['time_str']}"
-            schedule_context += "\nUSA ESTA INFORMACIÓN cuando el usuario seleccione una propiedad — NO preguntes de nuevo por fecha/hora.\n"
+            saved_date = pending["date_str"]
+            saved_pid = pending.get("property_id", "")
+            saved_time = pending.get("time_str", "")
+            schedule_context = (
+                "\n### PENDING SCHEDULING INFO\n"
+                "El usuario ya mencionó querer agendar una visita y se guardó esta información:\n"
+            )
+            if saved_pid:
+                schedule_context += f"  Propiedad: {saved_pid}\n"
+            schedule_context += f"  Fecha guardada: \"{saved_date}\"\n"
+            if saved_time:
+                schedule_context += f"  Hora guardada: \"{saved_time}\"\n"
+            schedule_context += (
+                f"\nREGLA CRÍTICA: Cuando el usuario complete la información faltante, llamá schedule_visit con:\n"
+                f"  - date_str=\"{saved_date}\"  ← EXACTAMENTE este valor. NUNCA sustituyas por 'mañana' ni la fecha de hoy.\n"
+            )
+            if saved_pid:
+                schedule_context += f"  - property_id=\"{saved_pid}\"\n"
+            if saved_time:
+                schedule_context += f"  - time_str=\"{saved_time}\"\n"
+            schedule_context += "NO preguntes de nuevo por fecha ni hora — ya están guardadas.\n"
             messages.append({
                 "role": "system",
                 "content": schedule_context

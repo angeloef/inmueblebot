@@ -306,10 +306,19 @@ async def process_messages(messages: List[Dict[str, Any]]):
             continue
 
         # 3. Skip duplicates by message_id
+        # Two-layer check: fast in-process dict first, then Redis (survives restarts).
         msg_id = msg.get("id", "")
-        if msg_id and _is_duplicate(msg_id):
-            logger.info(f"Skipping duplicate message: {msg_id}")
-            continue
+        if msg_id:
+            if _is_duplicate(msg_id):
+                logger.info(f"Skipping duplicate message (in-process): {msg_id}")
+                continue
+            try:
+                from app.core.memory import memory_manager
+                if await memory_manager.is_duplicate_message(msg_id):
+                    logger.info(f"Skipping duplicate message (Redis): {msg_id}")
+                    continue
+            except Exception as _dedup_err:
+                logger.warning(f"Redis dedup check failed, proceeding: {_dedup_err}")
 
         msg_type = msg.get("type", "text")
         phone = from_phone
@@ -424,8 +433,8 @@ async def process_messages(messages: List[Dict[str, Any]]):
             images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
             if images and response_text:
                 import re
-                # Remove bare numbered lines: "1. ", "1.\n", "2.  \n", etc.
-                response_text = re.sub(r'^\d+\.\s*\n?', '', response_text, flags=re.MULTILINE)
+                # Remove bare numbered lines: "1. ", "1.\n", "1) ", "1)\n", etc.
+                response_text = re.sub(r'^\d+[.)]\s*\n?', '', response_text, flags=re.MULTILINE)
                 # Remove image URLs the LLM may have included
                 response_text = re.sub(r'https?://[^\s]+/media/property/[^\s]+', '', response_text)
                 # Clean up double newlines left after removal

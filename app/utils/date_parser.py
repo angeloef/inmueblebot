@@ -558,16 +558,20 @@ def _extract_time_from_text(user_text: str) -> Optional[Tuple[int]]:
             if result:
                 return result
     
-    # Check for time periods
-    if 'mañana' in text and ('de la' in text or 'por la' in text):
-        return 10, 0
-    if 'tarde' in text and ('de la' in text or 'por la' in text):
-        return 15, 0
-    if 'noche' in text and ('de la' in text or 'por la' in text):
-        return 20, 0
-    if 'mediod' in text or 'mediodía' in text:
-        return 12, 0
-    
+    # Check for time periods — only fire when there is NO digit in the text.
+    # If there IS a digit (e.g. "a las 9 de la mañana"), the regex loop above already
+    # extracted the correct hour, so falling through here would overwrite it with a
+    # hardcoded default like 10:00.
+    if not re.search(r'\d', text):
+        if 'mañana' in text and ('de la' in text or 'por la' in text):
+            return 10, 0
+        if 'tarde' in text and ('de la' in text or 'por la' in text):
+            return 15, 0
+        if 'noche' in text and ('de la' in text or 'por la' in text):
+            return 20, 0
+        if 'mediod' in text or 'mediodía' in text:
+            return 12, 0
+
     return None
 
 def _parse_date(user_text: str, now: datetime) -> Optional[datetime]:

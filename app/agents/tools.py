@@ -783,7 +783,20 @@ async def schedule_visit(
             logger.info(f"[schedule_visit] PARSED: {format_datetime_argentina(parsed_dt)}")
         
         if parse_error:
-            # If parsing failed, ask user for clarification
+            # Save pending scheduling info so the date persists even though we're asking for time.
+            # Without this, when the user replies with the time, the LLM reconstructs the tool call
+            # from chat history and may substitute 'mañana' for the original 'el viernes'.
+            if phone and date_str:
+                try:
+                    await memory_manager.save_pending_scheduling(
+                        phone=phone,
+                        property_id=str(property_id),
+                        date_str=date_str,
+                        time_str=time_str
+                    )
+                    logger.info(f"[schedule_visit] Pending scheduling saved (time ambiguous): property={property_id}, date={date_str}")
+                except Exception as e:
+                    logger.warning(f"[schedule_visit] No se pudo guardar pending scheduling (parse_error): {e}")
             logger.warning(f"[schedule_visit] Parse error: {parse_error}")
             return parse_error
         
@@ -803,7 +816,23 @@ async def schedule_visit(
         
         start_datetime = parsed_dt
         logger.info(f"[schedule_visit] Parsed datetime: {format_datetime_argentina(start_datetime)}")
-        
+
+        # ── Business hours validation: lunes-sábado 9:00-18:00 hora Argentina ──
+        _weekday = start_datetime.weekday()  # 0=Lun, 6=Dom
+        _hour = start_datetime.hour
+        if _weekday == 6:  # Domingo
+            return (
+                "Los domingos no realizamos visitas. "
+                "Nuestro horario de atención es de lunes a sábado de 9:00 a 18:00 hs. "
+                "¿Qué otro día te viene bien?"
+            )
+        if not (9 <= _hour < 18):
+            return (
+                f"El horario de las {start_datetime.strftime('%H:%M')} hs está fuera de nuestro horario de atención "
+                f"(lunes a sábado de 9:00 a 18:00 hs). "
+                f"¿A qué hora del día preferís la visita?"
+            )
+
         logger.info(f"[schedule_visit] Parsed date: {date_str} + {time_str} -> {start_datetime.strftime('%Y-%m-%d %H:%M')}")
         
         # Get user in separate session
