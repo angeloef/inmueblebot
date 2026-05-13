@@ -741,6 +741,77 @@ def _parse_time(user_text: str) -> Optional[Tuple[int, int]]:
     return None
 
 
+async def parse_datetime_llm(
+    date_str: str,
+    time_str: Optional[str],
+    reference_dt: datetime,
+) -> Tuple[Optional[datetime], Optional[str]]:
+    """
+    Resuelve expresiones de fecha/hora en lenguaje natural usando el LLM configurado.
+
+    Returns:
+        (datetime_aware, None)  → éxito
+        (None, error_msg)       → fallo definitivo (responder al usuario con error_msg)
+        (None, None)            → fallo técnico del LLM → el caller debe hacer fallback a regex
+    """
+    from app.agents.llm_router import llm_router
+
+    combined = f"{date_str} {time_str or ''}".strip()
+    ref_str = reference_dt.strftime("%Y-%m-%d %H:%M")
+
+    system_prompt = (
+        "Sos un parser de fechas para un sistema de citas inmobiliarias en Argentina.\n"
+        "Zona horaria: America/Argentina/Buenos_Aires (UTC-3).\n"
+        "Tu única tarea: convertir la expresión de fecha/hora del usuario a formato ISO.\n\n"
+        "Reglas:\n"
+        "- Respondé SOLO con 'YYYY-MM-DD HH:MM' (ejemplo: 2026-05-14 09:00).\n"
+        "- 'de la mañana' = AM. 'de la tarde' o 'de la noche' = PM (sumá 12 si hora < 12).\n"
+        "- 'mediodía' = 12:00. 'a la tardecita' ≈ 17:00.\n"
+        "- Si solo dicen una hora sin período (ej: 'a las 3'), elegí la próxima ocurrencia futura.\n"
+        "- Si la hora no está especificada ni se puede inferir: respondé exactamente 'AMBIGUOUS: falta hora'.\n"
+        "- Si la fecha no se puede determinar: respondé exactamente 'AMBIGUOUS: falta fecha'.\n"
+        "- Nunca des explicaciones ni texto adicional."
+    )
+
+    user_message = (
+        f"Fecha y hora actual: {ref_str}\n"
+        f"Expresión del usuario: \"{combined}\""
+    )
+
+    try:
+        result = await llm_router.chat(
+            message=user_message,
+            system_prompt=system_prompt,
+            temperature=0,
+            max_tokens=20,
+        )
+
+        result = (result or "").strip()
+        logger.info(f"[DateParser LLM] '{combined}' → '{result}'")
+
+        if not result:
+            logger.warning("[DateParser LLM] Respuesta vacía del LLM, haciendo fallback a regex")
+            return None, None
+
+        if result.upper().startswith("AMBIGUOUS"):
+            reason = result.split(":", 1)[1].strip() if ":" in result else "expresión ambigua"
+            return None, f"No pude determinar {reason}. ¿Podés ser más específico?"
+
+        # Intentar parsear ISO
+        try:
+            naive_dt = datetime.strptime(result, "%Y-%m-%d %H:%M")
+            aware_dt = ARG_TZ.localize(naive_dt)
+            logger.info(f"[DateParser LLM] Éxito: {aware_dt.isoformat()}")
+            return aware_dt, None
+        except ValueError:
+            logger.warning(f"[DateParser LLM] Formato inesperado: '{result}', fallback a regex")
+            return None, None
+
+    except Exception as e:
+        logger.warning(f"[DateParser LLM] Error en llamada LLM: {e}, fallback a regex")
+        return None, None
+
+
 def format_datetime_argentina(dt: datetime) -> str:
     """Format datetime for display in Argentine format."""
     if dt.tzinfo is None:

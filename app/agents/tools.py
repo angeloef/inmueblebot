@@ -762,19 +762,22 @@ async def schedule_visit(
         
         # Combine date_str and time_str for parsing
         combined_input = f"{date_str} {time_str or ''}".strip()
-        
-        # Use robust Argentine timezone parser
-        from app.utils.date_parser import parse_spanish_datetime, format_datetime_argentina, validate_future
+
+        from app.utils.date_parser import parse_datetime_llm, parse_spanish_datetime, format_datetime_argentina, validate_future, get_argentina_now
         from app.services.appointment_service import appointment_service, format_appointment_confirmation
         from app.db.repository import UserRepository
         from app.db.models import User
         from app.db.session import async_session_factory
         logger.info(f"[schedule_visit] Input: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
-        
-        parsed_dt, parse_error = parse_spanish_datetime(combined_input)
-        
-        # Log what the LLM sent vs what was parsed for debugging
-        logger.info(f"[schedule_visit] LLM sent: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
+
+        # --- Paso 1: LLM parser (primario) ---
+        parsed_dt, parse_error = await parse_datetime_llm(date_str, time_str, get_argentina_now())
+
+        # --- Paso 2: Fallback a regex si el LLM falló técnicamente ---
+        if parsed_dt is None and parse_error is None:
+            logger.info("[schedule_visit] LLM parser sin resultado, fallback a regex")
+            parsed_dt, parse_error = parse_spanish_datetime(combined_input)
+
         logger.info(f"[schedule_visit] Parser returned: parsed_dt={parsed_dt}, parse_error={parse_error}")
         if parsed_dt:
             logger.info(f"[schedule_visit] PARSED: {format_datetime_argentina(parsed_dt)}")
