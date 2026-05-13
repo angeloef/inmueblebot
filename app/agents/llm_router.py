@@ -108,11 +108,14 @@ class LLMRouter:
             "max_tokens": max_tokens,
         }
         # GPT-5.5 reasoning effort: low for fast chatbot responses
-        kwargs["extra_body"] = {
-            "reasoning": {
-                "effort": "low"
+        # IMPORTANT: ONLY include extra_body for gpt-5.5 model name pattern.
+        # Older models (gpt-4o-mini, gpt-4.1) reject 'reasoning' parameter.
+        if self._model.startswith("gpt-5."):
+            kwargs["extra_body"] = {
+                "reasoning": {
+                    "effort": "low"
+                }
             }
-        }
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
