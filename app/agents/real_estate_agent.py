@@ -76,7 +76,7 @@ class RealEstateAgent:
                 merged_context = {"current_state": "idle", "conversation_stage": "new"}
             
             try:
-                history = await memory_manager.get_recent_messages(phone, limit=5)
+                history = await memory_manager.get_recent_messages(phone, limit=15)
             except Exception as e:
                 logger.warning(f"Error get_recent_messages: {e}")
                 history = []
@@ -442,8 +442,21 @@ class RealEstateAgent:
                             await memory_manager.update_context_field(
                                 phone, "selected_property_id", tool_args["property_id"]
                             )
+                            # Also save the property title if available from result
+                            prop_title = None
+                            if isinstance(tool_result, dict) and tool_result.get("title"):
+                                prop_title = tool_result["title"]
+                            elif isinstance(tool_result, str) and "Departamento" in tool_result:
+                                import re as _re
+                                _m = _re.search(r'(Departamento[^|]+|Casa[^|]+)', tool_result)
+                                if _m:
+                                    prop_title = _m.group(1).strip()
+                            if prop_title:
+                                await memory_manager.update_context_field(
+                                    phone, "selected_property_title", prop_title
+                                )
                             logger.info(
-                                f"[Agent] Saved selected_property_id={tool_args['property_id']} for {phone}"
+                                f"[Agent] Saved selected property: [{prop_title or '?'}] (ID={tool_args['property_id']}) for {phone}"
                             )
                         except Exception as e:
                             logger.warning(f"[Agent] Could not save selected_property_id: {e}")
@@ -573,12 +586,14 @@ class RealEstateAgent:
 
         # Inject active/selected property for context continuity — BEFORE history
         selected_id = user_context.get("selected_property_id")
+        selected_title = user_context.get("selected_property_title") or "propiedad"
         if selected_id:
             selected_prop_reminder = (
                 f"\n### ACTIVE PROPERTY CONTEXT\n"
-                f"El usuario está viendo actualmente la propiedad con ID: {selected_id}\n"
-                f"Si el usuario dice 'esa', 'esa propiedad', 'la misma', 'la que vimos' — "
-                f"USA get_property_details(property_id={selected_id})\n"
+                f"El usuario est\u00e1 viendo actualmente la propiedad: [{selected_title}] con ID: {selected_id}\n"
+                f"SIEMPRE que mencione 'esa', 'esa propiedad', 'la misma', 'la que vimos', "
+                f"'el departamento que vimos', 'esa casa' -- referite a [{selected_title}] con ID={selected_id}.\n"
+                f"Para schedule_visit: property_id={selected_id} (NO uses otro ID).\n"
             )
             messages.append({
                 "role": "system",
@@ -648,6 +663,24 @@ class RealEstateAgent:
             messages.append({"role": "system", "content": context_block})
             logger.info(f"[Agent] Injected {len(existing)} existing appointments for {phone}")
 
+        # Inject conversation state summary right before user message
+        if history and len(history) >= 2:
+            conv_summary_parts = []
+            if selected_id and selected_title:
+                conv_summary_parts.append(f"Propiedad activa: [{selected_title}] (ID={selected_id})")
+            op_type = user_context.get("operation_type") or user_context.get("last_operation")
+            if op_type:
+                conv_summary_parts.append(f"Operacion: {op_type}")
+            loc = user_context.get("location_preferences")
+            if loc:
+                conv_summary_parts.append(f"Ubicacion: {loc}")
+            if conv_summary_parts:
+                summary = " | ".join(conv_summary_parts)
+                messages.append({
+                    "role": "system",
+                    "content": f"\n### RESUMEN DE CONVERSACION\n{summary}\n"
+                })
+        
         for msg in history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
