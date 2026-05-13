@@ -719,9 +719,9 @@ class MemoryManager:
     async def reset_user_context(self, phone: str) -> bool:
         """
         Delete all Redis keys for a user + clear fallback caches.
-        More aggressive than clear_short_term_memory — also resets
-        the PostgreSQL user preferences to defaults so the next
-        conversation starts fresh.
+        Resets the PostgreSQL user record (name, preferences) AND
+        deletes all appointments linked to this user so the next
+        conversation starts completely fresh.
 
         Returns True on success (even if PostgreSQL cleanup fails).
         """
@@ -743,23 +743,45 @@ class MemoryManager:
         except Exception as e:
             logger.debug(f"[Memory] Redis unavailable for reset, fallback cleared: {e}")
 
-        # 3. Reset PostgreSQL user preferences
+        # 3. Reset PostgreSQL: clear name, preferences, and delete appointments
         try:
             from app.db.session import async_session_factory
+            from app.db.repository import UserRepository, AppointmentRepository
+            from app.db.models import User, Appointment
+
             async with async_session_factory() as session:
-                from app.db.repository import UserRepository
-                from app.db.models import User
-                repo = UserRepository(User, session)
-                user = await repo.get_by_phone(phone)
+                # Reset user record
+                user_repo = UserRepository(User, session)
+                user = await user_repo.get_by_phone(phone)
                 if user:
+                    user.name = None
                     user.location_preferences = None
                     user.property_type = None
                     user.budget_min = None
                     user.budget_max = None
-                    user.last_interaction = None
                     user.lead_score = 0
+                    user.last_interaction = None
+                    user.extra_data = None
+                    user.email = None
+                    logger.info(f"[Memory] User name and preferences cleared for {phone}")
+
+                    # Delete all appointments for this user
+                    apt_repo = AppointmentRepository(Appointment, session)
+                    appointments = await apt_repo.get_by_user(user.id)
+                    for apt in appointments:
+                        await session.delete(apt)
+                    if appointments:
+                        logger.info(f"[Memory] Deleted {len(appointments)} appointments for {phone}")
+                    else:
+                        logger.info(f"[Memory] No appointments found for {phone}")
+
+                    # Delete all conversations for this user (cascade handles messages)
+                    for conv in user.conversations:
+                        await session.delete(conv)
+                    logger.info(f"[Memory] Deleted conversations for {phone}")
+
                     await session.commit()
-                    logger.info(f"[Memory] PostgreSQL preferences reset for {phone}")
+                    logger.info(f"[Memory] PostgreSQL full reset for {phone}")
                 else:
                     logger.info(f"[Memory] No user record found for {phone}, nothing to reset in DB")
         except Exception as e:
