@@ -1,3 +1,4 @@
+
 """
 Google Calendar OAuth2 authentication script.
 Robust implementation for Docker environments.

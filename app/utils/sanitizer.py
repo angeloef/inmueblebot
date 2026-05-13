@@ -87,10 +87,20 @@ def sanitize_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
             value = re.sub(r'[;\'\"\\]', '', value)
             # Remover keywords SQL
             value = re.sub(r'\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER)\b', '', value, flags=re.IGNORECASE)
-            
+
             if not value:
                 continue
-                
+
+            # Validar enum property_type dentro del branch str (donde siempre cae)
+            if key == "property_type":
+                ALLOWED_PROPERTY_TYPES = {"casa", "departamento", "terreno", "oficina", "local", "galpon"}
+                if value not in ALLOWED_PROPERTY_TYPES:
+                    logger.warning(
+                        f"[Sanitizer] Invalid property_type '{value}' (not in enum), "
+                        f"skipping property_type filter"
+                    )
+                    continue
+
         elif isinstance(value, (int, float)):
             # Validar que sea número válido
             if isinstance(value, float) and (value != value):  # NaN check
@@ -107,16 +117,6 @@ def sanitize_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
             # Lista de strings
             value = [sanitize_text(v) for v in value if v]
             if not value:
-                continue
-        
-        elif key == "property_type":
-            # Validate against allowed enum. If invalid, skip (don't filter by type).
-            ALLOWED_PROPERTY_TYPES = {"casa", "departamento", "terreno", "oficina", "local", "galpon"}
-            if value not in ALLOWED_PROPERTY_TYPES:
-                logger.warning(
-                    f"[Sanitizer] Invalid property_type '{value}' (not in enum), "
-                    f"skipping property_type filter"
-                )
                 continue
         
         sanitized[key] = value
@@ -242,8 +242,9 @@ def sanitize_time_input(time_str: str) -> str:
     time_str = time_str.replace('p.m.', 'pm').replace('a.m.', 'am')
     time_str = time_str.replace('p.m', 'pm').replace('a.m', 'am')
     
-    # Solo dígitos, :, pm, am, espacio
-    time_str = re.sub(r'[^\d:\sampm]', ' ', time_str)
+    # Preservar letras españolas para que "de la tarde", "por la mañana", etc.
+    # lleguen intactos al date_parser. Solo eliminar caracteres realmente peligrosos.
+    time_str = re.sub(r'[^\w\s:áéíóúüñ]', ' ', time_str)
     time_str = re.sub(r' +', ' ', time_str).strip()
     
     return time_str

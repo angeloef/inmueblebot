@@ -694,32 +694,37 @@ def _parse_time(user_text: str) -> Optional[Tuple[int, int]]:
             return hour, 0
     
     # === Spanish time expressions ===
-    
-    # "de la mañana" / "por la mañana" / "mañana" (as time)
-    if "mañana" in user_text and "de la" in user_text or "por la mañana" in user_text:
-        return 10, 0  # 10:00
-    
-    # "de la tarde" / "por la tarde"
-    if "tarde" in user_text and ("de la" in user_text or "por la" in user_text or user_text.strip() == "tarde"):
-        return 15, 0  # 15:00 (3pm)
-    
-    # "al mediodía" / "mediodía"
-    if "mediod" in user_text or "mediodía" in user_text:
-        return 12, 0  # 12:00
-    
-    # "a las X de la mañana" - e.g., "a las 10 de la mañana"
-    match = re.search(r'a\s*las\s*(\d{1,2})\s*de\s*la\s*(mañana|tarde)', user_text)
+
+    # PRIMERO: "a las X de la mañana/tarde/noche" — específico con hora explícita
+    # Debe ir ANTES que los fallbacks genéricos para que "a las 8 de la mañana"
+    # retorne 8:00 y no el fallback hardcodeado 10:00.
+    match = re.search(r'a\s*las\s*(\d{1,2})\s*de\s*la\s*(mañana|tarde|noche)', user_text)
     if match:
         hour = int(match.group(1))
         period = match.group(2).lower()
-        if period == "tarde" and hour < 12:
+        if period in ("tarde", "noche") and hour < 12:
             hour += 12
         if 0 <= hour <= 23:
             return hour, 0
-    
+
+    # "al mediodía" / "mediodía"
+    if "mediod" in user_text or "mediodía" in user_text:
+        return 12, 0  # 12:00
+
     # "esta tarde" - assume soonest available slot
     if "esta tarde" in user_text:
         return 15, 0
+
+    # Fallbacks genéricos: solo aplican cuando NO hay un dígito de hora en el texto
+    # "de la mañana" / "por la mañana" (sin hora específica)
+    if ("mañana" in user_text and "de la" in user_text) or "por la mañana" in user_text:
+        if not re.search(r'\d', user_text):
+            return 10, 0  # 10:00
+
+    # "de la tarde" / "por la tarde" (sin hora específica)
+    if "tarde" in user_text and ("de la" in user_text or "por la" in user_text or user_text.strip() == "tarde"):
+        if not re.search(r'\d', user_text):
+            return 15, 0  # 15:00 (3pm)
     
     # === AMBIGUOUS - return None to force clarification ===
     # If text has date but no clear time
