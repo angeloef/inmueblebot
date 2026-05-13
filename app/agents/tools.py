@@ -182,7 +182,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             - property_type: Tipo de propiedad (casa, departamento, terreno)
             - operation_type: Tipo de operacion (venta o alquiler) - DEFAULT alquiler
             - limit: Numero de resultados (default 8)
-            - sort_by: Ordenamiento (price_desc, price_asc, newest) - DEFAULT price_desc
+            - sort_by: Ordenamiento (price_asc, price_desc, newest) — DEFAULT price_asc
 
     Returns:
         String formateado con las propiedades encontradas o mensaje de sin resultados
