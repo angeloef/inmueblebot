@@ -33,10 +33,14 @@ The conversation is successful when:
 After each tool result, check: "Can I answer the user core request now?" If YES - answer and offer next step (details, photos, schedule, refine). If NO - ask ONE more question. Do not keep iterating - the user will tell you if they need more.
 
 # Scheduling Flow
+0. ONLY enter this flow if the user EXPLICITLY expressed intent to visit/schedule a property.
+   Casual date or time mentions ("mañana te llamo", "el viernes paso", "voy a Obera mañana") are NOT triggers.
 1. Confirm the property: "Te referis a [propiedad]?"
 2. Ask for date/time naturally - extract ONE thing at a time
 3. Pass date EXACTLY as user said it (the parser handles "manana", "el 16", "proximo martes", "17/05/2026")
-4. Ask name if not known, then call schedule_visit with all data
+4. Call schedule_visit as soon as you have property_id and date_str — even if client_name is unknown.
+   Pass client_name if already known. If not, omit it: the function will ask and save the date/time.
+   NEVER collect the name in text before calling schedule_visit.
 5. On conflict: offer 2-3 alternatives. On success: use confirmed datetime from the tool result.
 
 # Rescheduling Flow
@@ -63,18 +67,22 @@ $150,000/mes | Obera Centro
 2 hab - 1 bano - 60m2
 Queres agendar una visita para verla?"
 
---- Example 3: Successful scheduling ---
+--- Example 3: Successful scheduling (name unknown) ---
 Usuario: "si, manana a las 10"
-Bot: "Perfecto, para registrar la visita me podrias dar tu nombre y apellido?"
+Bot: calls schedule_visit(property_id=X, date_str="manana", time_str="10")
+Tool returns: "Antes de confirmar la visita necesito tu nombre y apellido. ¿Me los decís?"
+Bot: "Perfecto! Para registrar la visita me podrias dar tu nombre y apellido?"
 Usuario: "Juan Perez"
-Bot: calls schedule_visit (tool confirms)
+Bot: calls schedule_visit(property_id=X, date_str="manana", time_str="10", client_name="Juan Perez")
 Bot: "Listo Juan! Te esperamos manana a las 10hs en Obera Centro. Necesitas algo mas?"
 
---- Example 4: Specific date scheduling ---
+--- Example 4: Specific date scheduling (name unknown) ---
 Usuario: "si me gusta, puedo ir a verlo el 16 a las 4 de la tarde?"
+Bot: calls schedule_visit(property_id=X, date_str="el 16", time_str="a las 4 de la tarde")
+Tool returns: "Antes de confirmar la visita necesito tu nombre y apellido. ¿Me los decís?"
 Bot: "Para registrar la visita, me podrias dar tu nombre y apellido?"
 Usuario: "Pedro Pedrin"
-Bot: calls schedule_visit with date_str="el 16", time_str="16:00"
+Bot: calls schedule_visit(property_id=X, date_str="el 16", time_str="a las 4 de la tarde", client_name="Pedro Pedrin")
 Bot: "Listo Pedro! Te esperamos el 16/05 a las 16hs para ver la propiedad."
 
 --- Example 5: Polite goodbye ---
@@ -245,7 +253,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "schedule_visit",
-            "description": "Schedule a property visit in database and Google Calendar. REQUIRES: property_id (use the ACTIVE property from context - the last one user saw details of), date_str (natural language like 'manana', 'el 16', 'proximo martes', '17/05/2026'), client_name (user full name). This is the ONLY function that creates appointments. Returns confirmed datetime or error.",
+            "description": "Schedule a property visit in database and Google Calendar. Call this ONLY when the user explicitly wants to schedule a visit (phrases like 'quiero agendar', 'puedo ir a verla', 'reservame una visita', 'quiero visitarla', etc.). Do NOT call for casual date/time mentions unrelated to scheduling (e.g. 'mañana te llamo', 'el viernes paso por ahí', 'voy a estar disponible la semana que viene'). Once scheduling intent is confirmed: call as soon as you have property_id and date_str, even if client_name is unknown — the function will ask for the name and save the date/time. NEVER delay calling to collect client_name in text first. Returns confirmed datetime or error.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -263,10 +271,10 @@ TOOL_DEFINITIONS = [
                     },
                     "client_name": {
                         "type": "string",
-                        "description": "Nombre y apellido completo del usuario. OBLIGATORIO si no está en el perfil. Nunca inventarlo — preguntar al usuario si no lo sabés."
+                        "description": "Nombre y apellido completo del usuario. Pasar si ya se conoce. Si no se conoce, omitir — la función lo pedirá."
                     }
                 },
-                "required": ["property_id", "date_str", "client_name"]
+                "required": ["property_id", "date_str"]
             }
         }
     },

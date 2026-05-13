@@ -686,11 +686,12 @@ async def schedule_visit(
     Agenda una visita a una propiedad.
 
     GUÍA PARA EL LLM:
+    - Llamar esta función en cuanto tengas property_id y date_str, AUNQUE NO TENGAS client_name.
+    - La función guarda la fecha/hora y pide el nombre ella sola — no lo hagas en texto primero.
     - Intenta enviar la fecha en formato DD/MM/YYYY cuando sea posible (ej: "29/04/2026")
     - También soporta expresiones naturales: "mañana a las 15hs", "el viernes a las 10 de la mañana"
     - Si date_str o time_str viene vacío pero hay contexto previo, úsalo
-    - Si no puedes determinar la fecha/hora, PREGUNTA al usuário antes de llamar
-    - SIEMPRE incluir client_name con el nombre y apellido del usuario
+    - Si no podés determinar la fecha/hora, PREGUNTÁ al usuario antes de llamar (pero si tenés fecha, llamá aunque falte el nombre)
 
     Esta función pode receber:
     - property_id: ID de la propiedad (número o UUID)
@@ -815,6 +816,20 @@ async def schedule_visit(
                 # ── Nombre obligatorio antes de agendar ──────────────────────
                 effective_name = client_name or user.name
                 if not effective_name or not effective_name.strip():
+                    # Guardar fecha/hora en Redis para que el próximo turno las tenga disponibles.
+                    # Sin esto, cuando el usuario responde con su nombre, el LLM no tiene la fecha
+                    # en el contexto estructurado y la omite al reconstruir la llamada a schedule_visit.
+                    if phone and date_str:
+                        try:
+                            await memory_manager.save_pending_scheduling(
+                                phone=phone,
+                                property_id=str(property_id),
+                                date_str=date_str,
+                                time_str=time_str
+                            )
+                            logger.info(f"[schedule_visit] Pending scheduling saved: property={property_id}, date={date_str}, time={time_str}")
+                        except Exception as e:
+                            logger.warning(f"[schedule_visit] No se pudo guardar pending scheduling: {e}")
                     return (
                         "Antes de confirmar la visita necesito tu nombre y apellido. "
                         "¿Me los decís?"
