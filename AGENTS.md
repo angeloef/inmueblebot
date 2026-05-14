@@ -1231,3 +1231,27 @@ TOOL_DEFINITIONS rewrite completo:
 - get_faq_answer: brokerage ≠ property questions
 
 get_system_prompt(): remove .format() — ahora inyecta contexto como User Context en una línea
+
+### Sprint 28 — Fix: Reschedule date-only inputs broken by hybrid parser (May 14, 2026)
+
+**Commit:** `81a0a09`
+
+**Bug:** After the hybrid parser refactor (commit 25479ce), `reschedule_appointment_tool` sent ALL date inputs through the LLM-first hybrid parser. The LLM requires both date AND time, so date-only inputs like `"12/05/2026"` returned `"AMBIGUOUS: falta hora"`. The old regex pipeline handled these via `datetime.strptime(new_date_str, "%d/%m/%Y")`.
+
+**Root cause chain:**
+1. Hybrid refactor replaced regex-first with LLM-first date parsing in `reschedule_appointment_tool`
+2. `parse_datetime_llm` prompt demands time → date-only inputs return "AMBIGUOUS: falta hora"
+3. `HybridParser.parse()` fallback condition `value is None AND error is None` blocks code fallback when LLM returns an error (non-None error)
+4. Error propagates to LLM → LLM retries with same args → hits the 3-failure limit → generic "dificultades técnicas"
+
+**Fixes:**
+1. `app/core/hybrid/base.py:83` — fallback condition: `value is None and error is None` → `value is None` so code fallback runs on ANY LLM failure (not just technical crashes like empty/garbled output)
+2. `app/agents/tools.py:1052-1087` — two-stage date parsing: numeric formats first (regex, no LLM cost), then hybrid parser for natural language (falls back to regex via the fix above)
+
+| Input | Before fix | After fix |
+|-------|-----------|-----------|
+| `"12/05/2026"` | ❌ LLM says "falta hora" | ✅ regex `%d/%m/%Y` |
+| `"2026-05-12"` | ❌ Same | ✅ regex `%Y-%m-%d` |
+| `"12/05/26"` | ❌ Same | ✅ regex `%d/%m/%y` |
+| `"viernes"` | ❌ Same | ❌ Still broken (both parsers need time) |
+| `"12/05/2026 15:00"` | ✅ Works | ✅ Works |
