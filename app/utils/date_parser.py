@@ -26,35 +26,6 @@ def get_argentina_now() -> datetime:
     return datetime.now(ARG_TZ)
 
 
-def _split_date_time(user_text: str) -> Tuple[Optional[str], Optional[str]]:
-    """Split combined date+time input for NUMERIC formats like '29/04/2026 18:00'."""
-    user_text = user_text.strip()
-    
-    time_patterns = [
-        r'(\d{1,2}):(\d{2})\s*$',
-        r'(\d{1,2})\s*pm\s*$',
-        r'(\d{1,2})\s*am\s*$',
-        r'(\d{1,2})\s*hs?\s*$',
-        r'a\s+las\s+(\d{1,2})(?::(\d{2}))?\s*$',
-    ]
-    
-    for pattern in time_patterns:
-        match = re.search(pattern, user_text)
-        if match:
-            date_part = user_text[:match.start()].strip()
-            time_part = match.group(0).strip()
-            
-            if not re.search(r'\d', date_part) or ('/' not in date_part and '-' not in date_part):
-                return user_text, None
-            
-            if date_part.startswith('el '):
-                date_part = date_part[3:]
-            
-            time_part = time_part.replace('a las ', '').replace('a las', '')
-            return date_part, time_part
-    
-    return user_text, None
-
 
 def _parse_date_advanced(user_text: str, now: datetime) -> Tuple[Optional[datetime], Optional[str]]:
     """Advanced date parsing for Spanish expressions."""

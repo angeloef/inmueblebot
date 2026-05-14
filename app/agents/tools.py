@@ -198,11 +198,24 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
         
         search_criteria = {}
         
-        # Normalize location
+        # Normalize location using hybrid parser
         if criteria.get("location"):
-            loc = criteria["location"].strip()
-            search_criteria["location"] = loc
-            logger.info(f"[TOOL] Location normalizada: '{loc}'")
+            raw_loc = criteria["location"].strip()
+            from app.core.hybrid.location import location_parser
+
+            loc_result = await location_parser.parse(raw_loc, {})
+            if loc_result.value:
+                search_criteria["location"] = loc_result.value
+                logger.info(
+                    "[TOOL] Location: raw=%r -> parsed=%r (parser=%s, conf=%.2f)",
+                    raw_loc,
+                    loc_result.value,
+                    loc_result.parser_used,
+                    loc_result.confidence,
+                )
+            else:
+                search_criteria["location"] = raw_loc
+                logger.info("[TOOL] Location parser fallo, usando raw: %r", raw_loc)
         
         if criteria.get("budget_max"):
             search_criteria["budget_max"] = int(criteria["budget_max"])
@@ -244,17 +257,27 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
         price_tier = criteria.get("price_tier")
         if price_tier:
             try:
-                from app.agents.budget_tiers import get_budget_tiers
-                tiers = await get_budget_tiers()
-                logger.info(f"[TOOL] price_tier='{price_tier}' -> tiers: low_max={tiers['low_max']}, med_max={tiers['med_max']}")
-                if price_tier == "economico":
-                    search_criteria["budget_max"] = tiers["low_max"]
-                    search_criteria["sort_by"] = "price_asc"
-                elif price_tier == "normal":
-                    search_criteria["budget_min"] = tiers["low_max"] + 1
-                    search_criteria["budget_max"] = tiers["med_max"]
-                elif price_tier == "premium":
-                    search_criteria["budget_min"] = tiers["med_max"] + 1
+                from app.core.hybrid.budget import budget_parser
+
+                ctx = {
+                    "city": search_criteria.get("location", "desconocida"),
+                    "median_price": 500,
+                }
+                budget_result = await budget_parser.parse(price_tier, ctx)
+                if budget_result.value and isinstance(budget_result.value, dict):
+                    bv = budget_result.value
+                    if "budget_min" in bv:
+                        search_criteria["budget_min"] = bv["budget_min"]
+                    if "budget_max" in bv:
+                        search_criteria["budget_max"] = bv["budget_max"]
+                        search_criteria["sort_by"] = "price_asc"
+                    logger.info(
+                        "[TOOL] Budget tier %r -> %s (parser=%s, conf=%.2f)",
+                        price_tier,
+                        bv,
+                        budget_result.parser_used,
+                        budget_result.confidence,
+                    )
             except Exception as e:
                 logger.warning(f"[TOOL] Could not resolve price_tier '{price_tier}': {e}")
         
@@ -763,20 +786,19 @@ async def schedule_visit(
         # Combine date_str and time_str for parsing
         combined_input = f"{date_str} {time_str or ''}".strip()
 
-        from app.utils.date_parser import parse_datetime_llm, parse_spanish_datetime, format_datetime_argentina, validate_future, get_argentina_now
+        from app.core.hybrid.date import date_parser as hybrid_date_parser
+        from app.utils.date_parser import format_datetime_argentina, validate_future, get_argentina_now
         from app.services.appointment_service import appointment_service, format_appointment_confirmation
         from app.db.repository import UserRepository
         from app.db.models import User
         from app.db.session import async_session_factory
         logger.info(f"[schedule_visit] Input: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
 
-        # --- Paso 1: LLM parser (primario) ---
-        parsed_dt, parse_error = await parse_datetime_llm(date_str, time_str, get_argentina_now())
-
-        # --- Paso 2: Fallback a regex si el LLM falló técnicamente ---
-        if parsed_dt is None and parse_error is None:
-            logger.info("[schedule_visit] LLM parser sin resultado, fallback a regex")
-            parsed_dt, parse_error = parse_spanish_datetime(combined_input)
+        # Hybrid date parsing: LLM first, regex fallback (controlled by PARSER_DATE env var)
+        parse_ctx = {"date_str": date_str, "time_str": time_str, "reference_dt": get_argentina_now()}
+        date_result = await hybrid_date_parser.parse(combined_input, parse_ctx)
+        parsed_dt = date_result.value
+        parse_error = date_result.error
 
         logger.info(f"[schedule_visit] Parser returned: parsed_dt={parsed_dt}, parse_error={parse_error}")
         if parsed_dt:
@@ -1027,36 +1049,33 @@ async def reschedule_appointment_tool(
         if not new_date_str:
             return "Necesito saber la nueva fecha."
         
-        # Parse date with multiple format fallbacks:
-        # 1. Try YYYY-MM-DD (current behavior)
-        # 2. Try DD/MM/YYYY
-        # 3. Try natural language via parse_spanish_datetime (mañana, hoy, próximo martes, etc.)
-        date_obj = None
-        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"]:
-            try:
-                date_obj = datetime.strptime(new_date_str.strip(), fmt).date()
-                logger.info(f"[reschedule] Parsed date '{new_date_str}' with format {fmt} -> {date_obj}")
-                break
-            except ValueError:
-                continue
+        # Parse date with hybrid parser (LLM first, regex fallback, controlled by PARSER_DATE)
+        date_result = None
+        if date_str := new_date_str.strip():
+            from app.core.hybrid.date import date_parser as hybrid_date_parser
 
-        if date_obj is None:
-            # Try natural language parsing (handles "mañana", "hoy", "próximo martes", etc.)
-            try:
-                parsed_dt, error_msg = parse_spanish_datetime(new_date_str)
-                if parsed_dt:
-                    date_obj = parsed_dt.date()
-                    logger.info(f"[reschedule] Natural language parsed '{new_date_str}' -> {date_obj}")
-                else:
-                    return (
-                        f"No pude entender la fecha '{new_date_str}'. "
-                        f"Por favor usá formato como '12/05/2026' o 'próximo martes'."
-                    )
-            except Exception:
-                return (
-                    f"No pude entender la fecha '{new_date_str}'. "
-                    f"Por favor usá formato como '12/05/2026' o 'próximo martes'."
-                )
+            parse_ctx = {"date_str": new_date_str, "time_str": new_time_str}
+            date_result = await hybrid_date_parser.parse(new_date_str, parse_ctx)
+        else:
+            return "Necesito saber la nueva fecha."
+
+        date_obj = None
+        if date_result and date_result.value:
+            date_obj = date_result.value.date()
+            logger.info(
+                "[reschedule] Hybrid parser '%s' -> %s (parser=%s, conf=%.2f)",
+                new_date_str,
+                date_obj,
+                date_result.parser_used,
+                date_result.confidence,
+            )
+        elif date_result and date_result.error:
+            return date_result.error
+        else:
+            return (
+                f"No pude entender la fecha '{new_date_str}'. "
+                f"Por favor usa formato como '12/05/2026' o 'proximo martes'."
+            )
         
         # If no new_time_str, use existing appointment's time
         if not new_time_str and current_apt:

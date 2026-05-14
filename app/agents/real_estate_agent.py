@@ -127,7 +127,34 @@ class RealEstateAgent:
                     first_prop = last_props_list[0].get("title", "propiedades") if isinstance(last_props_list[0], dict) else str(last_props_list[0])
                     user_prefs["last_reference"] = first_prop
                 logger.info(f"[Agent] Returning user detected for {phone}, last_ref: {user_prefs.get('last_reference')}")
-            
+
+            # Property reference resolution: resolve 'esa', 'el de 2 amb', etc.
+            from app.core.hybrid.reference import reference_parser
+
+            if (
+                user_message
+                and not any(id_str in user_message for id_str in ["ID:", "id ", "ID "])
+                and merged_context.get("last_shown_properties")
+            ):
+                ref_ctx = {
+                    "property_options": merged_context["last_shown_properties"],
+                    "selected_property_id": merged_context.get("selected_property_id"),
+                }
+                ref_result = await reference_parser.parse(user_message, ref_ctx)
+                if ref_result.value and ref_result.confidence >= 0.8:
+                    logger.info(
+                        "[ReferenceParser] User reference %r -> property %s (conf=%.2f, parser=%s)",
+                        user_message,
+                        ref_result.value,
+                        ref_result.confidence,
+                        ref_result.parser_used,
+                    )
+                    merged_context["selected_property_id"] = ref_result.value
+                    user_prefs["selected_property_id"] = ref_result.value
+                    await memory_manager.update_context_field(
+                        phone, "selected_property_id", ref_result.value
+                    )
+
             messages = self._build_messages(
                 user_message=user_message,
                 history=history,
@@ -838,10 +865,71 @@ class RealEstateAgent:
     ) -> None:
         """Extrae y guarda preferencias del mensaje del usuario."""
         try:
-            await memory_manager.extract_and_save_preferences(phone, message, current_prefs)
-            logger.info(f"Preferencias extraídas y guardadas exitosamente")
+            # Background name extraction (runs every turn, no user-facing latency)
+            if message and phone:
+                existing_name = current_prefs.get("name") or await memory_manager.get_user_name(phone)
+                if not existing_name:
+                    from app.core.hybrid.name import name_extractor
+
+                    name_result = await name_extractor.parse(message, {})
+                    if name_result.value and name_result.confidence >= 0.6:
+                        await memory_manager.save_user_name(phone, name_result.value)
+                        logger.info(
+                            "[NameExtractor] Extracted name %r for %s (parser=%s, conf=%.2f)",
+                            name_result.value,
+                            phone,
+                            name_result.parser_used,
+                            name_result.confidence,
+                        )
+
+            # Preference extraction (hybrid: LLM first, code fallback)
+            from app.core.hybrid.preference import preference_extractor
+
+            pref_ctx = {"phone": phone, "current_prefs": current_prefs}
+            pref_result = await preference_extractor.parse(message, pref_ctx)
+
+            if pref_result.value and isinstance(pref_result.value, dict):
+                prefs = pref_result.value
+
+                # Save basic fields (backward-compatible with existing schema)
+                if prefs.get("location"):
+                    current_prefs["location_preferences"] = prefs["location"]
+                if prefs.get("budget_max"):
+                    current_prefs["budget_max"] = prefs["budget_max"]
+                if prefs.get("budget_min"):
+                    current_prefs["budget_min"] = prefs["budget_min"]
+                if prefs.get("property_type"):
+                    current_prefs["property_type"] = prefs["property_type"]
+                if prefs.get("operation_type"):
+                    current_prefs["operation_type"] = prefs["operation_type"]
+                if prefs.get("bedrooms"):
+                    current_prefs["bedrooms"] = prefs["bedrooms"]
+                if prefs.get("bathrooms"):
+                    current_prefs["bathrooms"] = prefs["bathrooms"]
+
+                # NEW: save qualitative preferences
+                if prefs.get("features") or prefs.get("qualitative"):
+                    current_prefs["qualitative_prefs"] = {
+                        "features": prefs.get("features", []),
+                        "qualitative": prefs.get("qualitative", []),
+                    }
+
+                # Save to Redis
+                await memory_manager.update_context(phone, current_prefs)
+                logger.info(
+                    "Preferencias extraidas via %s: %s",
+                    pref_result.parser_used,
+                    {k: v for k, v in prefs.items() if v},
+                )
+            else:
+                # Fallback: existing regex extraction
+                await memory_manager.extract_and_save_preferences(
+                    phone, message, current_prefs
+                )
+
+            logger.info("Preferencias extraidas y guardadas exitosamente")
         except Exception as e:
-            logger.error(f"Error guardando preferencias: {e}")
+            logger.error("Error guardando preferencias: %s", e)
     
     def _clean_response(self, response: str, tools_used: List[str]) -> str:
         """Limpia la respuesta de texto técnico/prohibido."""

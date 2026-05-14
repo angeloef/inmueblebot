@@ -878,6 +878,40 @@ class MemoryManager:
             logger.error("[DeadLetter] Failed to save dead-letter entry: {}", e)
             return False
 
+    async def get_user_name(self, phone: str) -> Optional[str]:
+        """Get user's full name from Redis or DB."""
+        ctx = await self.get_context(phone)
+        if ctx and ctx.get("name"):
+            return ctx["name"]
+        try:
+            from app.db.repository import UserRepository
+            from app.db.models import User
+            from app.db.session import async_session_factory
+
+            async with async_session_factory() as session:
+                repo = UserRepository(User, session)
+                user = await repo.get_by_phone(phone)
+                return user.name if user and user.name else None
+        except Exception:
+            return None
+
+    async def save_user_name(self, phone: str, name: str) -> None:
+        """Save user's full name to both Redis and DB."""
+        await self.update_context_field(phone, "name", name)
+        try:
+            from app.db.repository import UserRepository
+            from app.db.models import User
+            from app.db.session import async_session_factory
+
+            async with async_session_factory() as session:
+                repo = UserRepository(User, session)
+                user = await repo.get_by_phone(phone)
+                if user:
+                    await repo.update(user.id, name=name)
+                    await session.commit()
+        except Exception as e:
+            logger.warning("save_user_name: DB error - %s", e)
+
     async def get_dead_letter_count(self) -> int:
         """Return the number of entries in the dead-letter queue."""
         try:

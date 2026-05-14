@@ -79,6 +79,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Context auto-reset failed: {e}")
 
+    # Pre-warm location parser city list from DB
+    try:
+        from app.core.hybrid.location import refresh_known_cities
+        await refresh_known_cities()
+    except Exception as e:
+        logger.warning("refresh_known_cities failed: %s", e)
+
     yield
 
     logger.info("Shutting down")
