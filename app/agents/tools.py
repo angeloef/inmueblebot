@@ -1049,33 +1049,42 @@ async def reschedule_appointment_tool(
         if not new_date_str:
             return "Necesito saber la nueva fecha."
         
-        # Parse date with hybrid parser (LLM first, regex fallback, controlled by PARSER_DATE)
-        date_result = None
-        if date_str := new_date_str.strip():
+        # Stage 1: Try numeric date formats directly (no LLM cost, handles "12/05/2026")
+        date_obj = None
+        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"]:
+            try:
+                date_obj = datetime.strptime(new_date_str.strip(), fmt).date()
+                logger.info(f"[reschedule] Numeric format {fmt}: '{new_date_str}' -> {date_obj}")
+                break
+            except ValueError:
+                continue
+
+        # Stage 2: Natural language dates via hybrid parser (LLM first, code fallback)
+        if date_obj is None:
+            if not new_date_str.strip():
+                return "Necesito saber la nueva fecha."
+
             from app.core.hybrid.date import date_parser as hybrid_date_parser
 
             parse_ctx = {"date_str": new_date_str, "time_str": new_time_str}
             date_result = await hybrid_date_parser.parse(new_date_str, parse_ctx)
-        else:
-            return "Necesito saber la nueva fecha."
 
-        date_obj = None
-        if date_result and date_result.value:
-            date_obj = date_result.value.date()
-            logger.info(
-                "[reschedule] Hybrid parser '%s' -> %s (parser=%s, conf=%.2f)",
-                new_date_str,
-                date_obj,
-                date_result.parser_used,
-                date_result.confidence,
-            )
-        elif date_result and date_result.error:
-            return date_result.error
-        else:
-            return (
-                f"No pude entender la fecha '{new_date_str}'. "
-                f"Por favor usa formato como '12/05/2026' o 'proximo martes'."
-            )
+            if date_result and date_result.value:
+                date_obj = date_result.value.date()
+                logger.info(
+                    "[reschedule] Hybrid parser '%s' -> %s (parser=%s, conf=%.2f)",
+                    new_date_str,
+                    date_obj,
+                    date_result.parser_used,
+                    date_result.confidence,
+                )
+            elif date_result and date_result.error:
+                return date_result.error
+            else:
+                return (
+                    f"No pude entender la fecha '{new_date_str}'. "
+                    f"Por favor usa formato como '12/05/2026' o 'proximo martes'."
+                )
         
         # If no new_time_str, use existing appointment's time
         if not new_time_str and current_apt:

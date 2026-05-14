@@ -80,7 +80,7 @@ class HybridParser(ABC):
             result = await self.parse_llm(raw, ctx)
         else:  # "hybrid" — LLM first, code fallback
             result = await self.parse_llm(raw, ctx)
-            if result.value is None and result.error is None:
+            if result.value is None:
                 self.logger.info(
                     "LLM parser sin resultado para %r — fallback a code", raw
                 )
