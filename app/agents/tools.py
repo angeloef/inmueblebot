@@ -1460,6 +1460,59 @@ async def compare_properties(property_ids: list) -> str:
     return "\n".join(table_lines)
 
 
+async def final_response(messages: list, phone: str = None) -> str:
+    """
+    Define la respuesta final del bot como una secuencia de mensajes separados.
+    Cada mensaje se envía por separado en WhatsApp en el orden especificado.
+    Usá esta herramienta SOLO como la última acción de la conversación,
+    después de haber ejecutado todas las herramientas necesarias (búsquedas,
+    detalles, imágenes, agendas, etc.).
+
+    Tipos de mensaje:
+    - "text": Un mensaje de texto que se envía solo.
+    - "images": Envía las imágenes de la propiedad como mensajes de imagen separados.
+
+    Args:
+        messages: Lista ordenada de mensajes a enviar. Cada mensaje es un dict:
+            - {"type": "text", "content": "texto del mensaje"}
+            - {"type": "images", "images": ["url1", "url2"], "caption": "opcional"}
+            Los mensajes de tipo "text" se envían como mensajes de WhatsApp.
+            Los de tipo "images" envían cada imagen como mensaje de imagen separado.
+            Máximo 5 segmentos.
+
+    Returns:
+        Confirmación de que la respuesta fue planificada.
+    """
+    import json
+
+    if not messages or not isinstance(messages, list):
+        return json.dumps({"error": "Se requiere una lista de mensajes", "plan": []})
+
+    if len(messages) > 5:
+        messages = messages[:5]
+
+    validated = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        msg_type = msg.get("type", "text")
+        if msg_type == "text" and msg.get("content"):
+            validated.append({"type": "text", "content": str(msg["content"])[:2000]})
+        elif msg_type == "images" and msg.get("images"):
+            images = msg["images"]
+            if isinstance(images, list) and len(images) > 0:
+                validated.append({
+                    "type": "images",
+                    "images": images[:6],
+                    "caption": str(msg.get("caption", ""))[:200]
+                })
+
+    if not validated:
+        return json.dumps({"error": "No hay mensajes válidos en el plan", "plan": []})
+
+    return json.dumps({"plan": validated})
+
+
 TOOL_FUNCTIONS = {
     "search_properties": search_properties,
     "compare_properties": compare_properties,
@@ -1476,6 +1529,7 @@ TOOL_FUNCTIONS = {
     "refine_search": refine_search,
     "get_property_images": get_property_images,
     "get_faq_answer": get_faq_answer,
+    "final_response": final_response,
 }
 
 
@@ -1547,4 +1601,5 @@ __all__ = [
     "format_property",
     "execute_tool",
     "TOOL_FUNCTIONS",
+    "final_response",
 ]

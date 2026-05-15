@@ -425,47 +425,84 @@ async def process_messages(messages: List[Dict[str, Any]]):
             response_text = result.get("response_text", "") or ""
             rich_content = result.get("rich_content") or {}
 
-            # Strip image URLs and internal paths from text before sending
-            response_text = sanitize_bot_response(response_text)
+            # ── Check for response_plan (multi-message support) ──────────────
+            response_plan = rich_content.get("response_plan") if isinstance(rich_content, dict) else None
 
-            # When images will be sent separately, strip the numbered list the LLM generates
-            # (e.g. "1.\n2.\n3.\n4." ) since WhatsApp will send them as separate image messages
-            images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
-            if images and response_text:
-                import re
-                # Remove bare numbered lines: "1. ", "1.\n", "1) ", "1)\n", etc.
-                response_text = re.sub(r'^\d+[.)]\s*\n?', '', response_text, flags=re.MULTILINE)
-                # Remove image URLs the LLM may have included
-                response_text = re.sub(r'https?://[^\s]+/media/property/[^\s]+', '', response_text)
-                # Clean up double newlines left after removal
-                response_text = re.sub(r'\n{3,}', '\n\n', response_text).strip()
+            if response_plan and isinstance(response_plan, list) and len(response_plan) > 0:
+                # Send messages according to the plan, in order
+                logger.info(f"[Webhook] Using response_plan with {len(response_plan)} segment(s)")
+                for seg_idx, segment in enumerate(response_plan):
+                    try:
+                        seg_type = segment.get("type", "text")
+                        if seg_type == "text":
+                            text = sanitize_bot_response(segment.get("content", ""))
+                            if text:
+                                await whatsapp_client.send_message(to=phone_to, message=text)
+                                logger.info(f"[Webhook] Sent plan segment {seg_idx}: text ({len(text)} chars)")
+                        elif seg_type == "images":
+                            images = segment.get("images", [])
+                            caption = sanitize_bot_response(segment.get("caption", ""))
+                            for i, url in enumerate(images[:4]):
+                                try:
+                                    img_result = await whatsapp_client.send_image(
+                                        to=phone_to,
+                                        image_url=url,
+                                        caption=caption
+                                    )
+                                    if img_result is None or (isinstance(img_result, dict) and img_result.get("error")):
+                                        logger.warning(f"[Webhook] Plan image {seg_idx}.{i} failed: {img_result}")
+                                    else:
+                                        logger.info(f"[Webhook] Sent plan image {seg_idx}.{i}")
+                                except Exception as e:
+                                    logger.error(f"[Webhook] Plan image error {seg_idx}.{i}: {e}")
+                                if i < len(images[:4]) - 1:
+                                    await asyncio.sleep(1.0)
+                    except Exception as e:
+                        logger.error(f"[Webhook] Plan segment {seg_idx} failed: {e}")
+                    # Small delay between segments for natural feel
+                    if seg_idx < len(response_plan) - 1:
+                        await asyncio.sleep(0.5)
+            else:
+                # ── Fallback: single text + images (original behavior) ─────────
+                # Strip image URLs and internal paths from text before sending
+                response_text = sanitize_bot_response(response_text)
 
-            # Send text response
-            if response_text:
-                logger.info(f"Sending to {phone_to}: {response_text[:30]}...")
-                await whatsapp_client.send_message(
-                    to=phone_to,
-                    message=response_text
-                )
+                # When images will be sent separately, strip the numbered list the LLM generates
+                images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
+                if images and response_text:
+                    import re
+                    # Remove bare numbered lines
+                    response_text = re.sub(r'^\d+[.)]\s*\n?', '', response_text, flags=re.MULTILINE)
+                    # Remove image URLs the LLM may have included
+                    response_text = re.sub(r'https?://[^\s]+/media/property/[^\s]+', '', response_text)
+                    # Clean up double newlines left after removal
+                    response_text = re.sub(r'\n{3,}', '\n\n', response_text).strip()
 
-            # Send images if any, with rate-limiting delay and error isolation
-            images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
-            for i, url in enumerate(images[:4]):
-                try:
-                    result = await whatsapp_client.send_image(
+                # Send text response
+                if response_text:
+                    logger.info(f"Sending to {phone_to}: {response_text[:30]}...")
+                    await whatsapp_client.send_message(
                         to=phone_to,
-                        image_url=url,
-                        caption=rich_content.get("caption", "")
+                        message=response_text
                     )
-                    if result is None or (isinstance(result, dict) and result.get("error")):
-                        logger.warning(f"Image send failed (index {i}, url truncated: {url[:60]}...): result={result}")
-                    else:
-                        logger.info(f"Image sent successfully (index {i})")
-                except Exception as e:
-                    logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
-                # Rate-limiting delay between image sends
-                if i < len(images[:4]) - 1:
-                    await asyncio.sleep(1.0)
+
+                # Send images if any, with rate-limiting delay and error isolation
+                images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
+                for i, url in enumerate(images[:4]):
+                    try:
+                        img_result = await whatsapp_client.send_image(
+                            to=phone_to,
+                            image_url=url,
+                            caption=rich_content.get("caption", "")
+                        )
+                        if img_result is None or (isinstance(img_result, dict) and img_result.get("error")):
+                            logger.warning(f"Image send failed (index {i}, url truncated: {url[:60]}...): result={img_result}")
+                        else:
+                            logger.info(f"Image sent successfully (index {i})")
+                    except Exception as e:
+                        logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
+                    if i < len(images[:4]) - 1:
+                        await asyncio.sleep(1.0)
 
             # Full response_time: from webhook receive → WhatsApp send complete
             response_time = time.time() - start_time
