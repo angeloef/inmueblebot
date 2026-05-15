@@ -300,7 +300,6 @@ class RealEstateAgent:
                         # final_response tool: parse the response plan and short-circuit the loop
                         if tool_name == "final_response":
                             try:
-                                import json
                                 plan_data = json.loads(tool_result)
                                 if "plan" in plan_data and plan_data["plan"]:
                                     # Build response_plan but keep response_text for backward compat
@@ -316,7 +315,7 @@ class RealEstateAgent:
                                     logger.info(f"[Agent] final_response plan: {len(plan)} segment(s)")
                                     break_out = True
                                     break
-                            except (json.JSONDecodeError, Exception) as e:
+                            except Exception as e:
                                 logger.warning(f"[Agent] final_response parse error: {e}")
                                 # Don't short-circuit — let the LLM try again
 
