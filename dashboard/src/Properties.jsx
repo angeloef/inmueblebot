@@ -584,8 +584,8 @@ export default function Properties({ onOpenClient, initialProperty }) {
           <div className="sub">{properties.length} en cartera · {counts.available} disponibles · {counts.rented} alquiladas</div>
         </div>
         <div className="page-h-actions">
-          <Button kind="secondary" icon="download" size="sm">Exportar</Button>
-          <Button kind="primary" icon="plus" size="sm" onClick={() => setCreating(true)}>Agregar propiedad</Button>
+          <Button kind="secondary" icon="download">Exportar</Button>
+          <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>Agregar propiedad</Button>
         </div>
       </div>
       <div className="scroll-surface surface">
