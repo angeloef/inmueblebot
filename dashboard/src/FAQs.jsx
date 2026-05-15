@@ -182,7 +182,10 @@ export default function FAQs() {
           <h1>Preguntas Frecuentes</h1>
           <div className="sub">Gestioná las FAQ que el chatbot responde a los clientes</div>
         </div>
-        <Button kind="primary" icon="plus" onClick={() => setShowNew(true)}>Nueva FAQ</Button>
+        <div className="page-h-actions">
+          <Button kind="primary" icon="plus" onClick={() => setShowNew(true)}>Nueva FAQ</Button>
+        </div>
+        
       </div>
 
       <div className="page-body" style={{ paddingTop: 0 }}>
