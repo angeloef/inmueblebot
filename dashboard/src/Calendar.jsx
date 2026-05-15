@@ -579,7 +579,7 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
           <div className="sub">Visitas, firmas, vencimientos y llamadas</div>
         </div>
         <div className="page-h-actions">
-          <Button kind="primary" icon="plus" size="sm" onClick={() => setEditor({ mode: 'create', event: { title: 'Visita · ', kind: 'visit', date: today, start: '10:00', end: '11:00', agent: 'M. Pereyra', status: 'pending' } })}>Nuevo evento</Button>
+          <Button kind="primary" icon="plus" onClick={() => setEditor({ mode: 'create', event: { title: 'Visita · ', kind: 'visit', date: today, start: '10:00', end: '11:00', agent: 'M. Pereyra', status: 'pending' } })}>Nuevo evento</Button>
         </div>
       </div>
 

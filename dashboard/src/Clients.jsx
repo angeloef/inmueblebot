@@ -291,8 +291,8 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
           <div className="sub">{clients.length} contactos · {counts.prospect} prospectos activos · {counts.tenant} inquilinos</div>
         </div>
         <div className="page-h-actions">
-          <Button kind="secondary" icon="download" size="sm">Exportar</Button>
-          <Button kind="primary" icon="plus" size="sm" onClick={() => setEditor({ mode: 'create' })}>Nuevo cliente</Button>
+          <Button kind="secondary" icon="download" >Exportar</Button>
+          <Button kind="primary" icon="plus" onClick={() => setEditor({ mode: 'create' })}>Nuevo cliente</Button>
         </div>
       </div>
 

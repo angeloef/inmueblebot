@@ -126,7 +126,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
           <div className="sub">{new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })} · {todayEvents.length} evento{todayEvents.length !== 1 ? 's' : ''} en la agenda de hoy</div>
         </div>
         <div className="page-h-actions">
-          <Button kind="primary" icon="plus" size="sm" onClick={() => onNav('calendar')}>Agendar visita</Button>
+          <Button kind="primary" icon="plus" onClick={() => onNav('calendar')}>Agendar visita</Button>
         </div>
       </div>
 
