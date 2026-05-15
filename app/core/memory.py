@@ -270,6 +270,154 @@ class MemoryManager:
             return False  # Fail open — in-process dict is still the last line of defence
 
     # =========================================================================
+    # MÉTODOS DE RESET (LIMPIEZA DE DATOS)
+    # =========================================================================
+
+    async def reset_user_context(self, phone: str) -> bool:
+        """
+        Resetea TODO el contexto y estado de un usuario específico.
+        Limpia Redis (contexto, mensajes, resumen, estado) + PostgreSQL (preferencias).
+        También limpia los fallbacks en memoria.
+
+        Args:
+            phone: Número de teléfono del usuario a resetear
+
+        Returns:
+            True si se completó, False si hubo error
+        """
+        logger.info(f"[Memory] Resetting ALL context for user {phone}")
+        success = True
+
+        # 1. Clear in-memory fallbacks
+        self._fallback_context.pop(phone, None)
+        self._fallback_messages.pop(phone, None)
+
+        # 2. Clear Redis keys
+        try:
+            r = await self._get_redis_with_retry()
+            keys_to_delete = [
+                f"user:{phone}:context",
+                f"user:{phone}:messages",
+                f"user:{phone}:summary",
+                f"user:{phone}:state",
+            ]
+            # Filter out keys that actually exist to reduce Redis churn
+            existing = []
+            for key in keys_to_delete:
+                if await r.exists(key):
+                    existing.append(key)
+            if existing:
+                await r.delete(*existing)
+                logger.info(f"[Memory] Redis: deleted {len(existing)} key(s) for {phone}")
+            else:
+                logger.info(f"[Memory] Redis: no keys to delete for {phone}")
+        except Exception as e:
+            logger.warning(f"[Memory] Redis reset failed for {phone}: {e}")
+            success = False
+
+        # 3. Clear PostgreSQL user data
+        try:
+            from app.db.session import async_session_factory
+            async with async_session_factory() as session:
+                from app.db.repository import UserRepository
+                from app.db.models import User
+                user_repo = UserRepository(User, session)
+                user = await user_repo.get_by_phone(phone)
+                if user:
+                    # Reset preferences back to defaults (don't delete the user, just clear)
+                    await user_repo.update(user.id,
+                        name=None,
+                        budget_min=None,
+                        budget_max=None,
+                        location_preferences=None,
+                        property_type=None,
+                        lead_score=0,
+                    )
+                    await session.commit()
+                    logger.info(f"[Memory] PostgreSQL: reset preferences for {phone}")
+                else:
+                    logger.info(f"[Memory] PostgreSQL: no user found for {phone}")
+        except Exception as e:
+            logger.warning(f"[Memory] PostgreSQL reset failed for {phone}: {e}")
+            success = False
+
+        return success
+
+    async def reset_all_users(self) -> int:
+        """
+        Resetea el contexto de TODOS los usuarios.
+        Barre todas las claves Redis con patrón user:* y las elimina.
+        También resetea la tabla users en PostgreSQL.
+
+        Returns:
+            Cantidad de keys eliminadas de Redis
+        """
+        logger.info("[Memory] Resetting ALL users context")
+        total_deleted = 0
+
+        # 1. Clear in-memory fallbacks entirely
+        self._fallback_context.clear()
+        self._fallback_messages.clear()
+        logger.info("[Memory] In-memory fallbacks cleared")
+
+        # 2. Clear ALL Redis user keys
+        try:
+            r = await self._get_redis_with_retry()
+            cursor = 0
+            pattern = "user:*"
+            deleted_batch = 0
+            while True:
+                cursor, keys = await r.scan(cursor=cursor, match=pattern, count=100)
+                if keys:
+                    await r.delete(*keys)
+                    deleted_batch += len(keys)
+                if cursor == 0:
+                    break
+            total_deleted += deleted_batch
+            logger.info(f"[Memory] Redis: deleted {deleted_batch} user key(s)")
+
+            # Also clear dedup keys
+            dedup_cursor = 0
+            dedup_deleted = 0
+            while True:
+                dedup_cursor, dedup_keys = await r.scan(cursor=dedup_cursor, match="dedup:*", count=100)
+                if dedup_keys:
+                    await r.delete(*dedup_keys)
+                    dedup_deleted += len(dedup_keys)
+                if dedup_cursor == 0:
+                    break
+            total_deleted += dedup_deleted
+            if dedup_deleted:
+                logger.info(f"[Memory] Redis: deleted {dedup_deleted} dedup key(s)")
+        except Exception as e:
+            logger.warning(f"[Memory] Redis flush failed: {e}")
+
+        # 3. Clear PostgreSQL user preferences (reset to defaults)
+        try:
+            from app.db.session import async_session_factory
+            from sqlalchemy import update
+            from app.db.models import User
+            async with async_session_factory() as session:
+                stmt = (
+                    update(User)
+                    .values(
+                        name=None,
+                        budget_min=None,
+                        budget_max=None,
+                        location_preferences=None,
+                        property_type=None,
+                        lead_score=0,
+                    )
+                )
+                result = await session.execute(stmt)
+                await session.commit()
+                logger.info(f"[Memory] PostgreSQL: reset {result.rowcount} user(s)")
+        except Exception as e:
+            logger.warning(f"[Memory] PostgreSQL reset failed: {e}")
+
+        return total_deleted
+
+    # =========================================================================
     # MÉTODOS DE MENSAJES (REDIS - CORTO PLAZO)
     # =========================================================================
     

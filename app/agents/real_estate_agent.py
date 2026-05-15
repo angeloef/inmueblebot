@@ -472,7 +472,16 @@ class RealEstateAgent:
                     # SHORT-CIRCUIT: search/recommend result is a complete formatted response — skip LLM regeneration
                     if isinstance(tool_result, str) and tool_name in ("search_properties", "recommend_properties"):
                         response_text = tool_result
-                        logger.info(f"[Agent] Short-circuit: {tool_name} complete, using formatted result directly")
+                        # If actual results were found, build a response_plan with follow-up message
+                        if "Encontré" in tool_result and "propiedades" in tool_result:
+                            follow_up = "¿Te gustaría más información de alguna de estas opciones? Solo decime el ID o el título del que te interesa y te paso la información."
+                            rich_content["response_plan"] = [
+                                {"type": "text", "content": tool_result},
+                                {"type": "text", "content": follow_up},
+                            ]
+                            logger.info(f"[Agent] Short-circuit: {tool_name} complete, response_plan with 2 segments")
+                        else:
+                            logger.info(f"[Agent] Short-circuit: {tool_name} complete, using formatted result directly")
                         break_out = True
                         break
                     
