@@ -297,27 +297,6 @@ class RealEstateAgent:
                             logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
                             break_out = True
                             break
-                        # final_response tool: parse the response plan and short-circuit the loop
-                        if tool_name == "final_response":
-                            try:
-                                plan_data = json.loads(tool_result)
-                                if "plan" in plan_data and plan_data["plan"]:
-                                    # Build response_plan but keep response_text for backward compat
-                                    plan = plan_data["plan"]
-                                    response_text = ""
-                                    for seg in plan:
-                                        if seg.get("type") == "text":
-                                            response_text += seg.get("content", "") + "\n"
-                                    # Remove trailing newlines
-                                    response_text = response_text.strip()
-                                    # Store structured plan in rich_content for the webhook
-                                    rich_content["response_plan"] = plan
-                                    logger.info(f"[Agent] final_response plan: {len(plan)} segment(s)")
-                                    break_out = True
-                                    break
-                            except Exception as e:
-                                logger.warning(f"[Agent] final_response parse error: {e}")
-                                # Don't short-circuit — let the LLM try again
 
                     # Reschedule failure counter: max 3 consecutive failures
                     if tool_name == "reschedule_appointment":
@@ -423,8 +402,7 @@ class RealEstateAgent:
                             "content": (
                                 "Respondiste una pregunta frecuente. "
                                 "Primero preguntale al usuario \"¿Tenes alguna otra consulta?\". "
-                                "Después de eso, ofrecelé ayuda con propiedades. "
-                                "Usá final_response con 2 segmentos de tipo 'text' para separar la respuesta de la pregunta de seguimiento."
+                                "Después de eso, ofrecelé ayuda con propiedades."
                             )
                         })
                     elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):

@@ -19,38 +19,6 @@ Scheduling confirmation: "Cita Agendada!" luego Tipo | Fecha | Hora | Propiedad
 FAQ: responde natural con la informacion, luego preguntá "¿Tenes alguna otra consulta?" y después ofrecé ayudar con propiedades.
 Sin resultados: "No encontre exactamente lo que buscas con esos filtros. Queres ajustar algo?"
 
-# Multi-Message Responses
-Podes enviar la respuesta como VARIOS mensajes de WhatsApp separados usando LA HERRAMIENTA final_response al final. Cada elemento en la lista "messages" es un mensaje individual que se envía por separado.
-USALO CUANDO:
-- Mostras imágenes: 1er mensaje = presentación, luego las imágenes, 3er mensaje = pregunta de seguimiento
-- Confirmás una cita: 1er mensaje = confirmación, 2do mensaje = "Necesitas algo mas?"
-- Respondés FAQ: 1er mensaje = respuesta a la pregunta, 2do mensaje = "Tenes alguna otra consulta?" (USÁ SIEMPRE final_response para FAQs)
-NO LO USES PARA:
-- Resultados de búsqueda de propiedades: TODAS las propiedades van en UN SOLO mensaje de texto (como antes)
-- Respuestas simples de una sola línea (saludo, pregunta corta)
-- Details de propiedad: van en UN SOLO mensaje de texto
-
-Ejemplo con imágenes:
-final_response(messages=[
-  {"type": "text", "content": "Acá tenés las fotos del Departamento 2 ambientes en Obera Centro:"},
-  {"type": "images", "images": ["url1", "url2"], "caption": ""},
-  {"type": "text", "content": "Decime si tenés alguna consulta, te gustaría ver otra propiedad o querés agendar una visita para verla en persona."}
-])
-
-Ejemplo con FAQ:
-final_response(messages=[
-  {"type": "text", "content": "Nuestro horario es de lunes a viernes de 9 a 18hs, y sábados de 9 a 13hs."},
-  {"type": "text", "content": "¿Tenes alguna otra consulta? O estás buscando alguna propiedad en particular?"}
-])
-
-Ejemplo con cita confirmada:
-final_response(messages=[
-  {"type": "text", "content": "¡Cita Agendada! Visita: Viernes 16/05 a las 10hs | Obera Centro | Departamento 2 ambientes"},
-  {"type": "text", "content": "Necesitás algo más?"}
-])
-
-IMPORTANTE: Si no usás final_response, tu texto se enviará como un ÚNICO mensaje (comportamiento anterior).
-
 # Active Property Context
 La "propiedad activa" es la ultima de la que el usuario vio detalles o fotos (get_property_details/get_property_images). Cuando el usuario dice "esa", "fotos", "agendar" sin especificar, usa la activa. Cambia solo cuando el usuario menciona explicitamente otra propiedad o hace nueva busqueda. Para schedule_visit, usa SIEMPRE el ID de la activa.
 
@@ -455,47 +423,6 @@ TOOL_DEFINITIONS = [
                     }
                 },
                 "required": ["property_ids"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "final_response",
-            "description": "Define the final response as a sequence of separate WhatsApp messages. Use as the LAST action after all other tools are done. Each message in the list is sent as a separate WhatsApp bubble in order. Use this when you need to send a greeting first, then images, then a follow-up question as separate messages — instead of cramming everything into one text. For property search results, keep ALL properties in ONE text message (use a single 'text' segment with the full list).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "messages": {
-                        "type": "array",
-                        "description": "Ordered list of message segments to send. Each segment is one WhatsApp message. Max 5 segments.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": ["text", "images"],
-                                    "description": "'text': a WhatsApp text message. 'images': send property images as separate image messages."
-                                },
-                                "content": {
-                                    "type": "string",
-                                    "description": "Text content. Only for type='text'."
-                                },
-                                "images": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Image URLs to send. Only for type='images'. Max 6."
-                                },
-                                "caption": {
-                                    "type": "string",
-                                    "description": "Caption for images. Only for type='images'."
-                                }
-                            },
-                            "required": ["type"]
-                        }
-                    }
-                },
-                "required": ["messages"]
             }
         }
     }
