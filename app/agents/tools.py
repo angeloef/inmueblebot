@@ -83,6 +83,8 @@ def format_property(prop) -> str:
 
     lines.append("")
     lines.append(f"ID: {prop_id}")
+    lines.append("")
+    lines.append("¿Queres que te muestre las fotos de esta propiedad? O preferirias ver los detalles de otra?")
 
     return "\n".join(lines)
 
@@ -200,21 +202,25 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
 
         feature_str = " — ".join(feat_parts) if feat_parts else ""
 
+        # Get property ID for reference
+        _oid = _get_attr(prop, "original_id", None)
+        _pid = str(_oid) if _oid else str(_get_attr(prop, "id", f"prop-{i}"))[:8]
+
         line = f"📍 {title} — {price_str}"
         if feature_str:
             line += f" — {feature_str}"
+        line += f" | ID: {_pid}"
 
         lines.append(line)
 
     # ── Footer ──
     if criteria:
         location = criteria.get("location", "")
-        if location:
-            lines.append("")
-            lines.append(f"Todas en {location}. ¿Te interesa alguna?")
-        else:
-            lines.append("")
-            lines.append("¿Te interesa alguna?")
+        lines.append("")
+        lines.append("Si te interesa alguna, solo decime la direccion o ID y te paso mas detalles.")
+    else:
+        lines.append("")
+        lines.append("¿Te interesa alguna?")
 
     return "\n".join(lines)
 
