@@ -1,4 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+
+// ── Mapeo vista ↔ URL ────────────────────────────────────────────────────────
+const VIEW_TO_PATH = {
+  dashboard:  '/dashboard/inicio',
+  calendar:   '/dashboard/calendario',
+  properties: '/dashboard/propiedades',
+  clients:    '/dashboard/clientes',
+  faqs:       '/dashboard/faqs',
+  documents:  '/dashboard/documentos',
+  settings:   '/dashboard/configuracion',
+};
+
+const PATH_TO_VIEW = Object.fromEntries(
+  Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v])
+);
+// Aliases para rutas sin sufijo
+PATH_TO_VIEW['/dashboard'] = 'dashboard';
+PATH_TO_VIEW['/'] = 'dashboard';
 import { Sidebar, Topbar } from './Shell';
 import { ToastStack, pushToast } from './Primitives';
 import { EventPopover } from './EventPopover';
@@ -10,7 +29,13 @@ import Clients from './Clients';
 import FAQs from './FAQs';
 
 export default function App() {
-  const [active, setActive] = useState('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Inicializar 'active' desde la URL actual (soporta F5 / deep link)
+  const [active, setActive] = useState(
+    () => PATH_TO_VIEW[location.pathname] ?? 'dashboard'
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [clientToOpen, setClientToOpen] = useState(null);
   const [propertyToOpen, setPropertyToOpen] = useState(null);
@@ -27,12 +52,20 @@ export default function App() {
     return () => query.removeEventListener('change', handler);
   }, []);
 
+  // Sincronizar cuando el usuario usa Atrás / Adelante del navegador
+  useEffect(() => {
+    const view = PATH_TO_VIEW[location.pathname];
+    if (view && view !== active) setActive(view);
+  }, [location.pathname]);
+
   const navTo = (view) => {
     setMenuOpen(false);
     setGlobalPopover(null);
     setClientToOpen(null);
     setPropertyToOpen(null);
     setActive(view);
+    const path = VIEW_TO_PATH[view];
+    if (path && location.pathname !== path) navigate(path);
   };
 
   const openClient = (client) => {
