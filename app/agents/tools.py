@@ -87,41 +87,86 @@ def format_property(prop) -> str:
     return "\n".join(lines)
 
 
-def format_property_list(properties: List) -> str:
+def format_property_list(properties: List, criteria: dict = None) -> str:
     """
     Formatea una lista de propiedades en texto legible para WhatsApp.
-    Formato minimalista, una línea por propiedad.
-    
+    Usa estilo A8 (Recepcionista Experta): header dinámico con criterios de búsqueda,
+    luego propiedades listadas con ubicación, precio y ambientes.
+
     Args:
         properties: Lista de objetos Property o dicts
-    
+        criteria: Dict opcional con search_criteria (location, property_type, bedrooms, etc.)
+                  para generar un header dinámico
+
     Returns:
         String formateado con los detalles de cada propiedad
     """
     if not properties:
         return "No encontré propiedades que coincidan con tu búsqueda."
-    
+
     lines = []
-    lines.append(f"Encontré {len(properties)} propiedades:\n")
 
-    for i, prop in enumerate(properties, 1):
-        # Use original_id (integer) if available
-        original_id = _get_attr(prop, "original_id", None)
-        if original_id:
-            prop_id = str(original_id)
+    # ── Dynamic header based on search criteria ──
+    if criteria:
+        # Map property_type to gendered Spanish
+        pt = criteria.get("property_type", "").lower()
+        if pt in ("casa",):
+            noun = "casas"
+            article = "las"
+        elif pt in ("departamento",):
+            noun = "departamentos"
+            article = "los"
+        elif pt in ("terreno",):
+            noun = "terrenos"
+            article = "los"
+        elif pt in ("oficina",):
+            noun = "oficinas"
+            article = "las"
+        elif pt in ("local",):
+            noun = "locales"
+            article = "los"
+        elif pt in ("galpon", "galpón"):
+            noun = "galpones"
+            article = "los"
         else:
-            prop_id = str(_get_attr(prop, "id", f"prop-{i}"))[:8]
+            noun = "propiedades"
+            article = "las"
 
+        # Bedrooms
+        bedrooms = criteria.get("bedrooms")
+        bed_str = f" de {bedrooms} dormitorio{'s' if bedrooms and bedrooms > 1 else ''}" if bedrooms else ""
+
+        # Location
+        location = criteria.get("location", "")
+
+        # Operation type
+        op = criteria.get("operation_type", "alquiler")
+
+        if location and noun:
+            demo = "Estas" if article == "las" else "Estos"
+            header = f"{demo} son {article} {noun}{bed_str} en {location}:"
+        elif noun:
+            demo = "Estas" if article == "las" else "Estos"
+            header = f"{demo} son {article} {noun}{bed_str} que tenemos disponibles:"
+        else:
+            header = "Estas son las propiedades que tenemos disponibles:"
+
+        lines.append(header)
+        lines.append("")
+    else:
+        lines.append(f"Encontré {len(properties)} propiedades:\n")
+
+    # ── Property lines — A8 style: 📍 {title} — {price} — {features} ──
+    for i, prop in enumerate(properties, 1):
         title = _get_attr(prop, "title", "Sin título")
         title = title[:50] + "..." if len(title) > 50 else title
 
         price = _get_attr(prop, "price", 0)
-        # Defensive: force price to int to prevent scientific notation ($1.2E+5)
         try:
             price = int(float(str(price)))
         except (ValueError, TypeError):
             price = 0
-        
+
         cur = _get_attr(prop, "currency", "USD")
         prop_type = _get_attr(prop, "type", "venta")
         if cur != "USD":
@@ -134,30 +179,43 @@ def format_property_list(properties: List) -> str:
             price_str = f"{currency_prefix}${price:,}"
 
         bedrooms = _get_attr(prop, "bedrooms")
-        bathrooms = _get_attr(prop, "bathrooms")
-        area_m2 = _get_attr(prop, "area_m2")
-
-        features = []
-        if bedrooms:
-            features.append(f"{bedrooms} hab")
-        if bathrooms:
-            features.append(f"{bathrooms} baños")
-        if area_m2:
-            features.append(f"{area_m2}m²")
-        features_str = " | ".join(features) if features else "Sin info"
 
         location = _get_attr(prop, "location", "Sin ubicación")
-
-        # Minimalist one-line format: 🏠 Title | $Price | N hab | Location | ID:N
-        bedroom_str = ""
-        if bedrooms:
-            bedroom_str = f" {bedrooms} hab |"
+        # Strip city name from location if it repeats the user's search city
+        if criteria and criteria.get("location"):
+            search_city = criteria["location"].lower()
+            location_clean = location
+            if location.lower().endswith(f", {search_city}") or location.lower().endswith(f", {search_city}"):
+                location_clean = location.rsplit(",", 1)[0].strip()
+            elif location.lower().startswith(f"{search_city} "):
+                location_clean = location[len(search_city):].strip().lstrip(",").strip()
         else:
-            bedroom_str = " |"
-        line = f"🏠 {title} | {price_str}{bedroom_str} {location} | ID:{prop_id}"
+            location_clean = location
+        location_clean = location_clean[:40] + "..." if len(location_clean) > 40 else location_clean
+
+        # Feature info
+        feat_parts = []
+        if bedrooms:
+            feat_parts.append(f"{bedrooms} ambiente{'s' if bedrooms > 1 else ''}")
+
+        feature_str = " — ".join(feat_parts) if feat_parts else ""
+
+        line = f"📍 {title} — {price_str}"
+        if feature_str:
+            line += f" — {feature_str}"
 
         lines.append(line)
-    
+
+    # ── Footer ──
+    if criteria:
+        location = criteria.get("location", "")
+        if location:
+            lines.append("")
+            lines.append(f"Todas en {location}. ¿Te interesa alguna?")
+        else:
+            lines.append("")
+            lines.append("¿Te interesa alguna?")
+
     return "\n".join(lines)
 
 
@@ -353,21 +411,21 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                     f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
                     f"🔱 Subiendo un poco el presupuesto{budget_str}:",
                 ]
-                parts.append(format_property_list(fb1_results[:MAX_ALTERNATIVES]))
+                parts.append(format_property_list(fb1_results[:MAX_ALTERNATIVES], fb1_criteria))
                 return "\n".join(parts)
             elif fb2_results:
                 parts = [
                     f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
                     f"🔱 Opciones sin filtro de presupuesto:",
                 ]
-                parts.append(format_property_list(fb2_results[:MAX_ALTERNATIVES]))
+                parts.append(format_property_list(fb2_results[:MAX_ALTERNATIVES], fb2_criteria))
                 return "\n".join(parts)
             else:
                 # No results from any fallback — signal LLM to ask user for adjustments
                 logger.info("[TOOL] All fallbacks returned 0 results — returning NO_RESULTS_ASK_MORE signal")
                 return "NO_RESULTS_ASK_MORE"
         
-        return format_property_list(properties)
+        return format_property_list(properties, search_criteria)
         
     except Exception as e:
         logger.error(f"Error en busqueda de propiedades: {e}")
@@ -556,7 +614,7 @@ async def recommend_properties(user_preferences: Dict[str, Any]) -> str:
         if not properties:
             return "No encontré propiedades que coincidan exactamente con tus preferencias. ¿Quieres ajustar los criterios de búsqueda?"
         
-        return "✨ *Basado en tus preferencias, te recomiendo:*\n\n" + format_property_list(properties)
+        return "✨ *Basado en tus preferencias, te recomiendo:*\n\n" + format_property_list(properties, criteria)
         
     except Exception as e:
         logger.error(f"Error en recomendaciones: {e}")
@@ -793,6 +851,34 @@ async def schedule_visit(
         from app.db.models import User
         from app.db.session import async_session_factory
         logger.info(f"[schedule_visit] Input: date_str='{date_str}', time_str='{time_str}', combined='{combined_input}'")
+
+        # ── Pre-check: if the date falls on a non-working day, warn proactively ──
+        # This prevents the "ask for time → reject Sunday" back-and-forth.
+        # We check before the full hybrid parse because the parser may return an
+        # "ambiguous time" error before we ever get to check the day of the week.
+        from app.utils.date_parser import _parse_date_advanced
+        _raw_date, _ = _parse_date_advanced(combined_input.lower(), get_argentina_now())
+        if _raw_date:
+            _wd = _raw_date.weekday()
+            if _wd == 6:
+                logger.info(f"[schedule_visit] Pre-check: date {_raw_date} is a Sunday — rejecting early")
+                # Still save pending scheduling so the LLM context preserves the property
+                if phone and date_str:
+                    try:
+                        await memory_manager.save_pending_scheduling(
+                            phone=phone,
+                            property_id=str(property_id),
+                            date_str=date_str,
+                            time_str=time_str
+                        )
+                    except Exception:
+                        pass
+                return (
+                    f"Los domingos no realizamos visitas. "
+                    f"Nuestro horario de atención es de lunes a sábado de 9:00 a 18:00 hs. "
+                    f"¿Qué otro día te viene bien?"
+                )
+        # ── End pre-check ──
 
         # Hybrid date parsing: LLM first, regex fallback (controlled by PARSER_DATE env var)
         parse_ctx = {"date_str": date_str, "time_str": time_str, "reference_dt": get_argentina_now()}
