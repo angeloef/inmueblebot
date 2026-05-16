@@ -85,6 +85,53 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Context auto-reset failed: {e}")
 
+    # ── Clean up test user's Google Calendar events on every deploy ──
+    # This lets you test appointment flows without manual cleanup after each deploy.
+    try:
+        clean_phone = os.environ.get("RESET_PHONE_ON_STARTUP") or "5493754455340"
+        from sqlalchemy import select
+        from app.db.models import User, Appointment
+        from app.db.session import async_session_factory
+        from app.services.calendar_service import calendar_service
+
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(User).where(User.whatsapp_phone == clean_phone)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                apt_result = await session.execute(
+                    select(Appointment).where(
+                        Appointment.user_id == user.id,
+                        Appointment.calendar_event_id.isnot(None),
+                    )
+                )
+                appointments = list(apt_result.scalars().all())
+                if appointments:
+                    for apt in appointments:
+                        if apt.calendar_event_id:
+                            await calendar_service.cancel_visit(apt.calendar_event_id)
+                            logger.info(
+                                f"[Startup] Deleted Google Calendar event "
+                                f"{apt.calendar_event_id} for test appointment {apt.id}"
+                            )
+                        apt.status = "cancelled"
+                    await session.commit()
+                    logger.info(
+                        f"[Startup] Cancelled {len(appointments)} test appointments "
+                        f"for {clean_phone} (+ cleaned Google Calendar events)"
+                    )
+                else:
+                    logger.info(
+                        f"[Startup] No calendar appointments to clean for test phone {clean_phone}"
+                    )
+            else:
+                logger.info(
+                    f"[Startup] No test user found for phone {clean_phone}"
+                )
+    except Exception as e:
+        logger.warning(f"[Startup] Test calendar cleanup failed: {e}")
+
     # Pre-warm location parser city list from DB
     try:
         from app.core.hybrid.location import refresh_known_cities
