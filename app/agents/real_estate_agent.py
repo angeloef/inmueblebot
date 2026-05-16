@@ -278,6 +278,27 @@ class RealEstateAgent:
                         except Exception as _e:
                             logger.warning(f"[Agent] Property guard error (non-fatal): {_e}")
 
+                    # SCHEDULING GUARD: if user just said "id 18" or similar without scheduling intent,
+                    # and LLM called schedule_visit, suppress it and redirect to get_property_details
+                    if tool_name == "schedule_visit" and user_message:
+                        _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
+                                           "reserva", "turno", "conocer", "ver en persona",
+                                           "ir a ver", "recorrer", "mostrar"]
+                        _user_lower = user_message.lower()
+                        _has_sched_intent = any(kw in _user_lower for kw in _sched_keywords)
+                        _is_simple_ref = any(phrase in _user_lower for phrase in [
+                            "id ", "el id", "muestrame", "pasame datos", "ver la",
+                            "quiero ver", "dame info", "informacion de", "detalles de"
+                        ])
+                        if not _has_sched_intent and (_is_simple_ref or len(_user_lower.strip().split()) <= 3):
+                            logger.warning(
+                                f"[Agent] 🛡️ SCHEDULING GUARD: user message '{user_message[:50]}' "
+                                f"has no scheduling keywords. Suppressing schedule_visit → redirecting to details."
+                            )
+                            # Replace with a get_property_details call instead
+                            tool_name = "get_property_details"
+                            tool_args = {"property_id": tool_args.get("property_id", "")}
+
                     tool_result = await execute_tool(
                         tool_name=tool_name,
                         arguments=tool_args,
