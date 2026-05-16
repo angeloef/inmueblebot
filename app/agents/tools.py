@@ -134,9 +134,23 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
             noun = "propiedades"
             article = "las"
 
-        # Bedrooms
+        # Bedrooms — detect actual range from properties
         bedrooms = criteria.get("bedrooms")
-        bed_str = f" de {bedrooms} dormitorio{'s' if bedrooms and bedrooms > 1 else ''}" if bedrooms else ""
+        if bedrooms and properties:
+            # Compute actual min/max bedrooms from the results
+            actual_beds = []
+            for p in properties:
+                b = _get_attr(p, "bedrooms", None)
+                if b is not None:
+                    actual_beds.append(int(b))
+            actual_beds = sorted(set(actual_beds))
+            if len(actual_beds) >= 2:
+                # Show range: "3 y 4 dormitorios" instead of just "3"
+                bed_str = f" de {' y '.join(str(b) for b in actual_beds)} dormitorio{'s' if len(actual_beds) > 1 or any(b > 1 for b in actual_beds) else ''}"
+            else:
+                bed_str = f" de {bedrooms} dormitorio{'s' if bedrooms > 1 else ''}" if bedrooms else ""
+        else:
+            bed_str = f" de {bedrooms} dormitorio{'s' if bedrooms and bedrooms > 1 else ''}" if bedrooms else ""
 
         # Location
         location = criteria.get("location", "")

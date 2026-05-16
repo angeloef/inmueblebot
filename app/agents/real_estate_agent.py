@@ -448,31 +448,15 @@ class RealEstateAgent:
                                 logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
                     
                     # SHORT-CIRCUIT: search/recommend result is a complete formatted response
-                    # Collect multiple search results for multi-message response (e.g., "1 o 2")
                     if isinstance(tool_result, str) and tool_name in ("search_properties", "recommend_properties"):
                         response_text = tool_result
-                        # A8 format detection: header starts with "Estos son" or "Estas son"
-                        has_a8_results = "Estos son" in tool_result or "Estas son" in tool_result
-                        has_old_results = "Encontré" in tool_result
-
-                        if has_a8_results or has_old_results:
-                            # Collect results for multi-message response
-                            if "_search_results" not in rich_content:
-                                rich_content["_search_results"] = []
-                            rich_content["_search_results"].append(tool_result)
-                            logger.info(
-                                f"[Agent] Collected search result #{len(rich_content['_search_results'])} "
-                                f"for multi-message response"
-                            )
-                            # Don't break yet — the LLM may call search_properties again for another value
-                            # Reset response_text so the loop continues
-                            response_text = None
-                            continue
+                        # A8 format has results (header starts with "Estos son" or "Estas son")
+                        if "Estos son" in tool_result or "Estas son" in tool_result or "Encontré" in tool_result:
+                            logger.info(f"[Agent] Short-circuit: {tool_name} complete, A8 format detected")
                         else:
-                            # No results (fallback or error) — let LLM handle
                             logger.info(f"[Agent] Short-circuit: {tool_name} returned no results, passing to LLM")
-                            break_out = True
-                            break
+                        break_out = True
+                        break
                     
                     if "get_property_images" in tool_name:
                         new_rich = self._extract_rich_content(tool_args, tool_result)
@@ -538,27 +522,6 @@ class RealEstateAgent:
                 tools_used=tools_used,
                 current_state=merged_context.get("current_state", "idle")
             )
-
-            # ── Build multi-message response_plan from collected search results ──
-            # When the user said "1 o 2 habitaciones", the LLM calls search_properties
-            # multiple times. Each result is collected in rich_content["_search_results"].
-            _search_results = rich_content.get("_search_results") if isinstance(rich_content, dict) else None
-            if _search_results and len(_search_results) > 1:
-                response_plan = [{"type": "text", "content": r} for r in _search_results]
-                rich_content["response_plan"] = response_plan
-                # First result is the response_text; rest are sent as follow-ups
-                response_text = _search_results[0]
-                logger.info(
-                    f"[Agent] Built multi-message response_plan with {len(_search_results)} segments "
-                    f"from collected search results"
-                )
-            elif _search_results and len(_search_results) == 1:
-                # Single search result — send as-is (response_plan with just the result)
-                response_text = _search_results[0]
-                logger.info(f"[Agent] Single search result, using directly as response")
-            # Clean up internal tracking
-            if isinstance(rich_content, dict):
-                rich_content.pop("_search_results", None)
 
             # Build result dict BEFORE background post-processing
             result = {
