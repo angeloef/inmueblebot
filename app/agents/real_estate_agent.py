@@ -447,17 +447,6 @@ class RealEstateAgent:
                             except Exception as e:
                                 logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
                     
-                    # SHORT-CIRCUIT: search/recommend result is a complete formatted response
-                    if isinstance(tool_result, str) and tool_name in ("search_properties", "recommend_properties"):
-                        response_text = tool_result
-                        # A8 format has results (header starts with "Estos son" or "Estas son")
-                        if "Estos son" in tool_result or "Estas son" in tool_result or "Encontré" in tool_result:
-                            logger.info(f"[Agent] Short-circuit: {tool_name} complete, A8 format detected")
-                        else:
-                            logger.info(f"[Agent] Short-circuit: {tool_name} returned no results, passing to LLM")
-                        break_out = True
-                        break
-                    
                     if "get_property_images" in tool_name:
                         new_rich = self._extract_rich_content(tool_args, tool_result)
                         # Preserve images from both current and previous rich_content
