@@ -128,7 +128,10 @@ function FaqRow({ faq, onEdit, onDelete }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+    <div
+      onClick={() => onEdit(faq)}
+      style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 2 }}>{faq.question}</div>
@@ -141,7 +144,7 @@ function FaqRow({ faq, onEdit, onDelete }) {
             {!faq.active && <Pill kind="cancelled">Inactiva</Pill>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           <IconButton name="edit" onClick={() => onEdit(faq)} title="Editar" />
           <IconButton name="trash" onClick={handleDelete} title="Eliminar" />
         </div>
