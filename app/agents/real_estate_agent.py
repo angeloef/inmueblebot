@@ -928,8 +928,13 @@ class RealEstateAgent:
                         "qualitative": prefs.get("qualitative", []),
                     }
 
-                # Save to Redis
-                await memory_manager.update_context(phone, current_prefs)
+                # Save to Redis — merge into full context to preserve state fields
+                try:
+                    full_context = await memory_manager.get_user_context(phone)
+                    full_context.update(current_prefs)
+                    await memory_manager.save_user_context(phone, full_context)
+                except Exception as ctx_e:
+                    logger.warning(f"[Agent] Could not persist extracted prefs to Redis: {ctx_e}")
                 logger.info(
                     "Preferencias extraidas via %s: %s",
                     pref_result.parser_used,
