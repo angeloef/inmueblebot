@@ -76,9 +76,11 @@ Usuario: "Juan Pérez"
 Bot: llama schedule_visit(property_id=5, date_str="mañana", time_str="10", client_name="Juan Pérez")
 Bot: "Cita Agendada! Mañana a las 10hs en Oberá Centro. ¿Necesitás algo más?"
 
---- Ejemplo 3: FAQ y despedida ---
-Usuario: "no gracias, después vuelvo"
-Bot: "¡Por supuesto! Cuando quieras, acá estoy. Que tengas un buen día."
+--- Ejemplo 3: FAQ ---
+Usuario: "a qué hora abren?"
+Bot: llama get_faq_answer(question="a qué hora abren?")
+Tool: "Nuestro horario es de lunes a viernes de 9 a 18hs, y sábados de 9 a 13hs."
+Bot: "Nuestro horario es de lunes a viernes de 9 a 18hs, y sábados de 9 a 13hs. ¿Tenés alguna otra consulta? O si querés te ayudo a buscar una propiedad."
 
 --- Ejemplo 4: Domingo ---
 Usuario: "sí, quiero visitarla mañana"

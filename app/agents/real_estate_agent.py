@@ -435,9 +435,11 @@ class RealEstateAgent:
                             messages.append({
                                 "role": "system",
                                 "content": (
-                                    "Respondiste una pregunta frecuente. "
-                                    "Primero preguntale al usuario \"¿Tenes alguna otra consulta?\". "
-                                    "Después de eso, ofrecelé ayuda con propiedades."
+                                    "Acabás de recibir la respuesta de FAQ en el tool result de arriba. "
+                                    "Usá ESA información para responder la pregunta del usuario. "
+                                    "NO digas 'Respondiste una pregunta frecuente' — simplemente dale la respuesta. "
+                                    "Después de responder, preguntale \"¿Tenés alguna otra consulta?\" "
+                                    "y luego ofrecelé ayuda con propiedades."
                                 )
                             })
                         elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
