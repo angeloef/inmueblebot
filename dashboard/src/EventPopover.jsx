@@ -20,10 +20,19 @@ export function EventPopover({ event, anchor, onClose, onEdit, onReschedule, onC
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: 0, top: 0, opacity: 0 });
   useEffect(() => {
-    if (!anchor || !ref.current) return;
+    if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
     const w = r.width, h = r.height;
     const margin = 8;
+    if (!anchor) {
+      // Opened programmatically (e.g. from notification) — center on screen
+      setPos({
+        left: Math.max(margin, (window.innerWidth  - w) / 2),
+        top:  Math.max(margin, (window.innerHeight - h) / 2),
+        opacity: 1,
+      });
+      return;
+    }
     let left = anchor.right + margin;
     let top = anchor.top;
     if (left + w > window.innerWidth - margin) left = Math.max(margin, anchor.left - w - margin);

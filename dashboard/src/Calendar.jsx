@@ -425,7 +425,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   );
 }
 
-export default function Calendar({ onOpenClient, onOpenProperty }) {
+export default function Calendar({ onOpenClient, onOpenProperty, initialEventId, initialDate }) {
   const { data: events = [] }                 = useEvents();
   const createEventMut                        = useCreateEvent();
   const updateEventMut                        = useUpdateEvent();
@@ -476,7 +476,7 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
   const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   // Single navigation cursor — all views derive from this date
-  const [navDate, setNavDate] = useState(() => new Date());
+  const [navDate, setNavDate] = useState(() => initialDate ? new Date(initialDate + "T12:00:00") : new Date());
 
   const goBack = () => setNavDate(d => {
     const nd = new Date(d);
@@ -496,6 +496,21 @@ export default function Calendar({ onOpenClient, onOpenProperty }) {
 
   const openEvent = (event, rect) => setPopover({ event, anchor: rect });
   const closePopover = () => setPopover(null);
+
+  // Auto-open event when navigated from a notification
+  const [notifEventHandled, setNotifEventHandled] = React.useState(false);
+  React.useEffect(() => {
+    if (!initialEventId || notifEventHandled || events.length === 0) return;
+    const target = events.find(e => String(e.id) === String(initialEventId));
+    if (!target) return;
+    setNotifEventHandled(true);
+    // Navigate to event's date
+    const [y, m, d] = target.date.split('-').map(Number);
+    setNavDate(new Date(y, m - 1, d));
+    setView('day');
+    // Open popover (centered — no anchor rect)
+    setPopover({ event: target, anchor: null });
+  }, [initialEventId, events, notifEventHandled]);
 
   const handleEdit = (e) => { setPopover(null); setEditor({ event: e, mode: 'edit' }); };
   const handleReschedule = (e) => { setPopover(null); setEditor({ event: e, mode: 'reschedule' }); };

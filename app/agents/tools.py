@@ -1055,6 +1055,7 @@ async def schedule_visit(
                             property_title=property_title,
                             datetime_str=dt_str,
                             property_id=prop_int_id,
+                            event_id=getattr(appointment, "id", None),
                         )
                 except Exception as _ne:
                     logger.debug(f"[schedule_visit] Notif error (non-fatal): {_ne}")
@@ -1225,6 +1226,7 @@ async def reschedule_appointment_tool(
                 phone=phone or "",
                 property_title="Visita",
                 datetime_str=dt_str,
+                event_id=getattr(appointment, "id", None),
             )
         except Exception as _ne:
             logger.debug(f"[reschedule] Notif error (non-fatal): {_ne}")
@@ -1275,6 +1277,7 @@ async def cancel_appointment_tool(
                 phone=phone or "",
                 property_title="Visita",
                 reason=reason or "",
+                event_id=apt_uuid,
             )
         except Exception as _ne:
             logger.debug(f"[cancel] Notif error (non-fatal): {_ne}")

@@ -223,7 +223,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
   );
 }
 
-export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) {
+export default function Clients({ initialClient, initialPhone, onOpenProperty, onOpenEvent }) {
   const { data: clients = [] } = useClients();
   const createClientMut = useCreateClient();
   const updateClientMut = useUpdateClient();
@@ -235,6 +235,14 @@ export default function Clients({ initialClient, onOpenProperty, onOpenEvent }) 
   const [editor, setEditor] = useState(null); // { mode: 'create'|'edit', client? }
 
   useEffect(() => { if (initialClient) setOpen(initialClient); }, [initialClient]);
+
+  // Open client by phone (from notification navigation)
+  const [phoneHandled, setPhoneHandled] = React.useState(false);
+  useEffect(() => {
+    if (!initialPhone || phoneHandled || leads.length === 0) return;
+    const found = leads.find(c => c.phone === initialPhone || c.phone?.endsWith(initialPhone.slice(-8)));
+    if (found) { setPhoneHandled(true); setOpen(found); }
+  }, [initialPhone, leads, phoneHandled]);
 
   const handleDelete = (client) => {
     setOpen(null);

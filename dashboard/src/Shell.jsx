@@ -88,7 +88,7 @@ function timeAgo(iso) {
   return `hace ${Math.floor(h / 24)}d`;
 }
 
-function NotificationPanel({ onClose }) {
+function NotificationPanel({ onClose, onAction }) {
   const { data, isLoading } = useNotifications();
   const markRead   = useMarkNotificationRead();
   const markAll    = useMarkAllRead();
@@ -117,7 +117,10 @@ function NotificationPanel({ onClose }) {
           <div
             key={n.id}
             className={`notif-item ${n.read ? 'read' : 'unread'}`}
-            onClick={() => { if (!n.read) markRead.mutate(n.id); }}
+            onClick={() => {
+              if (!n.read) markRead.mutate(n.id);
+              if (onAction) { onAction(n); onClose(); }
+            }}
           >
             <span className="notif-icon">{TYPE_ICON[n.type] ?? '🔔'}</span>
             <div className="notif-content">
@@ -137,7 +140,7 @@ function NotificationPanel({ onClose }) {
   );
 }
 
-export function Topbar({ onMenuToggle }) {
+export function Topbar({ onMenuToggle, onNotifAction }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { data } = useNotifications();
@@ -162,7 +165,7 @@ export function Topbar({ onMenuToggle }) {
           <Icon name="bell" size={16} />
           {unread > 0 && <span className="dot">{unread > 9 ? '9+' : unread}</span>}
         </span>
-        {open && <NotificationPanel onClose={() => setOpen(false)} />}
+        {open && <NotificationPanel onClose={() => setOpen(false)} onAction={onNotifAction} />}
       </div>
       <span className="tb-icon" title="Ayuda">
         <Icon name="info" size={16} />

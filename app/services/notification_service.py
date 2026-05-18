@@ -67,44 +67,44 @@ class NotificationService:
 
     # ── Helpers por tipo ──────────────────────────────────────────────────────
 
-    async def visit_scheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None):
+    async def visit_scheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None, event_id=None):
         client = f"...{phone[-8:]}" if phone else "?"
         await self.create(
             type=NotifType.VISIT_SCHEDULED,
             title="Nueva visita agendada",
             body=f"{property_title} · {datetime_str} · Cliente {client}",
             phone=phone,
-            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str},
+            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str, "event_id": str(event_id) if event_id else None},
         )
 
-    async def visit_rescheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None):
+    async def visit_rescheduled(self, phone: str, property_title: str, datetime_str: str, property_id=None, event_id=None):
         client = f"...{phone[-8:]}" if phone else "?"
         await self.create(
             type=NotifType.VISIT_RESCHEDULED,
             title="Visita reprogramada",
             body=f"{property_title} · nueva fecha {datetime_str} · Cliente {client}",
             phone=phone,
-            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str},
+            metadata={"property_id": str(property_id) if property_id else None, "datetime": datetime_str, "event_id": str(event_id) if event_id else None},
         )
 
-    async def visit_cancelled(self, phone: str, property_title: str, reason: str = "", property_id=None):
+    async def visit_cancelled(self, phone: str, property_title: str, reason: str = "", property_id=None, event_id=None):
         client = f"...{phone[-8:]}" if phone else "?"
         await self.create(
             type=NotifType.VISIT_CANCELLED,
             title="Visita cancelada",
             body=f"{property_title} · Cliente {client}" + (f" · {reason}" if reason else ""),
             phone=phone,
-            metadata={"property_id": str(property_id) if property_id else None, "reason": reason},
+            metadata={"property_id": str(property_id) if property_id else None, "reason": reason, "event_id": str(event_id) if event_id else None},
         )
 
-    async def call_scheduled(self, phone: str, datetime_str: str):
+    async def call_scheduled(self, phone: str, datetime_str: str, event_id=None):
         client = f"...{phone[-8:]}" if phone else "?"
         await self.create(
             type=NotifType.CALL_SCHEDULED,
             title="Nueva llamada agendada",
             body=f"{datetime_str} · Cliente {client}",
             phone=phone,
-            metadata={"datetime": datetime_str},
+            metadata={"datetime": datetime_str, "event_id": str(event_id) if event_id else None},
         )
 
     async def handoff_requested(self, phone: str, reason: str = ""):
