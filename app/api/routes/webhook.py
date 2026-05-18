@@ -501,7 +501,8 @@ async def process_messages(messages: List[Dict[str, Any]]):
                                 logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
                             if i < len(images[:4]) - 1:
                                 await asyncio.sleep(1.0)
-                        if follow_up:
+                        if True:  # Always use this follow-up after photos
+                            follow_up = "¿Tenes alguna otra consulta? O si querés podemos agendar una visita para que la veas en persona."
                             await asyncio.sleep(0.5)
                             logger.info(f"Sending photo follow-up to {phone_to}: {follow_up[:30]}...")
                             await whatsapp_client.send_message(to=phone_to, message=follow_up)
