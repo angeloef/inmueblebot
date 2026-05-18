@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { Icon, Button, IconButton, Pill, pushToast } from './Primitives';
 import { useFaqs, useCreateFaq, useUpdateFaq, useDeleteFaq } from './api';
 
-function FaqModal({ faq, onClose }) {
+function FaqModal({ faq, onClose, defaultOrder }) {
   const [question, setQuestion] = useState(faq?.question ?? '');
   const [answer, setAnswer] = useState(faq?.answer ?? '');
   const [category, setCategory] = useState(faq?.category ?? '');
   const [tagsText, setTagsText] = useState((faq?.tags ?? []).join(', '));
-  const [order, setOrder] = useState(faq?.order ?? 0);
   const [active, setActive] = useState(faq?.active ?? true);
   const [saving, setSaving] = useState(false);
 
@@ -27,7 +26,7 @@ function FaqModal({ faq, onClose }) {
         answer: answer.trim(),
         category: category.trim() || null,
         tags: tagsText.split(',').map(t => t.trim()).filter(Boolean),
-        order: Number(order),
+        order: faq?.order ?? defaultOrder,
         active,
       };
       if (isEditing) {
@@ -72,23 +71,13 @@ function FaqModal({ faq, onClose }) {
               placeholder="Ej: Nuestro horario es de lunes a viernes de 9 a 18hs..."
             />
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div className="field" style={{ flex: 1 }}>
-              <label>Categoría</label>
-              <input
-                value={category}
-                onChange={e => setCategory(e.target.value)}
-                placeholder="Ej: horarios, financiación, proceso"
-              />
-            </div>
-            <div className="field" style={{ width: 80 }}>
-              <label>Orden</label>
-              <input
-                type="number"
-                value={order}
-                onChange={e => setOrder(Number(e.target.value))}
-              />
-            </div>
+          <div className="field">
+            <label>Categoría</label>
+            <input
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              placeholder="Ej: horarios, financiación, proceso"
+            />
           </div>
           <div className="field">
             <label>Tags (separados por coma)</label>
@@ -120,7 +109,7 @@ function FaqModal({ faq, onClose }) {
   );
 }
 
-function FaqRow({ faq, onEdit, onDelete }) {
+function FaqRow({ faq, onEdit, onDelete, onMoveUp, onMoveDown, isFirst, isLast, reorderEnabled }) {
   const handleDelete = () => {
     if (confirm(`¿Eliminar FAQ: "${faq.question.slice(0, 50)}..."?`)) {
       onDelete(faq.id);
@@ -144,7 +133,17 @@ function FaqRow({ faq, onEdit, onDelete }) {
             {!faq.active && <Pill kind="cancelled">Inactiva</Pill>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          {reorderEnabled && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ opacity: isFirst ? 0.2 : 1, pointerEvents: isFirst ? 'none' : 'auto' }}>
+                <IconButton name="arrowUp" title="Subir" onClick={onMoveUp} />
+              </div>
+              <div style={{ opacity: isLast ? 0.2 : 1, pointerEvents: isLast ? 'none' : 'auto' }}>
+                <IconButton name="arrowDown" title="Bajar" onClick={onMoveDown} />
+              </div>
+            </div>
+          )}
           <IconButton name="edit" onClick={() => onEdit(faq)} title="Editar" />
           <IconButton name="trash" onClick={handleDelete} title="Eliminar" />
         </div>
@@ -156,6 +155,7 @@ function FaqRow({ faq, onEdit, onDelete }) {
 export default function FAQs() {
   const { data: faqs = [], isLoading } = useFaqs();
   const deleteMut = useDeleteFaq();
+  const updateMut = useUpdateFaq();
   const [editing, setEditing] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
@@ -167,13 +167,32 @@ export default function FAQs() {
     });
   };
 
+  // Canonical sorted list (used as source of truth for reordering)
+  const sorted = [...faqs].sort((a, b) => a.order - b.order);
+  const defaultOrder = sorted.length > 0 ? sorted[sorted.length - 1].order + 1 : 1;
+
+  // Move item at fromIdx to toIdx and renormalize all orders to 1,2,3...
+  const reorder = (fromIdx, toIdx) => {
+    const next = [...sorted];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    next.forEach((f, i) => {
+      if (f.order !== i + 1) {
+        updateMut.mutate({ ...f, order: i + 1 });
+      }
+    });
+  };
+
   const counts = {
     all:      faqs.length,
     active:   faqs.filter(f => f.active).length,
     inactive: faqs.filter(f => !f.active).length,
   };
 
-  const filtered = faqs.filter(f => {
+  // Arrows only make sense when not searching/filtering (order would be ambiguous)
+  const reorderEnabled = !search && filterActive === 'all';
+
+  const filtered = sorted.filter(f => {
     if (filterActive === 'active'   && !f.active) return false;
     if (filterActive === 'inactive' &&  f.active) return false;
     if (!search) return true;
@@ -216,24 +235,34 @@ export default function FAQs() {
             <div className="muted" style={{ textAlign: 'center', padding: 40 }}>Cargando...</div>
           ) : filtered.length === 0 ? (
             <div className="muted" style={{ textAlign: 'center', padding: 40 }}>
-              {search || filterActive !== 'all' ? 'Sin resultados para esa búsqueda.' : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
+              {search || filterActive !== 'all'
+                ? 'Sin resultados para esa búsqueda.'
+                : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {filtered.map(faq => (
-                <FaqRow
-                  key={faq.id}
-                  faq={faq}
-                  onEdit={setEditing}
-                  onDelete={handleDelete}
-                />
-              ))}
+              {filtered.map((faq, idx) => {
+                const globalIdx = sorted.findIndex(f => f.id === faq.id);
+                return (
+                  <FaqRow
+                    key={faq.id}
+                    faq={faq}
+                    onEdit={setEditing}
+                    onDelete={handleDelete}
+                    onMoveUp={() => reorder(globalIdx, globalIdx - 1)}
+                    onMoveDown={() => reorder(globalIdx, globalIdx + 1)}
+                    isFirst={idx === 0}
+                    isLast={idx === filtered.length - 1}
+                    reorderEnabled={reorderEnabled}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {showNew && <FaqModal onClose={() => setShowNew(false)} />}
+      {showNew && <FaqModal defaultOrder={defaultOrder} onClose={() => setShowNew(false)} />}
       {editing && <FaqModal faq={editing} onClose={() => setEditing(null)} />}
     </div>
   );
