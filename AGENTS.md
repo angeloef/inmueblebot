@@ -1255,3 +1255,18 @@ get_system_prompt(): remove .format() — ahora inyecta contexto como User Conte
 | `"12/05/26"` | ❌ Same | ✅ regex `%d/%m/%y` |
 | `"viernes"` | ❌ Same | ❌ Still broken (both parsers need time) |
 | `"12/05/2026 15:00"` | ✅ Works | ✅ Works |
+
+### Sprint 29 — Auto-clean test user's Google Calendar on deploy (May 16, 2026)
+
+**Commit:** `6cfe4eb`
+
+**Problem:** After every deploy, test phone `5493754455340` had stale appointments and Google Calendar events from previous test sessions. Repeated deployments accumulated calendar clutter — no way to test appointment flows cleanly.
+
+**Fix:** Added a block in `app/main.py:lifespan()` after the existing Redis context reset:
+1. Queries `User` by `whatsapp_phone` (defaults to same `RESET_PHONE_ON_STARTUP` env var)
+2. Finds all appointments for that user with a non-null `calendar_event_id`
+3. Calls `calendar_service.cancel_visit(event_id)` to remove each from Google Calendar
+4. Marks each appointment `status = "cancelled"` and commits
+5. Graceful if calendar not configured (catches exception, logs warning)
+
+**Audit:** Sub-worker code audit passed (0 CRITICAL/HIGH issues in new code). Pre-existing findings noted: debug endpoint leaks verify token (unrelated).

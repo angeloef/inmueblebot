@@ -1,0 +1,475 @@
+# InmuebleBot — Planes de Precios Recomendados
+## Pricing Strategy · Competitor Analysis · 12-Month Growth Roadmap
+## Región: Misiones, Argentina · Mayo 2026
+
+---
+
+## 0. Filosofía de Pricing
+
+La estrategia de pricing de InmuebleBot se basa en tres principios fundamentales:
+
+1. **Precio basado en el valor entregado, no en el costo.** El bot no cuesta $X por mes — genera $Y en leads adicionales, visitas, y cierres. El precio refleja ese valor incremental.
+
+2. **Escalabilidad regional.** Los precios están calculados para el interior de Argentina, no para CABA o mercados internacionales. Una agencia en Oberá no puede pagar lo mismo que una en Palermo.
+
+3. **Upgrade natural.** Cada plan es un escalón: el cliente empieza donde puede pagar y sube cuando ve resultados. El bot demuestra su valor en 30 días — el upgrade es natural.
+
+---
+
+## 1. Benchmark Competitivo — Pricing del Mercado 2026
+
+### Competidores Directos (WhatsApp + CRM + IA)
+
+| Producto | Plan más barato | Plan medio | Plan premium | Tipo de negocio |
+|----------|:---------------:|:----------:|:------------:|-----------------|
+| **WATI.io** | $50/mes (básico) | $150/mes (pro) | $300/mes (enterprise) | WhatsApp CRM |
+| **Landbot** | $60/mes (starter) | $120/mes (pro) | $220/mes (business) | Chatbot builder |
+| **ManyChat** | $15/mes (free) | $45/mes (pro) | $110/mes (premium) | Chatbot marketing |
+| **HubSpot Sales** | $50/mes (starter) | $100/mes (pro) | $500/mes (enterprise) | CRM general |
+| **Inmobu** | $30/mes (básico) | $50/mes (pro) | $80/mes (equipo) | CRM inmobiliario Arg |
+| **Trellis (USA)** | $39/mes (growth) | $79/mes (pro) | $159/mes (plus) | Real estate CRM |
+| **Chime (USA)** | $99/mes (solo) | $149/mes (team) | $299/mes (growth) | Real estate CRM |
+
+### Posicionamiento de InmuebleBot
+
+InmuebleBot NO compite con estas plataformas en features — compite en:
+- **Diferenciación:** Ninguna tiene IA conversacional nativa + WhatsApp + agenda automática
+- **Enfoque regional:** Ninguna está diseñada para el interior de Argentina
+- **Costo accesible:** Todas cotizan en USD para mercados internacionales
+
+**Precio target:** Posicionar InmuebleBot entre ManyChat ($15-45) e Inmobu ($30-80), pero con argumento de valor superior por IA conversacional real.
+
+---
+
+## 2. Los Tres Planes de Pricing
+
+### Plan 1 — Básico ($25/mes USD o $30,000 ARS)
+*Para el agente individual que quiere automatizar su atención*
+
+| Feature | Incluido | Detalle |
+|---------|----------|---------|
+| 🤖 Chatbot 24/7 | ✅ | Hasta 500 consultas/mes, respuestas en <2s |
+| 🏠 Gestión de propiedades | ✅ | Hasta 15 propiedades en el sistema |
+| 📊 Dashboard básico | ✅ | Leads nuevos, últimas conversaciones, visitas agendadas |
+| 📋 Lead tracking básico | ✅ | Score de lead, historial de conversaciones, preferencias guardadas |
+| 🔔 Notificaciones WhatsApp | ✅ | Alertas de nuevo lead calificado, visita agendada o cancelada |
+| 📅 Agenda automática | ✅ | Google Calendar + confirmación automática |
+| ❓ FAQ automático | ✅ | Preguntas frecuentes 24/7 |
+| 🆘 Soporte | ✅ | WhatsApp directo, respuesta <4h hábiles |
+
+**Target:** Agente individual (Persona 1), 10-20 propiedades, 30-50 leads/mes
+**Valor percibido:** $25/mes = menos de $1/día. Recupera 15-20h/semana del agente.
+**ROI para el cliente:** $25/mes → +2-3 leads cualificados adicionales → potencial de $6,000-15,000 USD adicionales/año en comisiones.
+
+---
+
+### Plan 2 — Profesional ($70/mes USD o $84,000 ARS)
+*Para la inmobiliaria pequeña que quiere presencia web + dashboard completo*
+
+| Feature | Incluido | Detalle |
+|---------|----------|---------|
+| ✅ Todo lo del Plan Básico | ✅ | Sin cambios |
+| 🏠 Propiedades ilimitadas | ✅ | Sin límite de propiedades en el sistema |
+| 🌐 **Sitio web personalizado** | ✅ | Landing page con catálogo de propiedades sincronizado automáticamente con el bot |
+| 🔗 **Web embebida del bot** | ✅ | El mismo chatbot en la web + WhatsApp |
+| 📊 **Dashboard avanzado** | ✅ | Embudo de conversión, tendencias semanales, reportes exportables |
+| 👥 Multi-agente | ✅ | Hasta 3 agentes con perfiles separados, calendario compartido |
+| 📈 Reporte semanal automático | ✅ | Resumen enviado al WhatsApp del agente cada lunes |
+| 📸 Fotos profesionales | ✅ | Optimización automática de imágenes (WebP→JPEG, redimensionamiento) |
+| 🆘 Soporte prioritario | ✅ | WhatsApp directo, respuesta <1h hábil |
+
+**Target:** Inmobiliaria pequeña (Persona 2), 2-5 agentes, 30-50 propiedades, 80-150 leads/mes
+**Valor percibido:** $70/mes = $23/agente/mes. Reemplaza: hosting web ($15) + chatbot básico ($30) + CRM básico ($30) = $75+ por separado.
+**ROI para el cliente:** $70/mes → agenda compartida elimina superposiciones → +3-5 visitas/mes adicionales → potencial $12,000-24,000 USD adicionales/año.
+
+---
+
+### Plan 3 — Enterprise ($150/mes USD o $180,000 ARS)
+*Para la agencia o desarrollador que quiere inteligencia de mercado (disponible post-20 clientes)*
+
+| Feature | Incluido | Detalle |
+|---------|----------|---------|
+| ✅ Todo lo del Plan Profesional | ✅ | Sin cambios |
+| 🧠 **Analítica avanzada** | ✅ | Pipeline ETL, tablas analíticas, dashboard de tendencias |
+| 🎯 **Scoring predictivo** | ✅ | Modelo de IA que predice qué leads van a convertir con datos históricos |
+| 📊 **Embudo de conversión completo** | ✅ | Lead → Cualificación → Detalles → Agenda → Visita → Cierre |
+| ⏰ **Alertas predictivas** | ✅ | Hot leads sin atender, propiedades frías, leads en riesgo de abandono |
+| 🧩 **Recomendación cross-sell** | ✅ | "Los que vieron esta propiedad también vieron..." |
+| 📈 **Reportes ejecutivos** | ✅ | Mensuales, comparativa vs. meses anteriores, tendencias de mercado |
+| 👥 Agentes ilimitados | ✅ | Sin límite de agentes, perfiles con permisos |
+| 🆘 **Soporte VIP** | ✅ | Canal dedicado, respuesta <30min hábiles, onboarding personalizado |
+| ⚙️ **API access** | ✅ | Integración con sistemas existentes de la inmobiliaria |
+| ☁️ **SLA 99.9%** | ✅ | Garantía de uptime |
+
+**Target:** Desarrollador/inversor (Persona 3), proyectos grandes, 200+ leads/mes
+**Valor percibido:** $150/mes = análisis que ninguna inmobiliaria de Misiones tiene. Datos de mercado que permiten decisiones de inversión informadas.
+**ROI para el cliente:** $150/mes → pricing intelligence puede aumentar márgenes en 2-3% por operación → potencial $30,000+ USD adicionales/año.
+
+---
+
+## 3. Tabla Comparativa de Planes
+
+| Feature | Básico ($25) | Profesional ($70) | Enterprise ($150) |
+|---------|:----------:|:---------------:|:----------------:|
+| Chatbot 24/7 WhatsApp | ✅ | ✅ | ✅ |
+| Límite de propiedades | 15 | Ilimitado | Ilimitado |
+| Dashboard básico (leads, visitas) | ✅ | ✅ | ✅ |
+| Dashboard avanzado (funnel, tendencias) | ❌ | ✅ | ✅ |
+| Lead tracking + score | ✅ | ✅ | ✅ |
+| Notificaciones WhatsApp | ✅ | ✅ | ✅ |
+| Agenda automática Google Calendar | ✅ | ✅ | ✅ |
+| FAQ automático | ✅ | ✅ | ✅ |
+| Multi-agente | ❌ | Hasta 3 | Ilimitado |
+| **Sitio web personalizado** | ❌ | **✅** | **✅** |
+| **Bot embebido en web** | ❌ | **✅** | **✅** |
+| Reporte semanal automático | ❌ | ✅ | ✅ |
+| Reportes ejecutivos + tendencias | ❌ | ❌ | ✅ |
+| **Scoring predictivo** | ❌ | ❌ | **✅** |
+| **Alertas predictivas** | ❌ | ❌ | **✅** |
+| **Analítica avanzada (ETL + dashboard)** | ❌ | ❌ | **✅** |
+| **Recomendación cross-sell** | ❌ | ❌ | **✅** |
+| API access | ❌ | ❌ | ✅ |
+| Soporte | WhatsApp 4h | Prioritaria 1h | VIP 30min |
+| SLA | 99.5% | 99.7% | 99.9% |
+
+---
+
+## 4. Pricing en Pesos Argentinos (ARS)
+
+Dado que el mercado objetivo es Misiones (Argentina), el pricing debe ser en ARS con indexación por inflación.
+
+| Plan | USD/mes | ARS/mes (TC ~$1,200) | ARS/mes ajustado (precio psicológico) |
+|------|:-------:|:--------------------:|:-------------------------------------:|
+| **Básico** | $25 | ~$30,000 | **$29,990/mes** |
+| **Profesional** | $70 | ~$84,000 | **$79,990/mes** |
+| **Enterprise** | $150 | ~$180,000 | **$179,990/mes** |
+
+**Estrategia de indexación:**
+- Precios fijados en USD pero facturados en ARS al TC del día
+- Opción: el cliente puede pagar en USD (stable via crypto o transferencia) para evitar inflación
+- Revisión trimestral de precios ARS (indexación por inflación)
+- Descuento anual: 2 meses gratis (paga 10, recibe 12)
+- Descuento por referido: 1 mes gratis por cada nuevo cliente referido
+
+---
+
+## 5. Estrategia de Pricing: Por Qué Estos Precios
+
+### 5.1 Anclaje Psicológico
+
+El Plan Básico a $25/mes NO es el producto principal — es la puerta de entrada. Su objetivo es:
+- Reducir la fricción de compra (menos que un café por día)
+- Demostrar valor en 30 días
+- Crear el hábito de depender del bot
+
+Una vez que el agente depende del bot, el upgrade a Profesional ($70) es natural:
+- "Tus 15 propiedades están llenas → necesitás el plan ilimitado"
+- "¿Querés que tus clientes también te encuentren por web? → actualizate"
+
+### 5.2 Relación Precio-Valor
+
+| Plan | Precio | Valor generado estimado | Ratio precio/valor |
+|------|-------|----------------------|:------------------:|
+| Básico | $25/mes | +$6,000-15,000/año en comisiones | **1:500** |
+| Profesional | $70/mes | +$12,000-24,000/año | **1:285** |
+| Enterprise | $150/mes | +$30,000+/año | **1:330** |
+
+### 5.3 Comparación con Alternativas (Costo Total)
+
+| Escenario | Costo/mes | Qué incluye |
+|-----------|:---------:|-------------|
+| **InmuebleBot Básico** | **$25** | Chatbot IA + CRM + agenda + dashboard |
+| Hacerlo manual (horas agente) | $200+ | 20h/semana × $2.5/h = $200 en tiempo perdido |
+| Landbot + Zapier + Calendly | $130+ | $60 + $50 + $20 = $130, sin IA ni CRM |
+| WATI.io + integraciones | $120+ | $50 + $30 + $40 en conexiones |
+| ManyChat + Calendly + manual | $65+ | $45 + $20 = $65, flujo fijo sin IA |
+
+**InmuebleBot es 2x-5x más barato que armar la misma solución con herramientas genéricas.**
+
+---
+
+## 6. Plan de Lanzamiento: 12-Month Growth Roadmap
+
+### Fase 0 — Pre-Lanzamiento (Mes 0, Mayo 2026)
+*Objetivo: Tener el producto funcionando y 3 early adopters gratis*
+
+| Semana | Acción | Métrica |
+|--------|--------|---------|
+| S1 | Identificar 10 inmobiliarias de Oberá y Posadas para early access | Lista de 10 prospectos |
+| S2 | Demo personalizado a cada una (por WhatsApp, obvio) | 3 conversiones a early adopter |
+| S3 | Onboarding de 3 early adopters GRATIS a cambio de feedback | 3 agencias usando el bot |
+| S4 | Recoger feedback, ajustar features críticos, grabar testimonios | Feedback documentado |
+
+**Costo: $0.** Solo tiempo del founder.
+**Riesgo:** Que los early adopters no usen el bot → elegir agencias con alto volumen de leads.
+
+---
+
+### Fase 1 — Validación (Meses 1-3, Junio-Agosto 2026)
+*Objetivo: 10 clientes pagos, $250-700 MRR, probar que el modelo funciona*
+
+| Mes | Acción | Target de clientes | MRR proyectado |
+|-----|--------|:------------------:|:--------------:|
+| **1** | Lanzar Plan Básico a $25/mes. Early adopters pasan a pago. | 3 | $75 |
+| **2** | Outreach directo a Colegio de Corredores de Misiones. Ofrecer 30 días gratis. | 5 | $125 |
+| **3** | Publicar en grupos de Facebook inmobiliarios del NEA. Pedir referidos. | 10 | $250-700 |
+
+**Estrategia de adquisición:**
+- **Canal #1:** WhatsApp directo al dueño de la inmobiliaria — "Te muestro cómo funciona en 5 minutos"
+- **Canal #2:** Colegio de Corredores de Misiones — charla/taller sobre "Cómo la IA está cambiando las inmobiliarias del interior"
+- **Canal #3:** Facebook Groups — contenido de valor (no ventas) sobre automatización inmobiliaria
+- **CTA:** "Probá InmuebleBot gratis por 30 días. Sin tarjeta. Sin compromiso."
+
+**Costo estimado de adquisición:** $0-30 por cliente (orgánico + referidos).
+**Indicador de tracción:** Churn < 10% mensual en Plan Básico.
+
+---
+
+### Fase 2 — Crecimiento (Meses 4-6, Septiembre-Noviembre 2026)
+*Objetivo: 30 clientes, $1,200-2,100 MRR, lanzar Plan Profesional*
+
+| Mes | Acción | Target | MRR |
+|-----|--------|:-----:|:---:|
+| **4** | Lanzar Plan Profesional ($70/mes). Ofrecer upgrade a early adopters con descuento. | 15 | $750+ |
+| **5** | Campaña de Google Ads + Meta Ads segmentada a "inmobiliaria Posadas" "corredor inmobiliario Oberá". Presupuesto: $300/mes. | 22 | $1,200+ |
+| **6** | Programa de referidos: 1 mes gratis por cada referido que se convierta en pago. | 30 | $1,500-2,100 |
+
+**Hitos clave:**
+- ✅ Lanzar sitio web de InmuebleBot (landing page + demo)
+- ✅ Automatizar onboarding (el cliente se registra y configura solo)
+- ✅ Primer testimonio grabado + caso de éxito escrito
+- ✅ 10+ reseñas/recomendaciones en redes inmobiliarias
+
+**Métricas de crecimiento:**
+| KPI | Target mes 6 |
+|-----|:-----------:|
+| Clientes pagos totales | 30 |
+| MRR | $1,500-2,100 |
+| Churn mensual | <8% |
+| CAC | $30-50 |
+| LTV (estimado 12 meses) | $300-600 |
+| % en Plan Profesional | 30% (9 de 30) |
+
+**Validación:** Si no llegamos a 30 clientes en mes 6 con $300/mes de ads, algo está mal en el producto o el mercado. Revisar.
+
+---
+
+### Fase 3 — Escalamiento (Meses 7-9, Diciembre 2026-Febrero 2027)
+*Objetivo: 50 clientes, $4,000+ MRR, consolidar presencia regional*
+
+| Mes | Acción | Target | MRR |
+|-----|--------|:-----:|:---:|
+| **7** | Evento FERIINM (feria inmobiliaria del NEA) — stand o charla. Presupuesto: $500. | 35 | $2,500+ |
+| **8** | Lanzar feature de sitio web (Plan Profesional). Campaña de email a clientes Básico para upgrade. | 45 | $3,500+ |
+| **9** | Campaña de invierno: descuento por pago anual (2 meses gratis). | 50 | $4,000+ |
+
+**Hitos clave:**
+- ✅ 50 clientes = masa crítica para datos → desarrollo de Plan Enterprise
+- ✅ Automatizar facturación (Mercado Pago)
+- ✅ Contratar primer soporte (part-time, desde Misiones)
+- ✅ Dashboard muestra datos de 50 agencias → ¡datos propietarios!
+
+**Estructura de ingresos objetivo (mes 9):**
+| Plan | Clientes | % | Ingreso |
+|------|:-------:|:-:|:-------:|
+| Básico ($25) | 30 | 60% | $750 |
+| Profesional ($70) | 17 | 34% | $1,190 |
+| Enterprise ($150) | 3 | 6% | $450 |
+| **Total** | **50** | **100%** | **$2,390** |
+
+---
+
+### Fase 4 — Explosión (Meses 10-12, Marzo-Mayo 2027)
+*Objetivo: 100 clientes, $8,000+ MRR, lanzar Plan Enterprise + expandir a otras provincias*
+
+| Mes | Acción | Target | MRR |
+|-----|--------|:-----:|:---:|
+| **10** | Lanzar Plan Enterprise ($150/mes) con analítica avanzada. | 60 | $4,000+ |
+| **11** | Expansión a Corrientes, Chaco, Formosa. Mismo playbook de Misiones. | 80 | $6,000+ |
+| **12** | Campaña de referidos: "Agente Master" — $50 por referido. | 100 | $8,000+ |
+
+**Hitos clave:**
+- ✅ Plan Enterprise disponible (20+ clientes previos = datos suficientes para scoring predictivo)
+- ✅ Presencia en 4 provincias del NEA
+- ✅ 100 clientes = $100,000+ ARR
+- ✅ Contratar primer vendedor (comisionista, desde Misiones)
+- ✅ Sistema de pricing indexado por inflación ya funcionando
+
+**Estructura de ingresos objetivo (mes 12):**
+| Plan | Clientes | % | Ingreso |
+|------|:-------:|:-:|:-------:|
+| Básico ($25) | 50 | 50% | $1,250 |
+| Profesional ($70) | 35 | 35% | $2,450 |
+| Enterprise ($150) | 15 | 15% | $2,250 |
+| **Total** | **100** | **100%** | **$5,950** |
+
+**MRR realista vs. optimista:**
+
+| Escenario | Mes 3 | Mes 6 | Mes 9 | Mes 12 |
+|-----------|:----:|:----:|:----:|:-----:|
+| **Conservador** (50% de targets) | $125 | $750 | $1,200 | $2,500 |
+| **Realista** (targets del roadmap) | $250 | $1,500 | $2,400 | $5,950 |
+| **Optimista** (120% de targets) | $500 | $2,500 | $5,000 | $10,000 |
+
+---
+
+## 7. Estrategia de Conversión: Free Trial → Pago → Upgrade
+
+### 7.1 Free Trial de 30 Días (Sin Tarjeta)
+
+El trial incluye el Plan Básico completo por 30 días. Sin límite de propiedades durante el trial.
+
+**Objetivo del trial:** Que el agente experimente leads entrando sin hacer nada.
+
+**Día 1-7:** Onboarding guiado. El founder configura las primeras 5 propiedades y el número de WhatsApp.
+**Día 7-14:** El bot empieza a recibir consultas. El agente ve leads entrando solos.
+**Día 14-21:** El agente empieza a recibir visitas agendadas sin levantar un dedo.
+**Día 21-28:** El agente NO QUIERE VOLVER ATRÁS. Está listo para pagar.
+**Día 28-30:** Recordatorio de que el trial termina. Ofrecer pago mensual o anual.
+
+**Script de conversión (WhatsApp al agente, día 25):**
+```
+👋 ¡Hola [Nombre]!
+
+Ya llevás 25 días usando InmuebleBot y estos son tus resultados:
+🆕 Leads nuevos: 12
+✅ Cualificados: 8
+📅 Visitas agendadas: 3
+⏰ Sin levantar el teléfono una sola vez.
+
+Tu trial termina en 5 días.
+Para seguir recibiendo leads automaticamente:
+👉 $25/mes o $250/año (2 meses gratis)
+
+¿Querés que te ayude con el pago?
+```
+
+### 7.2 Upgrade Paths Naturales
+
+```
+                    ┌──────────────────────┐
+                    │   FREE TRIAL 30 DÍAS  │
+                    │   (Plan Básico full)  │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │  ¿Primer lead que     │
+                    │  agenda una visita?   │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │   PLAN BÁSICO $25    │
+                    │  "Ya funciona, lo     │
+                    │   necesito siempre"   │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │  ¿Llega a 15 props?   │
+                    │  ¿Quiere web?         │
+                    │  ¿Tiene socio?        │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │ PLAN PROFESIONAL $70 │
+                    │  "Quiero crecer"      │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │  ¿20+ clientes en     │
+                    │  InmuebleBot?         │
+                    │  ¿Quiere datos de     │
+                    │  mercado?             │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │  PLAN ENTERPRISE $150 │
+                    │  "Dato>herramienta"   │
+                    └──────────────────────┘
+```
+
+### 7.3 Objeciones Comunes y Respuestas
+
+| Objeción | Respuesta |
+|----------|-----------|
+| "Está caro para Misiones" | "$25/mes = menos de $1/día. Un lead que contestás en 5 minutos en vez de 24hs te paga el año entero." |
+| "No sé si va a funcionar" | "Probá 30 días gratis. Sin tarjeta. Si no ves resultados, lo cancelamos." |
+| "Ya tengo WhatsApp Business" | "WhatsApp Business no tiene IA. No agenda visitas. No cualifica leads. No tiene dashboard. No te olvida responder." |
+| "Prefiero hacerlo yo" | "¿Cuánto vale tu hora? 20h/semana × $3/h = $240/mes en tiempo. InmuebleBot hace eso por $25." |
+| "¿Y si el bot se equivoca?" | "Todas las conversaciones tienen un botón 'Hablar con humano'. El bot escala cuando no sabe." |
+| "¿Aceptan Mercado Pago?" | "Sí. Débito, crédito, transferencia. Todo." |
+
+---
+
+## 8. Apéndice: Tabla de Costos del Bot (Para Calcular Márgenes)
+
+### Costos Variables por Cliente
+
+| Componente | Costo mensual estimado por cliente activo |
+|------------|:-----------------------------------------:|
+| **OpenAI GPT-5.5 API** | $0.50-1.50 por cliente (estimado en ~2,000 consultas/mes × 400 tokens promedio × $0.0025/1K tokens) |
+| **WhatsApp Cloud API** | $0.00 por consultas iniciadas por usuario (gratis). $0.05 por mensajes de notificación (alertas, recordatorios) → ~$1.00/mes |
+| **Render hosting (web + DB)** | $7-15/mes por instancia (se comparte entre ~50 clientes) → ~$0.30/cliente |
+| **Google Calendar API** | Gratis (100,000 consultas/día) |
+| **PostgreSQL (Render)** | $7/mes (se comparte entre todos los clientes) → ~$0.15/cliente |
+| **Dominio + SSL** | $10/año → ~$0.08/mes/cliente |
+| **Total por cliente** | **~$2.00-3.00/mes** |
+
+### Márgenes por Plan
+
+| Plan | Precio | Costo variable | Margen bruto |
+|------|:-----:|:-------------:|:-----------:|
+| Básico | $25/mes | ~$2.50 | **90%** |
+| Profesional | $70/mes | ~$4.50 (web hosting) | **93.5%** |
+| Enterprise | $150/mes | ~$6.00 (analytics + storage) | **96%** |
+
+### Punto de Equilibrio
+
+| Escenario | Clientes necesarios | Ingreso mensual | Cubre |
+|-----------|:------------------:|:--------------:|-------|
+| Founder-only (sin sueldo) | 10 | $250+ | Costos de infraestructura + OpenAI |
+| Founder con sueldo mínimo ($500/mes) | 30 | $1,500+ | Infra + OpenAI + sueldo founder |
+| Founder + 1 soporte part-time ($300/mes) | 50 | $2,400+ | Infra + OpenAI + 2 sueldos |
+| Empresa sostenible ($3,000/mes gastos) | 80 | $4,800+ | Infra + OpenAI + 3-4 sueldos + marketing |
+
+---
+
+## 9. Resumen Ejecutivo
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                PLANES DE PRECIO — INMUEBLEBOT                        │
+├────────────┬──────────┬──────────────┬──────────────┬───────────────┤
+│            │ BÁSICO   │ PROFESIONAL  │ ENTERPRISE   │               │
+│            │ $25/mes  │ $70/mes      │ $150/mes     │               │
+│            │ $29,990  │ $79,990      │ $179,990     │               │
+│            │ ARS/mes  │ ARS/mes      │ ARS/mes      │               │
+├────────────┼──────────┼──────────────┼──────────────┼───────────────┤
+│ Chatbot IA │ ✅       │ ✅           │ ✅           │               │
+│ Dashboard  │ Básico   │ Avanzado     │ Avanzado     │               │
+│ Lead track │ ✅       │ ✅           │ ✅           │               │
+│ Notificac. │ ✅       │ ✅           │ ✅           │               │
+│ Sitio web  │ ❌       │ ✅           │ ✅           │               │
+│ Analytics  │ ❌       │ ❌           │ ✅ (post-20  │               │
+│ avanzado   │          │              │  clientes)   │               │
+│ Target     │ Agente   │ Inmob.       │ Desarrollador │               │
+│            │ ind.     │ pequeña      │ /inversor    │               │
+├────────────┼──────────┼──────────────┼──────────────┼───────────────┤
+│ MARGEN     │ 90%      │ 93.5%        │ 96%          │               │
+└────────────┴──────────┴──────────────┴──────────────┴───────────────┘
+
+ROADMAP 12 MESES:
+┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐
+│ VAL  │ VAL  │ VAL  │ CREC │ CREC │ CREC │ ESC  │ ESC  │ ESC  │ EXP  │ EXP  │ EXP  │
+│ 3 cl │ 10   │ 10   │ 15   │ 22   │ 30   │ 35   │ 45   │ 50   │ 60   │ 80   │ 100  │
+│ $75  │ $250 │ $250 │ $750 │$1,200│$1,500│$2,500│$3,500│$2,400│$4,000│$6,000│$5,950│
+└──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
+ FASE 0    FASE 1               FASE 2              FASE 3          FASE 4
+PRE-LANZ   VALIDACIÓN           CRECIMIENTO         ESCALAMIENTO    EXPLOSIÓN
+           (Jun-Ago)            (Sep-Nov)           (Dic-Feb)       (Mar-May)
+```
+
+---
+
+*Documento generado para InmuebleBot — Mayo 2026*
+*Basado en: research-report-v1, v2, v3 + benchmark competitivo + SaaS pricing optimization*
+*Próxima revisión sugerida: Septiembre 2026 (post-lanzamiento, con datos reales de conversión)*
