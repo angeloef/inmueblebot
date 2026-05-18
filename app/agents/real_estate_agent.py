@@ -398,9 +398,9 @@ class RealEstateAgent:
                                 "role": "system",
                                 "content": (
                                     "Acabas de mostrar resultados de búsqueda. "
-                                    "SIEMPRE terminá tu respuesta preguntando al usuario "
-                                    "si quiere ver los detalles de alguna propiedad en particular. "
-                                    "Ej: '¿Querés ver los detalles de alguna?'"
+                                    "Terminá preguntando al usuario "
+                                    "si le gustaría conocer los detalles de alguna en particular. "
+                                    "Ej: '¿Cuál te gustaría conocer más a fondo?'"
                                 )
                             })
                         elif tool_name == "get_property_details":
@@ -413,13 +413,12 @@ class RealEstateAgent:
                             messages.append({
                                 "role": "system",
                                 "content": (
-                                    "Acabas de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
-                                    "IGNORÁ cualquier descripción, precio o título que hayas escrito antes. "
-                                    "Usá EXACTAMENTE los datos que devolvió el tool, palabra por palabra."
+                                    "Acabás de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
+                                    "Usá EXACTAMENTE los datos que devolvió el tool."
                                     f"{_prop_info}"
                                     "Presentalos de forma conversacional y preguntale al usuario "
-                                    "si quiere agendar una visita o ver las fotos. "
-                                    "Ej: '¿Querés agendar una visita para verla?'"
+                                    "si le gustaría ver las fotos o coordinar una visita. "
+                                    "Ej: '¿Te gustaría ver las fotos o preferís coordinar una visita?'"
                                 )
                             })
                         elif tool_name == "compare_properties":
@@ -428,7 +427,7 @@ class RealEstateAgent:
                                 "content": (
                                     "Mostraste una comparación de propiedades. "
                                     "Preguntale al usuario cuál le interesa más "
-                                    "para mostrarle los detalles."
+                                    "para pasarle los detalles."
                                 )
                             })
                         elif tool_name == "get_faq_answer":
@@ -438,8 +437,8 @@ class RealEstateAgent:
                                     "Acabás de recibir la respuesta de FAQ en el tool result de arriba. "
                                     "Usá ESA información para responder la pregunta del usuario. "
                                     "NO digas 'Respondiste una pregunta frecuente' — simplemente dale la respuesta. "
-                                    "Después de responder, preguntale \"¿Tenés alguna otra consulta?\" "
-                                    "y luego ofrecelé ayuda con propiedades."
+                                    "Después de responder, preguntale si le queda alguna duda. "
+                                    "Ej: '¿Te queda alguna duda o quisieras consultar algo más?'"
                                 )
                             })
                         elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
@@ -448,7 +447,8 @@ class RealEstateAgent:
                                 "content": (
                                     "La cita se agendó con éxito. Confirmale al usuario "
                                     "los detalles (día y hora) y preguntale si necesita "
-                                    "algo más. Si dice que no, despedite cordialmente."
+                                    "algo más. Si dice que no, despedite cordialmente. "
+                                    "Ej: 'Cita Agendada. [día] a las [hora]. Te esperamos, cualquier cosa avisanos.'"
                                 )
                             })
 
