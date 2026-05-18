@@ -1111,32 +1111,46 @@ async def reschedule_appointment_tool(
                 logger.warning(f"[reschedule] ⚠️ LLM pasó ID inválido '{appointment_id}' — buscando cita más reciente del usuario")
                 apt_uuid = None
         
-        # If no valid UUID, try to find the user's most recent appointment automatically
+        # If no valid UUID, try to find upcoming appointments for this user
         if not apt_uuid and phone:
             try:
                 from app.db.models import User
+                from datetime import timezone as tz
                 async with async_session_factory() as db:
                     user_repo_q = select(User).where(User.whatsapp_phone == phone)
                     user_result = await db.execute(user_repo_q)
                     user = user_result.scalar_one_or_none()
                     if user:
+                        now_utc = datetime.now(tz.utc)
                         apt_q = (
                             select(AppointmentModel)
                             .where(AppointmentModel.user_id == user.id)
-                            .where(AppointmentModel.status.in_(["scheduled", "confirmed"]))
-                            .order_by(AppointmentModel.created_at.desc())
-                            .limit(1)
+                            .where(AppointmentModel.status == "confirmed")
+                            .where(AppointmentModel.start_time > now_utc)
+                            .order_by(AppointmentModel.start_time.asc())
                         )
                         apt_result = await db.execute(apt_q)
-                        latest_apt = apt_result.scalar_one_or_none()
-                        if latest_apt:
-                            apt_uuid = latest_apt.id
-                            logger.info(f"[reschedule] Auto-resolved appointment: {apt_uuid}")
+                        upcoming_apts = list(apt_result.scalars().all())
+                        
+                        if len(upcoming_apts) == 1:
+                            apt_uuid = upcoming_apts[0].id
+                            logger.info(f"[reschedule] Auto-resolved single upcoming appointment: {apt_uuid}")
+                        elif len(upcoming_apts) > 1:
+                            # Multiple upcoming — list them so the LLM can ask the user which one
+                            lines = ["Tienes varias citas próximas. ¿Cuál te gustaría reprogramar?", ""]
+                            for i, apt in enumerate(upcoming_apts, 1):
+                                start = apt.start_time
+                                date_str = start.strftime("%d/%m/%Y")
+                                time_str = start.strftime("%H:%M")
+                                lines.append(f"{i}. 📆 {date_str} a las {time_str} — ID: `{apt.id}`")
+                            lines.append("")
+                            lines.append("Decime el número o el ID de la cita que quieras cambiar.")
+                            return "\n".join(lines)
             except Exception as e:
                 logger.warning(f"[reschedule] Could not auto-resolve appointment: {e}")
         
         if not apt_uuid:
-            return "Necesito el ID de la cita que quieres reprogramar."
+            return "No encontré citas futuras para reprogramar. ¿Querés agendar una nueva visita?"
         
         # Fetch current appointment data to use as reference
         current_apt = None
@@ -1257,16 +1271,60 @@ async def cancel_appointment_tool(
         Mensaje de confirmación
     """
     from uuid import UUID
+    from datetime import datetime, timezone as tz
     from app.services.appointment_service import appointment_service
+    from app.db.session import async_session_factory
+    from app.db.models import Appointment as AppointmentModel, User
+    from sqlalchemy import select
     
     try:
-        if not appointment_id:
-            return "Necesito el ID de la cita que quieres cancelar."
+        apt_uuid = None
         
-        try:
-            apt_uuid = UUID(appointment_id)
-        except ValueError:
-            return f"El ID de cita '{appointment_id}' no es válido."
+        # Try to parse the appointment_id as UUID
+        if appointment_id:
+            try:
+                apt_uuid = UUID(appointment_id)
+            except ValueError:
+                logger.warning(f"[cancel] ⚠️ LLM pasó ID inválido '{appointment_id}' — buscando citas futuras del usuario")
+                apt_uuid = None
+        
+        # If no valid UUID, try to find upcoming appointments for this user
+        if not apt_uuid and phone:
+            try:
+                async with async_session_factory() as db:
+                    user_q = select(User).where(User.whatsapp_phone == phone)
+                    user_result = await db.execute(user_q)
+                    user = user_result.scalar_one_or_none()
+                    if user:
+                        now_utc = datetime.now(tz.utc)
+                        apt_q = (
+                            select(AppointmentModel)
+                            .where(AppointmentModel.user_id == user.id)
+                            .where(AppointmentModel.status == "confirmed")
+                            .where(AppointmentModel.start_time > now_utc)
+                            .order_by(AppointmentModel.start_time.asc())
+                        )
+                        apt_result = await db.execute(apt_q)
+                        upcoming_apts = list(apt_result.scalars().all())
+                        
+                        if len(upcoming_apts) == 1:
+                            apt_uuid = upcoming_apts[0].id
+                            logger.info(f"[cancel] Auto-resolved single upcoming appointment: {apt_uuid}")
+                        elif len(upcoming_apts) > 1:
+                            lines = ["Tienes varias citas próximas. ¿Cuál te gustaría cancelar?", ""]
+                            for i, apt in enumerate(upcoming_apts, 1):
+                                start = apt.start_time
+                                date_str = start.strftime("%d/%m/%Y")
+                                time_str = start.strftime("%H:%M")
+                                lines.append(f"{i}. 📆 {date_str} a las {time_str} — ID: `{apt.id}`")
+                            lines.append("")
+                            lines.append("Decime el número o el ID de la cita que quieras cancelar.")
+                            return "\n".join(lines)
+            except Exception as e:
+                logger.warning(f"[cancel] Could not auto-resolve appointment: {e}")
+        
+        if not apt_uuid:
+            return "No encontré citas futuras para cancelar. ¿Querés agendar una nueva visita?"
         
         await appointment_service.cancel_appointment(apt_uuid, reason)
 

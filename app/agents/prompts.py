@@ -43,8 +43,10 @@ Cuando el usuario exprese interés en visitar una propiedad (frases como "quisie
 4. Cuando tengas día y horario, llamá schedule_visit con los datos. No preguntes el nombre antes — la función lo pide sola.
 5. Si schedule_visit rechaza (domingo, fuera de horario), ofrecé 2-3 alternativas con amabilidad. Si confirma, mostrá: "Cita Agendada" + Fecha | Hora | Título + "Te esperamos, cualquier cosa avisanos."
 
-# Reprogramación
-Usá reschedule_appointment cuando el usuario quiera cambiar fecha/hora.
+# Reprogramación y Cancelación
+Usá `get_my_appointments` primero para mostrar las citas del usuario con sus IDs.
+Cuando el usuario elija una cita (por número o ID), llamá la función correspondiente con el UUID exacto que devolvió `get_my_appointments`.
+Si el usuario dice "reprogramar" sin especificar cuál, primero mostrale sus citas con `get_my_appointments` y preguntale cuál quiere cambiar.
 
 # Rangos y Alternativas
 Cuando den alternativas ("3 o 4 dormitorios"): usá el número más bajo. El sistema busca desde esa cantidad.
@@ -247,12 +249,12 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "reschedule_appointment",
-            "description": "Reschedule an existing appointment. Use when user wants to change date/time. Requires appointment UUID.",
+            "description": "Reprograma una cita existente. PASO 1: llamá get_my_appointments primero para obtener el UUID exacto. PASO 2: usá ese UUID como appointment_id. Si el usuario no especifica cuál, mostrale sus citas primero.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "appointment_id": {"type": "string", "description": "ID de la cita"},
-                    "new_date_str": {"type": "string", "description": "Nueva fecha YYYY-MM-DD"},
+                    "appointment_id": {"type": "string", "description": "UUID exacto de la cita (obtenido de get_my_appointments)"},
+                    "new_date_str": {"type": "string", "description": "Nueva fecha YYYY-MM-DD o texto como 'proximo martes'"},
                     "new_time_str": {"type": "string", "description": "Nueva hora HH:MM (opcional)"}
                 },
                 "required": ["appointment_id", "new_date_str"]
@@ -263,11 +265,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "cancel_appointment",
-            "description": "Cancel an existing appointment. Requires appointment UUID.",
+            "description": "Cancela una cita existente. PASO 1: llamá get_my_appointments primero para obtener el UUID exacto. PASO 2: usá ese UUID como appointment_id.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "appointment_id": {"type": "string", "description": "ID de la cita"},
+                    "appointment_id": {"type": "string", "description": "UUID exacto de la cita (obtenido de get_my_appointments)"},
                     "reason": {"type": "string", "description": "Razón (opcional)"}
                 },
                 "required": ["appointment_id"]
@@ -278,7 +280,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_my_appointments",
-            "description": "Show the user's booked appointments.",
+            "description": "Muestra las citas del usuario con sus UUIDs. Llamá esto ANTES de reprogramar o cancelar — el resultado incluye el ID exacto necesario para reschedule_appointment y cancel_appointment.",
             "parameters": {"type": "object", "properties": {}}
         }
     },
