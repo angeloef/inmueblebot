@@ -526,8 +526,8 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
           />
         </div>
         <div className="modal-foot">
-          <Button kind="ghost" onClick={onClose}>Cancelar</Button>
-          <Button kind="primary" onClick={submit} disabled={!canSave}>
+          <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button kind="primary" size="sm" onClick={submit} disabled={!canSave}>
             {mode === 'edit' ? 'Guardar cambios' : 'Crear propiedad'}
           </Button>
         </div>
@@ -595,14 +595,14 @@ export default function Properties({ onOpenClient, initialProperty }) {
             <span key={k} className={`chip ${filter===k?'active':''}`} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></span>
           ))}
           <span style={{flex:1}}></span>
-          <select value={op} onChange={e=>setOp(e.target.value)} style={{fontSize:12,padding:'4px 8px',border:'1px solid var(--border-default)',borderRadius:6,background:'var(--gray-25)',outline:'none'}}>
+          <select value={op} onChange={e=>setOp(e.target.value)}>
             <option value="all">Todas las operaciones</option>
             <option value="rent">Alquiler</option>
             <option value="sale">Venta</option>
           </select>
-          <div className="views" style={{display:'flex',background:'var(--gray-50)',border:'1px solid var(--border-default)',borderRadius:7,padding:2}}>
-            <button onClick={()=>setView('list')} style={{border:'none',padding:'4px 8px',borderRadius:5,cursor:'pointer',background:view==='list'?'white':'transparent',color:view==='list'?'var(--fg-primary)':'var(--fg-secondary)',boxShadow:view==='list'?'0 1px 2px rgba(0,0,0,0.06)':'none'}}><Icon name="list" size={13} /></button>
-            <button onClick={()=>setView('grid')} style={{border:'none',padding:'4px 8px',borderRadius:5,cursor:'pointer',background:view==='grid'?'white':'transparent',color:view==='grid'?'var(--fg-primary)':'var(--fg-secondary)',boxShadow:view==='grid'?'0 1px 2px rgba(0,0,0,0.06)':'none'}}><Icon name="grid" size={13} /></button>
+          <div className="views">
+            <button className={view==='list'?'active':''} onClick={()=>setView('list')}><Icon name="list" size={13} /></button>
+            <button className={view==='grid'?'active':''} onClick={()=>setView('grid')}><Icon name="grid" size={13} /></button>
           </div>
         </div>
         <div className="tbl-scroll">

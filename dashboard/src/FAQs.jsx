@@ -109,8 +109,8 @@ function FaqModal({ faq, onClose }) {
             <label htmlFor="faq-active" style={{ margin: 0 }}>Activa</label>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-            <Button kind="secondary" onClick={onClose}>Cancelar</Button>
-            <Button kind="primary" onClick={handleSave} disabled={saving}>
+            <Button kind="secondary" size="sm" onClick={onClose}>Cancelar</Button>
+            <Button kind="primary" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? 'Guardando...' : 'Guardar'}
             </Button>
           </div>
@@ -128,7 +128,7 @@ function FaqRow({ faq, onEdit, onDelete }) {
   };
 
   return (
-    <div className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '12px 16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 2 }}>{faq.question}</div>
@@ -138,7 +138,6 @@ function FaqRow({ faq, onEdit, onDelete }) {
             {(faq.tags ?? []).map(t => (
               <span key={t} className="pill pill-neutral">{t}</span>
             ))}
-            {/* @ts-ignore */}
             {!faq.active && <Pill kind="cancelled">Inactiva</Pill>}
           </div>
         </div>
@@ -157,6 +156,7 @@ export default function FAQs() {
   const [editing, setEditing] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
+  const [filterActive, setFilterActive] = useState('all');
 
   const handleDelete = (id) => {
     deleteMut.mutate(id, {
@@ -164,7 +164,15 @@ export default function FAQs() {
     });
   };
 
+  const counts = {
+    all:      faqs.length,
+    active:   faqs.filter(f => f.active).length,
+    inactive: faqs.filter(f => !f.active).length,
+  };
+
   const filtered = faqs.filter(f => {
+    if (filterActive === 'active'   && !f.active) return false;
+    if (filterActive === 'inactive' &&  f.active) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -185,46 +193,41 @@ export default function FAQs() {
         <div className="page-h-actions">
           <Button kind="primary" icon="plus" onClick={() => setShowNew(true)}>Nueva FAQ</Button>
         </div>
-        
       </div>
 
-      <div className="page-body" style={{ paddingTop: 0 }}>
-        <div style={{ marginBottom: 16 }}>
+      <div className="scroll-surface surface">
+        <div className="filter-bar">
           <input
-            className="search-input"
             placeholder="Buscar por pregunta, respuesta, categoría o tag..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 14px',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              fontSize: 14,
-              background: 'var(--bg)',
-              color: 'var(--fg)',
-            }}
           />
+          {[['all', 'Todas', counts.all], ['active', 'Activas', counts.active], ['inactive', 'Inactivas', counts.inactive]].map(([k, l, n]) => (
+            <span key={k} className={`chip ${filterActive === k ? 'active' : ''}`} onClick={() => setFilterActive(k)}>
+              {l}<span className="num">{n}</span>
+            </span>
+          ))}
         </div>
-
-        {isLoading ? (
-          <div className="muted" style={{ textAlign: 'center', padding: 40 }}>Cargando...</div>
-        ) : filtered.length === 0 ? (
-          <div className="muted" style={{ textAlign: 'center', padding: 40 }}>
-            {search ? 'Sin resultados para esa búsqueda.' : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
-          </div>
-        ) : (
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {filtered.map(faq => (
-              <FaqRow
-                key={faq.id}
-                faq={faq}
-                onEdit={setEditing}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )}
+        <div className="tbl-scroll">
+          {isLoading ? (
+            <div className="muted" style={{ textAlign: 'center', padding: 40 }}>Cargando...</div>
+          ) : filtered.length === 0 ? (
+            <div className="muted" style={{ textAlign: 'center', padding: 40 }}>
+              {search || filterActive !== 'all' ? 'Sin resultados para esa búsqueda.' : 'Aún no hay preguntas frecuentes. Hacé clic en "Nueva FAQ" para agregar.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {filtered.map(faq => (
+                <FaqRow
+                  key={faq.id}
+                  faq={faq}
+                  onEdit={setEditing}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showNew && <FaqModal onClose={() => setShowNew(false)} />}

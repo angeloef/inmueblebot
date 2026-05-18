@@ -121,6 +121,11 @@ input, select, textarea { font-family: inherit; }
 .chip:hover { background: var(--bg-hover); }
 .chip.active { background: var(--accent-50); border-color: var(--accent-200); color: var(--accent-600); }
 .chip .num { font-size: 11px; opacity: 0.7; }
+.filter-bar select { font-size: 12px; padding: 4px 8px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--gray-25); outline: none; color: var(--fg-primary); cursor: pointer; }
+.filter-bar select:focus { border-color: var(--accent-400); }
+.views { display: flex; background: var(--gray-50); border: 1px solid var(--border-default); border-radius: 7px; padding: 2px; }
+.views button { font-size: 12px; padding: 4px 8px; border-radius: 5px; border: none; background: transparent; cursor: pointer; color: var(--fg-secondary); font-weight: 500; }
+.views button.active { background: white; color: var(--fg-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
 
 /* ───── Activity ───── */
 .activity { display: flex; flex-direction: column; }
@@ -136,9 +141,8 @@ input, select, textarea { font-family: inherit; }
 .cal-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border-default); background: white; }
 .cal-toolbar .nav { display: flex; gap: 2px; }
 .cal-toolbar h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.cal-toolbar .views { margin-left: auto; display: flex; background: var(--gray-50); border: 1px solid var(--border-default); border-radius: 7px; padding: 2px; }
-.cal-toolbar .views button { font-size: 12px; padding: 4px 12px; border-radius: 5px; border: none; background: transparent; cursor: pointer; color: var(--fg-secondary); font-weight: 500; }
-.cal-toolbar .views button.active { background: white; color: var(--fg-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.cal-toolbar .views { margin-left: auto; }
+.cal-toolbar .views button { padding: 4px 12px; }
 
 .cal-month { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border-default); }
 .cal-dow { font-size: 11px; color: var(--fg-tertiary); padding: 6px 10px; text-transform: uppercase; letter-spacing: 0.04em; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-default); background: var(--gray-25); font-weight: 500; display: flex; align-items: center; position: sticky; top: 0; z-index: 10; }
