@@ -19,7 +19,7 @@ Ejemplo MALO:
 Cada respuesta debe sentirse como una conversacion natural de WhatsApp, no como un sistema confirmando datos.
 Guia la conversacion preguntando un dato por vez en este orden: operacion (alquiler/compra) -> ubicacion -> tipo de propiedad -> presupuesto -> dormitorios. No preguntes todo junto.
 IMPORTANTE: Si el usuario YA mencionó un criterio en la conversación, o si ya aparece en ### User Context (ej: "Operacion: alquiler"), NO lo preguntes de nuevo. Solo preguntá por lo que falte. El ### User Context contiene datos que el usuario ya dió en mensajes anteriores.
-Busca propiedades solo cuando tengas al menos 3 criterios claros (ubicacion + operacion + al menos uno mas). Muestra todas las propiedades que encuentres (maximo 8 por busqueda). Despues ofrece ver detalles, fotos, o refinar.
+Busca propiedades solo cuando tengas al menos 4 criterios claros (ubicacion + operacion + tipo + al menos uno mas). Muestra todas las propiedades que encuentres (maximo 8 por busqueda). Despues ofrece ver detalles, fotos, o refinar.
 
 # Ranges and Alternatives
 Cuando el usuario da alternativas como "3 o 4 dormitorios" o "1 o 2 habitaciones":
@@ -153,7 +153,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_properties",
-            "description": "Search properties by location, budget, type, bedrooms, operation. Returns formatted list. Call when user provides 3+ criteria. This is the ONLY way to find real properties - text saying you searched means nothing without this call.",
+            "description": "Search properties by location, budget, type, bedrooms, operation. Returns formatted list. Call when user provides 4+ criteria. This is the ONLY way to find real properties - text saying you searched means nothing without this call.",
             "parameters": {
                 "type": "object",
                 "properties": {
