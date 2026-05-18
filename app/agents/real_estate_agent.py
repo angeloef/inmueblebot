@@ -42,6 +42,13 @@ class RealEstateAgent:
     def __init__(self):
         self.llm = llm_router
         self.tools = TOOL_DEFINITIONS
+        self._user_locks: dict = {}
+    
+    def _get_user_lock(self, phone: str) -> asyncio.Lock:
+        """Get or create per-user lock to serialize turns."""
+        if phone not in self._user_locks:
+            self._user_locks[phone] = asyncio.Lock()
+        return self._user_locks[phone]
     
     async def process_turn(
         self,
