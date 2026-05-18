@@ -135,13 +135,19 @@ function FaqRow({ faq, onEdit, onDelete, onMoveUp, onMoveDown, isFirst, isLast, 
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           {reorderEnabled && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ opacity: isFirst ? 0.2 : 1, pointerEvents: isFirst ? 'none' : 'auto' }}>
-                <IconButton name="arrowUp" title="Subir" onClick={onMoveUp} />
-              </div>
-              <div style={{ opacity: isLast ? 0.2 : 1, pointerEvents: isLast ? 'none' : 'auto' }}>
-                <IconButton name="arrowDown" title="Bajar" onClick={onMoveDown} />
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <button
+                className="faq-order-btn"
+                title="Subir"
+                onClick={onMoveUp}
+                disabled={isFirst}
+              >▲</button>
+              <button
+                className="faq-order-btn"
+                title="Bajar"
+                onClick={onMoveDown}
+                disabled={isLast}
+              >▼</button>
             </div>
           )}
           <IconButton name="edit" onClick={() => onEdit(faq)} title="Editar" />
@@ -172,15 +178,29 @@ export default function FAQs() {
   const defaultOrder = sorted.length > 0 ? sorted[sorted.length - 1].order + 1 : 1;
 
   // Move item at fromIdx to toIdx and renormalize all orders to 1,2,3...
-  const reorder = (fromIdx, toIdx) => {
+  const reorder = async (fromIdx, toIdx) => {
     const next = [...sorted];
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
-    next.forEach((f, i) => {
-      if (f.order !== i + 1) {
-        updateMut.mutate({ ...f, order: i + 1 });
+    try {
+      for (let i = 0; i < next.length; i++) {
+        const f = next[i];
+        const newOrder = i + 1;
+        if (f.order !== newOrder) {
+          await updateMut.mutateAsync({
+            id: f.id,
+            question: f.question,
+            answer: f.answer,
+            category: f.category,
+            tags: f.tags,
+            order: newOrder,
+            active: f.active,
+          });
+        }
       }
-    });
+    } catch {
+      pushToast({ text: 'Error al reordenar.', kind: 'danger' });
+    }
   };
 
   const counts = {

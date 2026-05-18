@@ -676,3 +676,29 @@ input, select, textarea { font-family: inherit; }
   .btn-sm { font-size: 13px; padding: 7px 13px; }
   .btn-sm svg { width: 16px; height: 16px; }
 }
+
+/* ── FAQ reorder buttons ─────────────────────────────────────────────────── */
+.faq-order-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  font-size: 9px;
+  line-height: 1;
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  background: var(--gray-25);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.faq-order-btn:hover:not(:disabled) {
+  background: var(--gray-100);
+  color: var(--fg-primary);
+}
+.faq-order-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
