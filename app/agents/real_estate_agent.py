@@ -69,6 +69,12 @@ class RealEstateAgent:
         logger.info(f"Agent procesando mensaje de {phone}: {user_message[:50]}...")
         
         try:
+            # Save user message to history FIRST so the LLM sees it in context
+            try:
+                await memory_manager.save_message(phone, "user", user_message)
+            except Exception as e:
+                logger.warning(f"Error saving user message: {e}")
+            
             try:
                 merged_context = await memory_manager.get_merged_context(phone)
             except Exception as e:
