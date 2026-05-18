@@ -239,10 +239,10 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
   // Open client by phone (from notification navigation)
   const [phoneHandled, setPhoneHandled] = React.useState(false);
   useEffect(() => {
-    if (!initialPhone || phoneHandled || leads.length === 0) return;
-    const found = leads.find(c => c.phone === initialPhone || c.phone?.endsWith(initialPhone.slice(-8)));
+    if (!initialPhone || phoneHandled || clients.length === 0) return;
+    const found = clients.find(c => c.phone === initialPhone || c.phone?.endsWith(initialPhone.slice(-8)));
     if (found) { setPhoneHandled(true); setOpen(found); }
-  }, [initialPhone, leads, phoneHandled]);
+  }, [initialPhone, clients, phoneHandled]);
 
   const handleDelete = (client) => {
     setOpen(null);
