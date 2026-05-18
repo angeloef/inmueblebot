@@ -85,20 +85,22 @@ class LocationParser(HybridParser):
         if not raw or len(raw.strip()) < 3:
             return ParseResult(None, 0.0, "llm")
 
-        result = await llm_router.chat(
+        result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_LOCATION_SYSTEM_PROMPT,
             temperature=0,
             max_tokens=20,
+            return_usage=True,
         )
         result = (result or "").strip()
+        tokens = (usage or {}).get("completion_tokens", 0)
 
         if not result or result.upper() == "UNKNOWN":
-            return ParseResult(None, 0.0, "llm")
+            return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
-        return ParseResult(value=result.strip(), confidence=0.9, parser_used="llm")
+        return ParseResult(value=result.strip(), confidence=0.9, parser_used="llm", llm_tokens=tokens)
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         return _code_normalize(raw)
 
 

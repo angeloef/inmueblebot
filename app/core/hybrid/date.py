@@ -25,7 +25,7 @@ class DateParser(HybridParser):
             return ParseResult(value=parsed_dt, confidence=0.95, parser_used="llm")
         return ParseResult(None, 0.0, "llm")
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         from app.utils.date_parser import get_argentina_now, parse_spanish_datetime
 
         date_str = ctx.get("date_str", raw)

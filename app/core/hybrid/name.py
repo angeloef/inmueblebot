@@ -58,20 +58,22 @@ class NameExtractor(HybridParser):
         if not raw or len(raw.strip()) < 5:
             return ParseResult(None, 0.0, "llm")
 
-        result = await llm_router.chat(
+        result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_NAME_SYSTEM_PROMPT,
             temperature=0,
             max_tokens=15,
+            return_usage=True,
         )
         result = (result or "").strip().strip('"').strip("'")
+        tokens = (usage or {}).get("completion_tokens", 0)
 
-        if not result or result.upper() == "NONE":
-            return ParseResult(None, 0.0, "llm")
+        if not result or result.strip().lower() == "none":
+            return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
-        return ParseResult(value=result, confidence=0.9, parser_used="llm")
+        return ParseResult(value=result, confidence=0.9, parser_used="llm", llm_tokens=tokens)
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         candidate = _code_extract_name(raw)
         if candidate:
             return ParseResult(value=candidate, confidence=0.6, parser_used="code")

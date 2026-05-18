@@ -68,532 +68,533 @@ class RealEstateAgent:
         """
         logger.info(f"Agent procesando mensaje de {phone}: {user_message[:50]}...")
         
-        try:
-            # Save user message to history FIRST so the LLM sees it in context
+        async with self._get_user_lock(phone):
             try:
-                await memory_manager.save_message(phone, "user", user_message)
-            except Exception as e:
-                logger.warning(f"Error saving user message: {e}")
-            
-            try:
-                merged_context = await memory_manager.get_merged_context(phone)
-            except Exception as e:
-                logger.warning(f"Error get_merged_context, usando default: {e}")
-                merged_context = {"current_state": "idle", "conversation_stage": "new"}
-            
-            try:
-                history = await memory_manager.get_recent_messages(phone, limit=15)
-            except Exception as e:
-                logger.warning(f"Error get_recent_messages: {e}")
-                history = []
-            
-            user_prefs = merged_context
+                # Save user message to history FIRST so the LLM sees it in context
+                try:
+                    await memory_manager.save_message(phone, "user", user_message)
+                except Exception as e:
+                    logger.warning(f"Error saving user message: {e}")
 
-            # Fetch existing appointments for context (prevents time hallucination in rescheduling)
-            try:
-                from app.services.appointment_service import appointment_service
-                from uuid import UUID
-                if "user_id" in merged_context and merged_context["user_id"]:
-                    uid = UUID(str(merged_context["user_id"]))
-                    existing = await appointment_service.get_upcoming_appointments(uid, limit=3)
-                    if existing:
-                        user_prefs["existing_appointments"] = existing
-                        logger.info(f"[Agent] Loaded {len(existing)} existing appointments for {phone}")
-            except Exception as e:
-                logger.warning(f"[Agent] Could not load existing appointments: {e}")
-            
-            if self._detect_handoff_request(user_message):
-                from app.services.handoff_service import handoff_service
-                handoff_result = await handoff_service.trigger_handoff(phone, "user_requested")
-                await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
-                return {
-                    "response_text": handoff_result.get("message", "Un agente humano te contactará pronto."),
-                    "rich_content": {"action": "handoff_initiated"},
-                    "tools_used": ["request_human_assistance"],
-                    "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
-                }
-            
-            # Get last_shown_properties from context for reference
-            last_props = merged_context.get("last_shown_properties", [])
-            
-            # Check if returning user (has context from previous session but no history yet)
-            last_context = merged_context
-            has_context = bool(last_context.get("selected_property_id") or last_context.get("last_shown_properties"))
-            is_new_session = len(history) == 0
+                try:
+                    merged_context = await memory_manager.get_merged_context(phone)
+                except Exception as e:
+                    logger.warning(f"Error get_merged_context, usando default: {e}")
+                    merged_context = {"current_state": "idle", "conversation_stage": "new"}
 
-            if has_context and is_new_session:
-                # Inject returning user context
-                user_prefs["is_returning"] = True
-                last_prop = last_context.get("selected_property_id", None)
-                last_props_list = last_context.get("last_shown_properties", [])
-                if last_prop:
-                    user_prefs["last_reference"] = last_prop
-                elif last_props_list:
-                    # Use the first property title as reference
-                    first_prop = last_props_list[0].get("title", "propiedades") if isinstance(last_props_list[0], dict) else str(last_props_list[0])
-                    user_prefs["last_reference"] = first_prop
-                logger.info(f"[Agent] Returning user detected for {phone}, last_ref: {user_prefs.get('last_reference')}")
+                try:
+                    history = await memory_manager.get_recent_messages(phone, limit=15)
+                except Exception as e:
+                    logger.warning(f"Error get_recent_messages: {e}")
+                    history = []
 
-            # Property reference resolution: resolve 'esa', 'el de 2 amb', etc.
-            from app.core.hybrid.reference import reference_parser
+                user_prefs = merged_context
 
-            if (
-                user_message
-                and not any(id_str in user_message for id_str in ["ID:", "id ", "ID "])
-                and merged_context.get("last_shown_properties")
-            ):
-                ref_ctx = {
-                    "property_options": merged_context["last_shown_properties"],
-                    "selected_property_id": merged_context.get("selected_property_id"),
-                }
-                ref_result = await reference_parser.parse(user_message, ref_ctx)
-                if ref_result.value and ref_result.confidence >= 0.8:
-                    logger.info(
-                        "[ReferenceParser] User reference %r -> property %s (conf=%.2f, parser=%s)",
-                        user_message,
-                        ref_result.value,
-                        ref_result.confidence,
-                        ref_result.parser_used,
-                    )
-                    merged_context["selected_property_id"] = ref_result.value
-                    user_prefs["selected_property_id"] = ref_result.value
-                    await memory_manager.update_context_field(
-                        phone, "selected_property_id", ref_result.value
-                    )
+                # Fetch existing appointments for context (prevents time hallucination in rescheduling)
+                try:
+                    from app.services.appointment_service import appointment_service
+                    from uuid import UUID
+                    if "user_id" in merged_context and merged_context["user_id"]:
+                        uid = UUID(str(merged_context["user_id"]))
+                        existing = await appointment_service.get_upcoming_appointments(uid, limit=3)
+                        if existing:
+                            user_prefs["existing_appointments"] = existing
+                            logger.info(f"[Agent] Loaded {len(existing)} existing appointments for {phone}")
+                except Exception as e:
+                    logger.warning(f"[Agent] Could not load existing appointments: {e}")
 
-            messages = self._build_messages(
-                user_message=user_message,
-                history=history,
-                user_context=user_prefs,
-                phone=phone,
-                last_shown_properties=last_props if last_props else None
-            )
-            
-            tools_used = []
-            response_text = ""
-            rich_content = {}
-            cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
+                if self._detect_handoff_request(user_message):
+                    from app.services.handoff_service import handoff_service
+                    handoff_result = await handoff_service.trigger_handoff(phone, "user_requested")
+                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
+                    return {
+                        "response_text": handoff_result.get("message", "Un agente humano te contactará pronto."),
+                        "rich_content": {"action": "handoff_initiated"},
+                        "tools_used": ["request_human_assistance"],
+                        "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
+                    }
 
-            reschedule_failures = 0
-            for iteration in range(self.MAX_TOOL_CALLS):
-                break_out = False
-                # Phase 4: Add detailed logging for tools + intent detection
-                tools_count = len(self.tools) if self.tools else 0
+                # Get last_shown_properties from context for reference
+                last_props = merged_context.get("last_shown_properties", [])
 
-                logger.info(f"[Agent] Iteration {iteration + 1}: Sending {tools_count} tools to LLM")
+                # Check if returning user (has context from previous session but no history yet)
+                last_context = merged_context
+                has_context = bool(last_context.get("selected_property_id") or last_context.get("last_shown_properties"))
+                is_new_session = len(history) == 0
 
-                llm_response = await self.llm.ainvoke(
-                    messages=messages,
-                    tools=self.tools,
-                    temperature=0.7
+                if has_context and is_new_session:
+                    # Inject returning user context
+                    user_prefs["is_returning"] = True
+                    last_prop = last_context.get("selected_property_id", None)
+                    last_props_list = last_context.get("last_shown_properties", [])
+                    if last_prop:
+                        user_prefs["last_reference"] = last_prop
+                    elif last_props_list:
+                        # Use the first property title as reference
+                        first_prop = last_props_list[0].get("title", "propiedades") if isinstance(last_props_list[0], dict) else str(last_props_list[0])
+                        user_prefs["last_reference"] = first_prop
+                    logger.info(f"[Agent] Returning user detected for {phone}, last_ref: {user_prefs.get('last_reference')}")
+
+                # Property reference resolution: resolve 'esa', 'el de 2 amb', etc.
+                from app.core.hybrid.reference import reference_parser
+
+                if (
+                    user_message
+                    and not any(id_str in user_message for id_str in ["ID:", "id ", "ID "])
+                    and merged_context.get("last_shown_properties")
+                ):
+                    ref_ctx = {
+                        "property_options": merged_context["last_shown_properties"],
+                        "selected_property_id": merged_context.get("selected_property_id"),
+                    }
+                    ref_result = await reference_parser.parse(user_message, ref_ctx)
+                    if ref_result.value and ref_result.confidence >= 0.8:
+                        logger.info(
+                            "[ReferenceParser] User reference %r -> property %s (conf=%.2f, parser=%s)",
+                            user_message,
+                            ref_result.value,
+                            ref_result.confidence,
+                            ref_result.parser_used,
+                        )
+                        merged_context["selected_property_id"] = ref_result.value
+                        user_prefs["selected_property_id"] = ref_result.value
+                        await memory_manager.update_context_field(
+                            phone, "selected_property_id", ref_result.value
+                        )
+
+                messages = self._build_messages(
+                    user_message=user_message,
+                    history=history,
+                    user_context=user_prefs,
+                    phone=phone,
+                    last_shown_properties=last_props if last_props else None
                 )
 
-                # Token usage logging
-                if llm_response.usage:
-                    u = llm_response.usage
-                    prompt_t = u.get("prompt_tokens", u.get("input_tokens", "?"))
-                    completion_t = u.get("completion_tokens", u.get("output_tokens", "?"))
-                    total_t = u.get("total_tokens", u.get("total", "?"))
-                    logger.info(
-                        f"[Tokens] phone={phone[-4:]} | provider={llm_response.provider} | "
-                        f"prompt={prompt_t} | completion={completion_t} | total={total_t}"
-                    )
-                    if isinstance(total_t, (int, float)):
-                        cumulative_tokens["prompt"] += prompt_t if isinstance(prompt_t, (int, float)) else 0
-                        cumulative_tokens["completion"] += completion_t if isinstance(completion_t, (int, float)) else 0
-                        cumulative_tokens["total"] += total_t
-                        cumulative_tokens["calls"] += 1
+                tools_used = []
+                response_text = ""
+                rich_content = {}
+                cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
-                # Log tool call results
-                if llm_response.has_tool_calls:
-                    tool_names = [tc.name for tc in llm_response.tool_calls]
-                    logger.info(f"[Agent] ✓ Tool calls made: {tool_names}")
-                else:
-                    logger.info(f"[Agent] No tools called (provider: {llm_response.provider})")
-                
-                if not llm_response.has_tool_calls:
-                    # Anti-hallucination guard: if this was a property search but the LLM
-                    # never called the search tool, don't accept a made-up response.
-                    search_was_called = any(
-                        "search_properties" in t or "recommend_properties" in t
-                        for t in tools_used
+                reschedule_failures = 0
+                for iteration in range(self.MAX_TOOL_CALLS):
+                    break_out = False
+                    # Phase 4: Add detailed logging for tools + intent detection
+                    tools_count = len(self.tools) if self.tools else 0
+
+                    logger.info(f"[Agent] Iteration {iteration + 1}: Sending {tools_count} tools to LLM")
+
+                    llm_response = await self.llm.ainvoke(
+                        messages=messages,
+                        tools=self.tools,
+                        temperature=0.7
                     )
-                    if intent == Intent.PROPERTY_SEARCH and not search_was_called:
-                        logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
-                        response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
+
+                    # Token usage logging
+                    if llm_response.usage:
+                        u = llm_response.usage
+                        prompt_t = u.get("prompt_tokens", u.get("input_tokens", "?"))
+                        completion_t = u.get("completion_tokens", u.get("output_tokens", "?"))
+                        total_t = u.get("total_tokens", u.get("total", "?"))
+                        logger.info(
+                            f"[Tokens] phone={phone[-4:]} | provider={llm_response.provider} | "
+                            f"prompt={prompt_t} | completion={completion_t} | total={total_t}"
+                        )
+                        if isinstance(total_t, (int, float)):
+                            cumulative_tokens["prompt"] += prompt_t if isinstance(prompt_t, (int, float)) else 0
+                            cumulative_tokens["completion"] += completion_t if isinstance(completion_t, (int, float)) else 0
+                            cumulative_tokens["total"] += total_t
+                            cumulative_tokens["calls"] += 1
+
+                    # Log tool call results
+                    if llm_response.has_tool_calls:
+                        tool_names = [tc.name for tc in llm_response.tool_calls]
+                        logger.info(f"[Agent] ✓ Tool calls made: {tool_names}")
                     else:
-                        # Search hallucination guard: if LLM said "voy a buscar"/"buscando"
-                        # without actually calling search, force it to search.
-                        _resp_lower = (llm_response.content or "").lower()
-                        _said_search = any(p in _resp_lower for p in
-                            ["voy a buscar", "vamos a buscar", "vamos a encontrar",
-                             "buscando", "déjame buscar", "un momento",
-                             "voy a revisar", "voy a consultar",
-                             "voy a fijarme", "voy a ver", "vamos a ver",
-                             "voy a chequear"])
-                        _user_wants_search = any(p in (user_message or "").lower() for p in
-                            ["busco", "buscar", "buscando", "quiero", "necesito",
-                             "departamento", "casa", "alquilar", "alquiler",
-                             "comprar", "terreno", "propiedad", "ph",
-                             "departamento", "local", "oficina"])
-                        
-                        if _said_search and _user_wants_search and not search_was_called:
-                            # Only force search if the LLM is NOT asking a question.
-                            # If the response has "?" or "¿", the LLM is guiding the conversation (REGLA 7).
-                            _is_question = "?" in _resp_lower or "¿" in _resp_lower
-                            if not _is_question:
-                                # Force-inject a system message: correct the LLM
-                                logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
-                                messages.append({
-                                    "role": "system",
-                                    "content": (
-                                        "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
-                                        "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
-                                        "LLAMÁ search_properties() AHORA con los criterios del usuario. "
-                                        "No sigas conversando sin buscar."
-                                    )
-                                })
-                                continue  # Go to next iteration (force the LLM to search)
-                        
-                        response_text = llm_response.content
-                    break
+                        logger.info(f"[Agent] No tools called (provider: {llm_response.provider})")
 
-                # PHASE 1.5: Execute tool calls
-                for tool_call in llm_response.tool_calls:
-                    tool_name = tool_call.name
-                    tool_args = tool_call.arguments
-                    
-                    logger.info(f"Tool call: {tool_name} con args: {tool_args}")
-                    tools_used.append(tool_name)
-                    
-                    # PROPERTY_ID GUARD: if LLM calls schedule_visit with wrong property_id,
-                    # force it to use selected_property_id from context
-                    if tool_name == "schedule_visit":
-                        try:
-                            _ctx = await memory_manager.get_user_context(phone)
-                            _selected = _ctx.get("selected_property_id")
-                            _arg_pid = tool_args.get("property_id")
-                            if _selected and _arg_pid and str(_selected) != str(_arg_pid):
-                                logger.warning(
-                                    f"[Agent] 🛡️ PROPERTY_ID MISMATCH: LLM wants property_id={_arg_pid} "
-                                    f"but selected_property_id={_selected}. FORCING CORRECTION."
-                                )
-                                # Override the LLM's property_id with the active one
-                                tool_args["property_id"] = str(_selected)
-                                tool_args["_corrected_from"] = str(_arg_pid)
-                        except Exception as _e:
-                            logger.warning(f"[Agent] Property guard error (non-fatal): {_e}")
-
-                    # SCHEDULING GUARD: if user just said "id 18" or similar without scheduling intent,
-                    # and LLM called schedule_visit, suppress it and redirect to get_property_details
-                    if tool_name == "schedule_visit" and user_message:
-                        _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
-                                           "reserva", "turno", "conocer", "ver en persona",
-                                           "ir a ver", "recorrer", "mostrar"]
-                        _user_lower = user_message.lower()
-                        _has_sched_intent = any(kw in _user_lower for kw in _sched_keywords)
-                        _is_simple_ref = any(phrase in _user_lower for phrase in [
-                            "id ", "el id", "muestrame", "pasame datos", "ver la",
-                            "quiero ver", "dame info", "informacion de", "detalles de"
-                        ])
-                        if not _has_sched_intent and (_is_simple_ref or len(_user_lower.strip().split()) <= 3):
-                            logger.warning(
-                                f"[Agent] 🛡️ SCHEDULING GUARD: user message '{user_message[:50]}' "
-                                f"has no scheduling keywords. Suppressing schedule_visit → redirecting to details."
-                            )
-                            # Replace with a get_property_details call instead
-                            tool_name = "get_property_details"
-                            tool_args = {"property_id": tool_args.get("property_id", "")}
-
-                    tool_result = await execute_tool(
-                        tool_name=tool_name,
-                        arguments=tool_args,
-                        phone=phone
-                    )
-
-                    # SHORT-CIRCUIT: if tool result IS the final answer, skip remaining LLM iterations
-                    if isinstance(tool_result, str):
-                        # General: any tool result with <!--CONFIRMED:--> is a final confirmation message
-                        if "<!--CONFIRMED:" in tool_result:
-                            response_text = tool_result
-                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded with confirmation, using result directly")
-                            break_out = True
-                            break
-                        if tool_name == "cancel_appointment" and "Cita Cancelada" in tool_result:
-                            response_text = tool_result
-                            logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
-                            break_out = True
-                            break
-
-                    # Reschedule failure counter: max 3 consecutive failures
-                    if tool_name == "reschedule_appointment":
-                        if not isinstance(tool_result, str) or "<!--CONFIRMED:" not in str(tool_result):
-                            reschedule_failures += 1
-                            logger.warning(
-                                f"[Agent] reschedule_appointment failed ({reschedule_failures}/3): "
-                                f"no CONFIRMED in result"
-                            )
-                            if reschedule_failures >= 3:
-                                response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
-                                logger.warning("[Agent] Reschedule failure limit reached (3) — breaking out")
-                                break_out = True
-                                break
+                    if not llm_response.has_tool_calls:
+                        # Anti-hallucination guard: if this was a property search but the LLM
+                        # never called the search tool, don't accept a made-up response.
+                        search_was_called = any(
+                            "search_properties" in t or "recommend_properties" in t
+                            for t in tools_used
+                        )
+                        if intent == Intent.PROPERTY_SEARCH and not search_was_called:
+                            logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
+                            response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
                         else:
-                            # Success — reset counter
-                            reschedule_failures = 0
+                            # Search hallucination guard: if LLM said "voy a buscar"/"buscando"
+                            # without actually calling search, force it to search.
+                            _resp_lower = (llm_response.content or "").lower()
+                            _said_search = any(p in _resp_lower for p in
+                                ["voy a buscar", "vamos a buscar", "vamos a encontrar",
+                                 "buscando", "déjame buscar", "un momento",
+                                 "voy a revisar", "voy a consultar",
+                                 "voy a fijarme", "voy a ver", "vamos a ver",
+                                 "voy a chequear"])
+                            _user_wants_search = any(p in (user_message or "").lower() for p in
+                                ["busco", "buscar", "buscando", "quiero", "necesito",
+                                 "departamento", "casa", "alquilar", "alquiler",
+                                 "comprar", "terreno", "propiedad", "ph",
+                                 "departamento", "local", "oficina"])
 
-                    # Detect tool loops — same tool called twice consecutively = break
-                    if len(tools_used) >= 2:
-                        last_two = tools_used[-2:]
-                        if last_two[0] == last_two[1]:
-                            logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
-                            # If it's a scheduling tool, propagate success or break failure loop
-                            if last_two[0] in ("schedule_visit", "reschedule_appointment", "cancel_appointment"):
-                                result_str = str(tool_result)
-                                if "<!--CONFIRMED:" in result_str or "Cita Reprogramada" in result_str or "Cita Cancelada" in result_str or "Cita Agendada" in result_str:
-                                    response_text = tool_result
-                                    logger.info(f"[Agent] Scheduling tool {last_two[0]} succeeded despite loop — confirmation used")
-                                else:
-                                    # Tool failed and is looping — break BOTH loops with friendly fallback
-                                    response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
-                                    logger.info(f"[Agent] Scheduling tool {last_two[0]} failed in loop — breaking outer loop too")
+                            if _said_search and _user_wants_search and not search_was_called:
+                                # Only force search if the LLM is NOT asking a question.
+                                # If the response has "?" or "¿", the LLM is guiding the conversation (REGLA 7).
+                                _is_question = "?" in _resp_lower or "¿" in _resp_lower
+                                if not _is_question:
+                                    # Force-inject a system message: correct the LLM
+                                    logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
+                                    messages.append({
+                                        "role": "system",
+                                        "content": (
+                                            "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
+                                            "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
+                                            "LLAMÁ search_properties() AHORA con los criterios del usuario. "
+                                            "No sigas conversando sin buscar."
+                                        )
+                                    })
+                                    continue  # Go to next iteration (force the LLM to search)
+
+                            response_text = llm_response.content
+                        break
+
+                    # PHASE 1.5: Execute tool calls
+                    for tool_call in llm_response.tool_calls:
+                        tool_name = tool_call.name
+                        tool_args = tool_call.arguments
+
+                        logger.info(f"Tool call: {tool_name} con args: {tool_args}")
+                        tools_used.append(tool_name)
+
+                        # PROPERTY_ID GUARD: if LLM calls schedule_visit with wrong property_id,
+                        # force it to use selected_property_id from context
+                        if tool_name == "schedule_visit":
+                            try:
+                                _ctx = await memory_manager.get_user_context(phone)
+                                _selected = _ctx.get("selected_property_id")
+                                _arg_pid = tool_args.get("property_id")
+                                if _selected and _arg_pid and str(_selected) != str(_arg_pid):
+                                    logger.warning(
+                                        f"[Agent] 🛡️ PROPERTY_ID MISMATCH: LLM wants property_id={_arg_pid} "
+                                        f"but selected_property_id={_selected}. FORCING CORRECTION."
+                                    )
+                                    # Override the LLM's property_id with the active one
+                                    tool_args["property_id"] = str(_selected)
+                                    tool_args["_corrected_from"] = str(_arg_pid)
+                            except Exception as _e:
+                                logger.warning(f"[Agent] Property guard error (non-fatal): {_e}")
+
+                        # SCHEDULING GUARD: if user just said "id 18" or similar without scheduling intent,
+                        # and LLM called schedule_visit, suppress it and redirect to get_property_details
+                        if tool_name == "schedule_visit" and user_message:
+                            _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
+                                               "reserva", "turno", "conocer", "ver en persona",
+                                               "ir a ver", "recorrer", "mostrar"]
+                            _user_lower = user_message.lower()
+                            _has_sched_intent = any(kw in _user_lower for kw in _sched_keywords)
+                            _is_simple_ref = any(phrase in _user_lower for phrase in [
+                                "id ", "el id", "muestrame", "pasame datos", "ver la",
+                                "quiero ver", "dame info", "informacion de", "detalles de"
+                            ])
+                            if not _has_sched_intent and (_is_simple_ref or len(_user_lower.strip().split()) <= 3):
+                                logger.warning(
+                                    f"[Agent] 🛡️ SCHEDULING GUARD: user message '{user_message[:50]}' "
+                                    f"has no scheduling keywords. Suppressing schedule_visit → redirecting to details."
+                                )
+                                # Replace with a get_property_details call instead
+                                tool_name = "get_property_details"
+                                tool_args = {"property_id": tool_args.get("property_id", "")}
+
+                        tool_result = await execute_tool(
+                            tool_name=tool_name,
+                            arguments=tool_args,
+                            phone=phone
+                        )
+
+                        # SHORT-CIRCUIT: if tool result IS the final answer, skip remaining LLM iterations
+                        if isinstance(tool_result, str):
+                            # General: any tool result with <!--CONFIRMED:--> is a final confirmation message
+                            if "<!--CONFIRMED:" in tool_result:
+                                response_text = tool_result
+                                logger.info(f"[Agent] Short-circuit: {tool_name} succeeded with confirmation, using result directly")
                                 break_out = True
                                 break
-                            break
+                            if tool_name == "cancel_appointment" and "Cita Cancelada" in tool_result:
+                                response_text = tool_result
+                                logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
+                                break_out = True
+                                break
 
-                    messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": f"call_{iteration}",
-                                "type": "function",
-                                "function": {
-                                    "name": tool_name,
-                                    "arguments": json.dumps(tool_args)
-                                }
-                            }
-                        ]
-                    })
-                    
-                    messages.append({
-                        "role": "tool",
-                        "name": tool_name,
-                        "tool_call_id": f"call_{iteration}",
-                        "content": str(tool_result)
-                    })
-                    
-                    # ── Plan B: Inject contextual next-step guidance ──
-                    if tool_name == "search_properties":
-                        # After showing search results, suggest next step
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "Acabas de mostrar resultados de búsqueda. "
-                                "SIEMPRE terminá tu respuesta preguntando al usuario "
-                                "si quiere ver los detalles de alguna propiedad en particular. "
-                                "Ej: '¿Querés ver los detalles de alguna?'"
-                            )
-                        })
-                    elif tool_name == "get_property_details":
-                        # Extract property data from tool result for the system message
-                        _prop_info = ""
-                        if isinstance(tool_result, str) and tool_result:
-                            # Extract first line or key info for context
-                            _first_line = tool_result.split('\n')[0] if '\n' in tool_result else tool_result[:60]
-                            _prop_info = f" Los datos REALES de la propiedad son: {_first_line}"
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "Acabas de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
-                                "IGNORÁ cualquier descripción, precio o título que hayas escrito antes. "
-                                "Usá EXACTAMENTE los datos que devolvió el tool, palabra por palabra."
-                                f"{_prop_info}"
-                                "Presentalos de forma conversacional y preguntale al usuario "
-                                "si quiere agendar una visita o ver las fotos. "
-                                "Ej: '¿Querés agendar una visita para verla?'"
-                            )
-                        })
-                    elif tool_name == "compare_properties":
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "Mostraste una comparación de propiedades. "
-                                "Preguntale al usuario cuál le interesa más "
-                                "para mostrarle los detalles."
-                            )
-                        })
-                    elif tool_name == "get_faq_answer":
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "Respondiste una pregunta frecuente. "
-                                "Primero preguntale al usuario \"¿Tenes alguna otra consulta?\". "
-                                "Después de eso, ofrecelé ayuda con propiedades."
-                            )
-                        })
-                    elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "La cita se agendó con éxito. Confirmale al usuario "
-                                "los detalles (día y hora) y preguntale si necesita "
-                                "algo más. Si dice que no, despedite cordialmente."
-                            )
-                        })
-                    
-                    if "search_properties" in tool_name or "recommend_properties" in tool_name:
-                        new_rich = self._extract_rich_content(tool_args, tool_result)
-                        # Preserve images from previous get_property_images calls
-                        existing_images = rich_content.get("images", [])
-                        if existing_images:
-                            new_rich["images"] = existing_images
-                        elif new_rich.get("properties"):
-                            # Extract images from property list if available
-                            for prop in new_rich["properties"]:
-                                if prop.get("images"):
-                                    new_rich["images"] = prop["images"]
+                        # Reschedule failure counter: max 3 consecutive failures
+                        if tool_name == "reschedule_appointment":
+                            if not isinstance(tool_result, str) or "<!--CONFIRMED:" not in str(tool_result):
+                                reschedule_failures += 1
+                                logger.warning(
+                                    f"[Agent] reschedule_appointment failed ({reschedule_failures}/3): "
+                                    f"no CONFIRMED in result"
+                                )
+                                if reschedule_failures >= 3:
+                                    response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
+                                    logger.warning("[Agent] Reschedule failure limit reached (3) — breaking out")
+                                    break_out = True
                                     break
-                        rich_content = new_rich
-                        
-                        # Save last_shown_properties for context (compressed: id + title only)
-                        last_props = rich_content.get("properties", [])
-                        if last_props:
-                            compressed = [
-                                {"id": p.get("id", p.get("property_id", "N/A")), "title": p.get("title", "N/A")}
-                                for p in last_props
+                            else:
+                                # Success — reset counter
+                                reschedule_failures = 0
+
+                        # Detect tool loops — same tool called twice consecutively = break
+                        if len(tools_used) >= 2:
+                            last_two = tools_used[-2:]
+                            if last_two[0] == last_two[1]:
+                                logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
+                                # If it's a scheduling tool, propagate success or break failure loop
+                                if last_two[0] in ("schedule_visit", "reschedule_appointment", "cancel_appointment"):
+                                    result_str = str(tool_result)
+                                    if "<!--CONFIRMED:" in result_str or "Cita Reprogramada" in result_str or "Cita Cancelada" in result_str or "Cita Agendada" in result_str:
+                                        response_text = tool_result
+                                        logger.info(f"[Agent] Scheduling tool {last_two[0]} succeeded despite loop — confirmation used")
+                                    else:
+                                        # Tool failed and is looping — break BOTH loops with friendly fallback
+                                        response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
+                                        logger.info(f"[Agent] Scheduling tool {last_two[0]} failed in loop — breaking outer loop too")
+                                    break_out = True
+                                    break
+                                break
+
+                        messages.append({
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{iteration}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": json.dumps(tool_args)
+                                    }
+                                }
                             ]
-                            logger.info(f"[Agent] Saving {len(compressed)} properties to context (compressed to id+title)")
-                            # Save to memory for next turn
+                        })
+
+                        messages.append({
+                            "role": "tool",
+                            "name": tool_name,
+                            "tool_call_id": f"call_{iteration}",
+                            "content": str(tool_result)
+                        })
+
+                        # ── Plan B: Inject contextual next-step guidance ──
+                        if tool_name == "search_properties":
+                            # After showing search results, suggest next step
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "Acabas de mostrar resultados de búsqueda. "
+                                    "SIEMPRE terminá tu respuesta preguntando al usuario "
+                                    "si quiere ver los detalles de alguna propiedad en particular. "
+                                    "Ej: '¿Querés ver los detalles de alguna?'"
+                                )
+                            })
+                        elif tool_name == "get_property_details":
+                            # Extract property data from tool result for the system message
+                            _prop_info = ""
+                            if isinstance(tool_result, str) and tool_result:
+                                # Extract first line or key info for context
+                                _first_line = tool_result.split('\n')[0] if '\n' in tool_result else tool_result[:60]
+                                _prop_info = f" Los datos REALES de la propiedad son: {_first_line}"
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "Acabas de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
+                                    "IGNORÁ cualquier descripción, precio o título que hayas escrito antes. "
+                                    "Usá EXACTAMENTE los datos que devolvió el tool, palabra por palabra."
+                                    f"{_prop_info}"
+                                    "Presentalos de forma conversacional y preguntale al usuario "
+                                    "si quiere agendar una visita o ver las fotos. "
+                                    "Ej: '¿Querés agendar una visita para verla?'"
+                                )
+                            })
+                        elif tool_name == "compare_properties":
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "Mostraste una comparación de propiedades. "
+                                    "Preguntale al usuario cuál le interesa más "
+                                    "para mostrarle los detalles."
+                                )
+                            })
+                        elif tool_name == "get_faq_answer":
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "Respondiste una pregunta frecuente. "
+                                    "Primero preguntale al usuario \"¿Tenes alguna otra consulta?\". "
+                                    "Después de eso, ofrecelé ayuda con propiedades."
+                                )
+                            })
+                        elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "La cita se agendó con éxito. Confirmale al usuario "
+                                    "los detalles (día y hora) y preguntale si necesita "
+                                    "algo más. Si dice que no, despedite cordialmente."
+                                )
+                            })
+
+                        if "search_properties" in tool_name or "recommend_properties" in tool_name:
+                            new_rich = self._extract_rich_content(tool_args, tool_result)
+                            # Preserve images from previous get_property_images calls
+                            existing_images = rich_content.get("images", [])
+                            if existing_images:
+                                new_rich["images"] = existing_images
+                            elif new_rich.get("properties"):
+                                # Extract images from property list if available
+                                for prop in new_rich["properties"]:
+                                    if prop.get("images"):
+                                        new_rich["images"] = prop["images"]
+                                        break
+                            rich_content = new_rich
+
+                            # Save last_shown_properties for context (compressed: id + title only)
+                            last_props = rich_content.get("properties", [])
+                            if last_props:
+                                compressed = [
+                                    {"id": p.get("id", p.get("property_id", "N/A")), "title": p.get("title", "N/A")}
+                                    for p in last_props
+                                ]
+                                logger.info(f"[Agent] Saving {len(compressed)} properties to context (compressed to id+title)")
+                                # Save to memory for next turn
+                                try:
+                                    await memory_manager.update_context_field(
+                                        phone,
+                                        "last_shown_properties",
+                                        compressed
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
+
+                        if "get_property_images" in tool_name:
+                            new_rich = self._extract_rich_content(tool_args, tool_result)
+                            # Preserve images from both current and previous rich_content
+                            existing_images = rich_content.get("images", [])
+                            new_images = new_rich.get("images", [])
+                            if existing_images:
+                                new_rich["images"] = existing_images + new_images
+                            rich_content = new_rich
+
+                        # Save selected_property_id for context continuity across turns
+                        if tool_args.get("property_id") and tool_name in ("get_property_details", "get_property_images"):
                             try:
                                 await memory_manager.update_context_field(
-                                    phone, 
-                                    "last_shown_properties", 
-                                    compressed
+                                    phone, "selected_property_id", tool_args["property_id"]
+                                )
+                                # Also save the property title if available from result
+                                prop_title = None
+                                if isinstance(tool_result, dict) and tool_result.get("title"):
+                                    prop_title = tool_result["title"]
+                                elif isinstance(tool_result, str) and "Departamento" in tool_result:
+                                    import re as _re
+                                    _m = _re.search(r'(Departamento[^|]+|Casa[^|]+)', tool_result)
+                                    if _m:
+                                        prop_title = _m.group(1).strip()
+                                if prop_title:
+                                    await memory_manager.update_context_field(
+                                        phone, "selected_property_title", prop_title
+                                    )
+                                logger.info(
+                                    f"[Agent] Saved selected property: [{prop_title or '?'}] (ID={tool_args['property_id']}) for {phone}"
                                 )
                             except Exception as e:
-                                logger.warning(f"[Agent] Could not save last_shown_properties: {e}")
-                    
-                    if "get_property_images" in tool_name:
-                        new_rich = self._extract_rich_content(tool_args, tool_result)
-                        # Preserve images from both current and previous rich_content
-                        existing_images = rich_content.get("images", [])
-                        new_images = new_rich.get("images", [])
-                        if existing_images:
-                            new_rich["images"] = existing_images + new_images
-                        rich_content = new_rich
-                    
-                    # Save selected_property_id for context continuity across turns
-                    if tool_args.get("property_id") and tool_name in ("get_property_details", "get_property_images"):
-                        try:
-                            await memory_manager.update_context_field(
-                                phone, "selected_property_id", tool_args["property_id"]
-                            )
-                            # Also save the property title if available from result
-                            prop_title = None
-                            if isinstance(tool_result, dict) and tool_result.get("title"):
-                                prop_title = tool_result["title"]
-                            elif isinstance(tool_result, str) and "Departamento" in tool_result:
-                                import re as _re
-                                _m = _re.search(r'(Departamento[^|]+|Casa[^|]+)', tool_result)
-                                if _m:
-                                    prop_title = _m.group(1).strip()
-                            if prop_title:
-                                await memory_manager.update_context_field(
-                                    phone, "selected_property_title", prop_title
-                                )
-                            logger.info(
-                                f"[Agent] Saved selected property: [{prop_title or '?'}] (ID={tool_args['property_id']}) for {phone}"
-                            )
-                        except Exception as e:
-                            logger.warning(f"[Agent] Could not save selected_property_id: {e}")
-                    
-                    # Log confirmed datetime for schedule_visit / reschedule
-                    if ("schedule_visit" in tool_name or "reschedule_appointment" in tool_name) and "Cita" in str(tool_result):
-                        import re
-                        match = re.search(r'<!--CONFIRMED:(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-->', str(tool_result))
-                        if match:
-                            confirmed_time = match.group(1)
-                            logger.info(f"[Agent] Tool confirmed datetime: {confirmed_time}")
-                            logger.info(f"[Agent] Final confirmation message using time: {confirmed_time}")
+                                logger.warning(f"[Agent] Could not save selected_property_id: {e}")
 
-                if break_out:
-                    break
+                        # Log confirmed datetime for schedule_visit / reschedule
+                        if ("schedule_visit" in tool_name or "reschedule_appointment" in tool_name) and "Cita" in str(tool_result):
+                            import re
+                            match = re.search(r'<!--CONFIRMED:(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-->', str(tool_result))
+                            if match:
+                                confirmed_time = match.group(1)
+                                logger.info(f"[Agent] Tool confirmed datetime: {confirmed_time}")
+                                logger.info(f"[Agent] Final confirmation message using time: {confirmed_time}")
 
-            # Turn summary log
-            logger.info(f"[Agent] Turn complete: {len(tools_used)} tool(s) used: {tools_used}")
+                    if break_out:
+                        break
 
-            if not response_text:
-                response_text = "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
-            
-            # Clean response - remove forbidden words/patterns
-            response_text = self._clean_response(response_text, tools_used)
+                # Turn summary log
+                logger.info(f"[Agent] Turn complete: {len(tools_used)} tool(s) used: {tools_used}")
 
-            # Anti-hallucination guard: detect if LLM claims actions (schedule/cancel/etc.)
-            # without having called the corresponding tool. If detected, replace with honesty.
-            response_text = self._detect_action_hallucination(response_text, tools_used)
+                if not response_text:
+                    response_text = "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
 
-            next_state = self._determine_next_state(
-                intent=intent,
-                tools_used=tools_used,
-                current_state=merged_context.get("current_state", "idle")
-            )
+                # Clean response - remove forbidden words/patterns
+                response_text = self._clean_response(response_text, tools_used)
 
-            # Build result dict BEFORE background post-processing
-            result = {
-                "response_text": response_text,
-                "rich_content": rich_content if rich_content else None,
-                "tools_used": tools_used,
-                "next_state": next_state
-            }
-            
-            # ── Background post-processing (runs AFTER WhatsApp send) ──
-            async def _background_post_processing():
-                """Save state, lead score, preferences — runs after response is sent to WhatsApp."""
-                try:
-                    # Save assistant message to memory
+                # Anti-hallucination guard: detect if LLM claims actions (schedule/cancel/etc.)
+                # without having called the corresponding tool. If detected, replace with honesty.
+                response_text = self._detect_action_hallucination(response_text, tools_used)
+
+                next_state = self._determine_next_state(
+                    intent=intent,
+                    tools_used=tools_used,
+                    current_state=merged_context.get("current_state", "idle")
+                )
+
+                # Build result dict BEFORE background post-processing
+                result = {
+                    "response_text": response_text,
+                    "rich_content": rich_content if rich_content else None,
+                    "tools_used": tools_used,
+                    "next_state": next_state
+                }
+
+                # ── Background post-processing (runs AFTER WhatsApp send) ──
+                async def _background_post_processing():
+                    """Save state, lead score, preferences — runs after response is sent to WhatsApp."""
                     try:
-                        await memory_manager.save_message(phone, "assistant", response_text)
+                        # Save assistant message to memory
+                        try:
+                            await memory_manager.save_message(phone, "assistant", response_text)
+                        except Exception as e:
+                            logger.warning(f"Error guardando mensaje en background: {e}")
+
+                        # State machine + lead score + preferences in parallel
+                        post_tasks = []
+                        post_tasks.append(state_machine.set_state(phone, next_state, allow_invalid=True))
+                        post_tasks.append(self._update_lead_score(phone, tools_used, user_message))
+                        if user_prefs:
+                            post_tasks.append(self._extract_and_save_preferences(phone, user_message, user_prefs))
+                        results = await asyncio.gather(*post_tasks, return_exceptions=True)
+                        for i, r in enumerate(results):
+                            if isinstance(r, Exception):
+                                task_names = ["set_state", "lead_score", "extract_preferences"]
+                                logger.warning(f"Error en background post-processing [{task_names[i]}]: {r}")
+
+                        # Token usage summary
+                        if cumulative_tokens["calls"] > 0:
+                            logger.info(
+                                f"[Tokens] phone={phone[-4:]} | CUMULATIVE | "
+                                f"calls={cumulative_tokens['calls']} | "
+                                f"prompt={cumulative_tokens['prompt']} | "
+                                f"completion={cumulative_tokens['completion']} | "
+                                f"total={cumulative_tokens['total']}"
+                            )
                     except Exception as e:
-                        logger.warning(f"Error guardando mensaje en background: {e}")
-                    
-                    # State machine + lead score + preferences in parallel
-                    post_tasks = []
-                    post_tasks.append(state_machine.set_state(phone, next_state, allow_invalid=True))
-                    post_tasks.append(self._update_lead_score(phone, tools_used, user_message))
-                    if user_prefs:
-                        post_tasks.append(self._extract_and_save_preferences(phone, user_message, user_prefs))
-                    results = await asyncio.gather(*post_tasks, return_exceptions=True)
-                    for i, r in enumerate(results):
-                        if isinstance(r, Exception):
-                            task_names = ["set_state", "lead_score", "extract_preferences"]
-                            logger.warning(f"Error en background post-processing [{task_names[i]}]: {r}")
-                    
-                    # Token usage summary
-                    if cumulative_tokens["calls"] > 0:
-                        logger.info(
-                            f"[Tokens] phone={phone[-4:]} | CUMULATIVE | "
-                            f"calls={cumulative_tokens['calls']} | "
-                            f"prompt={cumulative_tokens['prompt']} | "
-                            f"completion={cumulative_tokens['completion']} | "
-                            f"total={cumulative_tokens['total']}"
-                        )
-                except Exception as e:
-                    logger.warning(f"Error in background post-processing: {e}")
-            
-            # Fire background task immediately — webhook sends WhatsApp response first,
-            # then this finishes asynchronously (~6s speedup on user-perceived latency)
-            asyncio.create_task(_background_post_processing())
-            
-            logger.info(f"Agent respondió: {response_text[:50]}... (tools: {tools_used})")
-            
-            return result
-            
-        except Exception as e:
-            import traceback
-            logger.error(f"Error en process_turn: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {
+                        logger.warning(f"Error in background post-processing: {e}")
+
+                # Fire background task immediately — webhook sends WhatsApp response first,
+                # then this finishes asynchronously (~6s speedup on user-perceived latency)
+                asyncio.create_task(_background_post_processing())
+
+                logger.info(f"Agent respondió: {response_text[:50]}... (tools: {tools_used})")
+
+                return result
+
+            except Exception as e:
+                import traceback
+                logger.error(f"Error en process_turn: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return {
                 "response_text": "Disculpa, tuve un problema al procesar tu mensaje. ¿Podrías intentar de nuevo?",
                 "rich_content": None,
                 "tools_used": [],

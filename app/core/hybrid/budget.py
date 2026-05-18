@@ -32,18 +32,21 @@ class BudgetTierParser(HybridParser):
         city = ctx.get("city", "desconocida")
         median = ctx.get("median_price", 500)
 
-        result = await llm_router.chat(
+        result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_BUDGET_SYSTEM_PROMPT.format(
                 city=city, median_price=median, term=raw,
             ),
             temperature=0,
             max_tokens=50,
+            response_format={"type": "json_object"},
+            return_usage=True,
         )
         result = (result or "").strip()
+        tokens = (usage or {}).get("completion_tokens", 0)
 
         if not result or result.upper() == "UNKNOWN":
-            return ParseResult(None, 0.0, "llm")
+            return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
         try:
             data = json.loads(result)
@@ -54,13 +57,14 @@ class BudgetTierParser(HybridParser):
                     value={"budget_min": min_v, "budget_max": max_v},
                     confidence=0.85,
                     parser_used="llm",
+                    llm_tokens=tokens,
                 )
         except (ValueError, json.JSONDecodeError):
             pass
 
-        return ParseResult(None, 0.0, "llm")
+        return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         """Current budget_tiers.py logic using in-memory cache when possible,
         falling back to static defaults."""
         raw_lower = raw.lower().strip()

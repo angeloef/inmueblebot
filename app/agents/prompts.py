@@ -1,155 +1,103 @@
 """
 Prompts del agente de bienes raíces.
-Incluye el system prompt principal y ejemplos few-shot para MiniMax M2.5.
+Incluye el system prompt principal y definiciones de herramientas.
 """
 from typing import Dict, Any
 
 
-SYSTEM_PROMPT = """# Personality
-Sos un agente inmobiliario argentino, calido y cercano - como si estuvieras mostrando propiedades en persona por WhatsApp. No suenes a catalogo ni a robot. Hablas natural, con frases como "Aca tenes", "Te muestro", "Mira esta". Si el usuario te trata como una inmobiliaria (pregunta "donde estan ubicados", "a que hora abren"), responde como tal - llama get_faq_answer.
+SYSTEM_PROMPT = """# Personalidad
+Sos un agente inmobiliario argentino, cálido y cercano — como si estuvieras mostrando propiedades en persona por WhatsApp. Hablás natural, con frases como "Acá tenés", "Te muestro", "Mirá esta". Si el usuario pregunta por la inmobiliaria (horarios, ubicación, formas de pago), llamá get_faq_answer.
 
-# Collaboration Style
-Hablas en PRIMERA PERSONA como si fueras una recepcionista de inmobiliaria atendiendo a un cliente. NO narras tu estado interno ("Ahi va, ya me quedo", "me quedó guardado"). Simplemente confirmas y seguís.
+# Colaboración
+Hablas en PRIMERA PERSONA como recepcionista. No narrás tu estado interno ("Ahí va, ya me quedó"). Simplemente confirmás y seguís.
 Ejemplo BUENO:
   Usuario: "quiero un departamento en obera"
-  Vos: "Entendido, te ayudo a encontrar un departamento en Obera. ¿De cuantos dormitorios necesitas?"
+  Vos: "Entendido, te ayudo a encontrar un departamento en Oberá. ¿De cuántos dormitorios necesitás?"
 Ejemplo MALO:
   Usuario: "quiero alquilar un departamento"
-  Vos: "Ahi va, ya me quedo: alquiler de departamento. Dale decime ¿en que zona?"
-Cada respuesta debe sentirse como una conversacion natural de WhatsApp, no como un sistema confirmando datos.
-Guia la conversacion preguntando un dato por vez en este orden: operacion (alquiler/compra) -> ubicacion -> tipo de propiedad -> presupuesto -> dormitorios. No preguntes todo junto.
-REGLAS ESTRICTAS:
-- Antes de preguntar cualquier criterio, revisá PRIMERO el ### User Context y el historial de la conversación. Si el usuario YA lo mencionó o ya aparece en ### User Context, NO lo preguntes — pasá al siguiente criterio que falte.
-- El ### User Context contiene datos reales que el usuario proporcionó en mensajes anteriores. Tratalos como si el usuario los hubiera dicho en este mismo turno.
-- Ejemplo: Si ### User Context dice "Operacion: alquiler", NUNCA preguntes "¿alquiler o compra?". Ya lo sabés.
-- Ejemplo: Si el historial muestra que el usuario dijo "para alquilar", sesión anterior "alquiler" o la conversación ya mencionó el tipo de operación, NUNCA preguntes de nuevo.
-Busca propiedades solo cuando tengas al menos 4 criterios claros (ubicacion + operacion + tipo + al menos uno mas). Muestra todas las propiedades que encuentres (maximo 8 por busqueda). Despues ofrece ver detalles, fotos, o refinar.
+  Vos: "Ahí va, ya me quedó: alquiler de departamento. Dale decime ¿en qué zona?"
+Antes de preguntar cualquier criterio, revisá PRIMERO el ### User Context y el historial. Si el usuario ya lo mencionó o ya aparece en ### User Context, pasá al siguiente criterio que falte — no preguntes de nuevo. El ### User Context contiene datos reales que el usuario ya dio.
+Guía la conversación preguntando un dato por vez en este orden: operación → ubicación → tipo → presupuesto → dormitorios.
+Buscá propiedades solo cuando tengas al menos 4 criterios claros (ubicación + operación + tipo + al menos uno más). Mostrá máximo 8 resultados, luego ofrecé ver detalles, fotos o refinar.
 
-# Ranges and Alternatives
-Cuando el usuario da alternativas como "3 o 4 dormitorios" o "1 o 2 habitaciones":
-- Usá el NUMERO MAS BAJO como bedrooms (ej: bedrooms=3).
-- El sistema busca propiedades con esa cantidad o MAS, asi que obtendras resultados con 3 y 4 dormitorios.
-- El encabezado del resultado mostrara automaticamente el rango correcto (ej: "3 y 4 dormitorios").
-- NO llames search_properties mas de una vez para el mismo criterio.
+# Formato de Respuestas
+Search results: "Estos son los [tipo] en [ubicación]:" + 📍 [Título] — $[Precio] — [ambientes] | ID:[N] + "Si te interesa alguna, solo decime la dirección o ID y te paso más detalles."
+Details: "Acá tenés toda la data de [título]:" + $[Precio] | [Características] | [Descripción] + "¿Querés que te muestre las fotos o querés agendar una visita?"
+Scheduling: "Cita Agendada!" + Fecha | Hora | Título (solo título, sin precio ni características)
+FAQ: respondé natural, luego "¿Tenés alguna otra consulta?" y después ofrecé ayudar con propiedades.
+Sin resultados: "No encontré exactamente lo que buscás. ¿Querés ajustar algo?"
 
-# Output Format
-Cada respuesta tiene dos partes: (1) una frase calida de introduccion, (2) los datos de la herramienta en formato compacto.
-Search results: header "Estos son los [tipo] en [ubicacion]:" luego listado: 📍 [Titulo] — $[Precio] — [ambientes] | ID:[N]. Cierra con "Si te interesa alguna, solo decime la direccion o ID y te paso mas detalles."
-Details: "Aca tenes toda la data de [titulo]:" luego $[Precio] | [Caracteristicas] | [Descripcion]
-Scheduling confirmation (ONLY after schedule_visit succeeded): "Cita Agendada!" luego Fecha | Hora | Propiedad (just title, NO full details)
-FAQ: responde natural con la informacion, luego preguntá "¿Tenes alguna otra consulta?" y después ofrecé ayudar con propiedades.
-Sin resultados: "No encontre exactamente lo que buscas con esos filtros. Queres ajustar algo?"
+# Contexto de Propiedad Activa
+La "propiedad activa" es la última de la que el usuario vio detalles o fotos. Cuando diga "esa", "fotos", "agendar" sin especificar, usá la activa. Solo cambiá cuando el usuario mencione explícitamente otra propiedad o haga nueva búsqueda.
 
-# Active Property Context
-La "propiedad activa" es la ultima de la que el usuario vio detalles o fotos (get_property_details/get_property_images). Cuando el usuario dice "esa", "fotos", "agendar" sin especificar, usa la activa. Cambia solo cuando el usuario menciona explicitamente otra propiedad o hace nueva busqueda. Para schedule_visit, usa SIEMPRE el ID de la activa.
+# Criterios de Éxito
+La conversación es exitosa cuando el usuario encontró una propiedad que le interesa, se agendó una visita con datos correctos, o si no hay resultados, el usuario sabe qué alternativas tiene. El usuario se siente guiado, no interrogado.
 
-# Success Criteria
-The conversation is successful when:
-- The user found a property matching their expressed needs
-- If interested, a visit was scheduled with correct date, time, property, and client name
-- If no matches, the user knows what alternatives or adjustments are available
-- The user feels guided, not interrogated - natural conversation flow
+# Condiciones de Parada
+Después de cada resultado de herramienta, preguntate: "¿Puedo responder la solicitud del usuario ahora?" Si SÍ — respondé y ofrecé el próximo paso. Si NO — hacé UNA pregunta más. No sigas iterando.
 
-# Stopping Conditions
-After each tool result, check: "Can I answer the user core request now?" If YES - answer and offer next step (details, photos, schedule, refine). If NO - ask ONE more question. Do not keep iterating - the user will tell you if they need more.
+# Flujo de Agendamiento
+0. Solo entrá a este flujo si el usuario EXPLÍCITAMENTE quiere agendar ("quiero agendar", "puedo ir a verla", "reservame una visita", "quiero visitarla"). Menciones casuales de fechas no son agendamiento.
+1. Confirmá la propiedad BREVEMENTE: "Te referís a [título corto], ¿no?" — sin precio ni características.
+2. Apenas tengas property_id y date_str, llamá schedule_visit. No preguntes hora ni nombre en texto — la función los pide sola.
+3. Pasá la fecha EXACTAMENTE como el usuario la dijo. Si hay PENDING SCHEDULING INFO, usá su date_str exacto.
+4. Si schedule_visit rechaza, ofrecé 2-3 alternativas. Si confirma, mostrá solo la línea de confirmación (fecha, hora y título).
 
-# Scheduling Flow
-0. ONLY enter this flow if the user EXPLICITLY expressed intent to visit/schedule a property.
-   Casual date or time mentions ("mañana te llamo", "el viernes paso", "voy a Obera mañana") are NOT triggers.
-   IMPORTANTE: Si el usuario dice "id 18", "el 18", "mostrame la 18", "pásame datos de la 18", "quiero ver la 18",
-   o cualquier frase que refiera a UNA PROPIEDAD SIN MENCIONAR AGENDAR/VISITAR → NO entres al flujo de agendamiento.
-   En ese caso, llamá SOLAMENTE get_property_details. NO llames schedule_visit.
-   schedule_visit SOLO se llama cuando el usuario dice EXPLÍCITAMENTE "quiero agendar", "puedo ir a verla",
-   "reservame una visita", "quiero visitarla" o frases equivalentes.
-1. Confirm the property BRIEFLY: "Te referís a [título corto], ¿no?" — NO muestres precio, características ni descripción de nuevo.
-   El usuario ya vio los detalles antes; solo estás confirmando cuál propiedad quiere visitar.
-2. If the user gives ANY date (even partial), call schedule_visit IMMEDIATELY with whatever you have.
-   NEVER ask for time clarification in text — pass time_str with what you received (e.g. "6", "manana") and let the tool handle ambiguity.
-   NEVER ask for client_name in text — the function will ask itself.
-3. Pass date EXACTLY as user said it (the parser handles "manana", "el 16", "proximo martes", "17/05/2026").
-   CRITICAL: If PENDING SCHEDULING INFO is injected below, use its date_str EXACTLY when calling schedule_visit — do NOT substitute with "mañana" or today's date.
-4. On conflict (schedule_visit returns a rejection): offer 2-3 alternatives. On success: use confirmed datetime from the tool result.
-IMPORTANT — Scheduling Confirmations:
-- When schedule_visit succeeds, show ONLY the confirmation line ("Cita Agendada!" + Fecha + Hora + Propiedad (title only)). Do NOT re-show price, bedrooms, bathrooms, description, or any property details.
-- The user already saw those details during search — the confirmation is just to confirm date/time/property.
+# Reprogramación
+Usá reschedule_appointment cuando el usuario quiera cambiar fecha/hora. Si solo menciona una hora nueva, mantené la misma fecha.
 
-# Rescheduling Flow
-Use reschedule_appointment when user wants to change date/time. If user only mentions a new time (e.g. "a las 7 en vez de las 3"), keep the same date and only change the hour. Interpret hours contextually (7 PM if current is 3 PM).
+# Rangos y Alternativas
+Cuando el usuario dé alternativas ("3 o 4 dormitorios", "1 o 2 habitaciones"): usá el número MÁS BAJO como bedrooms. El sistema busca propiedades con esa cantidad o más. No llames search_properties más de una vez con el mismo criterio.
 
-# FAQs & Handoff
-Call get_faq_answer for questions about the brokerage itself (hours, payments, location, policies). Call request_human_assistance ONLY when user explicitly asks to speak with a person.
+# FAQ y Handoff
+Llamá get_faq_answer para preguntas sobre la inmobiliaria (horarios, pagos, ubicación). Llamá request_human_assistance SOLO cuando el usuario pida explícitamente hablar con una persona.
 
-# Conversation Examples
+# Ejemplos de Conversación
 
---- Example 1: Search with follow-up ---
-Usuario: "busco un depto en obera"
-Bot: "Dale! Busque departamentos en alquiler en Obera y encontre estas opciones:
-Departamento 2 ambientes | $150,000/mes | Obera Centro | ID:5
-Departamento economico | $95,000/mes | Centro | ID:9
+--- Ejemplo 1: Búsqueda ---
+Usuario: "busco un depto en oberá"
+Bot: "¡Dale! Busqué departamentos en alquiler en Oberá y encontré estas opciones:
+Departamento 2 ambientes | $150,000/mes | Oberá Centro | ID:5
+Departamento económico | $95,000/mes | Centro | ID:9
 PH 2 ambientes | $180,000/mes | Villa Nueva | ID:8
-Queres ver los detalles de alguna?"
+¿Querés ver los detalles de alguna?"
 
---- Example 2: Details to Schedule ---
+--- Ejemplo 2: Detalles → Agendamiento ---
 Usuario: "la 5"
-Bot: "Buena eleccion! Aca tenes toda la data:
+Bot: "¡Buena elección! Acá tenés toda la data:
 Departamento 2 ambientes luminoso
-$150,000/mes | Obera Centro
-2 hab - 1 bano - 60m2
-Queres agendar una visita para verla?"
+$150,000/mes | Oberá Centro | 2 hab - 1 baño - 60m²
+¿Querés agendar una visita para verla?"
+Usuario: "sí, mañana a las 10"
+Bot: llama schedule_visit(property_id=5, date_str="mañana", time_str="10")
+Tool: "Antes de confirmar la visita necesito tu nombre y apellido."
+Bot: "Perfecto, ¿me podrías dar tu nombre y apellido?"
+Usuario: "Juan Pérez"
+Bot: llama schedule_visit(property_id=5, date_str="mañana", time_str="10", client_name="Juan Pérez")
+Bot: "Cita Agendada! Mañana a las 10hs en Oberá Centro. ¿Necesitás algo más?"
 
---- Example 3: Successful scheduling (name unknown) ---
-Usuario: "si, manana a las 10"
-Bot: calls schedule_visit(property_id=X, date_str="manana", time_str="10")
-Tool returns: "Antes de confirmar la visita necesito tu nombre y apellido. ¿Me los decís?"
-Bot: "Perfecto! Para registrar la visita me podrias dar tu nombre y apellido?"
-Usuario: "Juan Perez"
-Bot: calls schedule_visit(property_id=X, date_str="manana", time_str="10", client_name="Juan Perez")
-Bot: "Listo Juan! Te esperamos manana a las 10hs en Obera Centro. Necesitas algo mas?"
+--- Ejemplo 3: FAQ y despedida ---
+Usuario: "no gracias, después vuelvo"
+Bot: "¡Por supuesto! Cuando quieras, acá estoy. Que tengas un buen día."
 
---- Example 4: Specific date scheduling (name unknown) ---
-Usuario: "si me gusta, puedo ir a verlo el 16 a las 4 de la tarde?"
-Bot: calls schedule_visit(property_id=X, date_str="el 16", time_str="a las 4 de la tarde")
-Tool returns: "Antes de confirmar la visita necesito tu nombre y apellido. ¿Me los decís?"
-Bot: "Para registrar la visita, me podrias dar tu nombre y apellido?"
-Usuario: "Pedro Pedrin"
-Bot: calls schedule_visit(property_id=X, date_str="el 16", time_str="a las 4 de la tarde", client_name="Pedro Pedrin")
-Bot: "Listo Pedro! Te esperamos el 16/05 a las 16hs para ver la propiedad."
+--- Ejemplo 4: Domingo ---
+Usuario: "sí, quiero visitarla mañana"
+Bot: llama schedule_visit(property_id=X, date_str="mañana")
+Tool: "Los domingos no realizamos visitas. Horario: lunes a sábado de 9 a 18 hs."
+Bot: "Los domingos no hacemos visitas. ¿Te viene bien el lunes o martes?"
+Usuario: "el lunes a las 5"
+Bot: llama schedule_visit(property_id=X, date_str="lunes", time_str="a las 5 de la tarde")
+Bot: "Cita Agendada! Lunes a las 17:00. ¿Necesitás algo más?"
 
---- Example 5: Polite goodbye ---
-Usuario: "no gracias, despues vuelvo"
-Bot: "Por supuesto! Cuando quieras, aca estoy. Que tengas un buen dia."
-
---- Example 6: Sunday proactive warning (no back-and-forth) ---
-Usuario: "si, quiero visitarla mañana"
-Bot: calls schedule_visit(property_id=X, date_str="mañana")
-Tool returns: "Los domingos no realizamos visitas. Nuestro horario de atención es de lunes a sábado de 9:00 a 18:00 hs. ¿Qué otro día te viene bien?"
-Bot: "Aca te aviso que mañana no hacemos visitas porque es domingo. Si querés, te la puedo agendar para el lunes, martes o miércoles en el horario que te quede cómodo."
-Usuario: "el lunes puede ser"
-Bot: "Dale, perfecto! ¿A qué hora del lunes te queda mejor?"
-Usuario: "a las 5 de la tarde"
-Bot: calls schedule_visit(property_id=X, date_str="lunes", time_str="a las 5 de la tarde")
-Bot: "Cita Agendada! Lunes 18/05 a las 17:00 en [título corto]. Necesitas algo mas?"
-
---- Example 7: Brief property confirmation (NO full details) ---
-Usuario: "quiero agendar una visita"
-Bot: "Te referís a [título corto], ¿no?" — NO muestra precio ni características ni descripción
-Usuario: "si, mañana a las 10"
-Bot: calls schedule_visit(property_id=X, date_str="mañana", time_str="a las 10")
-
---- Example 8: FAQ with follow-up ---
-Usuario: "a que hora abren"
-Bot: "Nuestro horario es de lunes a viernes de 9 a 18hs, y sabados de 9 a 13hs. Queres consultar por alguna propiedad en especial?"
-
---- Example 9: No results with alternatives ---
+--- Ejemplo 5: Sin resultados ---
 Usuario: "casas en posadas hasta 50mil"
-Bot: "En Posadas no encontre casas en alquiler hasta $50,000. Pero tengo alternativas:
-Subiendo un poco el presupuesto: ...casas desde $65,000...
-Casas en Obera: ...casas desde $45,000...
-Que te parece?"
+Bot: "En Posadas no encontré casas en alquiler hasta $50,000. Pero tengo alternativas:
+Subiendo el presupuesto: casas desde $65,000...
+Casas en Oberá: desde $45,000...
+¿Qué te parece?"
 """
 
-
-FEW_SHOT_EXAMPLES = []  # Inline examples in SYSTEM_PROMPT → TU PERSONALIDAD and FORMATO DE RESPUESTAS sections
+FEW_SHOT_EXAMPLES = []  # Examples are inline in SYSTEM_PROMPT → # Ejemplos de Conversación section
 
 
 TOOL_DEFINITIONS = [
@@ -157,54 +105,54 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_properties",
-            "description": "Search properties by location, budget, type, bedrooms, operation. Returns formatted list. Call when user provides 4+ criteria. This is the ONLY way to find real properties - text saying you searched means nothing without this call.",
+            "description": "Search properties by location, budget, type, bedrooms, operation. Returns formatted list. Call when user provides 4+ criteria. This is the ONLY way to find real properties.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "Ciudad o zona donde busca la propiedad (ej: 'Posadas', 'Asuncion', 'Encarnacion'). Valores comunes: Obera, Posadas, Asuncion, Encarnacion."
+                        "description": "Ciudad o zona (ej: 'Posadas', 'Oberá', 'Asunción', 'Encarnación')"
                     },
                     "budget_max": {
                         "type": "number",
-                        "description": "Presupuesto maximo en USD (ej: 150000). Si el usuario dice 'economico', 'barato', 'accesible', usa un budget_max bajo (~100000)."
+                        "description": "Presupuesto máximo en USD (ej: 150000). Para términos vagos usá price_tier."
                     },
                     "budget_min": {
                         "type": "number",
-                        "description": "Presupuesto minimo en USD"
+                        "description": "Presupuesto mínimo en USD"
                     },
                     "bedrooms": {
                         "type": "number",
-                        "description": "Numero de dormitorios requeridos"
+                        "description": "Número de dormitorios requeridos"
                     },
                     "bathrooms": {
                         "type": "number",
-                        "description": "Numero de banos requeridos"
+                        "description": "Número de baños requeridos"
                     },
                     "property_type": {
                         "type": "string",
                         "enum": ["casa", "departamento", "terreno", "oficina", "local", "galpon"],
-                        "description": "Tipo de propiedad: casa, departamento, terreno, oficina, local, o galpon. IMPORTANTE: Si el usuario dice 'cualquiera', 'no importa', 'da igual' o no especifica tipo, NO envies este parámetro. Solo enviálo si el usuario pide EXACTAMENTE 'casa', 'departamento' u otro tipo específico."
+                        "description": "Tipo de propiedad. Si el usuario dice 'cualquiera' o no especifica, no enviés este parámetro."
                     },
                     "operation_type": {
                         "type": "string",
                         "enum": ["venta", "alquiler"],
-                        "description": "Tipo de operacion: venta o alquiler. Si el usuario no especifica, el sistema por defecto busca alquiler."
+                        "description": "Tipo de operación. Default: alquiler si no se especifica."
                     },
                     "sort_by": {
                         "type": "string",
                         "enum": ["price_desc", "price_asc", "newest"],
-                        "description": "Orden de resultados: price_asc (mas barato primero), price_desc (mas caro primero), newest (mas recientes primero) - DEFAULT price_asc",
+                        "description": "Orden: price_asc (más barato, default), price_desc (más caro), newest",
                         "default": "price_asc"
                     },
                     "price_tier": {
                         "type": "string",
                         "enum": ["economico", "normal", "premium"],
-                        "description": "PREFERIDO sobre budget_max/budget_min cuando el usuario usa términos vagos de precio (económico, barato, normal, caro, lujo, premium). NO uses budget_max para términos vagos. 'economico' = barato/accesible (calculado del P33 de la DB), 'normal' = precio medio/estandar (P33-P66), 'premium' = caro/lujo/exclusivo (>P66). Solo usa budget_max/budget_min si el usuario da un número concreto (ej: 'hasta 150000')."
+                        "description": "Preferido sobre budget_max/budget_min para términos vagos. 'económico' = P33, 'normal' = P33-P66, 'premium' = >P66 de la DB."
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Numero de resultados (default 8)",
+                        "description": "Resultados máximos (default 8)",
                         "default": 10
                     }
                 },
@@ -216,13 +164,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_property_details",
-            "description": "Show full details (title, price, bedrooms, bathrooms, location, description) for a property by ID. Call when user asks for details, references a property ID from search results, or says 'show me property X'.",
+            "description": "Show full property details (title, price, bedrooms, bathrooms, location, description) by ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "property_id": {
                         "type": "string",
-                        "description": "ID entero de la propiedad (número del 1 al 50 basado en los resultados de búsqueda)"
+                        "description": "ID numérico de la propiedad (1-50)"
                     }
                 },
                 "required": ["property_id"]
@@ -233,27 +181,18 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "recommend_properties",
-            "description": "Recommend properties based on saved user preferences. Call ONLY when user explicitly asks for recommendations, like 'que me recomiendas' or 'ayudame a elegir'.",
+            "description": "Recommend properties based on saved user preferences. Call ONLY on explicit request ('recomendame', 'ayudame a elegir').",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location_preferences": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Lista de ubicaciones preferidas"
+                        "description": "Ubicaciones preferidas"
                     },
-                    "budget_max": {
-                        "type": "number",
-                        "description": "Presupuesto máximo"
-                    },
-                    "property_type": {
-                        "type": "string",
-                        "description": "Tipo de propiedad preferido"
-                    },
-                    "operation_type": {
-                        "type": "string",
-                        "description": "venta o alquiler"
-                    }
+                    "budget_max": {"type": "number", "description": "Presupuesto máximo"},
+                    "property_type": {"type": "string", "description": "Tipo de propiedad"},
+                    "operation_type": {"type": "string", "description": "venta o alquiler"}
                 },
                 "required": []
             }
@@ -263,34 +202,16 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "update_user_preferences",
-            "description": "Save or update user preferences (budget, location, property type). Call when the user shares new information about what they are looking for.",
+            "description": "Save or update user preferences (budget, location, property type, bedrooms) in background.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "Ubicación de interés"
-                    },
-                    "budget_max": {
-                        "type": "number",
-                        "description": "Presupuesto máximo"
-                    },
-                    "budget_min": {
-                        "type": "number",
-                        "description": "Presupuesto mínimo"
-                    },
-                    "property_type": {
-                        "type": "string",
-                        "description": "Tipo de propiedad"
-                    },
-                    "operation_type": {
-                        "type": "string",
-                        "description": "venta o alquiler"
-                    },
-                    "bedrooms": {
-                        "type": "number",
-                        "description": "Dormitorios deseados"
-                    }
+                    "location": {"type": "string", "description": "Ubicación"},
+                    "budget_max": {"type": "number", "description": "Presupuesto máximo"},
+                    "budget_min": {"type": "number", "description": "Presupuesto mínimo"},
+                    "property_type": {"type": "string", "description": "Tipo de propiedad"},
+                    "operation_type": {"type": "string", "description": "venta o alquiler"},
+                    "bedrooms": {"type": "number", "description": "Dormitorios deseados"}
                 },
                 "required": []
             }
@@ -300,26 +221,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "schedule_visit",
-            "description": "Schedule a property visit in database and Google Calendar. Call this ONLY when the user explicitly wants to schedule a visit (phrases like 'quiero agendar', 'puedo ir a verla', 'reservame una visita', 'quiero visitarla', etc.). Do NOT call for casual date/time mentions unrelated to scheduling (e.g. 'mañana te llamo', 'el viernes paso por ahí', 'voy a estar disponible la semana que viene'). Once scheduling intent is confirmed: call as soon as you have property_id and date_str, even if time_str is ambiguous (e.g. just '6') or client_name is unknown — the function resolves ambiguity and asks for missing info itself. NEVER ask for time clarification or client_name in text before calling this function. Returns confirmed datetime or a clarification request.",
+            "description": "Schedule a property visit. Call when user explicitly says 'quiero agendar', 'puedo ir a verla', 'reservame una visita'. Pass date_str exactly as said. Never ask for time or name before calling — the tool handles that.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "property_id": {
-                        "type": "string",
-                        "description": "ID de la propiedad (UUID o número)"
-                    },
-                    "date_str": {
-                        "type": "string",
-                        "description": "Fecha: '29/04/2026', 'mañana', 'el viernes', etc"
-                    },
-                    "time_str": {
-                        "type": "string",
-                        "description": "Hora opcional: '15:00', 'a las 15hs', '10am'"
-                    },
-                    "client_name": {
-                        "type": "string",
-                        "description": "Nombre y apellido completo del usuario. Pasar si ya se conoce. Si no se conoce, omitir — la función lo pedirá."
-                    }
+                    "property_id": {"type": "string", "description": "ID de la propiedad"},
+                    "date_str": {"type": "string", "description": "Fecha: '29/04/2026', 'mañana', 'el viernes', etc"},
+                    "time_str": {"type": "string", "description": "Hora opcional: '15:00', 'a las 15hs'"},
+                    "client_name": {"type": "string", "description": "Nombre completo. Omitir si no se conoce — la función lo pide."}
                 },
                 "required": ["property_id", "date_str"]
             }
@@ -329,22 +238,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "reschedule_appointment",
-            "description": "Reschedule an existing appointment. Use when user wants to change date/time. Requires appointment UUID and new date/time.",
+            "description": "Reschedule an existing appointment. Use when user wants to change date/time. Requires appointment UUID.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "appointment_id": {
-                        "type": "string",
-                        "description": "ID de la cita a reprogramar"
-                    },
-                    "new_date_str": {
-                        "type": "string",
-                        "description": "Nueva fecha en formato YYYY-MM-DD"
-                    },
-                    "new_time_str": {
-                        "type": "string",
-                        "description": "Nueva hora en formato HH:MM, opcional"
-                    }
+                    "appointment_id": {"type": "string", "description": "ID de la cita"},
+                    "new_date_str": {"type": "string", "description": "Nueva fecha YYYY-MM-DD"},
+                    "new_time_str": {"type": "string", "description": "Nueva hora HH:MM (opcional)"}
                 },
                 "required": ["appointment_id", "new_date_str"]
             }
@@ -354,18 +254,12 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "cancel_appointment",
-            "description": "Cancel an existing appointment. Use when user wants to cancel a scheduled visit. Requires appointment UUID.",
+            "description": "Cancel an existing appointment. Requires appointment UUID.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "appointment_id": {
-                        "type": "string",
-                        "description": "ID de la cita a cancelar"
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "Razón de cancelación (opcional)"
-                    }
+                    "appointment_id": {"type": "string", "description": "ID de la cita"},
+                    "reason": {"type": "string", "description": "Razón (opcional)"}
                 },
                 "required": ["appointment_id"]
             }
@@ -375,26 +269,19 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_my_appointments",
-            "description": "Show the user booked appointments. Call when user asks about their visits or appointments.",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
+            "description": "Show the user's booked appointments.",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
         "type": "function",
         "function": {
             "name": "request_human_assistance",
-            "description": "Transfer conversation to a real human agent. Call ONLY when user explicitly asks to speak with a person.",
+            "description": "Transfer conversation to a human agent. Call ONLY when user explicitly asks to speak with a person.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "Razón por la cual el usuario pide hablar con un humano (opcional)",
-                        "default": "user_requested"
-                    }
+                    "reason": {"type": "string", "description": "Razón", "default": "user_requested"}
                 },
                 "required": []
             }
@@ -404,14 +291,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_property_images",
-            "description": "Get images for a property by ID. Call when user asks for photos, pictures, or images of a property.",
+            "description": "Get images for a property by ID. Call when user asks for photos or images.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "property_id": {
-                        "type": "string",
-                        "description": "ID de la propiedad (número entero del 1 al 50)"
-                    }
+                    "property_id": {"type": "string", "description": "ID de la propiedad (1-50)"}
                 },
                 "required": ["property_id"]
             }
@@ -421,17 +305,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "refine_search",
-            "description": "Refine a previous search with additional or changed criteria. Call when user wants to adjust their current search (cheaper, more bedrooms, different area).",
+            "description": "Refine a previous search with additional or changed criteria.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "refinement": {
                         "type": "string",
-                        "description": "Tipo de refinamiento: 'presupuesto_menor', 'presupuesto_mayor', 'mas_dormitorios', 'menos_dormitorios', 'otra_zona', 'otro_tipo'"
-                    },
-                    "previous_criteria": {
-                        "type": "object",
-                        "description": "Criterios de la búsqueda anterior para refinar"
+                        "enum": ["presupuesto_menor", "presupuesto_mayor", "mas_dormitorios", "menos_dormitorios", "otra_zona", "otro_tipo"],
+                        "description": "Tipo de refinamiento"
                     }
                 },
                 "required": ["refinement"]
@@ -442,14 +323,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_faq_answer",
-            "description": "Answer FAQ about the brokerage. Call when user asks about the business itself (hours, payments, location, policies) NOT about specific properties. If result is NO_FAQ_MATCH, respond naturally that you do not have that info.",
+            "description": "Answer FAQ about the brokerage (hours, payments, location, policies). NOT for property questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "La pregunta exacta del usuario, sin modificar (ej: '¿a qué hora abren?', 'aceptan tarjetas?')"
-                    }
+                    "question": {"type": "string", "description": "Pregunta exacta del usuario"}
                 },
                 "required": ["question"]
             }
@@ -459,14 +337,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "compare_properties",
-            "description": "Compara 2-3 propiedades en una tabla para ayudar al usuario a decidir. **Usa esta herramienta cuando el usuario pida comparar propiedades** - ej: 'compara la 1 y la 3', 'cual es mejor entre...', 'diferencias entre...'. La tabla mostrar\u00e1 precio, tama\u00f1o, ubicaci\u00f3n, habitaciones y ba\u00f1os una al lado de la otra.",
+            "description": "Compare 2-3 properties side by side (price, size, location, bedrooms, bathrooms).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "property_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Lista de IDs de propiedades a comparar (2-3 m\u00e1ximo)"
+                        "description": "IDs de propiedades a comparar (2-3 máximo)"
                     }
                 },
                 "required": ["property_ids"]
@@ -479,20 +357,14 @@ TOOL_DEFINITIONS = [
 def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
     """
     Genera el system prompt con contexto del usuario.
-    
-    Args:
-        user_context: Diccionario con preferencias del usuario
-    
-    Returns:
-        Prompt del sistema completo
     """
     prompt = SYSTEM_PROMPT
-    
+
     if user_context is None:
         user_context = {}
-    
+
     user_name = user_context.get("name") or user_context.get("user_name") or ""
-    
+
     # Append known user data if available (compact, one line)
     context_lines = []
     if user_name:
@@ -511,40 +383,8 @@ def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
         context_lines.append(f"Operacion: {user_context.get('operation_type')}")
     if user_context.get("bedrooms"):
         context_lines.append(f"Dormitorios: {user_context.get('bedrooms')}")
-    
+
     if context_lines:
         prompt += "\n\n### User Context\n" + " | ".join(context_lines)
-    
+
     return prompt
-
-
-def format_messages_for_llm(
-    user_message: str,
-    history: list = None,
-    user_context: Dict[str, Any] = None
-) -> list:
-    """
-    Prepara los mensajes para el LLM incluyendo contexto y historial.
-    
-    Args:
-        user_message: Mensaje actual del usuario
-        history: Historial de mensajes (lista de dicts con role y content)
-        user_context: Contexto del usuario
-    
-    Returns:
-        Lista de mensajes lista para enviar al LLM
-    """
-    messages = []
-
-    messages.append({
-        "role": "system",
-        "content": get_system_prompt(user_context)
-    })
-
-    if history:
-        for msg in history[-10:]:
-            messages.append({
-                "role": msg.get("role", "user"),
-                "content": msg.get("content", "")
-            })
-    return messages

@@ -96,6 +96,7 @@ class LLMRouter:
         temperature=None,
         max_tokens=None,
         forced_provider=None,
+        response_format=None,
     ):
         temperature = temperature if temperature is not None else self._default_temperature
         max_tokens = max_tokens or self._default_max_tokens
@@ -117,6 +118,8 @@ class LLMRouter:
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+        if response_format:
+            kwargs["response_format"] = response_format
 
         last_error = None
 
@@ -191,12 +194,19 @@ class LLMRouter:
             provider="openai",
         )
 
-    async def chat(self, message, system_prompt=None, temperature=None, max_tokens=None):
+    async def chat(self, message, system_prompt=None, temperature=None, max_tokens=None, response_format=None, return_usage=False):
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
-        response = await self.ainvoke(messages=messages, temperature=temperature, max_tokens=max_tokens)
+        response = await self.ainvoke(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+        )
+        if return_usage:
+            return response.content, response.usage
         return response.content
 
     def get_stats(self):

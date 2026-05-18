@@ -45,16 +45,18 @@ class PropertyReferenceParser(HybridParser):
         options_str = self._format_options(props)
         prompt = _REFERENCE_SYSTEM_PROMPT.format(options=options_str, message=raw)
 
-        result = await llm_router.chat(
+        result, usage = await llm_router.chat(
             message=raw,
             system_prompt=prompt,
             temperature=0,
             max_tokens=10,
+            return_usage=True,
         )
         result = (result or "").strip()
+        tokens = (usage or {}).get("completion_tokens", 0)
 
         if not result or result.upper() == "UNKNOWN":
-            return ParseResult(None, 0.0, "llm")
+            return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
         # Validate: result must be an integer matching one of the options
         try:
@@ -64,13 +66,17 @@ class PropertyReferenceParser(HybridParser):
                     value=str(int_result),
                     confidence=0.9,
                     parser_used="llm",
+                    llm_tokens=tokens,
                 )
         except (ValueError, TypeError):
-            pass
+            import logging
+            logging.getLogger("hybrid.REFERENCE").warning(
+                "Reference validation error: result=%r props=%s", result, [p.get("id") for p in props]
+            )
 
-        return ParseResult(None, 0.0, "llm")
+        return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         """Code fallback: just return the selected_property_id from context."""
         prop_id = ctx.get("selected_property_id")
         if prop_id:

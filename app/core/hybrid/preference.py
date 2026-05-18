@@ -38,25 +38,19 @@ class PreferenceExtractor(HybridParser):
         if not raw or len(raw.strip()) < 5:
             return ParseResult(None, 0.0, "llm")
 
-        result = await llm_router.chat(
+        result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_PREFERENCE_SYSTEM_PROMPT,
             temperature=0,
             max_tokens=120,
+            response_format={"type": "json_object"},
+            return_usage=True,
         )
         result = (result or "").strip()
+        tokens = (usage or {}).get("completion_tokens", 0)
 
         if not result:
-            return ParseResult(None, 0.0, "llm")
-
-        # Strip markdown code fences if present
-        if result.startswith("```"):
-            lines = result.split("\n")
-            content = "\n".join(
-                line for line in lines
-                if not line.startswith("```")
-            )
-            result = content.strip()
+            return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
         try:
             data = json.loads(result)
@@ -85,24 +79,20 @@ class PreferenceExtractor(HybridParser):
                     value=data,
                     confidence=0.85,
                     parser_used="llm",
+                    llm_tokens=tokens,
                 )
         except (json.JSONDecodeError, TypeError):
             pass
 
-        return ParseResult(None, 0.0, "llm")
+        return ParseResult(None, 0.0, "llm", llm_tokens=tokens)
 
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         """Current regex-based extraction, wrapped in ParseResult."""
-        import asyncio
-
-        from app.core.memory import memory_manager
-
         try:
             phone = ctx.get("phone", "unknown")
             current_prefs = ctx.get("current_prefs", {})
-            prefs = asyncio.run(
-                memory_manager.extract_and_save_preferences(phone, raw, current_prefs)
-            )
+            from app.core.memory import memory_manager
+            prefs = await memory_manager.extract_and_save_preferences(phone, raw, current_prefs)
             if prefs:
                 return ParseResult(value=prefs, confidence=0.6, parser_used="code")
         except Exception:

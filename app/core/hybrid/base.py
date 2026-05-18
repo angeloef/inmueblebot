@@ -66,7 +66,7 @@ class HybridParser(ABC):
         """LLM-based parsing. Must handle temperature=0, max_tokens <= 50."""
 
     @abstractmethod
-    def parse_code(self, raw: str, ctx: dict) -> ParseResult:
+    async def parse_code(self, raw: str, ctx: dict) -> ParseResult:
         """Deterministic (regex/map) parsing. Must never raise."""
 
     async def parse(self, raw: str, ctx: dict | None = None) -> ParseResult:
@@ -75,7 +75,7 @@ class HybridParser(ABC):
         t0 = time.perf_counter()
 
         if self.config.strategy == "code":
-            result = self.parse_code(raw, ctx)
+            result = await self.parse_code(raw, ctx)
         elif self.config.strategy == "llm":
             result = await self.parse_llm(raw, ctx)
         else:  # "hybrid" — LLM first, code fallback
@@ -84,7 +84,7 @@ class HybridParser(ABC):
                 self.logger.info(
                     "LLM parser sin resultado para %r — fallback a code", raw
                 )
-                code_result = self.parse_code(raw, ctx)
+                code_result = await self.parse_code(raw, ctx)
                 result = ParseResult(
                     value=code_result.value,
                     confidence=code_result.confidence,
