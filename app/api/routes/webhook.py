@@ -467,7 +467,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 # Strip image URLs and internal paths from text before sending
                 response_text = sanitize_bot_response(response_text)
 
-                # When images will be sent separately, strip the numbered list the LLM generates
+                # When images will be sent separately, split text around photo references
                 images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
                 if images and response_text:
                     import re
@@ -477,6 +477,35 @@ async def process_messages(messages: List[Dict[str, Any]]):
                     response_text = re.sub(r'https?://[^\s]+/media/property/[^\s]+', '', response_text)
                     # Clean up double newlines left after removal
                     response_text = re.sub(r'\n{3,}', '\n\n', response_text).strip()
+                    # Split at 📷 lines: everything before 📷 is intro, everything after is follow-up
+                    photo_lines = re.split(r'(?:^|\n)\s*📷[^\n]*', response_text, flags=re.MULTILINE)
+                    if len(photo_lines) >= 2:
+                        intro = photo_lines[0].strip()
+                        follow_up = ''.join(photo_lines[1:]).strip()
+                        if intro:
+                            logger.info(f"Sending photo intro to {phone_to}: {intro[:30]}...")
+                            await whatsapp_client.send_message(to=phone_to, message=intro)
+                            await asyncio.sleep(0.5)
+                        for i, url in enumerate(images[:4]):
+                            try:
+                                img_result = await whatsapp_client.send_image(
+                                    to=phone_to,
+                                    image_url=url,
+                                    caption=rich_content.get("caption", "")
+                                )
+                                if img_result is None or (isinstance(img_result, dict) and img_result.get("error")):
+                                    logger.warning(f"Image send failed (index {i}, url truncated: {url[:60]}...): result={img_result}")
+                                else:
+                                    logger.info(f"Image sent successfully (index {i})")
+                            except Exception as e:
+                                logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
+                            if i < len(images[:4]) - 1:
+                                await asyncio.sleep(1.0)
+                        if follow_up:
+                            await asyncio.sleep(0.5)
+                            logger.info(f"Sending photo follow-up to {phone_to}: {follow_up[:30]}...")
+                            await whatsapp_client.send_message(to=phone_to, message=follow_up)
+                        continue  # Skip the generic text+images send below
 
                 # Send text response
                 if response_text:
