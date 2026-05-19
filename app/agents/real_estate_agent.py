@@ -507,8 +507,13 @@ class RealEstateAgent:
                             # Check if user also asked to schedule — push LLM to call schedule_visit next
                             _user_msg_lower = (user_message or "").lower()
                             _sched_keywords = ["coordinar", "visita", "agendar", "reservar", "turno", "cita"]
+                            _photo_keywords = ["foto", "imagen", "imag", "ver foto", "mira", "mostrar"]
                             _asked_for_schedule = any(kw in _user_msg_lower for kw in _sched_keywords)
+                            _asked_for_photos = any(kw in _user_msg_lower for kw in _photo_keywords)
                             _images_found = bool(new_rich.get("images"))
+                            # Check if there is a pending scheduling context from a previous turn
+                            _pending_sched = merged_context.get("pending_scheduling") or {}
+                            _pending_prop = str(_pending_sched.get("property_id", "")) if isinstance(_pending_sched, dict) else ""
                             if _asked_for_schedule:
                                 _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
                                 if _selected:
@@ -540,6 +545,24 @@ class RealEstateAgent:
                                         )
                                     })
                                     logger.info(f"[Agent] 📷+📅 photos+schedule nudge (images_found={_images_found})")
+                            elif _images_found and not _asked_for_photos and _pending_prop:
+                                # LLM re-called get_property_images unnecessarily while user is
+                                # continuing a scheduling flow (e.g. providing day/time).
+                                # Suppress image re-send and redirect to schedule_visit.
+                                _prop_id = _pending_prop or merged_context.get("selected_property_id", tool_args.get("property_id", ""))
+                                rich_content["images"] = []  # Clear so webhook won't re-send
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "INSTRUCCIÓN PRIORITARIA: Las fotos de esta propiedad ya fueron enviadas "
+                                        "al usuario en el turno anterior. NO las envíes de nuevo y NO las menciones. "
+                                        "El usuario acaba de responder con un día y horario para la visita. "
+                                        f"Llamá AHORA schedule_visit(property_id={_prop_id}) "
+                                        "con la fecha y hora que mencionó el usuario. "
+                                        "PROHIBIDO: NO digas 'te dejo las fotos'. NO menciones imágenes."
+                                    )
+                                })
+                                logger.info(f"[Agent] 🚫 Suppressed image re-send — redirecting to schedule_visit for {phone}")
                             elif not _asked_for_schedule and not _images_found:
                                 messages.append({
                                     "role": "system",
