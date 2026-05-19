@@ -1080,7 +1080,7 @@ class RealEstateAgent:
         HALLUCINATION_CHECKS = [
             # schedule_visit
             (['agendé', 'agendamos',
-              "te esperamos", "te agendé", "quedó agendada"],
+              "te agendé", "quedó agendada"],
              "schedule_visit",
              "Lo siento, tuve un problema al agendar la visita. ¿Podrías intentar de nuevo?"),
 
