@@ -530,11 +530,13 @@ class RealEstateAgent:
                                     messages.append({
                                         "role": "system",
                                         "content": (
-                                            f"¡Importante! El usuario pidió fotos Y coordinar una visita. "
+                                            f"INSTRUCCIÓN PRIORITARIA: El usuario pidió fotos Y coordinar una visita. "
                                             f"{_photo_note} "
-                                            "Preguntale qué día y horario le vendría bien para la visita. "
-                                            f"Cuando tengas día y hora, llamá schedule_visit con property_id={_selected}. "
-                                            "No preguntes confirmación de propiedad — el usuario ya la eligió."
+                                            "AHORA debés preguntarle qué día y horario le vendría bien. "
+                                            "PROHIBIDO: NO llames get_faq_answer. NO preguntes el horario de atención. "
+                                            "NO confirmes la propiedad — el usuario ya la eligió. "
+                                            "Decí exactamente: '¿Qué día y horario te vendría bien para la visita?'. "
+                                            f"Cuando el usuario responda, llamá schedule_visit con property_id={_selected}."
                                         )
                                     })
                                     logger.info(f"[Agent] 📷+📅 photos+schedule nudge (images_found={_images_found})")
