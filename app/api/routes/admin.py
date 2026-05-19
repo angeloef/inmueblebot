@@ -332,7 +332,7 @@ class PropertyCreate(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     area_m2: Optional[int] = None
-    currency: str = "USD"
+    currency: str = "ARS"
     status: str = "available"             # 'available','reserved','sold','rented'
     images: Optional[List[str]] = None    # List of image URLs
 
@@ -420,7 +420,7 @@ def _prop_to_dict(p):
         "active": p.status in ("available", "reserved"),
         "status": p.status,
         "type": p.type,                                    # 'venta' or 'alquiler'
-        "currency": getattr(p, "currency", "USD"),
+        "currency": getattr(p, "currency", "ARS") or "ARS",
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 

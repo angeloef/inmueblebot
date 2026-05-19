@@ -8,8 +8,9 @@
 // ─── Utilidades de formato (locale: es-AR) ────────────────────────────────────
 
 export const fmtCurrency = (n, cur) => {
-  if (cur === 'USD') return `USD ${n.toLocaleString('es-AR')}`;
-  return `$ ${n.toLocaleString('es-AR')}`;
+  const amount = Number(n || 0).toLocaleString('es-AR');
+  if (cur === 'USD') return `USD ${amount}`;
+  return `$ ${amount}`;  // ARS — siempre con $ sin label adicional
 };
 
 export const padDate = (y, m, d) =>

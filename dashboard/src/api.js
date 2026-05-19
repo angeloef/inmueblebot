@@ -147,7 +147,7 @@ function toProperty(p) {
     m2:        p.area_m2 ?? p.area ?? 0,
     status:    p.status ?? 'available',
     price:     p.price ?? 0,
-    currency:  p.currency ?? 'USD',
+    currency:  p.currency || 'ARS',
     // operation: 'venta' or 'alquiler' from DB type field
     operation: p.type === 'alquiler' ? 'rent' : 'sale',
     agent:     '',
@@ -174,7 +174,7 @@ function fromProperty(d) {
     location:      [d.addr, d.neigh].filter(Boolean).join(', ') || d.addr || '',
     city:          cityStr,
     price:         Number(d.price) || 0,
-    currency:      d.currency ?? 'USD',
+    currency:      d.currency || 'ARS',
     bedrooms:      d.rooms ? parseInt(d.rooms) || null : null,
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,

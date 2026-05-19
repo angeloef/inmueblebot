@@ -34,7 +34,7 @@ def format_property(prop) -> str:
     price = _get_attr(prop, "price", 0)
     prop_type = _get_attr(prop, "type", "venta")
     location = _get_attr(prop, "location", "Ubicación no disponible")
-    cur = _get_attr(prop, "currency", "USD")
+    cur = _get_attr(prop, "currency", "ARS")
     bedrooms = _get_attr(prop, "bedrooms")
     bathrooms = _get_attr(prop, "bathrooms")
     area_m2 = _get_attr(prop, "area_m2")
@@ -183,7 +183,7 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
         except (ValueError, TypeError):
             price = 0
 
-        cur = _get_attr(prop, "currency", "USD")
+        cur = _get_attr(prop, "currency", "ARS")
         prop_type = _get_attr(prop, "type", "venta")
         if cur != "USD":
             currency_prefix = f"{cur} "
@@ -1606,8 +1606,8 @@ async def compare_properties(property_ids: list) -> str:
         except (ValueError, TypeError):
             price = 0
         op_type = getattr(prop, "type", "venta") or "venta"
-        cur = getattr(prop, "currency", "USD")
-        prefix = "" if cur == "USD" else f"{cur} "
+        cur = getattr(prop, "currency", "ARS") or "ARS"
+        prefix = "USD " if cur == "USD" else ""
         if op_type == "alquiler":
             return f"{prefix}${price:,}/mes"
         return f"{prefix}${price:,}"
