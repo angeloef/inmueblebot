@@ -861,8 +861,27 @@ async def schedule_visit(
             prop_int_id = prop.id
             property_obj = prop
         
+        # Fix common typos in Spanish day names before parsing
+        _TYPO_MAP = {
+            "vienes": "viernes", "vienres": "viernes", "vienes": "viernes",
+            "lunes": "lunes",  # correct, but keep for completeness
+            "martes": "martes",
+            "juves": "jueves", "juves": "jueves",
+            "miercoles": "miércoles", "mièrcoles": "miércoles",
+            "sabado": "sábado",
+            "domingo": "domingo",
+        }
+        def _fix_typos(s: str) -> str:
+            if not s:
+                return s
+            words = s.lower().split()
+            fixed = [_TYPO_MAP.get(w, w) for w in words]
+            return " ".join(fixed)
+        date_str = _fix_typos(date_str or "")
+        time_str = _fix_typos(time_str or "")
+
         # Combine date_str and time_str for parsing
-        combined_input = f"{date_str} {time_str or ''}".strip()
+        combined_input = f"{date_str} {time_str}".strip()
 
         from app.core.hybrid.date import date_parser as hybrid_date_parser
         from app.utils.date_parser import format_datetime_argentina, validate_future, get_argentina_now

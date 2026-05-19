@@ -743,6 +743,7 @@ async def parse_datetime_llm(
         "- 'de la mañana' = AM. 'de la tarde' o 'de la noche' = PM (sumá 12 si hora < 12).\n"
         "- 'mediodía' = 12:00. 'a la tardecita' ≈ 17:00.\n"
         "- Si solo dicen una hora sin período (ej: 'a las 3'), elegí la próxima ocurrencia futura.\n"
+        "- Corregí typos comunes en días: 'vienes'=viernes, 'juves'=jueves, 'lune'=lunes, 'marte'=martes.\n"
         "- Si la hora no está especificada ni se puede inferir: respondé exactamente 'AMBIGUOUS: falta hora'.\n"
         "- Si la fecha no se puede determinar: respondé exactamente 'AMBIGUOUS: falta fecha'.\n"
         "- Nunca des explicaciones ni texto adicional."
