@@ -294,7 +294,19 @@ class RealEstateAgent:
 
                         # SCHEDULING GUARD: if user just said "id 18" or similar without scheduling intent,
                         # and LLM called schedule_visit, suppress it and redirect to get_property_details
-                        if tool_name == "schedule_visit" and user_message:
+                        # Skip guard if already in booking flow or user is giving time
+                        _skip_guard = False
+                        _current_state = merged_context.get("current_state", "")
+                        if _current_state in (ConversationStateEnum.BOOKING.value,):
+                            _skip_guard = True
+                        if user_message:
+                            _time_patterns = ["a las", "para las", "a la", "para la", ":00", "pm", "am"]
+                            if any(p in user_message.lower() for p in _time_patterns):
+                                _skip_guard = True
+                            if any(c.isdigit() for c in user_message) and len(user_message.strip().split()) <= 3:
+                                # "a las 5", "para las 4pm", "17:00" — clear time response
+                                _skip_guard = True
+                        if not _skip_guard and tool_name == "schedule_visit" and user_message:
                             _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
                                                "reserva", "turno", "conocer", "ver en persona",
                                                "ir a ver", "recorrer", "mostrar"]
