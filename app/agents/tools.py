@@ -1138,14 +1138,27 @@ async def reschedule_appointment_tool(
                         elif len(upcoming_apts) > 1:
                             # Multiple upcoming — list them so the LLM can ask the user which one
                             lines = ["Tienes varias citas próximas. ¿Cuál te gustaría reprogramar?", ""]
+                            import pytz
+                            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
                             for i, apt in enumerate(upcoming_apts, 1):
                                 start = apt.start_time
-                                date_str = start.strftime("%d/%m/%Y")
-                                time_str = start.strftime("%H:%M")
-                                lines.append(f"{i}. 📆 {date_str} a las {time_str} — ID: `{apt.id}`")
+                                if start.tzinfo is not None:
+                                    start_local = start.astimezone(arg_tz)
+                                else:
+                                    start_local = arg_tz.localize(start)
+                                date_str = start_local.strftime("%d/%m/%Y")
+                                time_str = start_local.strftime("%H:%M")
+                                lines.append(f"{i}. 📆 {date_str} a las {time_str}")
                             lines.append("")
-                            lines.append("Decime el número o el ID de la cita que quieras cambiar.")
-                            return "\n".join(lines)
+                            lines.append("Decime el número de la cita que quieras cambiar.")
+                            message = "\n".join(lines)
+                            # Append hidden UUID mapping for LLM consumption
+                            id_lines = []
+                            for i, apt in enumerate(upcoming_apts, 1):
+                                id_lines.append(f"<!--ID:{i}:{apt.id}-->")
+                            if id_lines:
+                                message += "\n" + "\n".join(id_lines)
+                            return message
             except Exception as e:
                 logger.warning(f"[reschedule] Could not auto-resolve appointment: {e}")
         
