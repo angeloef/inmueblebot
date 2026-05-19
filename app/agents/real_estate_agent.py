@@ -37,7 +37,7 @@ class RealEstateAgent:
     6. Retorna respuesta estructurada
     """
     
-    MAX_TOOL_CALLS = 5  # Increased to allow search→details→images→schedule sequences
+    MAX_TOOL_CALLS = 7  # Multi-intent sequences: search→details→images→schedule + extras
     
     def __init__(self):
         self.llm = llm_router
@@ -55,7 +55,8 @@ class RealEstateAgent:
         phone: str,
         user_message: str,
         intent: Intent = None,
-        force_agent: bool = False
+        force_agent: bool = False,
+        extracted_entities: dict = None
     ) -> Dict[str, Any]:
         """
         Procesa un turno de conversación.
@@ -96,6 +97,15 @@ class RealEstateAgent:
                     history = []
 
                 user_prefs = merged_context
+
+                # Merge classifier-extracted entities into user_prefs so the
+                # system prompt sees them before the first LLM call
+                if extracted_entities:
+                    for _field in ("location", "budget_min", "budget_max", "bedrooms",
+                                   "bathrooms", "operation_type", "property_type"):
+                        if extracted_entities.get(_field) is not None and not user_prefs.get(_field):
+                            user_prefs[_field] = extracted_entities[_field]
+                    logger.info(f"[Agent] Merged classifier entities into user_prefs: {extracted_entities}")
 
                 # Fetch existing appointments for context (prevents time hallucination in rescheduling)
                 try:
@@ -228,6 +238,45 @@ class RealEstateAgent:
                         )
                     messages.append({"role": "system", "content": _photo_nudge})
                     logger.info(f"[Agent] 📷 PHOTO nudge injected for {phone} (pid={_selected_pid}, also_sched={_also_wants_sched})")
+
+                # ── Entities injection: give LLM the classifier entities explicitly ──
+                if extracted_entities:
+                    _ent_parts = [f"{k}={v}" for k, v in extracted_entities.items() if v is not None]
+                    if _ent_parts:
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                f"ENTIDADES EXTRAIDAS DEL MENSAJE: {', '.join(_ent_parts)}. "
+                                "Usalas directamente como argumentos en la primera herramienta. "
+                                "No le preguntes al usuario datos que ya estan en esta lista."
+                            )
+                        })
+                        logger.info(f"[Agent] Entities injected: {_ent_parts}")
+
+                # ── Multi-intent detection: detect all intents in the message ──────────
+                _mi_intents = {}
+                _mi_lower = (user_message or "").lower()
+                if any(kw in _mi_lower for kw in ["foto", "imagen", "imag", "ver foto"]):
+                    _mi_intents["photos"] = "ver las fotos de la propiedad"
+                if any(kw in _mi_lower for kw in ["agendar", "visita", "coordinar", "reservar", "turno", "cita"]):
+                    _mi_intents["schedule"] = "agendar una visita"
+                if any(kw in _mi_lower for kw in ["cancelar", "cancelá", "anular"]):
+                    _mi_intents["cancel"] = "cancelar una cita existente"
+                if any(kw in _mi_lower for kw in ["comparar", "comparame", "diferencia entre", "cual es mejor", "cuál es mejor"]):
+                    _mi_intents["compare"] = "comparar propiedades entre sí"
+                if any(kw in _mi_lower for kw in ["busco", "buscar", "mostrame opciones", "hay algo", "buscame", "quiero ver opciones"]):
+                    _mi_intents["search"] = "buscar propiedades con criterios"
+                if len(_mi_intents) >= 2:
+                    _mi_list = "\n".join(f"  - {desc}" for desc in _mi_intents.values())
+                    _mi_msg_content = (
+                        f"MULTI-INTENT DETECTADO: El usuario quiere {len(_mi_intents)} cosas:\n"
+                        f"{_mi_list}\n"
+                        "Ejecutalas en orden logico con las herramientas necesarias. "
+                        "NO te detengas ni hagas preguntas intermedias si ya tenes la informacion suficiente. "
+                        "Completa TODAS las acciones antes de responder."
+                    )
+                    messages.append({"role": "system", "content": _mi_msg_content})
+                    logger.info(f"[Agent] Multi-intent: {list(_mi_intents.keys())}")
 
                 tools_used = []
                 response_text = ""
@@ -472,21 +521,44 @@ class RealEstateAgent:
                                 )
                             })
                         elif tool_name == "get_property_details":
-                            # Extract property data from tool result for the system message
                             _prop_info = ""
                             if isinstance(tool_result, str) and tool_result:
-                                # Extract first line or key info for context
                                 _first_line = tool_result.split('\n')[0] if '\n' in tool_result else tool_result[:60]
-                                _prop_info = f" Los datos REALES de la propiedad son: {_first_line}"
+                                _prop_info = f" Los datos REALES: {_first_line}."
+                            # Context-aware follow-up: don't ask what user already told us
+                            _u_lower = (user_message or "").lower()
+                            _wants_photos = any(kw in _u_lower for kw in ["foto", "imagen", "imag"])
+                            _wants_visit  = any(kw in _u_lower for kw in ["visita", "agendar", "coordinar", "reservar"])
+                            _pid_det = tool_args.get("property_id", "")
+                            if _wants_photos and _wants_visit:
+                                _follow_up = (
+                                    f"El usuario ya pidio FOTOS y VISITA. "
+                                    f"Llama get_property_images(property_id={_pid_det}) ahora. "
+                                    "Luego pregunta dia y horario para schedule_visit. "
+                                    "NO preguntes 'fotos o visita' — ya lo dijo."
+                                )
+                            elif _wants_photos:
+                                _follow_up = (
+                                    f"El usuario ya pidio las fotos. "
+                                    f"Llama get_property_images(property_id={_pid_det}) AHORA. NO preguntes."
+                                )
+                            elif _wants_visit:
+                                _follow_up = (
+                                    "El usuario ya quiere coordinar visita. "
+                                    "Preguntale dia y horario directamente."
+                                )
+                            else:
+                                _follow_up = (
+                                    "Presentalos de forma conversacional y preguntale "
+                                    "si le gustaria ver las fotos o coordinar una visita. "
+                                    "Ej: '¿Te gustaria ver las fotos o preferis coordinar una visita?'"
+                                )
                             messages.append({
                                 "role": "system",
                                 "content": (
-                                    "Acabás de recibir los DATOS REALES de la propiedad desde la base de datos en el tool result arriba. "
-                                    "Usá EXACTAMENTE los datos que devolvió el tool."
-                                    f"{_prop_info}"
-                                    "Presentalos de forma conversacional y preguntale al usuario "
-                                    "si le gustaría ver las fotos o coordinar una visita. "
-                                    "Ej: '¿Te gustaría ver las fotos o preferís coordinar una visita?'"
+                                    "Acabas de recibir los DATOS REALES de la propiedad en el tool result. "
+                                    "Usa EXACTAMENTE esos datos. "
+                                    f"{_prop_info} {_follow_up}"
                                 )
                             })
                         elif tool_name == "compare_properties":

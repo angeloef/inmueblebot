@@ -104,7 +104,11 @@ class Router:
                     agent_result = await self.agent.process_turn(
                         phone=phone,
                         user_message=message_text,
-                        intent=classification.intent
+                        intent=classification.intent,
+                        extracted_entities=(
+                            classification.extracted_entities.model_dump(exclude_none=True)
+                            if classification.extracted_entities else None
+                        )
                     )
                     response = {
                         "response_text": agent_result.get("response_text", ""),
