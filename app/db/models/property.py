@@ -48,14 +48,14 @@ class Property(Base):
     price: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        comment="Precio en USD (entero)"
+        comment="Precio en USD/ARS (entero)"
     )
 
     # Moneda
     currency: Mapped[str] = mapped_column(
         String(3),
-        default="USD",
-        server_default="USD",
+        default="ARS",
+        server_default="ARS",
         comment="Moneda del precio"
     )
 
