@@ -274,76 +274,6 @@ class MemoryManager:
     # MÉTODOS DE RESET (LIMPIEZA DE DATOS)
     # =========================================================================
 
-    async def reset_user_context(self, phone: str) -> bool:
-        """
-        Resetea TODO el contexto y estado de un usuario específico.
-        Limpia Redis (contexto, mensajes, resumen, estado) + PostgreSQL (preferencias).
-        También limpia los fallbacks en memoria.
-
-        Args:
-            phone: Número de teléfono del usuario a resetear
-
-        Returns:
-            True si se completó, False si hubo error
-        """
-        logger.info(f"[Memory] Resetting ALL context for user {phone}")
-        success = True
-
-        # 1. Clear in-memory fallbacks
-        self._fallback_context.pop(phone, None)
-        self._fallback_messages.pop(phone, None)
-
-        # 2. Clear Redis keys
-        try:
-            r = await self._get_redis_with_retry()
-            keys_to_delete = [
-                f"user:{phone}:context",
-                f"user:{phone}:messages",
-                f"user:{phone}:summary",
-                f"user:{phone}:state",
-            ]
-            # Filter out keys that actually exist to reduce Redis churn
-            existing = []
-            for key in keys_to_delete:
-                if await r.exists(key):
-                    existing.append(key)
-            if existing:
-                await r.delete(*existing)
-                logger.info(f"[Memory] Redis: deleted {len(existing)} key(s) for {phone}")
-            else:
-                logger.info(f"[Memory] Redis: no keys to delete for {phone}")
-        except Exception as e:
-            logger.warning(f"[Memory] Redis reset failed for {phone}: {e}")
-            success = False
-
-        # 3. Clear PostgreSQL user data
-        try:
-            from app.db.session import async_session_factory
-            async with async_session_factory() as session:
-                from app.db.repository import UserRepository
-                from app.db.models import User
-                user_repo = UserRepository(User, session)
-                user = await user_repo.get_by_phone(phone)
-                if user:
-                    # Reset preferences back to defaults (don't delete the user, just clear)
-                    await user_repo.update(user.id,
-                        name=None,
-                        budget_min=None,
-                        budget_max=None,
-                        location_preferences=None,
-                        property_type=None,
-                        lead_score=0,
-                    )
-                    await session.commit()
-                    logger.info(f"[Memory] PostgreSQL: reset preferences for {phone}")
-                else:
-                    logger.info(f"[Memory] PostgreSQL: no user found for {phone}")
-        except Exception as e:
-            logger.warning(f"[Memory] PostgreSQL reset failed for {phone}: {e}")
-            success = False
-
-        return success
-
     async def reset_all_users(self) -> int:
         """
         Resetea el contexto de TODOS los usuarios.
@@ -1074,4 +1004,4 @@ class MemoryManager:
 
 
 # Instancia global del gestor de memoria
-memory_manager = MemoryManager()
+memory_manager = MemoryManager()                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
