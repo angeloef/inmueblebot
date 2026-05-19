@@ -649,34 +649,70 @@ class RealEstateAgent:
                             if _asked_for_schedule:
                                 _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
                                 if _selected:
+                                    # Extract date/time already given in the user message
+                                    import re as _re
+                                    _day_rx = r'\b(hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b'
+                                    _time_rx = r'a\s+las?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|hs|h)?)|(\d{1,2}(?::\d{2})?\s*(?:am|pm|hs|h))\b'
+                                    _day_m  = _re.search(_day_rx, _user_msg_lower)
+                                    _time_m = _re.search(_time_rx, _user_msg_lower)
+                                    _extracted_date = _day_m.group(0).strip() if _day_m else ""
+                                    _extracted_time = ""
+                                    if _time_m:
+                                        _raw_t = (_time_m.group(1) or _time_m.group(2) or "").strip()
+                                        _t_num = _re.search(r'(\d{1,2})(?::(\d{2}))?', _raw_t)
+                                        if _t_num:
+                                            _h = int(_t_num.group(1))
+                                            _mn = int(_t_num.group(2)) if _t_num.group(2) else 0
+                                            if 'pm' in _raw_t and _h < 12:
+                                                _h += 12
+                                            elif 'am' not in _raw_t and 'hs' not in _raw_t and _h <= 7:
+                                                _h += 12  # bare "5" in business ctx -> 17
+                                            _extracted_time = f"{_h:02d}:{_mn:02d}"
                                     try:
                                         await memory_manager.save_pending_scheduling(
                                             phone=phone,
                                             property_id=str(_selected),
-                                            date_str="",
-                                            time_str=""
+                                            date_str=_extracted_date,
+                                            time_str=_extracted_time,
                                         )
-                                        logger.info(f"[Agent] 📝 Saved pending scheduling context for {phone}")
+                                        logger.info(f"[Agent] Saved pending sched: date={_extracted_date!r} time={_extracted_time!r}")
                                     except Exception as _pe:
                                         logger.warning(f"[Agent] Could not save pending scheduling: {_pe}")
                                     _photo_note = (
                                         "Las fotos ya fueron enviadas al usuario."
                                         if _images_found
-                                        else "Esta propiedad no tiene fotos disponibles — NO digas que enviaste fotos."
+                                        else "Esta propiedad no tiene fotos disponibles. NO digas que enviaste fotos."
                                     )
-                                    messages.append({
-                                        "role": "system",
-                                        "content": (
-                                            f"INSTRUCCIÓN PRIORITARIA: El usuario pidió fotos Y coordinar una visita. "
-                                            f"{_photo_note} "
-                                            "AHORA debés preguntarle qué día y horario le vendría bien. "
-                                            "PROHIBIDO: NO llames get_faq_answer. NO preguntes el horario de atención. "
-                                            "NO confirmes la propiedad — el usuario ya la eligió. "
-                                            "Decí exactamente: '¿Qué día y horario te vendría bien para la visita?'. "
-                                            f"Cuando el usuario responda, llamá schedule_visit con property_id={_selected}."
-                                        )
-                                    })
-                                    logger.info(f"[Agent] 📷+📅 photos+schedule nudge (images_found={_images_found})")
+                                    if _extracted_date and _extracted_time:
+                                        messages.append({
+                                            "role": "system",
+                                            "content": (
+                                                f"INSTRUCCION PRIORITARIA: El usuario pidio fotos Y visita. "
+                                                f"{_photo_note} "
+                                                f"El usuario YA dio: dia={_extracted_date!r}, hora={_extracted_time}. "
+                                                f"Llama AHORA schedule_visit(property_id='{_selected}', date='{_extracted_date}', time='{_extracted_time}'). "
+                                                "PROHIBIDO: NO preguntes dia ni horario. NO llames get_faq_answer."
+                                            )
+                                        })
+                                        logger.info(f"[Agent] photos+schedule -> DIRECT schedule_visit date={_extracted_date!r} time={_extracted_time!r}")
+                                    else:
+                                        _missing_info = []
+                                        if not _extracted_date:
+                                            _missing_info.append("dia")
+                                        if not _extracted_time:
+                                            _missing_info.append("horario")
+                                        messages.append({
+                                            "role": "system",
+                                            "content": (
+                                                f"INSTRUCCION PRIORITARIA: El usuario pidio fotos Y visita. "
+                                                f"{_photo_note} "
+                                                f"Falta: {' y '.join(_missing_info)}. Preguntale solo eso. "
+                                                "PROHIBIDO: NO llames get_faq_answer. "
+                                                "NO confirmes la propiedad. "
+                                                f"Cuando el usuario responda, llama schedule_visit con property_id={_selected}."
+                                            )
+                                        })
+                                        logger.info(f"[Agent] photos+schedule nudge -> ask missing: {_missing_info}")
                             elif _images_found and not _asked_for_photos and _pending_prop:
                                 # LLM re-called get_property_images unnecessarily while user is
                                 # continuing a scheduling flow (e.g. providing day/time).
