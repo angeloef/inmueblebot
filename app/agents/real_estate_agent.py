@@ -512,8 +512,12 @@ class RealEstateAgent:
                             _asked_for_photos = any(kw in _user_msg_lower for kw in _photo_keywords)
                             _images_found = bool(new_rich.get("images"))
                             # Check if there is a pending scheduling context from a previous turn
-                            _pending_sched = merged_context.get("pending_scheduling") or {}
+                            try:
+                                _pending_sched = await memory_manager.get_pending_scheduling(phone) or {}
+                            except Exception:
+                                _pending_sched = {}
                             _pending_prop = str(_pending_sched.get("property_id", "")) if isinstance(_pending_sched, dict) else ""
+                            logger.info(f"[Agent] 🔍 pending_sched={_pending_sched!r}, _pending_prop={_pending_prop!r}")
                             if _asked_for_schedule:
                                 _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
                                 if _selected:
