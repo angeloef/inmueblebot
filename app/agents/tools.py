@@ -1138,13 +1138,19 @@ async def reschedule_appointment_tool(
                         elif len(upcoming_apts) > 1:
                             # Multiple upcoming — list them so the LLM can ask the user which one
                             lines = ["Tienes varias citas próximas. ¿Cuál te gustaría reprogramar?", ""]
+                            import pytz
+                            arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
                             for i, apt in enumerate(upcoming_apts, 1):
                                 start = apt.start_time
-                                date_str = start.strftime("%d/%m/%Y")
-                                time_str = start.strftime("%H:%M")
-                                lines.append(f"{i}. 📆 {date_str} a las {time_str} — ID: `{apt.id}`")
+                                if start.tzinfo is not None:
+                                    start_local = start.astimezone(arg_tz)
+                                else:
+                                    start_local = arg_tz.localize(start)
+                                date_str = start_local.strftime("%d/%m/%Y")
+                                time_str = start_local.strftime("%H:%M")
+                                lines.append(f"{i}. 📆 {date_str} a las {time_str}")
                             lines.append("")
-                            lines.append("Decime el número o el ID de la cita que quieras cambiar.")
+                            lines.append("Decime el número de la cita que quieras cambiar.")
                             return "\n".join(lines)
             except Exception as e:
                 logger.warning(f"[reschedule] Could not auto-resolve appointment: {e}")
@@ -1377,8 +1383,20 @@ async def get_my_appointments(phone: str = None) -> str:
                 return "No tienes citas programadas."
             
             appointments = await appointment_service.get_user_appointments(user.id, upcoming=True)
-            
-            return format_appointment_list(appointments)
+
+            # Fetch property titles for display
+            from app.db.models import Property
+            from sqlalchemy import select
+            prop_ids = list({a.property_id for a in appointments})
+            property_titles = {}
+            if prop_ids:
+                prop_result = await session.execute(
+                    select(Property.id, Property.title).where(Property.id.in_(prop_ids))
+                )
+                for row in prop_result.all():
+                    property_titles[row[0]] = row[1]
+
+            return format_appointment_list(appointments, property_titles)
             
     except Exception as e:
         logger.error(f"Error al obtener citas: {e}")

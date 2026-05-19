@@ -1033,15 +1033,15 @@ class RealEstateAgent:
         # Mapping: action claim phrases → required tool that must have been called
         HALLUCINATION_CHECKS = [
             # schedule_visit
-            (["agendada", "agendé", "agendamos", "visita agendada", "cita agendada", "turno agendado",
+            (['agendé', 'agendamos', 'visita agendada', 'cita agendada', 'turno agendado',
               "te esperamos", "te agendé", "quedó agendada"],
              "schedule_visit",
              "Lo siento, tuve un problema al agendar la visita. ¿Podrías intentar de nuevo?"),
 
             # reschedule_appointment
-            (["reprogramada", "reprogramé", "reprogramamos", "cita reprogramada",
+            (['reprogramé', 'reprogramamos', 'cita reprogramada',
               "cambio la fecha", "cambié la fecha", "nueva fecha para tu cita",
-              "modifiqué tu cita", "modificada"],
+              'modifiqué tu cita'],
              "reschedule_appointment",
              "Lo siento, tuve un problema al reprogramar la cita. ¿Podrías intentar de nuevo?"),
 
