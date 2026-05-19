@@ -267,7 +267,8 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.price <= budget_max)
         
         if bedrooms_min is not None:
-            query = query.where(Property.bedrooms >= bedrooms_min)
+            # Exact match by default; caller can pass bedrooms_max > bedrooms_min to broaden
+            query = query.where(Property.bedrooms == bedrooms_min)
         
         if bathrooms_min is not None:
             query = query.where(Property.bathrooms >= bathrooms_min)
