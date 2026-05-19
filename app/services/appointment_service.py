@@ -597,41 +597,35 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
 def format_appointment_list(appointments: list[Appointment], property_titles: dict = None) -> str:
     """
     Formatea una lista de citas para WhatsApp.
-
+    
     Args:
         appointments: Lista de citas
         property_titles: Dict {property_id: title} opcional
-
+    
     Returns:
         Mensaje formateado
     """
     if not appointments:
         return "No tienes citas programadas upcoming."
-
-    import pytz
-    arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
-
+    
     lines = ["📅 *Tus próximas citas:*", ""]
-
+    
     for i, apt in enumerate(appointments, 1):
         start = apt.start_time
-        # Convert from UTC (DB storage) to Argentina timezone for display
-        if start.tzinfo is not None:
-            start_local = start.astimezone(arg_tz)
-        else:
-            start_local = arg_tz.localize(start)
-        date_str = start_local.strftime("%d/%m")
-        time_str = start_local.strftime("%H:%M")
-
+        date_str = start.strftime("%d/%m")
+        time_str = start.strftime("%H:%M")
+        
         prop_title = "Propiedad"
         if property_titles and apt.property_id in property_titles:
             prop_title = property_titles[apt.property_id]
-
+        
         type_label = "visita" if apt.type == "visit" else apt.type
-
-        lines.append(f"{i}. 📆 {date_str} a las {time_str} — {prop_title} ({type_label})")
+        
+        lines.append(f"{i}. 📆 {date_str} a las {time_str}")
+        lines.append(f"   🏠 {prop_title} ({type_label})")
+        lines.append(f"   🔍 ID: `{apt.id}`")
         lines.append("")
-
+    
     return "\n".join(lines)
 
 
