@@ -698,7 +698,7 @@ def delete_property(
 @router.get("/appointments")
 def list_appointments(
     status: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 200,
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
@@ -708,6 +708,25 @@ def list_appointments(
         query = query.filter(Appointment.status == status)
     apts = query.order_by(Appointment.start_time.desc()).limit(limit).all()
     return {"appointments": [_apt_to_dict(a) for a in apts], "total": len(apts)}
+
+
+@router.get("/appointments/{apt_id}")
+def get_appointment(
+    apt_id: str,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Obtiene un appointment por UUID — usado por el dashboard para abrir el modal desde notificación."""
+    from app.db.models import Appointment
+    import uuid as _uuid
+    try:
+        apt_uuid = _uuid.UUID(apt_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID")
+    apt = db.query(Appointment).filter(Appointment.id == apt_uuid).first()
+    if not apt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return _apt_to_dict(apt)
 
 
 @router.post("/appointments")

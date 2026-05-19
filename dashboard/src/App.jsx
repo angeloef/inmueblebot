@@ -15,7 +15,6 @@ const VIEW_TO_PATH = {
 const PATH_TO_VIEW = Object.fromEntries(
   Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v])
 );
-// Aliases para rutas sin sufijo
 PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
@@ -30,7 +29,7 @@ import Clients from './Clients';
 import FAQs from './FAQs';
 
 // ── Notification type → destination ─────────────────────────────────────────
-const NOTIF_VISIT_TYPES = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
+const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
 const NOTIF_CLIENT_TYPES = new Set(['new_lead', 'lead_qualified', 'handoff_requested']);
 
 export default function App() {
@@ -43,14 +42,13 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Standard cross-view navigation state
-  const [clientToOpen, setClientToOpen] = useState(null);
+  const [clientToOpen, setClientToOpen]   = useState(null);
   const [propertyToOpen, setPropertyToOpen] = useState(null);
   const [globalPopover, setGlobalPopover] = useState(null);
 
   // Notification-driven navigation state
-  const [calEventId, setCalEventId] = useState(null);   // open specific event in calendar
-  const [calDate, setCalDate]       = useState(null);   // navigate calendar to this date
-  const [clientPhone, setClientPhone] = useState(null); // open client by phone in clients
+  const [calEventId, setCalEventId] = useState(null);
+  const [clientPhone, setClientPhone] = useState(null);
 
   const updateEventMut = useUpdateEvent();
   const deleteEventMut = useDeleteEvent();
@@ -65,14 +63,16 @@ export default function App() {
   useEffect(() => {
     const view = PATH_TO_VIEW[location.pathname];
     if (view && view !== active) setActive(view);
-  }, [location.pathname]);
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Core navigation ───────────────────────────────────────────────────────
   const navTo = (view) => {
     setMenuOpen(false);
     setGlobalPopover(null);
     setClientToOpen(null);
     setPropertyToOpen(null);
-    // Don't clear notif state here — let Calendar/Clients consume it
+    setCalEventId(null);
+    setClientPhone(null);
     setActive(view);
     const path = VIEW_TO_PATH[view];
     if (path && location.pathname !== path) navigate(path);
@@ -97,14 +97,12 @@ export default function App() {
     setGlobalPopover({ event, anchor: rect });
   };
 
-  // ── Handle notification click ─────────────────────────────────────────────
+  // ── Notification click handler ─────────────────────────────────────────────
   const handleNotifAction = (notif) => {
     const meta = notif.metadata ?? {};
 
     if (NOTIF_VISIT_TYPES.has(notif.type)) {
-      // Navigate to calendar; open specific event if we have its ID
       setCalEventId(meta.event_id ?? null);
-      setCalDate(null); // Calendar will derive date from the event itself
       setClientToOpen(null);
       setClientPhone(null);
       setPropertyToOpen(null);
@@ -114,9 +112,7 @@ export default function App() {
       if (path && location.pathname !== path) navigate(path);
 
     } else if (NOTIF_CLIENT_TYPES.has(notif.type)) {
-      // Navigate to clients and open by phone
       setCalEventId(null);
-      setCalDate(null);
       setClientToOpen(null);
       setClientPhone(notif.phone ?? null);
       setPropertyToOpen(null);
@@ -126,7 +122,6 @@ export default function App() {
       if (path && location.pathname !== path) navigate(path);
 
     } else {
-      // bot_error → just go to dashboard
       navTo('dashboard');
     }
   };
@@ -149,29 +144,36 @@ export default function App() {
       <div className="main">
         <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} />
         <div className="canvas">
+
           {active === 'dashboard' && (
             <Dashboard onNav={navTo} onOpenEvent={openEvent} onOpenClient={openClient} />
           )}
+
           {active === 'calendar' && (
             <Calendar
+              key={calEventId ?? 'cal'}
               onOpenClient={openClient}
               onOpenProperty={openProperty}
               initialEventId={calEventId}
-              initialDate={calDate}
-              key={calEventId ?? calDate ?? 'cal'}
             />
           )}
-          {active === 'properties' && <Properties onOpenClient={openClient} initialProperty={propertyToOpen} />}
+
+          {active === 'properties' && (
+            <Properties onOpenClient={openClient} initialProperty={propertyToOpen} />
+          )}
+
           {active === 'clients' && (
             <Clients
+              key={clientPhone ?? 'cli'}
               initialClient={clientToOpen}
               initialPhone={clientPhone}
-              onOpenProperty={() => setActive('properties')}
+              onOpenProperty={openProperty}
               onOpenEvent={openEvent}
-              key={clientPhone ?? (clientToOpen?.id ?? 'cli')}
             />
           )}
+
           {active === 'faqs' && <FAQs />}
+
           {active === 'documents' && (
             <div className="page-view">
               <div className="page-h">
@@ -180,6 +182,7 @@ export default function App() {
               </div>
             </div>
           )}
+
           {active === 'settings' && (
             <div className="page-view">
               <div className="page-h">
@@ -188,6 +191,7 @@ export default function App() {
               </div>
             </div>
           )}
+
         </div>
       </div>
       {globalPopover && (

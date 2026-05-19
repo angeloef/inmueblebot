@@ -1048,7 +1048,7 @@ async def schedule_visit(
                     apt_type = getattr(appointment, "type", "visit")
                     dt_str = format_datetime_argentina(appointment.start_time) if hasattr(appointment, "start_time") else ""
                     if apt_type == "call":
-                        await notification_service.call_scheduled(phone=phone, datetime_str=dt_str)
+                        await notification_service.call_scheduled(phone=phone, datetime_str=dt_str, event_id=getattr(appointment, "id", None))
                     else:
                         await notification_service.visit_scheduled(
                             phone=phone,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, IconButton, pushToast } from './Primitives';
 import { parseTime, padDate, fmtTime12 } from './data';
-import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus, useProperties, useClients } from './api';
+import { useEvents, useEventById, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus, useProperties, useClients } from './api';
 import { EventPopover, EventEditor } from './EventPopover';
 
 const DOWS = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
@@ -498,19 +498,20 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
   const closePopover = () => setPopover(null);
 
   // Auto-open event when navigated from a notification
+  // Strategy: look in cached list first; if missing (older event beyond limit), fetch by ID.
+  const { data: fetchedEvent } = useEventById(initialEventId ?? null);
   const [notifEventHandled, setNotifEventHandled] = React.useState(false);
   React.useEffect(() => {
-    if (!initialEventId || notifEventHandled || events.length === 0) return;
-    const target = events.find(e => String(e.id) === String(initialEventId));
+    if (!initialEventId || notifEventHandled) return;
+    // Prefer cached list; fall back to individually fetched event
+    const target = events.find(e => String(e.id) === String(initialEventId)) ?? fetchedEvent ?? null;
     if (!target) return;
     setNotifEventHandled(true);
-    // Navigate to event's date
     const [y, m, d] = target.date.split('-').map(Number);
     setNavDate(new Date(y, m - 1, d));
     setView('day');
-    // Open popover (centered — no anchor rect)
     setPopover({ event: target, anchor: null });
-  }, [initialEventId, events, notifEventHandled]);
+  }, [initialEventId, events, fetchedEvent, notifEventHandled]);
 
   const handleEdit = (e) => { setPopover(null); setEditor({ event: e, mode: 'edit' }); };
   const handleReschedule = (e) => { setPopover(null); setEditor({ event: e, mode: 'reschedule' }); };

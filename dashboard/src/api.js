@@ -351,6 +351,14 @@ const eventApi = {
 export const useEvents = () =>
   useQuery({ queryKey: keys.events, queryFn: eventApi.list });
 
+export const useEventById = (id) =>
+  useQuery({
+    queryKey: ['event', id],
+    queryFn:  () => eventApi.get(id),
+    enabled:  !!id,
+    staleTime: 0,
+  });
+
 export const useCreateEvent = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: eventApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }) });
