@@ -492,6 +492,25 @@ class RealEstateAgent:
                             if existing_images:
                                 new_rich["images"] = existing_images + new_images
                             rich_content = new_rich
+                            # Check if user also asked to schedule — push LLM to call schedule_visit next
+                            _user_msg_lower = (user_message or "").lower()
+                            _sched_keywords = ["coordinar", "visita", "agendar", "reservar", "turno", "cita"]
+                            _asked_for_schedule = any(kw in _user_msg_lower for kw in _sched_keywords)
+                            if _asked_for_schedule:
+                                _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
+                                if _selected:
+                                    messages.append({
+                                        "role": "system",
+                                        "content": (
+                                            "¡Importante! El usuario pidió fotos Y coordinar una visita. "
+                                            "YA mostraste las fotos arriba. "
+                                            "Ahora llamá schedule_visit para agendar la visita. "
+                                            f"Usá property_id={_selected}. "
+                                            "No preguntes confirmación de propiedad — el usuario ya la eligió. "
+                                            "Pasá directo a coordinar el día y horario."
+                                        )
+                                    })
+                                    logger.info(f"[Agent] 📷+📅 User asked for photos AND schedule — injected schedule_visit nudge")
 
                         # Save selected_property_id for context continuity across turns
                         if tool_args.get("property_id") and tool_name in ("get_property_details", "get_property_images"):
@@ -837,16 +856,19 @@ class RealEstateAgent:
         if intent == Intent.PROPERTY_SEARCH or "search_properties" in str(tools_used):
             return ConversationStateEnum.SEARCHING.value
         
+        if "get_property_images" in str(tools_used):
+            return ConversationStateEnum.VIEWING_PROPERTY.value
+        
         if intent == Intent.PROPERTY_DETAILS or "get_property_details" in str(tools_used):
             return ConversationStateEnum.VIEWING_PROPERTY.value
         
-        if intent == Intent.SCHEDULE_APPOINTMENT:
+        if intent == Intent.SCHEDULE_APPOINTMENT or "schedule_visit" in str(tools_used) or "reschedule_appointment" in str(tools_used):
             return ConversationStateEnum.BOOKING.value
         
         if intent == Intent.HUMAN_HANDOFF:
             return ConversationStateEnum.HUMAN_ASSISTANCE.value
         
-        if current_state in [ConversationStateEnum.SEARCHING.value, ConversationStateEnum.VIEWING_PROPERTY.value]:
+        if current_state in [ConversationStateEnum.SEARCHING.value, ConversationStateEnum.VIEWING_PROPERTY.value, ConversationStateEnum.BOOKING.value]:
             return current_state
         
         return ConversationStateEnum.IDLE.value
