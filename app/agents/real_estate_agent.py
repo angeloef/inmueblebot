@@ -177,6 +177,38 @@ class RealEstateAgent:
                     last_shown_properties=last_props if last_props else None
                 )
 
+                # ── Scheduling nudge: fetch pending scheduling ONCE per turn ──────────────────
+                # Used by: (a) start-of-turn LLM nudge, (b) SCHEDULING GUARD skip condition
+                try:
+                    _turn_pending_sched = await memory_manager.get_pending_scheduling(phone) or {}
+                except Exception:
+                    _turn_pending_sched = {}
+
+                if _turn_pending_sched.get("active") and _turn_pending_sched.get("property_id"):
+                    _tp_pid = _turn_pending_sched.get("property_id")
+                    _tp_date = _turn_pending_sched.get("date_str", "")
+                    _tp_time = _turn_pending_sched.get("time_str", "")
+                    _user_msg_lower_sched = (user_message or "").lower()
+                    _is_photo_req = any(kw in _user_msg_lower_sched for kw in ["foto", "imagen", "imag", "ver foto"])
+                    if not _is_photo_req:
+                        _nudge_parts = [
+                            "INSTRUCCION PRIORITARIA: El usuario esta en el flujo de agendamiento.",
+                            f"Propiedad seleccionada: ID={_tp_pid}.",
+                        ]
+                        if _tp_date:
+                            _nudge_parts.append(f"Fecha ya proporcionada: '{_tp_date}'.")
+                        if _tp_time:
+                            _nudge_parts.append(f"Hora ya proporcionada: '{_tp_time}'.")
+                        _nudge_parts.extend([
+                            "El usuario puede estar dando: una fecha, una hora, su nombre u otro dato requerido.",
+                            f"LLAMA schedule_visit(property_id={_tp_pid}, ...) CON LA INFORMACION DISPONIBLE.",
+                            "PROHIBIDO confirmar verbalmente sin llamar la herramienta.",
+                            "PROHIBIDO volver a mostrar fotos.",
+                            "Si el usuario da su nombre, usalo en schedule_visit como contact_name.",
+                        ])
+                        messages.append({"role": "system", "content": " ".join(_nudge_parts)})
+                        logger.info(f"[Agent] 📅 START-OF-TURN scheduling nudge injected for {phone} (pid={_tp_pid})")
+
                 tools_used = []
                 response_text = ""
                 rich_content = {}
@@ -299,6 +331,10 @@ class RealEstateAgent:
                         _current_state = merged_context.get("current_state", "")
                         if _current_state in (ConversationStateEnum.BOOKING.value,):
                             _skip_guard = True
+                        # Skip guard if there's an active pending scheduling context
+                        if _turn_pending_sched.get("active") and _turn_pending_sched.get("property_id"):
+                            _skip_guard = True
+                            logger.info(f"[Agent] 🛡️ SCHEDULING GUARD skipped: active pending_scheduling for {phone}")
                         if user_message:
                             _time_patterns = ["a las", "para las", "a la", "para la", ":00", "pm", "am"]
                             if any(p in user_message.lower() for p in _time_patterns):
