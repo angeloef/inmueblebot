@@ -851,39 +851,48 @@ class MemoryManager:
         # 3. Reset PostgreSQL: clear name, preferences, and delete appointments
         try:
             from app.db.session import async_session_factory
-            from app.db.repository import UserRepository, AppointmentRepository
-            from app.db.models import User, Appointment
+            from app.db.repository import UserRepository
+            from app.db.models import User
+            from sqlalchemy import text as _text, delete as _delete
 
             async with async_session_factory() as session:
-                # Reset user record
                 user_repo = UserRepository(User, session)
                 user = await user_repo.get_by_phone(phone)
                 if user:
-                    user.name = None
-                    user.location_preferences = None
-                    user.property_type = None
-                    user.budget_min = None
-                    user.budget_max = None
-                    user.lead_score = 0
-                    user.last_interaction = None
-                    user.extra_data = None
-                    user.email = None
-                    logger.info(f"[Memory] User name and preferences cleared for {phone}")
+                    user_id = user.id
 
-                    # Delete all appointments for this user
-                    apt_repo = AppointmentRepository(Appointment, session)
-                    appointments = await apt_repo.get_by_user(user.id)
-                    for apt in appointments:
-                        await session.delete(apt)
-                    if appointments:
-                        logger.info(f"[Memory] Deleted {len(appointments)} appointments for {phone}")
-                    else:
-                        logger.info(f"[Memory] No appointments found for {phone}")
+                    # Use raw SQL for the user update to avoid JSONB/text[] type cast conflict.
+                    # ORM attribute assignment triggers autoflush with ::jsonb cast which fails
+                    # when the DB column is actually text[].
+                    await session.execute(
+                        _text(
+                            "UPDATE users SET name=NULL, location_preferences=NULL, "
+                            "property_type=NULL, budget_min=NULL, budget_max=NULL, "
+                            "lead_score=0, last_interaction=NULL, extra_data=NULL, email=NULL "
+                            "WHERE id=:uid"
+                        ),
+                        {"uid": user_id},
+                    )
+                    logger.info(f"[Memory] User preferences cleared (raw SQL) for {phone}")
 
-                    # Delete all conversations for this user (cascade handles messages)
-                    for conv in user.conversations:
-                        await session.delete(conv)
-                    logger.info(f"[Memory] Deleted conversations for {phone}")
+                    # Delete appointments via raw SQL (no autoflush risk)
+                    from app.db.models import Appointment
+                    apt_result = await session.execute(
+                        _text("DELETE FROM appointments WHERE user_id=:uid RETURNING id"),
+                        {"uid": user_id},
+                    )
+                    apt_count = apt_result.rowcount
+                    if apt_count:
+                        logger.info(f"[Memory] Deleted {apt_count} appointments for {phone}")
+
+                    # Delete conversations via raw SQL
+                    conv_result = await session.execute(
+                        _text("DELETE FROM conversations WHERE user_id=:uid RETURNING id"),
+                        {"uid": user_id},
+                    )
+                    conv_count = conv_result.rowcount
+                    if conv_count:
+                        logger.info(f"[Memory] Deleted {conv_count} conversations for {phone}")
 
                     await session.commit()
                     logger.info(f"[Memory] PostgreSQL full reset for {phone}")
