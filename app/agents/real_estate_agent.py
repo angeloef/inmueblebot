@@ -209,6 +209,26 @@ class RealEstateAgent:
                         messages.append({"role": "system", "content": " ".join(_nudge_parts)})
                         logger.info(f"[Agent] 📅 START-OF-TURN scheduling nudge injected for {phone} (pid={_tp_pid})")
 
+                # ── Photo nudge: if user asks for photos with a selected property, force get_property_images ──
+                _photo_keywords_turn = ["foto", "imagen", "imag", "ver foto", "mostrar foto", "mira"]
+                _user_wants_photos = any(kw in (user_message or "").lower() for kw in _photo_keywords_turn)
+                _selected_pid = merged_context.get("selected_property_id")
+                if _user_wants_photos and _selected_pid and not _turn_pending_sched.get("active"):
+                    _also_wants_sched = any(kw in (user_message or "").lower() for kw in
+                        ["agendar", "visita", "coordinar", "reservar", "turno", "cita"])
+                    _photo_nudge = (
+                        f"INSTRUCCION PRIORITARIA: El usuario quiere ver las fotos de la propiedad ID={_selected_pid}. "
+                        f"LLAMA get_property_images(property_id={_selected_pid}) AHORA. "
+                        "PROHIBIDO repetir la pregunta '¿Te gustaria ver las fotos?'. El usuario ya respondio que si. "
+                    )
+                    if _also_wants_sched:
+                        _photo_nudge += (
+                            "El usuario TAMBIEN quiere agendar una visita. "
+                            "Despues de mostrar las fotos, preguntale que dia y horario le viene bien."
+                        )
+                    messages.append({"role": "system", "content": _photo_nudge})
+                    logger.info(f"[Agent] 📷 PHOTO nudge injected for {phone} (pid={_selected_pid}, also_sched={_also_wants_sched})")
+
                 tools_used = []
                 response_text = ""
                 rich_content = {}
