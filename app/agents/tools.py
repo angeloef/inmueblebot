@@ -1151,13 +1151,7 @@ async def reschedule_appointment_tool(
                                 lines.append(f"{i}. 📆 {date_str} a las {time_str}")
                             lines.append("")
                             lines.append("Decime el número de la cita que quieras cambiar.")
-                            message = "\n".join(lines)
-                            # Append hidden UUID mapping for LLM consumption
-                            id_lines = []
-                            for i, apt in enumerate(upcoming_apts, 1):
-                                id_lines.append(f"<!--ID:{i}:{apt.id}-->")
-                            message += "\n" + "\n".join(id_lines)
-                            return message
+                            return "\n".join(lines)
             except Exception as e:
                 logger.warning(f"[reschedule] Could not auto-resolve appointment: {e}")
         

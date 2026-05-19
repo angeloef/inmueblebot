@@ -632,16 +632,7 @@ def format_appointment_list(appointments: list[Appointment], property_titles: di
         lines.append(f"{i}. 📆 {date_str} a las {time_str} — {prop_title} ({type_label})")
         lines.append("")
 
-    message = "\n".join(lines)
-
-    # Append structured metadata for LLM consumption (hidden from user via HTML comment syntax)
-    # Format: <!--ID:N:uuid--> where N is the 1-based index the user sees
-    id_lines = []
-    for i, apt in enumerate(appointments, 1):
-        id_lines.append(f"<!--ID:{i}:{apt.id}-->")
-    message += "\n" + "\n".join(id_lines)
-
-    return message
+    return "\n".join(lines)
 
 
 appointment_service = AppointmentService()
