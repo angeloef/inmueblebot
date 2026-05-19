@@ -557,17 +557,17 @@ def delete_lead(
 
 
 @router.post("/users/{phone}/reset")
-def reset_user_context(
+async def reset_user_context(
     phone: str,
     _: bool = Depends(verify_admin_api_key),
 ):
     """Reset conversation context for a user by phone number.
     Clears Redis keys, in-memory fallback, and PostgreSQL preferences.
     Useful for testing — ensures the bot starts fresh on next message."""
-    import asyncio
+    from app.core.memory import memory_manager as _mm
     try:
-        asyncio.run(memory_manager.reset_user_context(phone))
-        return {"status": "reset", "phone": phone}
+        success = await _mm.reset_user_context(phone)
+        return {"status": "reset" if success else "error", "phone": phone}
     except Exception as exc:
         import traceback
         raise HTTPException(status_code=500, detail=traceback.format_exc())
@@ -1188,34 +1188,6 @@ async def agent_reply(
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result))
     return {"status": "sent", "to": phone_to}
-
-
-@router.post("/users/{phone}/reset")
-async def reset_user_context(
-    phone: str,
-    _: bool = Depends(verify_admin_api_key),
-):
-    """Reset conversation context for a user by phone number.
-    
-    Deletes all Redis keys (context, messages, summary) for the given
-    phone, clears in-memory fallback caches, and resets PostgreSQL
-    user preferences (location, budget, property type, lead score) to
-    defaults so the next conversation starts completely fresh.
-    
-    Useful for testing — especially the test phone 5493754455340.
-    """
-    from app.core.memory import memory_manager
-    try:
-        success = await memory_manager.reset_user_context(phone)
-        if success:
-            return {
-                "status": "reset",
-                "phone": phone,
-                "message": f"Contexto reseteado para {phone}",
-            }
-        return {"status": "error", "phone": phone, "message": "Reset failed"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/resume/{phone}")
