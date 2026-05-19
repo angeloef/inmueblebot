@@ -78,10 +78,16 @@ async def lifespan(app: FastAPI):
             deleted = await memory_manager.reset_all_users()
             logger.info(f"[Startup] All users context reset: {deleted} Redis keys cleared")
         else:
-            reset_phone = os.environ.get("RESET_PHONE_ON_STARTUP") or "5493754455340"
             from app.core.memory import memory_manager
-            await memory_manager.reset_user_context(reset_phone)
-            logger.info(f"[Startup] Context auto-reset for test phone {reset_phone}")
+            # Reset all test phones on startup
+            test_phones = [
+                os.environ.get("RESET_PHONE_ON_STARTUP") or "5493754455340",  # compañero
+                "5493754532056",  # Julian
+            ]
+            for reset_phone in test_phones:
+                if reset_phone:
+                    await memory_manager.reset_user_context(reset_phone)
+                    logger.info(f"[Startup] Context auto-reset for test phone {reset_phone}")
     except Exception as e:
         logger.warning(f"[Startup] Context auto-reset failed: {e}")
 
