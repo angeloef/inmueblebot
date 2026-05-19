@@ -1390,8 +1390,23 @@ async def get_my_appointments(phone: str = None) -> str:
                 return "No tienes citas programadas."
             
             appointments = await appointment_service.get_user_appointments(user.id, upcoming=True)
-            
-            return format_appointment_list(appointments)
+
+            # Fetch property titles for display
+            from app.db.models import Property
+            from sqlalchemy import select
+            prop_ids = list({a.property_id for a in appointments})
+            property_titles = {}
+            if prop_ids:
+                try:
+                    prop_result = await session.execute(
+                        select(Property.id, Property.title).where(Property.id.in_(prop_ids))
+                    )
+                    for row in prop_result.all():
+                        property_titles[row[0]] = row[1]
+                except Exception as _pe:
+                    logger.warning(f"[get_my_appointments] Error fetching property titles: {_pe}")
+
+            return format_appointment_list(appointments, property_titles)
             
     except Exception as e:
         logger.error(f"Error al obtener citas: {e}")
