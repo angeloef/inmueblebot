@@ -508,10 +508,10 @@ class RealEstateAgent:
                             _user_msg_lower = (user_message or "").lower()
                             _sched_keywords = ["coordinar", "visita", "agendar", "reservar", "turno", "cita"]
                             _asked_for_schedule = any(kw in _user_msg_lower for kw in _sched_keywords)
+                            _images_found = bool(new_rich.get("images"))
                             if _asked_for_schedule:
                                 _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
                                 if _selected:
-                                    # Save pending scheduling info so context survives across turns
                                     try:
                                         await memory_manager.save_pending_scheduling(
                                             phone=phone,
@@ -522,18 +522,31 @@ class RealEstateAgent:
                                         logger.info(f"[Agent] 📝 Saved pending scheduling context for {phone}")
                                     except Exception as _pe:
                                         logger.warning(f"[Agent] Could not save pending scheduling: {_pe}")
+                                    _photo_note = (
+                                        "Las fotos ya fueron enviadas al usuario."
+                                        if _images_found
+                                        else "Esta propiedad no tiene fotos disponibles — NO digas que enviaste fotos."
+                                    )
                                     messages.append({
                                         "role": "system",
                                         "content": (
-                                            "¡Importante! El usuario pidió fotos Y coordinar una visita. "
-                                            "YA mostraste las fotos arriba. "
-                                            "Ahora llamá schedule_visit para agendar la visita. "
-                                            f"Usá property_id={_selected}. "
-                                            "No preguntes confirmación de propiedad — el usuario ya la eligió. "
-                                            "Pasá directo a coordinar el día y horario."
+                                            f"¡Importante! El usuario pidió fotos Y coordinar una visita. "
+                                            f"{_photo_note} "
+                                            "Preguntale qué día y horario le vendría bien para la visita. "
+                                            f"Cuando tengas día y hora, llamá schedule_visit con property_id={_selected}. "
+                                            "No preguntes confirmación de propiedad — el usuario ya la eligió."
                                         )
                                     })
-                                    logger.info(f"[Agent] 📷+📅 User asked for photos AND schedule — injected schedule_visit nudge")
+                                    logger.info(f"[Agent] 📷+📅 photos+schedule nudge (images_found={_images_found})")
+                            elif not _asked_for_schedule and not _images_found:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "No hay fotos disponibles para esta propiedad. "
+                                        "Informale al usuario con amabilidad y ofrecele coordinar una visita "
+                                        "para conocerla en persona."
+                                    )
+})
 
                         # Save selected_property_id for context continuity across turns
                         if tool_args.get("property_id") and tool_name in ("get_property_details", "get_property_images"):

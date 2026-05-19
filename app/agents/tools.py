@@ -1033,8 +1033,19 @@ async def schedule_visit(
                     suggestions = result.get("suggested_times", [])
                     if suggestions:
                         lines = [f"- {s.get('formatted') or s.get('datetime', '')}" for s in suggestions[:3]]
-                        return f"⚠️ {msg}\n\n🎯 Horarios disponibles:\n" + "\n".join(lines) + "\n\n¿Alguna?"
-                    return f"⚠️ {msg}\n\n¿Qué otro horario te conviene?"
+                        # Embed first suggestion as hidden comment so LLM can confirm it on next "si"
+                        first_dt = suggestions[0].get("datetime", "")  # e.g. "2026-05-23 17:00"
+                        hidden = ""
+                        if first_dt:
+                            _d = first_dt.split(" ")[0] if " " in first_dt else first_dt
+                            _t = first_dt.split(" ")[1] if " " in first_dt else ""
+                            hidden = (
+                                f"\n\n<!--ALTERNATIVES_PROPOSED:"
+                                f" si el usuario confirma, llamá schedule_visit("
+                                f"property_id={property_id}, date_str=\"{_d}\", time_str=\"{_t}\")-->"
+                            )
+                        return f"⚠️ {msg}\n\n🎯 Horarios disponibles:\n" + "\n".join(lines) + "\n\n¿Alguna?" + hidden
+                    return f"⚠️ {msg}\n\n¿Qué otro horario te conviene?" 
                 return f"⚠️ No se pudo completar la agenda.\n\n¿Qué otro horario te conviene?"
             
             # Success - format confirmation
