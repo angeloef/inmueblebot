@@ -499,6 +499,17 @@ class RealEstateAgent:
                             if _asked_for_schedule:
                                 _selected = merged_context.get("selected_property_id", tool_args.get("property_id", ""))
                                 if _selected:
+                                    # Save pending scheduling info so context survives across turns
+                                    try:
+                                        await memory_manager.save_pending_scheduling(
+                                            phone=phone,
+                                            property_id=str(_selected),
+                                            date_str="",
+                                            time_str=""
+                                        )
+                                        logger.info(f"[Agent] 📝 Saved pending scheduling context for {phone}")
+                                    except Exception as _pe:
+                                        logger.warning(f"[Agent] Could not save pending scheduling: {_pe}")
                                     messages.append({
                                         "role": "system",
                                         "content": (
@@ -679,8 +690,8 @@ class RealEstateAgent:
 
         # Inject pending scheduling info for context-aware scheduling — BEFORE history
         pending = user_context.get("pending_scheduling_info")
-        if pending and pending.get("date_str"):
-            saved_date = pending["date_str"]
+        if pending and pending.get("active"):
+            saved_date = pending.get("date_str", "")
             saved_pid = pending.get("property_id", "")
             saved_time = pending.get("time_str", "")
             schedule_context = (
@@ -689,7 +700,8 @@ class RealEstateAgent:
             )
             if saved_pid:
                 schedule_context += f"  Propiedad: {saved_pid}\n"
-            schedule_context += f"  Fecha guardada: \"{saved_date}\"\n"
+            if saved_date:
+                schedule_context += f"  Fecha guardada: \"{saved_date}\"\n"
             if saved_time:
                 schedule_context += f"  Hora guardada: \"{saved_time}\"\n"
             schedule_context += (

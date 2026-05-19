@@ -218,6 +218,7 @@ class MemoryManager:
         context = await self.get_user_context(phone)
         
         context["pending_scheduling_info"] = {
+            "active": True,
             "property_id": property_id,
             "date_str": date_str,
             "time_str": time_str,
