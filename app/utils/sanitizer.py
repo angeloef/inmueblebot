@@ -362,26 +362,60 @@ def is_internal_error(text: str) -> bool:
             return True
     return False
 
+def _deduplicate_text(text: str) -> str:
+    """
+    Elimina párrafos o bloques duplicados que el LLM a veces genera por error.
+    Solo elimina duplicados CONSECUTIVOS, no afecta listas ni repeticiones intencionales.
+    """
+    if not text:
+        return text
+
+    # Strategy 1: if the whole text is repeated exactly (e.g. "A\n\nA")
+    # Split by double newline and check for consecutive identical chunks
+    chunks = [c.strip() for c in re.split(r'\n{2,}', text)]
+    deduped = []
+    for chunk in chunks:
+        if chunk and (not deduped or chunk != deduped[-1]):
+            deduped.append(chunk)
+    result = '\n\n'.join(deduped)
+
+    # Strategy 2: if the entire text is repeated as a single block with just a newline separator
+    # e.g. "Hello world\nHello world"
+    half = len(result) // 2
+    if half > 20:
+        first_half = result[:half].strip()
+        second_half = result[half:].strip().lstrip('\n')
+        if first_half == second_half:
+            result = first_half
+
+    return result
+
+
 def sanitize_bot_response(text: str) -> str:
     """
     Limpia la respuesta del bot antes de enviarla a WhatsApp.
     - Elimina URLs de imágenes (se envían por separado como media)
     - Elimina paths internos y artefactos de tool-calling
     - Reemplaza errores internos con mensajes profesionales
+    - Elimina párrafos duplicados (artefacto del LLM)
     """
     if not text:
         return text
-    
+
     # First: detect and replace internal errors with safe fallback
     if is_internal_error(text):
         logger.warning(f"[Sanitizer] ⚠️ Detectado error interno en respuesta: {text[:80]}...")
         return _SAFE_FALLBACK_MESSAGE
-    
+
     # Strip technical patterns
     for pattern in _OUTPUT_LEAK_PATTERNS:
         text = pattern.sub('', text)
-    
+
     text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # Remove consecutive duplicate paragraphs (LLM repetition artifact)
+    text = _deduplicate_text(text)
+
     return text.strip()
 
 

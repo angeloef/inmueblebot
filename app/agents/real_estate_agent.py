@@ -893,18 +893,29 @@ class RealEstateAgent:
         selected_id = user_context.get("selected_property_id")
         selected_title = user_context.get("selected_property_title") or "propiedad"
         if selected_id:
+            # Check if user is asking about scheduling so we can suppress the confirmation question
+            _sched_kws = ["visita", "agendar", "agend", "coordinar", "turno", "cita",
+                          "puedo ir", "ir a ver", "conocer", "verla", "visitarla"]
+            _user_asking_sched = any(kw in (user_message or "").lower() for kw in _sched_kws)
+
             selected_prop_reminder = (
                 f"\n### ACTIVE PROPERTY CONTEXT\n"
-                f"El usuario est\u00e1 viendo actualmente la propiedad: [{selected_title}] con ID: {selected_id}\n"
-                f"SIEMPRE que mencione 'esa', 'esa propiedad', 'la misma', 'la que vimos', "
-                f"'el departamento que vimos', 'esa casa' -- referite a [{selected_title}] con ID={selected_id}.\n"
-                f"Para schedule_visit: property_id={selected_id} (NO uses otro ID).\n"
+                f"Propiedad activa: [{selected_title}] (ID={selected_id}).\n"
+                f"SIEMPRE que el usuario mencione 'esa', 'la misma', 'esa propiedad', "
+                f"'el departamento que vimos', 'esa casa' → referite a [{selected_title}] ID={selected_id}.\n"
+                f"Para schedule_visit usa property_id={selected_id} (NO uses otro ID).\n"
             )
+            if _user_asking_sched:
+                selected_prop_reminder += (
+                    f"PROHIBIDO preguntar '¿Te referís a {selected_title}?' — "
+                    f"la propiedad ya está identificada. "
+                    f"Pasá DIRECTAMENTE a preguntar el día de la visita.\n"
+                )
             messages.append({
                 "role": "system",
                 "content": selected_prop_reminder
             })
-            logger.info(f"[Agent] Injected selected_property_id={selected_id} into LLM context for {phone}")
+            logger.info(f"[Agent] Injected selected_property_id={selected_id} (sched={_user_asking_sched}) for {phone}")
 
         # Inject pending scheduling info for context-aware scheduling — BEFORE history
         pending = user_context.get("pending_scheduling_info")
@@ -1348,8 +1359,3 @@ class RealEstateAgent:
             "transferir a un agente",
         ]
         
-        message_lower = message.lower()
-        return any(keyword in message_lower for keyword in handoff_keywords)
-
-
-real_estate_agent = RealEstateAgent()
