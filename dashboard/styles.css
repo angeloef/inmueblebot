@@ -23,7 +23,7 @@ input, select, textarea { font-family: inherit; }
 /* ───── Sidebar ───── */
 .sb { background: var(--bg-sidebar); border-right: 1px solid var(--border-default); padding: 12px 10px; display: flex; flex-direction: column; gap: 1px; overflow: auto; }
 .sb-brand { display: flex; align-items: center; justify-content: center; padding: 6px 8px 12px; }
-.sb-brand img { width: 90px; height: 90px; }
+.sb-brand img { width: 180px; height: 180px; }
 .sb-brand span { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .sb-section { font-size: 10px; color: var(--fg-muted); font-weight: 600; padding: 14px 10px 4px; letter-spacing: 0.06em; text-transform: uppercase; }
 .sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 15px; color: var(--fg-secondary); cursor: pointer; user-select: none; transition: background var(--dur-fast); }
