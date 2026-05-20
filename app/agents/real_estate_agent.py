@@ -1361,4 +1361,8 @@ class RealEstateAgent:
             "transferirme",
             "transferir a un agente",
         ]
-        
+        return any(kw in message.lower() for kw in handoff_keywords)
+
+
+# Module-level singleton — imported by webhook.py and other modules
+real_estate_agent = RealEstateAgent()
