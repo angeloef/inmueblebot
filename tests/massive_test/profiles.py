@@ -1,14 +1,19 @@
 """
-profiles.py (v2) — 8 user profiles for enhanced Monte Carlo test.
+profiles.py (v3) — 12 user profiles for enhanced Monte Carlo test.
 
-New in v2:
-- Profile 7: User who asks for photos
-- Profile 8: User who compares properties
-- All profiles have erratic behaviors: wrong IDs, contradictions,
-  intent changes mid-conversation, confusion, incomplete info
-- Complex flows within sessions (search → compare → details → schedule)
-- Users change their mind: "no esa, la otra", "mejor busco otra cosa"
-- Random confusion probability per turn (~20%)
+New in v3:
+- Profile 9: Lead capture → schedule (save_lead_info)
+- Profile 10: Human handoff (request_human_assistance)
+- Profile 11: Preferences save/load (update/get_user_preferences + recommend)
+- Profile 12: Reschedule/Cancel existing appointments
+
+v3 updates to existing:
+- Profile 1: Added refine_search path
+- Profile 6: Added UUID-based selection + reschedule/cancel split
+- Profile 8: Added recommend_properties path
+
+All profiles have erratic behaviors: wrong IDs, contradictions,
+intent changes, confusion, incomplete info, typos.
 """
 
 import random
@@ -47,6 +52,7 @@ DATES = [
     "mañana", "mañana a las 10", "mañana a las 15", "pasado mañana",
     "el viernes", "el martes que viene", "hoy a las 17", "mañana a las 11",
     "este sábado", "el lunes", "mañana a las 9", "el jueves a las 14",
+    "el miércoles a las 16",
 ]
 
 NAMES = [
@@ -78,6 +84,7 @@ CONFUSED_RESPONSES = [
     "no esa no, la de más abajo",
 ]
 
+# ── Utility helpers ─────────────────────────────────────────────────
 
 def greet() -> str:
     return random.choice(GREETINGS) + ("!" if random.random() < 0.3 else "")
@@ -89,26 +96,35 @@ def maybe_confuse() -> bool:
 
 
 def maybe_wrong_id() -> str or None:
-    """~25% chance of giving a hallucinated/wrong ID."""
-    if random.random() < 0.25:
+    """~30% chance of giving a hallucinated/wrong ID (v3: bumped from 25%)."""
+    if random.random() < 0.30:
         return random.choice(WRONG_IDS)
     return None
 
 
 def maybe_change_intent() -> bool:
-    """~15% chance user changes their mind mid-conversation."""
+    """~20% chance user changes their mind mid-conversation (v3: bumped from 15%)."""
+    return random.random() < 0.20
+
+
+def maybe_typo() -> bool:
+    """~25% chance user makes a typo (v3: bumped from 15%)."""
+    return random.random() < 0.25
+
+
+def maybe_contradict() -> bool:
+    """~15% chance user contradicts their own preference (NEW in v3)."""
     return random.random() < 0.15
 
 
 # ═══════════════════════════════════════════════════════════════════
-# PROFILE 1:  Busca alquiler específico (complex flow)
+# PROFILE 1:  Busca alquiler específico (complex flow + refine)
 # ═══════════════════════════════════════════════════════════════════
 
 def p1_turn1(_last_response=None):
     """Search with full criteria, occasionally with misspellings"""
     loc = random.choice(LOCATIONS)
-    # 15% chance: typo in location
-    if random.random() < 0.15:
+    if maybe_typo():
         loc = loc.replace("á", "a").replace("é", "e").replace("ó", "o")
     budget = random.choice(BUDGETS)
     typ = random.choice(TYPES)
@@ -116,15 +132,14 @@ def p1_turn1(_last_response=None):
 
 
 def p1_turn2(_last_response=None):
-    """After results: confused pick, or comparison, or details"""
-    # 20% chance: wrong ID first
+    """After results: confused pick, comparison, refine, or details"""
     wrong = maybe_wrong_id()
     if wrong:
         return wrong
 
     action = random.choices(
-        ["details", "compare", "nope", "refine"],
-        weights=[0.5, 0.15, 0.2, 0.15],
+        ["details", "compare", "nope", "refine", "exit"],
+        weights=[0.35, 0.15, 0.2, 0.2, 0.1],  # v3: added refine (20%)
     )[0]
     if action == "details":
         return random.choice(REFERENCES)
@@ -132,14 +147,19 @@ def p1_turn2(_last_response=None):
         ids = random.choice(["la 1 y la 2", "la primera y la tercera",
                              "compara la 1 con la 2", "la 2 y la 5"])
         return f"compará {ids}"
-    elif action == "nope":
+    elif action == "refine":  # NEW: refine_search path
+        return random.choice([
+            f"refiná la búsqueda, algo más barato en {random.choice(LOCATIONS)}",
+            "filtrá mejor, con 2 ambientes nomás",
+            f"ajustá la búsqueda, en {random.choice(LOCATIONS)} más céntrico",
+        ])
+    elif action == "exit":
         return random.choice(["gracias, después vuelvo", "no me interesan, chau"])
     return f"mostrame algo más barato en {random.choice(LOCATIONS)}"
 
 
 def p1_turn3(_last_response=None):
     """After details/compare: schedule, photos, confused, or back"""
-    # 15% chance: user says "no, la otra" (confused reference)
     if maybe_confuse():
         return random.choice(CONFUSED_RESPONSES)
 
@@ -160,13 +180,10 @@ def p1_turn3(_last_response=None):
 def p1_turn4(_last_response=None):
     """After scheduling: may accept, reject, or change mind"""
     resp = (_last_response or "").lower()
-    # 25%: user changes mind about date
     if maybe_change_intent() or "ocupado" in resp or "alternativa" in resp:
         return f"ok, entonces {random.choice(DATES)}"
-    # 15%: user cancels after scheduling
     if random.random() < 0.15:
         return "no, al final no, cancelá eso"
-    # 10%: user wants another property after scheduling
     if random.random() < 0.10 and "agendada" in resp:
         return "gracias, ahora mostrame otra propiedad"
     return random.choice(["gracias, perfecto", "genial, muchas gracias",
@@ -184,7 +201,7 @@ def p2_turn1(_last_response=None):
 
 
 def p2_turn2(_last_response=None):
-    """After results: 20% chance of wrong pick then correct"""
+    """After results: 30% chance of wrong pick then correct"""
     if maybe_wrong_id():
         return random.choice(WRONG_IDS)
     return random.choice(REFERENCES)
@@ -198,7 +215,7 @@ def p2_turn3(_last_response=None):
 
 
 def p2_turn4(_last_response=None):
-    """After scheduling: confirm or exit"""
+    """After scheduling: confirm, change intent, or exit"""
     if maybe_change_intent():
         return "no, mejor busco otra propiedad"
     return "gracias, después te confirmo"
@@ -224,7 +241,7 @@ def p3_turn2(_last_response=None):
     if random.random() < 0.25:
         return f"no sé bien, un {typ} por {loc} capaz"
     if random.random() < 0.15:
-        return f"un {typ} nomás, no sé la zona"  # Still ambiguous
+        return f"un {typ} nomás, no sé la zona"
     return f"un {typ} en {loc}"
 
 
@@ -244,14 +261,14 @@ def p3_turn3(_last_response=None):
 
 
 def p3_turn4(_last_response=None):
-    """After details: schedule or change intent"""
+    """After details: schedule, FAQ, or change intent"""
     resp = (_last_response or "").lower()
-    # 20%: change intent — ask FAQ or ask for something else
     if maybe_change_intent():
         return random.choice([
             "esperá, ¿a qué hora abren la inmobiliaria?",
             "decime, ¿aceptan mascotas?",
             "cambio de opinión, mostrame casas mejor",
+            "sabés qué, primero decime el horario de atención",
         ])
     if "agendar" in resp or "visit" in resp:
         return f"si, {random.choice(DATES)}, soy {random.choice(NAMES)}"
@@ -322,7 +339,6 @@ def p5_turn1(_last_response=None):
 
 def p5_turn2(_last_response=None):
     """After fallbacks: confused, try again, or exit"""
-    # 30%: user gets confused by fallback output
     if maybe_confuse():
         return random.choice(["no entiendo, ¿qué significa todo eso?",
                               "eh, no me queda claro, explicame de nuevo",
@@ -342,7 +358,7 @@ def p5_turn3(_last_response=None):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# PROFILE 6:  Cliente existente → complex flow (reschedule/cancel/change)
+# PROFILE 6:  Cliente existente → reschedule/cancel/search (v3: UUID pattern)
 # ═══════════════════════════════════════════════════════════════════
 
 def p6_turn1(_last_response=None):
@@ -356,7 +372,7 @@ def p6_turn1(_last_response=None):
 
 def p6_turn2(_last_response=None):
     """After seeing appointments: complex decisions"""
-    # 20%: user changes mind
+    # 20% intent change
     if maybe_change_intent():
         return random.choice([
             "no, mejor buscame una propiedad nueva",
@@ -365,31 +381,41 @@ def p6_turn2(_last_response=None):
         ])
     action = random.choices(
         ["reschedule", "cancel", "new_search", "exit"],
-        weights=[0.25, 0.25, 0.2, 0.3],
+        weights=[0.25, 0.25, 0.25, 0.25],
     )[0]
     if action == "reschedule":
-        return f"quiero cambiar la hora para {random.choice(DATES)}"
+        return random.choice([
+            f"quiero reprogramar la primera cita para {random.choice(DATES)}",
+            f"cambiá la del jueves para {random.choice(DATES)}",
+            f"reprogramá mi visita para {random.choice(DATES)}",
+        ])
     elif action == "cancel":
-        return random.choice(["cancelá esa cita por favor", "dá de baja ese turno",
-                              "no voy a poder ir, cancelalo"])
+        return random.choice([
+            "cancelá la primera cita por favor",
+            "dá de baja mi turno de la semana que viene",
+            "no voy a poder ir, cancelalo",
+        ])
     elif action == "new_search":
         return f"buscame un {random.choice(TYPES)} en {random.choice(LOCATIONS)} {random.choice(BUDGETS)}"
     return "gracias, después vuelvo"
 
 
 def p6_turn3(_last_response=None):
-    """After action: confirm or change"""
+    """After action: confirm, change, or retry"""
     resp = (_last_response or "").lower()
-    if "no tienes citas" in resp or "no encontré" in resp:
+    if "no tienes citas" in resp or "no encontré" in resp or "ninguna" in resp:
         return f"ah ok, buscame un {random.choice(TYPES)} en {random.choice(LOCATIONS)} entonces"
-    # 20%: user changes mind about reschedule
-    if maybe_change_intent() and ("reprogram" in resp or "cancel" in resp):
-        return "no, dejalo como estaba mejor"
+    # 20%: user changes mind about reschedule/cancel
+    if maybe_change_intent() and ("reprogram" in resp or "cancel" in resp or "cambió" in resp):
+        return random.choice([
+            "no, dejalo como estaba mejor",
+            "no sabés, dejá, no toques nada",
+        ])
     return "si, confirmalo"
 
 
 # ═══════════════════════════════════════════════════════════════════
-# PROFILE 7:  Fotos + confused picks (NEW)
+# PROFILE 7:  Fotos + confused picks
 # ═══════════════════════════════════════════════════════════════════
 
 def p7_turn1(_last_response=None):
@@ -399,7 +425,6 @@ def p7_turn1(_last_response=None):
 
 def p7_turn2(_last_response=None):
     """After results: pick one (possibly wrong first)"""
-    # 30% chance of wrong ID first
     if maybe_confuse():
         return random.choice(WRONG_IDS)
     return f"{random.choice(REFERENCES)}"
@@ -430,7 +455,7 @@ def p7_turn4(_last_response=None):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# PROFILE 8:  Comparación de propiedades (NEW)
+# PROFILE 8:  Comparación + recommend (v3: added recommend path)
 # ═══════════════════════════════════════════════════════════════════
 
 def p8_turn1(_last_response=None):
@@ -450,18 +475,191 @@ def p8_turn2(_last_response=None):
 
 
 def p8_turn3(_last_response=None):
-    """After comparison: pick one, may be confused"""
+    """After comparison: pick one, ask for recommendation, or confused"""
     if maybe_confuse():
         return random.choice(CONFUSED_RESPONSES)
+    action = random.choices(["details", "recommend", "wrong_id"],
+                            weights=[0.5, 0.3, 0.2])[0]  # v3: added recommend
+    if action == "recommend":
+        return random.choice([
+            "recomendame la mejor opción",
+            "cuál me recomendás de todas?",
+            "decime cuál es la mejor relación precio-calidad",
+        ])
+    if action == "wrong_id":
+        return random.choice(WRONG_IDS)
     return f"quiero ver los detalles de {random.choice(['la primera', 'la que comparaste', 'la más barata', 'el ID 20'])}"
 
 
 def p8_turn4(_last_response=None):
-    """After details: schedule or compare more"""
-    # 20%: user wants to compare more
+    """After details/recommend: schedule, compare more, or exit"""
     if maybe_change_intent() or random.random() < 0.2:
         return "ahora compará esa con la otra que vimos"
     return f"agendá una visita {random.choice(DATES)}, soy {random.choice(NAMES)}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFILE 9:  Guarda lead + agenda (NEW — save_lead_info)
+# ═══════════════════════════════════════════════════════════════════
+
+def p9_turn1(_last_response=None):
+    """Vague search — bot will qualify then ask for contact info"""
+    return f"{greet()} estoy buscando un {random.choice(TYPES)} en {random.choice(LOCATIONS)} {random.choice(BUDGETS)}"
+
+
+def p9_turn2(_last_response=None):
+    """After search: pick a property (may be wrong first)"""
+    if maybe_wrong_id():
+        return random.choice(WRONG_IDS)
+    return f"quiero ver {random.choice(REFERENCES)}"
+
+
+def p9_turn3(_last_response=None):
+    """After details: bot may ask for contact info — provide name"""
+    return f"me interesa, mi nombre es {random.choice(NAMES)} y mi teléfono es el mismo"
+
+
+def p9_turn4(_last_response=None):
+    """After lead capture: schedule visit or confused"""
+    if maybe_change_intent():
+        return random.choice([
+            "no, mejor busco otra propiedad primero",
+            "esperá, mostrame las fotos antes",
+            "cambio de idea, quiero ver otro",
+        ])
+    action = random.choices(["schedule", "exit"], weights=[0.7, 0.3])[0]
+    if action == "schedule":
+        return f"si, agendá para {random.choice(DATES)}"
+    return "gracias, después te llamo"
+
+
+def p9_turn5(_last_response=None):
+    """After scheduling: confirm or change mind"""
+    if maybe_change_intent():
+        return random.choice([
+            "no, mejor cambiá la fecha",
+            f"en realidad mejor {random.choice(DATES)}",
+        ])
+    return "perfecto, gracias!"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFILE 10:  Pide agente humano (NEW — request_human_assistance)
+# ═══════════════════════════════════════════════════════════════════
+
+def p10_turn1(_last_response=None):
+    """Search for something specific"""
+    return f"{greet()} necesito un {random.choice(TYPES)} en {random.choice(LOCATIONS)} para comprar hasta 400000"
+
+
+def p10_turn2(_last_response=None):
+    """After results: pick one"""
+    return f"mostrame {random.choice(REFERENCES)}"
+
+
+def p10_turn3(_last_response=None):
+    """After details: ask for human (or change mind — 15%)"""
+    if maybe_confuse() or random.random() < 0.15:
+        return random.choice([
+            "no, dejá, seguimos viendo propiedades",
+            "esperá, no, mejor segui mostrando",
+            "sabés qué, no, olvidate",
+        ])
+    return random.choice([
+        "quiero hablar con una persona",
+        "pasame con un asesor por favor",
+        "necesito hablar con un agente",
+        "podés transferirme con alguien?",
+    ])
+
+
+def p10_turn4(_last_response=None):
+    """After handoff: exit or change mind"""
+    if maybe_change_intent():
+        return "no, al final no hace falta, gracias"
+    return "gracias, espero que me contacten"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFILE 11:  Preferencias guardadas (NEW — update/get_user_preferences)
+# ═══════════════════════════════════════════════════════════════════
+
+def p11_turn1(_last_response=None):
+    """Search with clear preferences to save"""
+    return f"{greet()} buscame un {random.choice(TYPES)} en {random.choice(LOCATIONS)} {random.choice(BUDGETS)}, prefiero con 2 dormitorios"
+
+
+def p11_turn2(_last_response=None):
+    """After results: save these preferences"""
+    return random.choice([
+        "guardá estas preferencias",
+        "acordate lo que me gusta",
+        "guardá mi búsqueda así la retomo después",
+        "memorizá mis preferencias",
+    ])
+
+
+def p11_turn3(_last_response=None):
+    """After saving: ask for recommendations based on saved prefs"""
+    return random.choice([
+        "recomendame propiedades según lo que guardé",
+        "qué propiedades me recomendas con lo que ya sabés?",
+        "mostrame opciones similares a lo que ya tengo guardado",
+    ])
+
+
+def p11_turn4(_last_response=None):
+    """After recommendations: modify prefs (contradict 15%) or schedule"""
+    if maybe_contradict():
+        return random.choice([
+            "no, cambiá, quiero casa no departamento",
+            "en realidad más caro, hasta 400000",
+            "no, mejor en Posadas, no Oberá",
+        ])
+    action = random.choices(["schedule", "exit"], weights=[0.6, 0.4])[0]
+    if action == "schedule":
+        return f"quiero visitar una {random.choice(DATES)}, soy {random.choice(NAMES)}"
+    return "gracias, después retomo"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFILE 12:  Reprograma/Cancela cita (NEW — reschedule/cancel with UUID)
+# ═══════════════════════════════════════════════════════════════════
+
+def p12_turn1(_last_response=None):
+    """Check existing appointments"""
+    return random.choice([
+        f"{greet()} quiero ver mis visitas agendadas",
+        f"{greet()} tengo turnos, mostrame",
+        f"{greet()} necesito cambiar mi cita, decime cuáles tengo",
+    ])
+
+
+def p12_turn2(_last_response=None):
+    """After seeing appointments: reschedule or cancel"""
+    resp = (_last_response or "").lower()
+    if "no tienes" in resp or "no hay" in resp or "ninguna" in resp:
+        # No appointments → fallback to search
+        return f"ah, bueno, buscame un {random.choice(TYPES)} en {random.choice(LOCATIONS)} entonces"
+    action = random.choices(["reschedule", "cancel"], weights=[0.5, 0.5])[0]
+    if action == "reschedule":
+        return f"reprogramá la primera para {random.choice(DATES)}"
+    else:
+        return random.choice([
+            "cancelá la primera cita",
+            "dá de baja mi turno",
+            "no voy a poder ir, cancelalo",
+        ])
+
+
+def p12_turn3(_last_response=None):
+    """After action: confirm, change mind, or give wrong info"""
+    if maybe_wrong_id():
+        return random.choice(["no esa, la segunda", "no, la del viernes no, la otra",
+                              "la número 99, no esa"])
+    if maybe_change_intent() and random.random() < 0.3:
+        return "no, dejalo como estaba"
+    return "si, confirmado, gracias"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -469,9 +667,10 @@ def p8_turn4(_last_response=None):
 # ═══════════════════════════════════════════════════════════════════
 
 PROFILES = [
+    # ── Profile 1: Alquiler específico (errático + refine) ────────
     {
         "name": "Alquiler específico (errático)",
-        "weight": 0.20,
+        "weight": 0.15,
         "states": {
             "idle": (p1_turn1, "searching"),
             "searching": (p1_turn2, None),
@@ -480,9 +679,10 @@ PROFILES = [
         },
         "max_turns": 8,
     },
+    # ── Profile 2: Busca compra ───────────────────────────────────
     {
         "name": "Busca compra",
-        "weight": 0.10,
+        "weight": 0.08,
         "states": {
             "idle": (p2_turn1, "searching"),
             "searching": (p2_turn2, "viewing_property"),
@@ -491,9 +691,10 @@ PROFILES = [
         },
         "max_turns": 6,
     },
+    # ── Profile 3: Consulta vaga + intent change ──────────────────
     {
         "name": "Consulta vaga + intent change",
-        "weight": 0.15,
+        "weight": 0.12,
         "states": {
             "idle": (p3_turn1, "qualifying"),
             "qualifying": (p3_turn2, "searching"),
@@ -502,9 +703,10 @@ PROFILES = [
         },
         "max_turns": 10,
     },
+    # ── Profile 4: FAQ → fotos → agenda ───────────────────────────
     {
         "name": "FAQ → fotos → agenda",
-        "weight": 0.10,
+        "weight": 0.08,
         "states": {
             "idle": (p4_turn1, "faq"),
             "faq": (p4_turn2, "searching"),
@@ -514,9 +716,10 @@ PROFILES = [
         },
         "max_turns": 8,
     },
+    # ── Profile 5: No encuentra + confusión ────────────────────────
     {
         "name": "No encuentra + confusión",
-        "weight": 0.10,
+        "weight": 0.08,
         "states": {
             "idle": (p5_turn1, "searching"),
             "searching": (p5_turn2, None),
@@ -524,6 +727,7 @@ PROFILES = [
         },
         "max_turns": 6,
     },
+    # ── Profile 6: Cliente existente (cambia opinión) ──────────────
     {
         "name": "Cliente existente (cambia opinión)",
         "weight": 0.10,
@@ -537,9 +741,10 @@ PROFILES = [
         },
         "max_turns": 8,
     },
+    # ── Profile 7: Pide fotos + confusión ─────────────────────────
     {
         "name": "Pide fotos + confusión",
-        "weight": 0.15,
+        "weight": 0.10,
         "states": {
             "idle": (p7_turn1, "searching"),
             "searching": (p7_turn2, "viewing_property"),
@@ -548,9 +753,10 @@ PROFILES = [
         },
         "max_turns": 8,
     },
+    # ── Profile 8: Compara propiedades + recommend ────────────────
     {
         "name": "Compara propiedades",
-        "weight": 0.10,
+        "weight": 0.08,
         "states": {
             "idle": (p8_turn1, "searching"),
             "searching": (p8_turn2, "viewing_property"),
@@ -558,5 +764,55 @@ PROFILES = [
             "scheduling": (p8_turn4, "idle"),
         },
         "max_turns": 8,
+    },
+    # ── Profile 9: Lead capture + schedule (NEW) ───────────────────
+    {
+        "name": "Guarda lead + agenda (NEW)",
+        "weight": 0.08,
+        "states": {
+            "idle": (p9_turn1, "searching"),
+            "searching": (p9_turn2, "viewing_property"),
+            "viewing_property": (p9_turn3, "lead_capture"),
+            "lead_capture": (p9_turn4, None),
+            "scheduling": (p9_turn5, "idle"),
+        },
+        "max_turns": 8,
+    },
+    # ── Profile 10: Human handoff (NEW) ────────────────────────────
+    {
+        "name": "Pide agente humano (NEW)",
+        "weight": 0.06,
+        "states": {
+            "idle": (p10_turn1, "searching"),
+            "searching": (p10_turn2, "viewing_property"),
+            "viewing_property": (p10_turn3, "handoff"),
+            "handoff": (p10_turn4, "exit"),
+        },
+        "max_turns": 6,
+    },
+    # ── Profile 11: Preferences save/load (NEW) ────────────────────
+    {
+        "name": "Preferencias guardadas (NEW)",
+        "weight": 0.06,
+        "states": {
+            "idle": (p11_turn1, "searching"),
+            "searching": (p11_turn2, "preferences"),
+            "preferences": (p11_turn3, "searching"),
+            "searching": (p11_turn4, None),
+        },
+        "max_turns": 8,
+    },
+    # ── Profile 12: Reschedule/Cancel (NEW) ────────────────────────
+    {
+        "name": "Reprograma/Cancela (NEW)",
+        "weight": 0.06,
+        "states": {
+            "idle": (p12_turn1, "appointments"),
+            "appointments": (p12_turn2, None),
+            "scheduling": (p12_turn3, "idle"),
+            "cancelling": (p12_turn3, "idle"),
+            "searching": (p12_turn3, "idle"),
+        },
+        "max_turns": 6,
     },
 ]

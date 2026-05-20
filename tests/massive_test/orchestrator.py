@@ -1,8 +1,15 @@
 """
-orchestrator.py — Monte Carlo test orchestrator.
+orchestrator.py — Monte Carlo test orchestrator (v3).
 
 Executes N sessions per profile against the live Render API
 via the /admin/simulate endpoint. Reports progress in real-time.
+
+v3 changes:
+- Added states: completed, lead_capture, preferences, handoff
+- Added tools: refine_search, recommend_properties, save_lead_info,
+  request_human_assistance, update_user_preferences, get_user_preferences
+- Updated state inference for new tools
+- Per-profile session counts for better weight distribution
 """
 
 import json
@@ -24,7 +31,24 @@ SIMULATE_URL = f"{BASE_URL}/admin/simulate"
 ADMIN_API_KEY = "your-secure-admin-key-here"
 HEADERS = {"X-API-Key": ADMIN_API_KEY, "Content-Type": "application/json"}
 
-SESSIONS_PER_PROFILE = 5    # 6 profiles × 5 = 30 sessions
+# Per-profile session counts (v3: weighted by importance)
+# Key = profile index, Value = sessions count
+PER_PROFILE_SESSIONS = {
+    0: 5,   # Alquiler específico (errático) — core flow
+    1: 3,   # Busca compra
+    2: 4,   # Consulta vaga + intent change
+    3: 3,   # FAQ → fotos → agenda
+    4: 3,   # No encuentra + confusión
+    5: 4,   # Cliente existente
+    6: 3,   # Pide fotos
+    7: 3,   # Compara propiedades
+    8: 4,   # Guarda lead + agenda (NEW) — important new flow
+    9: 3,   # Pide agente humano (NEW)
+    10: 3,  # Preferencias guardadas (NEW)
+    11: 3,  # Reprograma/Cancela (NEW)
+}
+TOTAL_SESSIONS = sum(PER_PROFILE_SESSIONS.values())
+
 MAX_TURNS = 10               # Safety limit per session
 TURN_DELAY = 1.5             # Seconds between turns
 SESSION_DELAY = 3.0          # Seconds between sessions
@@ -56,12 +80,26 @@ def infer_state(response_text: str, tools_used: list, previous_state: str) -> st
         return "faq"
     if "get_property_details" in tools:
         return "viewing_property"
+    if "get_property_images" in tools:
+        return "viewing_property"
     if "search_properties" in tools:
         return "searching"
+    if "refine_search" in tools:  # NEW
+        return "searching"
+    if "save_lead_info" in tools:  # NEW
+        return "lead_capture"
+    if "request_human_assistance" in tools:  # NEW
+        return "handoff"
+    if "recommend_properties" in tools:  # NEW
+        return "preferences"
+    if "update_user_preferences" in tools:  # NEW
+        return "preferences"
+    if "get_user_preferences" in tools:  # NEW
+        return "preferences"
 
     # Text-based heuristics
     if any(p in text_lower for p in ["cita agendada", "te esperamos", "visitarnos", "confirmada"]):
-        return "idle"
+        return "completed"
     if any(p in text_lower for p in ["gracias por contactarnos", "buen día", "que tengas"]):
         return "idle"
     if any(p in text_lower for p in ["qué zona", "qué tipo", "alquilar o comprar",
@@ -87,7 +125,18 @@ def infer_state(response_text: str, tools_used: list, previous_state: str) -> st
         return "appointments"
     if any(p in text_lower for p in ["no encontré", "no tengo propiedades", "sin resultados",
                                       "intentar con otros", "alternativas"]):
-        return "searching"  # Still in search state with fallbacks
+        return "searching"
+
+    # NEW: lead capture heuristics (bot asking for contact info)
+    if any(p in text_lower for p in ["nombre", "teléfono", "correo", "email",
+                                      "datos de contacto", "cómo te llamás"]):
+        if ("decime" in text_lower or "dame" in text_lower or "podrías" in text_lower):
+            return "lead_capture"
+
+    # NEW: handoff heuristics (bot offering transfer)
+    if any(p in text_lower for p in ["conectar con un asesor", "transferir con",
+                                      "agente humano", "paso con un agente"]):
+        return "handoff"
 
     # If nothing specific found, stay in previous state
     return previous_state or "idle"
@@ -98,10 +147,13 @@ def is_exit_state(text_lower: str) -> bool:
     user_exit = any(p in text_lower for p in
                      ["gracias", "chau", "adiós", "después vuelvo", "después te confirmo",
                       "ya fue", "era lo que necesitaba",
-                      "no encontré lo que buscaba"])
+                      "no encontré lo que buscaba",
+                      "después te llamo", "después retomo",
+                      "espero que me contacten", "que me contacten"])
     bot_exit = any(p in text_lower for p in
                     ["que tengas un buen", "cuando quieras", "buen día",
-                     "quedo a tu disposición", "un buen día"])
+                     "quedo a tu disposición", "un buen día",
+                     "que estés bien"])
     return user_exit or bot_exit
 
 
@@ -244,14 +296,13 @@ def check_health(client: httpx.Client) -> bool:
 
 def main():
     print("╔════════════════════════════════════════════════════════════╗")
-    print("║   InmuebleBot — Monte Carlo Mass Test Suite               ║")
-    print("║   Markov Chain Coverage + 10 Validation Rules             ║")
+    print("║   InmuebleBot — Monte Carlo Mass Test Suite v3            ║")
+    print("║   12 perfiles · 16 reglas · 29 edges                      ║")
     print("╚════════════════════════════════════════════════════════════╝")
     print()
     print(f"Target: {BASE_URL}/admin/simulate")
     print(f"Profiles: {len(PROFILES)}")
-    print(f"Sessions per profile: {SESSIONS_PER_PROFILE}")
-    print(f"Total sessions: {len(PROFILES) * SESSIONS_PER_PROFILE}")
+    print(f"Total sessions: {TOTAL_SESSIONS}")
     print()
 
     with httpx.Client() as client:
@@ -282,21 +333,21 @@ def main():
 
         # Phase 2: Main execution
         print("=" * 60)
-        print("📌 PHASE 2: Main Execution (30 sessions)")
+        print(f"📌 PHASE 2: Main Execution ({TOTAL_SESSIONS} sessions)")
         print("=" * 60)
-        total_planned = len(PROFILES) * SESSIONS_PER_PROFILE
         session_idx = 2  # Start after calibration
 
         for pi, profile in enumerate(PROFILES):
-            for si in range(SESSIONS_PER_PROFILE):
+            sessions_for_this = PER_PROFILE_SESSIONS.get(pi, 4)
+            for si in range(sessions_for_this):
                 # Keepalive
                 if time.time() - last_keepalive > KEEPALIVE_INTERVAL:
                     check_health(client)
                     last_keepalive = time.time()
 
-                progress_pct = (session_idx / total_planned) * 100
-                print(f"\n[{session_idx + 1}/{total_planned} | {progress_pct:.0f}%] "
-                      f"📋 {profile['name']} (session {si + 1}/{SESSIONS_PER_PROFILE})")
+                progress_pct = (session_idx / TOTAL_SESSIONS) * 100
+                print(f"\n[{session_idx + 1}/{TOTAL_SESSIONS} | {progress_pct:.0f}%] "
+                      f"📋 {profile['name']} (session {si + 1}/{sessions_for_this})")
 
                 sess = run_session(client, profile, session_idx + 1000, tracker)
                 turns = len(sess.get("turns", []))
@@ -325,8 +376,8 @@ def main():
 
         # Per-profile scores
         print("  Per-Profile Results:")
-        print(f"  {'Profile':25s} {'Sessions':>8s} {'Turns':>6s} {'Avg Turns':>9s} {'Fail Rate':>9s}")
-        print(f"  {'-'*25} {'-'*8} {'-'*6} {'-'*9} {'-'*9}")
+        print(f"  {'Profile':35s} {'Sessions':>8s} {'Turns':>6s} {'Avg Turns':>9s} {'Fail Rate':>9s}")
+        print(f"  {'-'*35} {'-'*8} {'-'*6} {'-'*9} {'-'*9}")
         for profile in PROFILES:
             pname = profile["name"]
             p_sessions = [r for r in results if r.get("profile") == pname]
@@ -338,7 +389,7 @@ def main():
                     for v in t.get("validations", []):
                         p_violations += 1
             fail_rate = (p_violations / max(total_turns, 1)) * 100
-            print(f"  {pname:25s} {len(p_sessions):>8d} {total_turns:>6d} {avg_turns:>8.1f}  {fail_rate:>8.1f}%")
+            print(f"  {pname:35s} {len(p_sessions):>8d} {total_turns:>6d} {avg_turns:>8.1f}  {fail_rate:>8.1f}%")
         print()
 
         # Violation breakdown
@@ -348,7 +399,7 @@ def main():
             for _, _, rule, _ in tracker.violations:
                 rule_counts[rule] = rule_counts.get(rule, 0) + 1
             for rule, count in sorted(rule_counts.items(), key=lambda x: -x[1])[:5]:
-                print(f"    {rule:20s} × {count}")
+                print(f"    {rule:35s} × {count}")
             print()
             print("  Last 10 violations (for debugging):")
             for sid, turn, rule, msg in tracker.violations[-10:]:

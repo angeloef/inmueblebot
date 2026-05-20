@@ -1,12 +1,14 @@
 #! /usr/bin/env python3
 """
-run_full_test.py — Enhanced Monte Carlo Test v2.
+run_full_test.py — Enhanced Monte Carlo Test v3.
 
-Changes from v1:
-- 8 profiles instead of 6 (added fotos + compare profiles)
-- ~20% erratic behavior per turn (wrong IDs, confusion, intent changes)
-- Random new seed for reproducibility
-- Timing comparison with v1 baseline
+Changes from v2:
+- 12 profiles instead of 8 (added lead capture, handoff, preferences, reschedule/cancel)
+- 29 known edges instead of 19
+- 16 validation rules instead of 10
+- ~30% erratic behavior per turn (wrong IDs, confusion, intent changes, contradictions, typos)
+- Per-profile session counts for better weight distribution
+- New stats: tools not covered, per-rule violations, Spanish language check
 """
 import sys
 import time
@@ -22,7 +24,7 @@ from orchestrator import (
     run_session, check_health, simulate_turn, infer_state_from_response,
     SIMULATE_URL, HEADERS, BASE_URL,
     TURN_DELAY, SESSION_DELAY, KEEPALIVE_INTERVAL,
-    SESSIONS_PER_PROFILE, MAX_TURNS,
+    PER_PROFILE_SESSIONS, TOTAL_SESSIONS, MAX_TURNS,
 )
 
 
@@ -32,15 +34,18 @@ def main():
     random.seed(TEST_SEED)
 
     print("╔══════════════════════════════════════════════════════════════╗")
-    print("║   InmuebleBot — MASS TEST v2                               ║")
-    print("║   8 perfiles + erratic behavior + comparison                ║")
+    print("║   InmuebleBot — MASS TEST v3                               ║")
+    print("║   12 perfiles · 16 reglas · 29 edges                       ║")
+    print("║   Todos los tools + lead/handoff/preferences               ║")
     print("╚══════════════════════════════════════════════════════════════╝")
     print()
     print(f"Target:       {SIMULATE_URL}")
     print(f"Profiles:     {len(PROFILES)}")
-    print(f"Sessions:     {len(PROFILES) * SESSIONS_PER_PROFILE}")
+    print(f"Sessions:     {TOTAL_SESSIONS}")
+    print(f"Known edges:  {len(KNOWN_EDGES)}")
     print(f"Seed:         {TEST_SEED}")
     print(f"Start time:   {time.strftime('%H:%M:%S')}")
+    print(f"Delay/turn:   {TURN_DELAY}s   Delay/session:  {SESSION_DELAY}s")
     print()
 
     with httpx.Client() as client:
@@ -55,17 +60,36 @@ def main():
         start_wall = time.time()
         last_keepalive = time.time()
         session_idx = 0
-        total_planned = len(PROFILES) * SESSIONS_PER_PROFILE
+
+        # ── Calibration ──
+        print("=" * 64)
+        print("📌 CALIBRATION (2 warm-up sessions)")
+        print("=" * 64)
+        for i in range(2):
+            profile = PROFILES[i % len(PROFILES)]
+            sess = run_session(client, profile, 9990 + i, tracker)
+            turns = len(sess.get("turns", []))
+            print(f"  [{i + 1}/2] {profile['name']:35s} → {'✅' if turns > 0 else '❌'} {turns}t")
+            all_session_data.append(sess)
+            time.sleep(SESSION_DELAY)
+        print()
+
+        # ── Main Execution ──
+        print("=" * 64)
+        print(f"📌 MAIN EXECUTION ({TOTAL_SESSIONS} sessions)")
+        print("=" * 64)
+        session_idx = 2  # after calibration
 
         for pi, profile in enumerate(PROFILES):
-            for si in range(SESSIONS_PER_PROFILE):
+            sess_count = PER_PROFILE_SESSIONS.get(pi, 4)
+            for si in range(sess_count):
                 if time.time() - last_keepalive > KEEPALIVE_INTERVAL:
                     check_health(client)
                     last_keepalive = time.time()
 
-                progress_pct = (session_idx / total_planned) * 100
-                print(f"[{session_idx + 1}/{total_planned} | {progress_pct:.0f}%] "
-                      f"📋 {profile['name']} (s{si + 1})")
+                progress_pct = (session_idx / (TOTAL_SESSIONS + 2)) * 100
+                print(f"\n[{session_idx}/{TOTAL_SESSIONS + 2} | {progress_pct:.0f}%] "
+                      f"📋 {profile['name']} (s{si + 1}/{sess_count})")
 
                 sess = run_session(client, profile, TEST_SEED + session_idx, tracker)
                 turns = len(sess.get("turns", []))
@@ -81,19 +105,19 @@ def main():
                 status_mark = "✅" if turns > 0 else "⚠️"
                 state_seq = " → ".join([d[2] for d in turn_details])
                 print(f"  {status_mark} {turns}t | tools={list(tools_used)[:5]} | "
-                      f"states={state_seq[:60]} | viol={viol_count}")
+                      f"states={state_seq[:70]} | viol={viol_count}")
 
                 all_session_data.append(sess)
                 session_idx += 1
 
-                if session_idx < total_planned:
+                if session_idx <= TOTAL_SESSIONS + 2:
                     time.sleep(SESSION_DELAY)
 
         # ── Final Report ──
         elapsed_m = (time.time() - start_wall) / 60
         print()
         print("=" * 64)
-        print("📊 FINAL REPORT v2")
+        print("📊 FINAL REPORT v3")
         print("=" * 64)
         print()
         print(tracker.report())
@@ -101,9 +125,9 @@ def main():
 
         # Per-profile breakdown
         print("  Per-Profile Results:")
-        h = f"  {'Profile':35s} {'Sess':>4s} {'Turns':>5s} {'Avg':>5s} {'Viol':>4s}"
+        h = f"  {'Profile':40s} {'Sess':>4s} {'Turns':>5s} {'Avg':>5s} {'Viol':>4s}"
         print(h)
-        print(f"  {'-'*35} {'-'*4} {'-'*5} {'-'*5} {'-'*4}")
+        print(f"  {'-'*40} {'-'*4} {'-'*5} {'-'*5} {'-'*4}")
         total_viol = 0
         for profile in PROFILES:
             pname = profile["name"]
@@ -113,15 +137,30 @@ def main():
             p_viol = sum(1 for s in p_sessions for t in s.get("turns", [])
                          for v in t.get("validations", []))
             total_viol += p_viol
-            print(f"  {pname:35s} {len(p_sessions):>4d} {total_t:>5d} {avg_t:>4.1f}  {p_viol:>4d}")
+            print(f"  {pname:40s} {len(p_sessions):>4d} {total_t:>5d} {avg_t:>4.1f}  {p_viol:>4d}")
         print()
 
         # Tool coverage
+        ALL_KNOWN_TOOLS = [
+            "search_properties", "refine_search", "get_property_details",
+            "recommend_properties", "update_user_preferences", "get_user_preferences",
+            "save_lead_info", "schedule_visit", "reschedule_appointment",
+            "cancel_appointment", "get_my_appointments",
+            "request_human_assistance", "get_property_images",
+            "get_faq_answer", "compare_properties",
+        ]
         all_tools = set()
         for s in all_session_data:
             for t in s.get("turns", []):
                 all_tools.update(t.get("tools_used", []))
-        print(f"  Tools detected ({len(all_tools)}): {sorted(all_tools)}")
+        covered = [t for t in ALL_KNOWN_TOOLS if t in all_tools]
+        missing = [t for t in ALL_KNOWN_TOOLS if t not in all_tools]
+        print(f"  Tools detected ({len(all_tools)}/{len(ALL_KNOWN_TOOLS)}):")
+        print(f"    Covered: {', '.join(sorted(covered))}")
+        if missing:
+            print(f"    ❌ MISSING: {', '.join(missing)}")
+        else:
+            print(f"    ✅ ALL TOOLS COVERED")
         print()
 
         # Timing
@@ -148,6 +187,14 @@ def main():
                 rule_counts[rule] = rule_counts.get(rule, 0) + 1
             for rule, count in sorted(rule_counts.items(), key=lambda x: -x[1]):
                 print(f"    {rule:35s} × {count}")
+
+            # Show FAIL vs WARN breakdown
+            fail_count = sum(1 for _, _, rule, _ in tracker.violations if rule != "TIMING" and rule != "LANGUAGE" and rule != "NOT-STALE-CONTEXT")
+            warn_count = sum(1 for _, _, rule, _ in tracker.violations if rule in ["TIMING", "LANGUAGE", "NOT-STALE-CONTEXT"])
+            print(f"    ─────────────────────────────────────")
+            print(f"    {'FAIL violations:':35s} × {fail_count}")
+            print(f"    {'WARN violations:':35s} × {warn_count}")
+
             print()
             print("  Last 20 violations:")
             for sid, turn, rule, msg in tracker.violations[-20:]:
@@ -155,17 +202,17 @@ def main():
         else:
             print()
             print("  🏆 ZERO VIOLATIONS across all sessions!")
-        print()
 
         # Summary
+        print()
         print("=" * 64)
         print(f"📌 COMPLETE at {time.strftime('%H:%M:%S')}")
         print(f"   Wall time:   {elapsed_m:.1f} min")
         print(f"   Sessions:    {tracker.sessions}")
         print(f"   Turns:       {tracker.total_turns}")
         print(f"   Edges:       {tracker.edge_coverage:.1f}% ({len(tracker.edges_visited)}/{len(KNOWN_EDGES)})")
+        print(f"   Tools:       {len(all_tools)}/{len(ALL_KNOWN_TOOLS)}")
         print(f"   Violations:  {len(tracker.violations)}")
-        print(f"   Tools seen:  {len(all_tools)}/{len(all_tools)}")
         print("=" * 64)
 
 

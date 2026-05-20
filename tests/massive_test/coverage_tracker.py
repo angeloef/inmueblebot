@@ -1,8 +1,13 @@
 """
-coverage_tracker.py — Markov chain edge coverage tracking.
+coverage_tracker.py — Markov chain edge coverage tracking (v3).
 
 Tracks which state→transition edges have been traversed
 during the Monte Carlo test sessions.
+
+v3 changes:
+- Added 3 states: lead_capture, preferences, handoff
+- Added 10 new edges (29 total)
+- Matches bot's real ConversationStateEnum more closely
 """
 
 KNOWABLE_STATES = [
@@ -11,33 +16,66 @@ KNOWABLE_STATES = [
     "searching",
     "viewing_property",
     "scheduling",
+    "completed",
     "faq",
     "appointments",
     "cancelling",
+    "lead_capture",
+    "preferences",
+    "handoff",
     "exit",
 ]
 
-# Known edges in the conversation graph
+# Known edges in the conversation graph (v3 — 29 edges)
 KNOWN_EDGES = [
-    ("idle", "qualifying"),       # Bot asks clarifying questions
-    ("idle", "searching"),        # User gives enough info → direct search
-    ("idle", "faq"),              # User asks FAQ
-    ("idle", "appointments"),     # User asks about their appointments
-    ("qualifying", "searching"),  # After clarification → search
+    # ── idle transitions ──
+    ("idle", "qualifying"),            # Bot asks clarifying questions
+    ("idle", "searching"),             # User gives enough info → direct search
+    ("idle", "faq"),                   # User asks FAQ
+    ("idle", "appointments"),          # User asks about their appointments
+    # ── qualifying ──
+    ("qualifying", "searching"),        # After clarification → search
+    # ── searching ──
     ("searching", "viewing_property"),  # Search results → user picks one
-    ("searching", "idle"),        # Search → user leaves
-    ("searching", "searching"),   # Refinement search
-    ("viewing_property", "scheduling"),  # Details → schedule
-    ("viewing_property", "searching"),   # Details → another search
-    ("viewing_property", "idle"),        # Details → user leaves
-    ("scheduling", "idle"),       # Schedule done → user leaves
-    ("scheduling", "scheduling"), # Schedule retry (conflict)
-    ("faq", "searching"),         # FAQ → then search
-    ("faq", "idle"),              # FAQ → user leaves
-    ("appointments", "scheduling"),  # Appts → reschedule
-    ("appointments", "cancelling"),  # Appts → cancel
-    ("appointments", "idle"),        # Appts → user leaves
-    ("cancelling", "idle"),      # Cancel done → done
+    ("searching", "searching"),         # Refinement search (refine_search)
+    ("searching", "idle"),              # Search → user leaves
+    ("searching", "preferences"),       # User saves/updates preferences (NEW)
+    ("searching", "faq"),               # User asks FAQ mid-search
+    # ── viewing_property ──
+    ("viewing_property", "scheduling"),   # Details → schedule
+    ("viewing_property", "searching"),    # Details → another search
+    ("viewing_property", "lead_capture"), # Bot asks for contact info (NEW)
+    ("viewing_property", "handoff"),      # User requests human (NEW)
+    ("viewing_property", "idle"),         # Details → user leaves
+    # ── scheduling (BOOKING in bot's enum) ──
+    ("scheduling", "completed"),          # Booking confirmed (NEW)
+    ("scheduling", "scheduling"),         # Retry (conflict/change)
+    ("scheduling", "idle"),               # User cancels booking
+    # ── completed ──
+    ("completed", "idle"),                # Done → back to idle (NEW)
+    # ── faq ──
+    ("faq", "searching"),                 # FAQ → then search
+    ("faq", "idle"),                      # FAQ → user leaves
+    # ── appointments ──
+    ("appointments", "scheduling"),       # Appts → reschedule
+    ("appointments", "cancelling"),       # Appts → cancel
+    ("appointments", "searching"),        # Appts → new search (NEW)
+    ("appointments", "idle"),             # Appts → user leaves
+    # ── cancelling ──
+    ("cancelling", "idle"),               # Cancel done → done
+    # ── lead_capture (NEW) ──
+    ("lead_capture", "scheduling"),       # Gave contact → schedule visit
+    ("lead_capture", "idle"),             # Gave contact → user leaves
+    # ── handoff (NEW) ──
+    ("handoff", "exit"),                  # Handoff done → exit
+    # ── preferences (NEW) ──
+    ("preferences", "searching"),         # Saved prefs → search with them
+    # ── exit ──
+    ("idle", "exit"),                     # Cold exit (no real conversation)
+    ("viewing_property", "exit"),         # Details → immediate exit
+    ("scheduling", "exit"),               # After scheduling → exit
+    ("faq", "exit"),                      # FAQ → exit
+    ("appointments", "exit"),             # Appointments → exit
 ]
 
 
@@ -76,7 +114,7 @@ class CoverageTracker:
     def report(self) -> str:
         lines = []
         lines.append(f"┌────────────────────────────────────────────────┐")
-        lines.append(f"│ COVERAGE REPORT                                │")
+        lines.append(f"│ COVERAGE REPORT v3                            │")
         lines.append(f"├────────────────────────────────────────────────┤")
         lines.append(f"│ Sessions:      {self.sessions:>3d}                               │")
         lines.append(f"│ Total turns:   {self.total_turns:>3d}                               │")
