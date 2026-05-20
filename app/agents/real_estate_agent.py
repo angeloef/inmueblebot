@@ -1012,10 +1012,11 @@ class RealEstateAgent:
             messages.append({
                 "role": "system",
                 "content": (
-                    "IMPORTANTE: Este es el primer mensaje del usuario. "
-                    "Respondé con un saludo cálido y preguntale activamente "
-                    "qué está buscando. No esperes a que te den todos los detalles. "
-                    "Ej: '¡Hola! ¿Estás buscando alquilar o comprar? ¿En qué zona?'"
+                    "IMPORTANTE: Este es el primer contacto del usuario. "
+                    "Seguí las instrucciones de # Saludo Inicial del system prompt: "
+                    "saludo con hora del día + nombre de la inmobiliaria + lo que podés hacer en una frase natural + pregunta abierta. "
+                    "Si el usuario ya dio criterios en su mensaje (zona, tipo, precio, etc.), saltate el saludo genérico "
+                    "y respondé directamente a lo que pidió."
                 )
             })
         

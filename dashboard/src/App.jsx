@@ -27,6 +27,7 @@ import Calendar from './Calendar';
 import Properties from './Properties';
 import Clients from './Clients';
 import FAQs from './FAQs';
+import Config from './Config';
 
 // ── Notification type → destination ─────────────────────────────────────────
 const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
@@ -183,14 +184,7 @@ export default function App() {
             </div>
           )}
 
-          {active === 'settings' && (
-            <div className="page-view">
-              <div className="page-h">
-                <h1>Configuración</h1>
-                <div className="sub">Próximamente</div>
-              </div>
-            </div>
-          )}
+          {active === 'settings' && <Config />}
 
         </div>
       </div>

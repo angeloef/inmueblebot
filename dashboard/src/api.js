@@ -36,6 +36,7 @@ export const keys = {
   event:           (id) => ['events', id],
   calendarStatus:  ['calendar', 'status'],
   calendarEvents:  ['calendar', 'events'],
+  botSettings:     ['bot-settings'],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -288,27 +289,28 @@ export const useCreateProperty = () => {
 export const useUpdateProperty = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }) => propertyApi.update(id, data),
-    onSuccess: (_, { id }) => {
-      qc.invalidateQueries({ queryKey: keys.properties });
-      qc.invalidateQueries({ queryKey: keys.property(id) });
-    },
+    mutationFn: ({ id, data }) => propertyApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
   });
 };
 
 export const useDeleteProperty = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: propertyApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }) });
+  return useMutation({
+    mutationFn: propertyApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+  });
 };
 
-// ─── Clientes (Leads) ─────────────────────────────────────────────────────────
+// ─── Clients ──────────────────────────────────────────────────────────────────
 
 const clientApi = {
-  list:   ()         => http.get('/admin/leads?limit=500').then(r => (r.data.leads ?? r.data).map(toClient)),
+  list:   ()         => http.get('/admin/leads').then(r => (r.data.leads ?? r.data).map(toClient)),
   get:    (id)       => http.get(`/admin/leads/${id}`).then(r => toClient(r.data)),
   create: (data)     => http.post('/admin/leads', fromClient(data)).then(r => r.data),
   update: (id, data) => http.patch(`/admin/leads/${id}`, fromClient(data)).then(r => r.data),
   remove: (id)       => http.delete(`/admin/leads/${id}`).then(r => r.data),
+  reset:  (phone)    => http.post(`/admin/users/${phone}/reset`).then(r => r.data),
 };
 
 export const useClients = () =>
@@ -325,39 +327,40 @@ export const useCreateClient = () => {
 export const useUpdateClient = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }) => clientApi.update(id, data),
-    onSuccess: (_, { id }) => {
-      qc.invalidateQueries({ queryKey: keys.clients });
-      qc.invalidateQueries({ queryKey: keys.client(id) });
-    },
+    mutationFn: ({ id, data }) => clientApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.clients }),
   });
 };
 
 export const useDeleteClient = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: clientApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.clients }) });
+  return useMutation({
+    mutationFn: clientApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.clients }),
+  });
 };
 
-// ─── Eventos (Citas / Appointments) ──────────────────────────────────────────
+export const useResetClient = () =>
+  useMutation({ mutationFn: clientApi.reset });
+
+// ─── Events / Appointments ────────────────────────────────────────────────────
 
 const eventApi = {
-  list:   ()         => http.get('/admin/appointments').then(r => (r.data.appointments ?? r.data).map(toEvent)),
-  get:    (id)       => http.get(`/admin/appointments/${id}`).then(r => toEvent(r.data)),
-  create: (data)     => http.post('/admin/appointments', fromEvent(data)).then(r => r.data),
-  update: (id, data) => http.patch(`/admin/appointments/${id}`, fromEvent(data)).then(r => r.data),
-  remove: (id)       => http.delete(`/admin/appointments/${id}`).then(r => r.data),
+  list:   (params = {}) => http.get('/admin/appointments', { params }).then(r => (r.data.appointments ?? r.data).map(toEvent)),
+  get:    (id)           => http.get(`/admin/appointments/${id}`).then(r => toEvent(r.data)),
+  create: (data)         => http.post('/admin/appointments', fromEvent(data)).then(r => r.data),
+  update: (data)         => http.patch(`/admin/appointments/${data.id}`, fromEvent(data)).then(r => r.data),
+  remove: (id)           => http.delete(`/admin/appointments/${id}`).then(r => r.data),
 };
 
-export const useEvents = () =>
-  useQuery({ queryKey: keys.events, queryFn: eventApi.list });
+export const useEvents = (params) =>
+  useQuery({ queryKey: [...keys.events, params], queryFn: () => eventApi.list(params) });
 
-export const useEventById = (id) =>
-  useQuery({
-    queryKey: ['event', id],
-    queryFn:  () => eventApi.get(id),
-    enabled:  !!id,
-    staleTime: 0,
-  });
+export const useEvent = (id) =>
+  useQuery({ queryKey: keys.event(id), queryFn: () => eventApi.get(id), enabled: !!id });
+
+// Alias used by Calendar.jsx
+export const useEventById = useEvent;
 
 export const useCreateEvent = () => {
   const qc = useQueryClient();
@@ -367,69 +370,62 @@ export const useCreateEvent = () => {
 export const useUpdateEvent = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }) => eventApi.update(id, data),
+    mutationFn: eventApi.update,
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }),
   });
 };
 
 export const useDeleteEvent = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: eventApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }) });
-};
-
-// ─── FAQ ─────────────────────────────────────────────────────────────────────
-
-export const keysFaqs = ['faqs'];
-
-export const faqApi = {
-  list:   ()        => http.get('/admin/faqs').then(r => r.data.faqs ?? r.data),
-  get:    (id)      => http.get(`/admin/faqs/${id}`).then(r => r.data),
-  create: (data)    => http.post('/admin/faqs', data).then(r => r.data),
-  update: (id, data) => http.patch(`/admin/faqs/${id}`, data).then(r => r.data),
-  remove: (id)      => http.delete(`/admin/faqs/${id}`).then(r => r.data),
-};
-
-export const useFaqs = () =>
-  useQuery({ queryKey: keysFaqs, queryFn: faqApi.list });
-
-export const useCreateFaq = () => {
-  const qc = useQueryClient();
   return useMutation({
-    mutationFn: faqApi.create,
-    onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }),
+    mutationFn: eventApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }),
   });
 };
 
-export const useUpdateFaq = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }) => faqApi.update(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }),
-  });
-};
-
-export const useDeleteFaq = () => {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: faqApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keysFaqs }) });
-};
-
-// ─── Google Calendar ──────────────────────────────────────────────────────────
+// ─── Calendar ─────────────────────────────────────────────────────────────────
 
 export const useCalendarStatus = () =>
   useQuery({
     queryKey: keys.calendarStatus,
-    queryFn: () => http.get('/admin/calendar/status').then(r => r.data),
-    staleTime: 60_000,       // re-check every minute
-    refetchOnWindowFocus: true,
+    queryFn:  () => http.get('/admin/calendar/status').then(r => r.data),
+    staleTime: 60_000,
   });
 
-export const useCalendarEvents = (daysAhead = 30, maxResults = 50) =>
+export const useCalendarEvents = (params = {}) =>
   useQuery({
-    queryKey: [...keys.calendarEvents, daysAhead, maxResults],
-    queryFn: () => http.get('/admin/calendar/events', { params: { days_ahead: daysAhead, max_results: maxResults } }).then(r => r.data),
-    staleTime: 120_000,       // re-check every 2 minutes
-    refetchOnWindowFocus: true,
+    queryKey: [...keys.calendarEvents, params],
+    queryFn:  () => http.get('/admin/calendar/events', { params }).then(r => r.data),
+    staleTime: 30_000,
   });
+
+// ─── FAQs ─────────────────────────────────────────────────────────────────────
+
+const faqApi = {
+  list:   (params = {}) => http.get('/admin/faqs', { params }).then(r => r.data.faqs ?? r.data),
+  get:    (id)           => http.get(`/admin/faqs/${id}`).then(r => r.data),
+  create: (data)         => http.post('/admin/faqs', data).then(r => r.data),
+  update: ({ id, ...data }) => http.patch(`/admin/faqs/${id}`, data).then(r => r.data),
+  remove: (id)           => http.delete(`/admin/faqs/${id}`).then(r => r.data),
+};
+
+export const useFaqs = (params) =>
+  useQuery({ queryKey: ['faqs', params], queryFn: () => faqApi.list(params) });
+
+export const useCreateFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: faqApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: ['faqs'] }) });
+};
+
+export const useUpdateFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: faqApi.update, onSuccess: () => qc.invalidateQueries({ queryKey: ['faqs'] }) });
+};
+
+export const useDeleteFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: faqApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: ['faqs'] }) });
+};
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
@@ -444,7 +440,7 @@ export const useNotifications = () =>
   useQuery({
     queryKey: ['notifications'],
     queryFn:  () => notifApi.list({ limit: 30 }),
-    refetchInterval: 30_000,   // polling cada 30s
+    refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
 
@@ -469,5 +465,27 @@ export const useDeleteNotification = () => {
   return useMutation({
     mutationFn: notifApi.remove,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+};
+
+// ─── Bot Settings ─────────────────────────────────────────────────────────────
+
+const settingsApi = {
+  get:    () => http.get('/admin/settings').then(r => r.data),
+  update: (data) => http.patch('/admin/settings', data).then(r => r.data),
+};
+
+export const useBotSettings = () =>
+  useQuery({
+    queryKey: keys.botSettings,
+    queryFn:  settingsApi.get,
+    staleTime: 30_000,
+  });
+
+export const useUpdateBotSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: settingsApi.update,
+    onSuccess:  () => qc.invalidateQueries({ queryKey: keys.botSettings }),
   });
 };

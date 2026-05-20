@@ -206,6 +206,23 @@ def _run_startup_migration(engine):
                     updated_at TIMESTAMPTZ
                 )
             """))
+            # ── Fix 16: Create bot_settings table ────────────────────────
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                    key         VARCHAR(100) PRIMARY KEY,
+                    value       TEXT NOT NULL DEFAULT '',
+                    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            # Seed default company_name if not already set
+            conn.execute(text("""
+                INSERT INTO bot_settings (key, value) VALUES ('company_name', 'la inmobiliaria')
+                ON CONFLICT (key) DO NOTHING
+            """))
+            conn.execute(text("""
+                INSERT INTO bot_settings (key, value) VALUES ('business_hours', 'Lunes a sábado de 9 a 18hs')
+                ON CONFLICT (key) DO NOTHING
+            """))
             # ── Fix 15: Create notifications table ───────────────────────
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS notifications (
@@ -1443,3 +1460,66 @@ def delete_notification(
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
     return {"status": "deleted", "id": notif_id}
+
+
+# ── Bot Settings ──────────────────────────────────────────────────────────────
+
+# All bot-operational settings are stored as key-value rows in bot_settings.
+# The dashboard Config page reads/writes via these endpoints.
+# The bot reads them via get_bot_setting() with an in-memory 5-min cache.
+
+_ALLOWED_SETTINGS = {
+    "company_name":         "Nombre de la inmobiliaria",
+    "business_hours":       "Horario de atención",
+    "agent_whatsapp":       "WhatsApp del agente humano (handoffs)",
+}
+
+
+class BotSettingsUpdate(BaseModel):
+    company_name:     Optional[str] = None
+    business_hours:   Optional[str] = None
+    agent_whatsapp:   Optional[str] = None
+
+
+@router.get("/settings")
+def get_bot_settings(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Devuelve todos los bot_settings como un dict plano {key: value}."""
+    from sqlalchemy import text as _t
+    rows = db.execute(_t("SELECT key, value FROM bot_settings")).fetchall()
+    result = {r[0]: r[1] for r in rows}
+    # Fill in defaults for allowed keys not yet in DB
+    for key in _ALLOWED_SETTINGS:
+        result.setdefault(key, "")
+    return result
+
+
+@router.patch("/settings")
+def update_bot_settings(
+    data: BotSettingsUpdate,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Actualiza uno o más bot_settings. Solo acepta campos de _ALLOWED_SETTINGS."""
+    from sqlalchemy import text as _t
+    updates = data.model_dump(exclude_unset=True)
+    if not updates:
+        return {"status": "no_changes"}
+    for key, value in updates.items():
+        if key not in _ALLOWED_SETTINGS:
+            continue
+        db.execute(_t("""
+            INSERT INTO bot_settings (key, value, updated_at)
+            VALUES (:key, :value, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """), {"key": key, "value": value or ""})
+    db.commit()
+    # Bust the in-memory cache in prompts.py so bot picks up changes immediately
+    try:
+        from app.agents.prompts import _bust_settings_cache
+        _bust_settings_cache()
+    except Exception:
+        pass
+    return {"status": "updated", "keys": list(updates.keys())}

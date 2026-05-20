@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     )
     AGENT_WHATSAPP_NUMBER: Optional[str] = Field(default=None, description="Número WhatsApp del agente humano para handoffs")
 
+    # === Identidad del negocio ===
+    COMPANY_NAME: str = Field(default="la inmobiliaria", description="Nombre de la inmobiliaria (usado en saludo inicial y mensajes de alcance)")
+
     # === Configuración de la aplicación ===
     API_PREFIX: str = Field(default="/api", description="Prefijo para rutas API")
     CORS_ORIGINS: list[str] = Field(default=["*"], description="Orígenes permitidos para CORS")
