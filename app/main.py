@@ -414,6 +414,17 @@ else:
     logger.warning(f"Dashboard dist not found at {dashboard_dir}")
 
 
+# ── Dashboard static assets (not under /assets/ subpath) ──────────
+
+@app.get("/logo.svg", include_in_schema=False)
+async def serve_logo():
+    """Serve the dashboard logo SVG (copied from public/ to dist/ by Vite)."""
+    logo_path = os.path.join(dashboard_dir, "logo.svg")
+    if os.path.isfile(logo_path):
+        return FileResponse(logo_path, media_type="image/svg+xml")
+    return JSONResponse(status_code=404, content={"detail": "Logo not found"})
+
+
 # ── Routers ─────────────────────────────────────────────────────────────────
 
 # WhatsApp webhook
