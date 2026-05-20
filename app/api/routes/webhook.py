@@ -469,6 +469,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
                 # When images will be sent separately, split text around photo references
                 images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
+                _images_already_sent = False  # Track if images were sent inside the photo branch
                 if images and response_text:
                     import re
                     # Remove bare numbered lines
@@ -501,12 +502,25 @@ async def process_messages(messages: List[Dict[str, Any]]):
                                 logger.error(f"Image send error (index {i}, url truncated: {url[:60]}...): {e}")
                             if i < len(images[:4]) - 1:
                                 await asyncio.sleep(1.0)
-                        if True:  # Always use this follow-up after photos
+                        # Only send photo follow-up if scheduling was NOT done in this same turn.
+                        # If schedule_visit was called, the LLM's response_text already has the
+                        # confirmation — sending a "querés agendar?" follow-up would be contradictory
+                        # and would overwrite/replace the actual confirmation (due to `continue` below).
+                        _scheduled_this_turn = any(
+                            t in tools_used for t in ("schedule_visit", "reschedule_appointment")
+                        )
+                        if not _scheduled_this_turn:
                             follow_up = "¿Tenes alguna otra consulta? O si querés podemos agendar una visita para que la veas en persona."
                             await asyncio.sleep(0.5)
                             logger.info(f"Sending photo follow-up to {phone_to}: {follow_up[:30]}...")
                             await whatsapp_client.send_message(to=phone_to, message=follow_up)
-                        continue  # Skip the generic text+images send below
+                            continue  # Skip the generic text+images send below (only when not scheduling)
+                        else:
+                            # Scheduling was confirmed: fall through to send response_text (confirmation)
+                            # Don't `continue` — let the generic send below deliver the LLM confirmation.
+                            logger.info(f"Skipping photo follow-up (schedule_visit used this turn)")
+                            # Images were already sent above; mark so the generic loop below skips them
+                            _images_already_sent = True
 
                 # Send text response
                 if response_text:
@@ -517,7 +531,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
                     )
 
                 # Send images if any, with rate-limiting delay and error isolation
-                images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
+                # Re-fetch only if images weren't already sent in the photo-split branch above
+                if not _images_already_sent:
+                    images = rich_content.get("images", []) if isinstance(rich_content, dict) else []
                 for i, url in enumerate(images[:4]):
                     try:
                         img_result = await whatsapp_client.send_image(

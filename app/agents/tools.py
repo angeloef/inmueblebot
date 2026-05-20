@@ -1089,6 +1089,13 @@ async def schedule_visit(
                         )
                 except Exception as _ne:
                     logger.debug(f"[schedule_visit] Notif error (non-fatal): {_ne}")
+                # Clear pending scheduling state so next turn doesn't re-trigger the scheduling nudge
+                if phone:
+                    try:
+                        await memory_manager.clear_pending_scheduling(phone)
+                        logger.info(f"[schedule_visit] Pending scheduling cleared for {phone}")
+                    except Exception as _ce:
+                        logger.warning(f"[schedule_visit] Could not clear pending scheduling: {_ce}")
                 return format_appointment_confirmation(appointment, property_title)
 
             return "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
