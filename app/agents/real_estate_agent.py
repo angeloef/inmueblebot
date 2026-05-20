@@ -696,23 +696,26 @@ class RealEstateAgent:
                                         })
                                         logger.info(f"[Agent] photos+schedule -> DIRECT schedule_visit date={_extracted_date!r} time={_extracted_time!r}")
                                     else:
-                                        _missing_info = []
+                                        # Ask day first, hour second — never both at once, never with examples
                                         if not _extracted_date:
-                                            _missing_info.append("dia")
-                                        if not _extracted_time:
-                                            _missing_info.append("horario")
+                                            _next_q = "¿Qué día te queda bien? Atendemos de lunes a sábado de 9 a 18hs."
+                                            _missing_label = "dia"
+                                        else:
+                                            _next_q = f"¿A qué hora te queda mejor el {_extracted_date}?"
+                                            _missing_label = "horario"
                                         messages.append({
                                             "role": "system",
                                             "content": (
                                                 f"INSTRUCCION PRIORITARIA: El usuario pidio fotos Y visita. "
                                                 f"{_photo_note} "
-                                                f"Falta: {' y '.join(_missing_info)}. Preguntale solo eso. "
-                                                "PROHIBIDO: NO llames get_faq_answer. "
+                                                f"Preguntá ÚNICAMENTE esto, con estas palabras exactas: \"{_next_q}\" "
+                                                "PROHIBIDO: NO agregues ejemplos de horarios. "
                                                 "NO confirmes la propiedad. "
+                                                "NO llames get_faq_answer. "
                                                 f"Cuando el usuario responda, llama schedule_visit con property_id={_selected}."
                                             )
                                         })
-                                        logger.info(f"[Agent] photos+schedule nudge -> ask missing: {_missing_info}")
+                                        logger.info(f"[Agent] photos+schedule nudge -> ask missing: {_missing_label}")
                             elif _images_found and not _asked_for_photos and _pending_prop:
                                 # LLM re-called get_property_images unnecessarily while user is
                                 # continuing a scheduling flow (e.g. providing day/time).
