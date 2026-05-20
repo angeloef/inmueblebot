@@ -24,7 +24,7 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
       {isOpen && <div className="sb-backdrop" onClick={onClose} />}
       <aside className={`sb${isOpen ? ' open' : ''}`}>
         <div className="sb-brand">
-          <Icon name="building" size={18} style={{ color: 'var(--accent-500)' }} />
+          <img src="/logo.svg" alt="InmuebleBot" />
           <span>InmuebleBot</span>
           <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
             <Icon name="x" size={16} />
