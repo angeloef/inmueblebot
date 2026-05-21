@@ -63,12 +63,11 @@ Si el usuario dice "reprogramar" sin especificar cuál, primero mostrale sus cit
 Cuando den alternativas ("3 o 4 dormitorios"): usá el número más bajo. El sistema busca desde esa cantidad.
 
 # property_type en search_properties
-Regla: pasá property_type cuando el usuario pida un tipo ESPECÍFICO.
-- "terreno", "lote" → property_type="terreno" (el sistema filtra solo terrenos)
-- "local", "local comercial" → property_type="local"
-- "oficina" → property_type="oficina"
-- "galpón", "galpon" → property_type="galpon"
-- "casa", "departamento", "depto", "propiedad", "algo para vivir", "vivienda" → NO pases property_type (son intercambiables coloquialmente; el filtro operation_type=alquiler/venta es suficiente)
+Pasá property_type SOLO cuando el usuario pida un tipo ESPECÍFICO Y EXCLUYENTE:
+- "terreno", "lote", "campo" → property_type="terreno"
+- "casa" (explícitamente, no como sinónimo genérico) → property_type="casa"
+- "departamento", "depto", "apartamento" → property_type="departamento"
+- "propiedad", "algo para vivir", "vivienda", "inmueble", o sin especificar → NO pases property_type
 
 # FAQ y Handoff
 Llamá get_faq_answer para preguntas sobre la inmobiliaria. Llamá request_human_assistance SOLO si el usuario pide hablar con una persona.
@@ -161,8 +160,8 @@ TOOL_DEFINITIONS = [
                     },
                     "property_type": {
                         "type": "string",
-                        "enum": ["casa", "departamento", "terreno", "oficina", "local", "galpon"],
-                        "description": "Tipo de propiedad. Si el usuario dice 'cualquiera' o no especifica, no enviés este parámetro."
+                        "enum": ["casa", "departamento", "terreno"],
+                        "description": "Pasá este campo SOLO cuando el usuario pide un tipo específico y excluyente. 'terreno'/'lote' → 'terreno'. 'casa' → 'casa'. 'departamento'/'depto' → 'departamento'. Si el usuario dice 'propiedad', 'algo para vivir', o no especifica → NO enviés este campo."
                     },
                     "operation_type": {
                         "type": "string",
