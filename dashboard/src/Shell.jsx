@@ -27,7 +27,9 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
           <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
             <Icon name="chevronLeft" size={20} />
           </button>
-          <img src="/logo.svg" alt="InmuebleBot" />
+          <div className="sb-logo">
+            <img src="/logo.svg" alt="InmuebleBot" />
+          </div>
         </div>
         <div className="sb-nav">
           <div className="sb-section">Principal</div>

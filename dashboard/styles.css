@@ -618,7 +618,7 @@ input, select, textarea { font-family: inherit; }
     flex-shrink: 0;
   }
   .sb-close:hover { background: var(--bg-hover); color: var(--fg-primary); }
-  .sb-brand img { margin: 12px 0 20px; }
+  .sb-logo { flex: 1; display: flex; align-items: center; justify-content: center; }
   .sb-nav { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 
   /* ── Padding reducido ── */
