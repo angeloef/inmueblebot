@@ -208,13 +208,31 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.type == type)
 
         if property_type:
-            # NOTE: Property type filtering is DISABLED because extra_data['kind']
-            # was never populated by seeding. The LLM handles type filtering through
-            # conversation and title_search. This filter always returned 0 results
-            # regardless of implementation (extra_data['building_type'],
-            # extra_data['kind'], or Property.property_type from the old model).
-            # TODO: Re-enable when DB has proper type data.
-            pass
+            # Filter via title ILIKE for DISTINCT types only.
+            # "casa" and "departamento" are interchangeable in colloquial use — no filter.
+            # "terreno", "local", "oficina", "galpon" are genuinely distinct — filter by title.
+            _DISTINCT_TYPE_KEYWORDS = {
+                "terreno": "terreno",
+                "land": "terreno",
+                "local": "local",
+                "oficina": "oficina",
+                "office": "oficina",
+                "galpon": "galpon",
+                "galpón": "galpon",
+            }
+            pt_lower = property_type.strip().lower()
+            title_kw = _DISTINCT_TYPE_KEYWORDS.get(pt_lower)
+            if title_kw:
+                # Match title OR description so "Terreno en Barrio Norte" is found
+                from sqlalchemy import or_
+                query = query.where(
+                    or_(
+                        Property.title.ilike(f"%{title_kw}%"),
+                        Property.description.ilike(f"%{title_kw}%"),
+                    )
+                )
+                logger.info(f"[Repo] property_type '{property_type}' → title/desc ILIKE '%{title_kw}%'")
+            # For residential types (casa, departamento, ph, duplex) → no filter needed
 
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
@@ -430,31 +448,13 @@ class AppointmentRepository(BaseRepository):
             select(Appointment)
             .where(
                 Appointment.start_time >= now,
-                Appointment.start_time <= end,
-                Appointment.status == "confirmed"
+                Appointment.phone == phone,
+                Appointment.status != "cancelled",
             )
             .order_by(Appointment.start_time.asc())
+            .limit(limit)
         )
         return list(result.scalars().all())
-    
-    async def create_appointment(
-        self,
-        user_id: UUID,
-        property_id: UUID,
-        start_time,
-        end_time,
-        type: str = "visit",
-        notes: str = None,
-    ) -> "Appointment":
-        """Crea una nueva cita."""
-        from app.db.models import Appointment
-        
-        apt = Appointment(
-            user_id=user_id,
-            property_id=property_id,
-            start_time=start_time,
-            end_time=end_time,
-            type=type,
-            notes=notes,
-        )
-        return await self.create(apt)
+
+    async def create_appointment(self, apt_data: dict):
+        return await self.create(apt_data)
