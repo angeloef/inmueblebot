@@ -643,6 +643,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
     rented: properties.filter(p=>p.status==='rented').length,
     sale: properties.filter(p=>p.status==='sale').length,
     reserved: properties.filter(p=>p.status==='reserved').length,
+    sold: properties.filter(p=>p.status==='sold').length,
   };
 
   return (
@@ -650,7 +651,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
       <div className="page-h">
         <div>
           <h1>Propiedades</h1>
-          <div className="sub">{properties.length} en cartera · {counts.available} disponibles · {counts.rented} alquiladas</div>
+          <div className="sub">{properties.length} en cartera · {counts.available} disponibles · {counts.rented} alquiladas · {counts.sold} vendidas</div>
         </div>
         <div className="page-h-actions">
           <Button kind="secondary" icon="download">Exportar</Button>
@@ -660,7 +661,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
       <div className="scroll-surface surface">
         <div className="filter-bar">
           <input placeholder="Buscar por dirección, barrio..." value={search} onChange={e => setSearch(e.target.value)} />
-          {[['all','Todas',counts.all],['available','Disponibles',counts.available],['rented','Alquiladas',counts.rented],['sale','En venta',counts.sale],['reserved','Reservadas',counts.reserved]].map(([k,l,n]) => (
+          {[['all','Todas',counts.all],['available','Disponibles',counts.available],['rented','Alquiladas',counts.rented],['sale','En venta',counts.sale],['reserved','Reservadas',counts.reserved],['sold','Vendidas',counts.sold]].map(([k,l,n]) => (
             <span key={k} className={`chip ${filter===k?'active':''}`} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></span>
           ))}
           <span style={{flex:1}}></span>
@@ -714,14 +715,14 @@ export default function Properties({ onOpenClient, initialProperty }) {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:14,padding:14}}>
               {filtered.map(p => (
-                <div key={p.id} onClick={() => setOpen(p)} style={{border:'1px solid var(--border-default)',borderRadius:10,overflow:'hidden',cursor:'pointer',background:'white',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
+                <div key={p.id} onClick={() => setOpen(p)} style={{border:'1px solid var(--border-default)',borderRadius:10,cursor:'pointer',background:'white',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
                   <div style={{position:'relative'}}>
                     {isImg(p.photo) ? (
-                      <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden'}}>
+                      <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden',borderRadius:'10px 10px 0 0'}}>
                         <img src={p.photo} alt={p.addr} style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} />
                       </div>
                     ) : (
-                      <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:0, aspectRatio:'4/3'}}>{p.type}</div>
+                      <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:'10px 10px 0 0', aspectRatio:'4/3'}}>{p.type}</div>
                     )}
                     <StatusDropdown kind={p.status} overlay onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} />
                   </div>

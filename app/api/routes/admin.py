@@ -654,7 +654,7 @@ def list_properties(
     _: bool = Depends(verify_admin_api_key),
 ):
     from app.db.models import Property
-    props = db.query(Property).filter(Property.status != "sold").all()
+    props = db.query(Property).order_by(Property.created_at.desc().nullslast()).all()
     return {"properties": [_prop_to_dict(p) for p in props], "total": len(props)}
 
 

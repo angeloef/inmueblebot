@@ -149,7 +149,7 @@ export function StatusDropdown({ kind, onSelect, overlay, size = 'md' }) {
         <svg width="8" height="8" viewBox="0 0 8 8" style={{ marginLeft:2, opacity:0.6 }}><path d="M2 3l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
       </span>
       {open && (
-        <div className="status-dropdown-menu" onClick={(e) => e.stopPropagation()}>
+        <div className="status-dropdown-menu" style={{ right: overlay ? 0 : undefined, left: overlay ? 'auto' : 0 }} onClick={(e) => e.stopPropagation()}>
           {STATUS_OPTIONS.map(sk => {
             const opt = STATUS_LABELS[sk];
             return (
