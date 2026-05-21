@@ -480,4 +480,13 @@ def get_system_prompt(user_context: Dict[str, Any] = None) -> str:
         except (ValueError, TypeError):
             pass
     if user_context.get("property_type"):
-        context_lines.append(f"Tipo: {user_context.get('property_type')
+        context_lines.append(f"Tipo: {user_context.get('property_type')}")
+    if user_context.get("operation_type"):
+        context_lines.append(f"Operacion: {user_context.get('operation_type')}")
+    if user_context.get("bedrooms"):
+        context_lines.append(f"Dormitorios: {user_context.get('bedrooms')}")
+
+    if context_lines:
+        prompt += "\n\n### User Context\n" + " | ".join(context_lines)
+
+    return prompt
