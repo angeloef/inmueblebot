@@ -646,22 +646,23 @@ export default function Properties({ onOpenClient, initialProperty }) {
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:14,padding:14}}>
               {filtered.map(p => (
                 <div key={p.id} onClick={() => setOpen(p)} style={{border:'1px solid var(--border-default)',borderRadius:10,overflow:'hidden',cursor:'pointer',background:'white',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
-                  {isImg(p.photo) ? (
-                    <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden'}}>
-                      <img src={p.photo} alt={p.addr} style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} />
-                    </div>
-                  ) : (
-                    <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:0, aspectRatio:'4/3'}}>{p.type}</div>
-                  )}
-                  <div style={{padding:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                      <Pill kind={p.status} />
-                      <span style={{marginLeft:'auto',fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh}</span>
-                    </div>
-                    <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>{p.addr}</div>
-                    <div style={{fontSize:11,color:'var(--fg-tertiary)',marginBottom:8}}>{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
-                    <div className="tabular" style={{fontSize:14,fontWeight:600}}>
+                  <div style={{position:'relative'}}>
+                    {isImg(p.photo) ? (
+                      <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden'}}>
+                        <img src={p.photo} alt={p.addr} style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} />
+                      </div>
+                    ) : (
+                      <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:0, aspectRatio:'4/3'}}>{p.type}</div>
+                    )}
+                    <Pill kind={p.status} className="pill-overlay" />
+                  </div>
+                  <div style={{padding:12,display:'flex',flexDirection:'column',gap:6}}>
+                    <div style={{fontSize:13,fontWeight:600,color:'var(--fg-primary)'}}>{p.addr}</div>
+                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh}</div>
+                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
+                    <div className="tabular" style={{fontSize:14,fontWeight:600,marginTop:2,display:'flex',alignItems:'baseline',gap:5}}>
                       {fmtCurrency(p.price, p.currency)}
+                      <span style={{fontSize:10,fontWeight:500,color:'var(--fg-muted)',letterSpacing:'0.02em'}}>{p.currency}</span>
                       {p.operation==='rent' && p.status !== 'sale' && <span className="muted" style={{fontWeight:400,fontSize:11}}> /mes</span>}
                     </div>
                   </div>

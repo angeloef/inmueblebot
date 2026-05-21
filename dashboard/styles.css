@@ -66,6 +66,8 @@ input, select, textarea { font-family: inherit; }
 /* ───── Pills ───── */
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; line-height: 1.5; }
 .pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.pill-overlay { position: absolute; top: 8px; right: 8px; z-index: 1; background: rgba(255,255,255,0.88); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.pill.pill-overlay { background: rgba(255,255,255,0.88); }
 .pill-available { background: #ecf6ee; color: #275a33; }
 .pill-rented   { background: #ecf0f8; color: #25407a; }
 .pill-sale     { background: #f1eef7; color: #4a3573; }

@@ -92,11 +92,11 @@ const PILL_KINDS = {
   owner:     { cls: 'pill-sale',      dot: '#6b4d99', label: 'Propietario'},
   tenant:    { cls: 'pill-paid',      dot: '#3d8b4f', label: 'Inquilino' },
 };
-export function Pill({ kind, children }) {
+export function Pill({ kind, children, className }) {
   const k = PILL_KINDS[kind];
-  if (!k) return <span className="pill pill-neutral">{children}</span>;
+  if (!k) return <span className={`pill pill-neutral ${className || ''}`}>{children}</span>;
   return (
-    <span className={`pill ${k.cls}`}>
+    <span className={`pill ${k.cls} ${className || ''}`}>
       <span className="dot" style={{ background: k.dot }} />
       {children || k.label}
     </span>
