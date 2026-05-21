@@ -523,16 +523,48 @@ class RealEstateAgent:
 
                         # ── Plan B: Inject contextual next-step guidance ──
                         if tool_name == "search_properties":
-                            # After showing search results, suggest next step
-                            messages.append({
-                                "role": "system",
-                                "content": (
-                                    "Acabas de mostrar resultados de búsqueda. "
-                                    "Terminá preguntando al usuario "
-                                    "si le gustaría conocer los detalles de alguna en particular. "
-                                    "Ej: '¿Cuál te gustaría conocer más a fondo?'"
+                            # Count results by counting 📍 markers in the returned string
+                            _result_str = str(tool_result)
+                            _n_results = _result_str.count("📍")
+
+                            if _n_results == 1:
+                                # Single result — extract exact title
+                                _title = ""
+                                for _line in _result_str.split("\n"):
+                                    if _line.startswith("📍"):
+                                        # Format: "📍 Título — $precio ..."
+                                        _title = _line[2:].split(" — ")[0].strip()
+                                        break
+                                _close = (
+                                    f"¿Querés saber algo más de {_title}?"
+                                    if _title
+                                    else "¿Querés saber algo más de esta propiedad?"
                                 )
-                            })
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        f"Mostraste 1 resultado. "
+                                        f"Terminá la respuesta con exactamente: '{_close}'"
+                                    )
+                                })
+                            else:
+                                # Multiple results — use property_type plural
+                                _pt = tool_args.get("property_type", "").lower()
+                                _plural_map = {
+                                    "terreno": "terrenos",
+                                    "casa": "casas",
+                                    "departamento": "departamentos",
+                                    "ph": "PH",
+                                }
+                                _tipo_plural = _plural_map.get(_pt, "propiedades")
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        f"Mostraste {_n_results} resultados. "
+                                        f"Terminá la respuesta con exactamente: "
+                                        f"'¿Querés más información de alguno de estos {_tipo_plural}?'"
+                                    )
+                                })
                         elif tool_name == "get_property_details":
                             _prop_info = ""
                             if isinstance(tool_result, str) and tool_result:
