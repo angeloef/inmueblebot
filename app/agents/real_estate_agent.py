@@ -526,43 +526,63 @@ class RealEstateAgent:
                             # Count results by counting 📍 markers in the returned string
                             _result_str = str(tool_result)
                             _n_results = _result_str.count("📍")
+                            # Extract only the 📍 property lines (no header/footer from tool)
+                            _prop_lines = [l for l in _result_str.split("\n") if l.startswith("📍")]
+                            _prop_lines_str = "\n".join(_prop_lines)
+                            _pt = tool_args.get("property_type", "").lower()
 
                             if _n_results == 1:
-                                # Single result — extract exact title
-                                _title = ""
-                                for _line in _result_str.split("\n"):
-                                    if _line.startswith("📍"):
-                                        # Format: "📍 Título — $precio ..."
-                                        _title = _line[2:].split(" — ")[0].strip()
-                                        break
+                                # Single result — build singular header + extract title
+                                _title = _prop_lines[0][2:].split(" — ")[0].strip() if _prop_lines else ""
                                 _close = (
                                     f"¿Querés saber algo más de {_title}?"
                                     if _title
                                     else "¿Querés saber algo más de esta propiedad?"
                                 )
+                                _sing_map = {
+                                    "terreno": "el terreno",
+                                    "casa": "la casa",
+                                    "departamento": "el departamento",
+                                    "ph": "el PH",
+                                }
+                                _tipo_sing = _sing_map.get(_pt, "la propiedad")
+                                _loc = tool_args.get("location", "")
+                                _header = (
+                                    f"Este es {_tipo_sing} que tenemos en {_loc}:"
+                                    if _loc
+                                    else f"Este es {_tipo_sing} que tenemos disponible:"
+                                )
                                 messages.append({
                                     "role": "system",
                                     "content": (
-                                        f"Mostraste 1 resultado. "
-                                        f"Terminá la respuesta con exactamente: '{_close}'"
+                                        f"Respondé EXACTAMENTE con este texto, sin modificar ni agregar nada:\n\n"
+                                        f"{_header}\n"
+                                        f"{_prop_lines_str}\n"
+                                        f"{_close}"
                                     )
                                 })
                             else:
-                                # Multiple results — use property_type plural
-                                _pt = tool_args.get("property_type", "").lower()
+                                # Multiple results — build plural header + closing
                                 _plural_map = {
-                                    "terreno": "terrenos",
-                                    "casa": "casas",
-                                    "departamento": "departamentos",
-                                    "ph": "PH",
+                                    "terreno": ("terrenos", "los"),
+                                    "casa": ("casas", "las"),
+                                    "departamento": ("departamentos", "los"),
+                                    "ph": ("PH", "los"),
                                 }
-                                _tipo_plural = _plural_map.get(_pt, "propiedades")
+                                _noun, _art = _plural_map.get(_pt, ("propiedades", "las"))
+                                _loc = tool_args.get("location", "")
+                                _header = (
+                                    f"Estos son {_art} {_noun} que tenemos en {_loc}:"
+                                    if _loc
+                                    else f"Estos son {_art} {_noun} que tenemos disponibles:"
+                                )
                                 messages.append({
                                     "role": "system",
                                     "content": (
-                                        f"Mostraste {_n_results} resultados. "
-                                        f"Terminá la respuesta con exactamente: "
-                                        f"'¿Querés más información de alguno de estos {_tipo_plural}?'"
+                                        f"Respondé EXACTAMENTE con este texto, sin modificar ni agregar nada:\n\n"
+                                        f"{_header}\n"
+                                        f"{_prop_lines_str}\n"
+                                        f"¿Querés más información de alguno de estos {_noun}?"
                                     )
                                 })
                         elif tool_name == "get_property_details":
