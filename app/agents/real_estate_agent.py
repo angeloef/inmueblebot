@@ -398,7 +398,9 @@ class RealEstateAgent:
                         # Skip guard if already in booking flow or user is giving time
                         _skip_guard = False
                         _current_state = merged_context.get("current_state", "")
-                        if _current_state in (ConversationStateEnum.BOOKING.value,):
+                        # Skip if in booking OR viewing_property (bot just showed photos/details and offered visit)
+                        if _current_state in (ConversationStateEnum.BOOKING.value,
+                                              ConversationStateEnum.VIEWING_PROPERTY.value):
                             _skip_guard = True
                         # Skip guard if there's an active pending scheduling context
                         if _turn_pending_sched.get("active") and _turn_pending_sched.get("property_id"):
@@ -411,6 +413,17 @@ class RealEstateAgent:
                             if any(c.isdigit() for c in user_message) and len(user_message.strip().split()) <= 3:
                                 # "a las 5", "para las 4pm", "17:00" — clear time response
                                 _skip_guard = True
+                            # Pure affirmative response (user confirming a scheduling offer the bot made)
+                            _affirmative_words = {
+                                "sí", "si", "dale", "ok", "bueno", "claro", "perfecto",
+                                "genial", "ya", "vamos", "por", "favor", "porfa", "obvio",
+                                "sip", "sep", "vá", "va", "bárbaro", "barbaro"
+                            }
+                            import re as _re
+                            _msg_words = set(_re.sub(r'[^a-záéíóúüñ\s]', '', user_message.lower()).split())
+                            if _msg_words and _msg_words.issubset(_affirmative_words):
+                                _skip_guard = True
+                                logger.info(f"[Agent] 🛡️ SCHEDULING GUARD skipped: pure affirmative '{user_message}'")
                         if not _skip_guard and tool_name == "schedule_visit" and user_message:
                             _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
                                                "reserva", "turno", "conocer", "ver en persona",
