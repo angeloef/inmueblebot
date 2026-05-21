@@ -296,10 +296,15 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 logger.info("[TOOL] Location parser fallo, usando raw: %r", raw_loc)
         
         if criteria.get("budget_max"):
-            search_criteria["budget_max"] = int(criteria["budget_max"])
-            logger.info(f"[TOOL] Budget max: {search_criteria['budget_max']}")
-        
+            raw_budget = int(criteria["budget_max"])
+            # Expand +20%: user's budget is a TARGET, not a hard cap.
+            # This surfaces options slightly above what they said while still being relevant.
+            search_criteria["budget_max"] = int(raw_budget * 1.20)
+            logger.info(f"[TOOL] Budget max: {raw_budget} → expanded to {search_criteria['budget_max']} (+20%)")
+
         if criteria.get("budget_min"):
+            # Only apply explicit budget_min; never derive a floor from budget_max.
+            # Cheaper options should always appear — user may take something better value.
             search_criteria["budget_min"] = int(criteria["budget_min"])
             logger.info(f"[TOOL] Budget min: {search_criteria['budget_min']}")
         
@@ -1764,7 +1769,7 @@ async def execute_tool(tool_name: str, arguments: dict, phone: str = None) -> st
 
 __all__ = [
     "search_properties",
-    "compare_properties",
+    "get_property_images",
     "get_property_details", 
     "recommend_properties",
     "update_user_preferences",
