@@ -410,6 +410,24 @@ class HandoffRequest(BaseModel):
     reason: Optional[str] = "user_requested"
 
 
+class PropertyStatusUpdate(BaseModel):
+    """Quick status change — only the status field."""
+    status: str = "available"  # 'available','reserved','sold','rented'
+
+
+class PropertyRelateClient(BaseModel):
+    """Link a client to a property with a relationship type."""
+    client_id: str            # UUID of the User/Lead
+    relation: str = "interested"  # 'interested', 'buyer', 'tenant'
+    update_status: bool = True    # auto-update property status
+
+
+class ClientPropertyInterest(BaseModel):
+    """Toggle a client's interest in a property."""
+    property_id: int
+    interested: bool = True   # True = add interest, False = remove
+
+
 # ── Serialization helpers ──────────────────────────────────────────────────────
 
 _ROLE_TO_STATUS = {"prospect": "new", "tenant": "converted", "owner": "new", "lost": "lost"}
@@ -438,9 +456,11 @@ def _user_to_dict(u):
         "phone": u.whatsapp_phone,
         "name": u.name,
         "email": extra.get("email"),
-        "status": _ROLE_TO_STATUS.get(role, "new"),   # toClient() maps status → role
+        "role": role,                                      # raw role, no round-trip loss
+        "status": _ROLE_TO_STATUS.get(role, "new"),        # backward compat
         "notes": extra.get("notes"),
         "tags": [],
+        "property_relations": extra.get("property_relations", []),
         "lead_score": getattr(u, 'lead_score', 0) or 0,
         "last_interaction": u.last_interaction.isoformat() if u.last_interaction else None,
         "updated_at": u.last_interaction.isoformat() if u.last_interaction else None,
@@ -471,6 +491,8 @@ def _prop_to_dict(p):
         "status": p.status,
         "type": p.type,                                    # 'venta' or 'alquiler'
         "currency": getattr(p, "currency", "ARS") or "ARS",
+        "buyer_id": extra.get("buyer_id"),
+        "tenant_id": extra.get("tenant_id"),
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -745,6 +767,144 @@ def delete_property(
     prop.status = "sold"   # soft delete
     db.commit()
     return {"status": "deleted", "property_id": prop_id}
+
+
+# ── Quick Status Change ─────────────────────────────────────────────────────────
+
+@router.patch("/properties/{prop_id}/status")
+def update_property_status(
+    prop_id: int,
+    data: PropertyStatusUpdate,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Quick status update without full property edit."""
+    from app.db.models import Property
+    prop = db.query(Property).filter(Property.id == prop_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    valid = ("available", "reserved", "sold", "rented")
+    if data.status not in valid:
+        raise HTTPException(status_code=422, detail=f"Invalid status. Must be one of {valid}")
+    prop.status = data.status
+    db.commit()
+    return {"status": "updated", "property_id": prop_id, "new_status": prop.status}
+
+
+# ── Client-Property Relationship ────────────────────────────────────────────────
+
+@router.post("/properties/{prop_id}/relate-client")
+def relate_client_to_property(
+    prop_id: int,
+    data: PropertyRelateClient,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Link a client to a property with a relationship type. Optionally updates property status.
+
+    Relations:
+      - 'interested': marks client as interested (adds to property_relations on client)
+      - 'buyer': marks client as buyer, sets property status → 'sold'
+      - 'tenant': marks client as tenant, sets property status → 'rented'
+    """
+    from app.db.models import User, Property
+    from uuid import UUID as _UUID
+
+    # Validate client
+    try:
+        uid = _UUID(data.client_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid client_id format (expected UUID)")
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # Validate property
+    prop = db.query(Property).filter(Property.id == prop_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    # Update property extra_data with buyer/tenant ID
+    extra = dict(prop.extra_data or {})
+    if data.relation == "buyer":
+        extra["buyer_id"] = data.client_id
+        if data.update_status:
+            prop.status = "sold"
+    elif data.relation == "tenant":
+        extra["tenant_id"] = data.client_id
+        if data.update_status:
+            prop.status = "rented"
+    prop.extra_data = extra
+    db.flush()
+
+    # Update user extra_data with property_relations
+    uextra = _parse_extra(getattr(user, 'extra_data', None))
+    relations = uextra.get("property_relations", [])
+    # Remove existing relation for this property if any
+    relations = [r for r in relations if r.get("prop_id") != prop_id]
+    if data.relation == "interested" or data.relation in ("buyer", "tenant"):
+        from datetime import datetime as _dt
+        relations.append({
+            "prop_id": prop_id,
+            "relation": data.relation,
+            "date": _dt.utcnow().isoformat(),
+        })
+    uextra["property_relations"] = relations
+    try:
+        user.extra_data = uextra
+    except AttributeError:
+        pass
+
+    db.commit()
+    return {
+        "status": "linked",
+        "property_id": prop_id,
+        "client_id": data.client_id,
+        "relation": data.relation,
+        "property_status": prop.status,
+    }
+
+
+@router.patch("/leads/{lead_id}/property-interest")
+def toggle_client_property_interest(
+    lead_id: str,
+    data: ClientPropertyInterest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Toggle a client's interest in a property."""
+    from app.db.models import User
+    try:
+        uid = _uuid.UUID(lead_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid lead_id format (expected UUID)")
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    uextra = _parse_extra(getattr(user, 'extra_data', None))
+    relations = uextra.get("property_relations", [])
+    if data.interested:
+        # Add interest if not already present
+        exists = any(r.get("prop_id") == data.property_id for r in relations)
+        if not exists:
+            from datetime import datetime as _dt
+            relations.append({
+                "prop_id": data.property_id,
+                "relation": "interested",
+                "date": _dt.utcnow().isoformat(),
+            })
+    else:
+        # Remove interest
+        relations = [r for r in relations if r.get("prop_id") != data.property_id]
+
+    uextra["property_relations"] = relations
+    try:
+        user.extra_data = uextra
+    except AttributeError:
+        pass
+    db.commit()
+    return {"status": "updated", "lead_id": lead_id, "property_id": data.property_id, "interested": data.interested}
 
 
 # ── Appointments ───────────────────────────────────────────────────────────────

@@ -103,6 +103,69 @@ export function Pill({ kind, children, className }) {
   );
 }
 
+/* ── Status Dropdown ──────────────────────────────────────────────────────────
+ * Clickable pill that opens a floating menu of all statuses.
+ * Props:
+ *   kind      – current status key
+ *   onSelect  – called with (newStatusKey) on selection
+ *   overlay   – if true, renders as pill-overlay (absolute top-right)
+ *   size      – 'sm' | 'md' (default 'md')
+ */
+const STATUS_OPTIONS = ['available','sold','rented','reserved'];
+const STATUS_LABELS = {
+  available: { label: 'Disponible',  dot: '#3d8b4f', cls: 'pill-available' },
+  sold:      { label: 'Vendida',     dot: '#6b4d99', cls: 'pill-sale'      },
+  rented:    { label: 'Alquilada',   dot: '#3a5fa8', cls: 'pill-rented'    },
+  reserved:  { label: 'Reservada',   dot: '#3a5fa8', cls: 'pill-rented'    },
+};
+export function StatusDropdown({ kind, onSelect, overlay, size = 'md' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const current = STATUS_LABELS[kind] ?? STATUS_LABELS.available;
+  // Fallback for legacy statuses like 'sale' that don't match DB values
+  if (!STATUS_LABELS[kind]) {
+    const cls = overlay ? `pill pill-neutral pill-overlay` : `pill pill-neutral`;
+    return (
+      <span style={{ position: overlay ? 'absolute' : 'static', top: overlay ? 8 : undefined, right: overlay ? 8 : undefined, zIndex: overlay ? 1 : undefined }}>
+        <span className={cls}><span className="dot" style={{background:'#8b919a'}} />{kind}</span>
+      </span>
+    );
+  }
+  const cls = overlay ? `pill ${current.cls} pill-overlay` : `pill ${current.cls}`;
+
+  return (
+    <span ref={ref} className={`status-dropdown ${open ? 'open' : ''}`} style={{ position: overlay ? 'absolute' : 'relative', display:'inline-block', top: overlay ? 8 : undefined, right: overlay ? 8 : undefined, zIndex: overlay ? 1 : undefined }}>
+      <span className={cls} style={{ cursor:'pointer', userSelect:'none' }} onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}>
+        <span className="dot" style={{ background: current.dot }} />
+        {current.label}
+        <svg width="8" height="8" viewBox="0 0 8 8" style={{ marginLeft:2, opacity:0.6 }}><path d="M2 3l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+      </span>
+      {open && (
+        <div className="status-dropdown-menu" onClick={(e) => e.stopPropagation()}>
+          {STATUS_OPTIONS.map(sk => {
+            const opt = STATUS_LABELS[sk];
+            return (
+              <div key={sk} className={`status-dropdown-item ${sk === kind ? 'active' : ''}`}
+                   onClick={() => { onSelect(sk); setOpen(false); }}>
+                <span className="sd-dot" style={{ background: opt.dot }} />
+                {opt.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function initials(name) {
   return name.split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase();
 }

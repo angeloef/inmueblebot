@@ -78,6 +78,22 @@ input, select, textarea { font-family: inherit; }
 .pill-cancelled{ background: var(--gray-50); color: var(--fg-tertiary); text-decoration: line-through; }
 .pill-neutral  { background: var(--gray-50); color: var(--fg-secondary); border: 1px solid var(--border-default); }
 
+/* ───── Status Dropdown ───── */
+.status-dropdown { display: inline-block; }
+.status-dropdown-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; min-width: 140px;
+  background: white; border: 1px solid var(--border-default); border-radius: 8px;
+  box-shadow: var(--shadow-md); z-index: 100; padding: 4px;
+}
+.status-dropdown-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: 5px; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: background var(--dur-fast); color: var(--fg-primary);
+}
+.status-dropdown-item:hover { background: var(--bg-hover); }
+.status-dropdown-item.active { background: var(--bg-active); font-weight: 600; }
+.sd-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
 /* ───── KPI ───── */
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .kpi { background: white; border: 1px solid var(--border-default); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }

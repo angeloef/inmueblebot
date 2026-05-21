@@ -108,6 +108,11 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
   const [tab, setTab] = useState('overview');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const interestProps = (client.interest || []).map(id => properties.find(p => String(p.id) === String(id))).filter(Boolean);
+  // Properties linked via property_relations (buyer, tenant, interested)
+  const linkedProps = (client.property_relations || []).map(r => ({
+    prop: properties.find(p => String(p.id) === String(r.prop_id)),
+    relation: r.relation,
+  })).filter(({ prop }) => prop);
   const events = allEvents.filter(e => e.clientId === client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -187,20 +192,36 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
             </div>
           </Fragment>}
           {tab === 'interest' && <div className="detail-block">
-            <h3>Propiedades de interés ({interestProps.length})</h3>
-            {interestProps.length === 0
+            <h3>Propiedades vinculadas ({interestProps.length + linkedProps.length})</h3>
+            {interestProps.length === 0 && linkedProps.length === 0
               ? <div className="muted" style={{fontSize:12}}>Sin propiedades asignadas.</div>
-              : interestProps.map(p => (
-              <div key={p.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}} onClick={() => onOpenProperty(p)}>
-                <span className="prop-thumb" style={{background:p.photo,width:52,height:42}}><Icon name="building" /></span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:500}}>{p.addr}</div>
-                  <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh} · {p.rooms !== '—' && p.rooms + ' · '}{p.m2} m²</div>
-                </div>
-                <Pill kind={p.status} />
-                <div className="tabular" style={{fontSize:13,fontWeight:500,minWidth:110,textAlign:'right'}}>{fmtCurrency(p.price, p.currency)}</div>
-              </div>
-            ))}
+              : <>
+                {linkedProps.map(({ prop, relation }) => (
+                  <div key={`linked-${prop.id}-${relation}`} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}} onClick={() => onOpenProperty(prop)}>
+                    <span className="prop-thumb" style={{background:prop.photo,width:52,height:42}}><Icon name="building" /></span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:500}}>{prop.addr}</div>
+                      <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{prop.neigh} · {prop.rooms !== '—' && prop.rooms + ' · '}{prop.m2} m²</div>
+                    </div>
+                    <span className={`pill ${relation === 'buyer' ? 'pill-paid' : relation === 'tenant' ? 'pill-rented' : 'pill-available'}`} style={{fontSize:10}}>
+                      {relation === 'buyer' ? 'Comprador' : relation === 'tenant' ? 'Inquilino' : 'Interesado'}
+                    </span>
+                    <div className="tabular" style={{fontSize:13,fontWeight:500,minWidth:110,textAlign:'right'}}>{fmtCurrency(prop.price, prop.currency)}</div>
+                  </div>
+                ))}
+                {interestProps.map(p => (
+                  <div key={p.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}} onClick={() => onOpenProperty(p)}>
+                    <span className="prop-thumb" style={{background:p.photo,width:52,height:42}}><Icon name="building" /></span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:500}}>{p.addr}</div>
+                      <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh} · {p.rooms !== '—' && p.rooms + ' · '}{p.m2} m²</div>
+                    </div>
+                    <Pill kind={p.status} />
+                    <div className="tabular" style={{fontSize:13,fontWeight:500,minWidth:110,textAlign:'right'}}>{fmtCurrency(p.price, p.currency)}</div>
+                  </div>
+                ))}
+              </>
+            }
           </div>}
           {tab === 'activity' && <div className="detail-block">
             <h3>Historial ({events.length})</h3>

@@ -1,7 +1,7 @@
 import React, { useState, Fragment } from 'react';
-import { Icon, Button, IconButton, Pill, initials, pushToast } from './Primitives';
+import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty } from './api';
+import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty } from './api';
 import { KIND_META } from './EventPopover';
 
 /** Devuelve true si el string es una URL de imagen (base64 o http) */
@@ -16,8 +16,24 @@ const isImg = (s) => s && (
 function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onDelete }) {
   const { data: clients = [] }   = useClients();
   const { data: allEvents = [] } = useEvents();
+  const updateStatus     = useUpdatePropertyStatus();
+  const relateClient     = useRelateClientToProperty();
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignSearch, setAssignSearch] = useState('');
+  const [assignRelation, setAssignRelation] = useState('buyer');
   if (!property) return null;
-  const interestedClients = clients.filter(c => (c.interest || []).includes(String(property.id)));
+
+  // Interested clients: from property_relations (new) and legacy interest array
+  const relatedClientIds = new Set();
+  const interestedClients = clients.filter(c => {
+    const fromRelations = (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'interested');
+    const fromLegacy = (c.interest || []).includes(String(property.id));
+    if (fromRelations || fromLegacy) relatedClientIds.add(c.id);
+    return fromRelations || fromLegacy;
+  });
+  // Buyer/tenant from property_relations
+  const buyerClient = clients.find(c => (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'buyer'));
+  const tenantClient = clients.find(c => (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'tenant'));
   const events = allEvents.filter(e => String(e.propId) === String(property.id));
   /** true si la propiedad es para alquiler (muestra /mes en precio) */
   const isRent = property.operation === 'rent' && property.status !== 'sale';
@@ -41,7 +57,9 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
           )}
 
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>
-            <Pill kind={property.status} />
+            <StatusDropdown kind={property.status} onSelect={(s) => updateStatus.mutate({ id: property.id, status: s })} />
+            {buyerClient && <Pill kind="active">Comprador: {buyerClient.name}</Pill>}
+            {tenantClient && <Pill kind="active">Inquilino: {tenantClient.name}</Pill>}
             <span className="tabular" style={{fontSize:18,fontWeight:600,letterSpacing:'-0.01em'}}>
               {fmtCurrency(property.price, property.currency)}
             </span>
@@ -100,6 +118,56 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
                 <Pill kind={c.role} />
               </div>
             ))}
+          </div>
+
+          <div className="detail-block">
+            <h3>Asignar comprador / inquilino</h3>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:4}}>
+              {!assignOpen ? (
+                <Button kind="secondary" size="sm" onClick={() => setAssignOpen(true)} icon="user-plus">Vincular cliente</Button>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <input placeholder="Buscar cliente por nombre..." value={assignSearch} onChange={e => setAssignSearch(e.target.value)}
+                         style={{width:'100%',padding:'6px 10px',fontSize:13,border:'1px solid var(--border-default)',borderRadius:6}} autoFocus />
+                  <div style={{display:'flex',gap:6}}>
+                    {[['buyer','Comprador'],['tenant','Inquilino'],['interested','Interesado']].map(([k,l]) => (
+                      <span key={k} className={`chip ${assignRelation===k?'active':''}`} onClick={()=>setAssignRelation(k)}>{l}</span>
+                    ))}
+                  </div>
+                  <div style={{maxHeight:160,overflowY:'auto',display:'flex',flexDirection:'column',gap:2}}>
+                    {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => (
+                      <div key={c.id} className="popover-attendee" style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
+                           onClick={() => {
+                             relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true });
+                             setAssignOpen(false);
+                             setAssignSearch('');
+                           }}>
+                        <span className="av">{initials(c.name)}</span>
+                        <div style={{flex:1}}>
+                          <div className="name" style={{fontSize:13,fontWeight:500}}>{c.name}</div>
+                          <div className="meta">{c.phone || c.email}</div>
+                        </div>
+                        <Pill kind={c.role} />
+                      </div>
+                    ))}
+                    {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).length === 0 && (
+                      <div className="muted" style={{fontSize:12,padding:8}}>Sin resultados.</div>
+                    )}
+                  </div>
+                  <Button kind="ghost" size="sm" onClick={() => { setAssignOpen(false); setAssignSearch(''); }}>Cancelar</Button>
+                </div>
+              )}
+            </div>
+            {buyerClient && (
+              <div style={{marginTop:8,fontSize:12,color:'var(--success-700)'}}>
+                ✓ Comprador asignado: <strong>{buyerClient.name}</strong>
+              </div>
+            )}
+            {tenantClient && (
+              <div style={{marginTop:4,fontSize:12,color:'var(--info-500)'}}>
+                ✓ Inquilino asignado: <strong>{tenantClient.name}</strong>
+              </div>
+            )}
           </div>
 
           <div className="detail-block">
@@ -541,6 +609,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
   const createProperty  = useCreateProperty();
   const updateProperty  = useUpdateProperty();
   const deleteProperty  = useDeleteProperty();
+  const updateStatus    = useUpdatePropertyStatus();
   const [filter, setFilter] = useState('all');
   const [op, setOp] = useState('all');
   const [search, setSearch] = useState('');
@@ -626,7 +695,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
                       </div>
                     </td>
                     <td className="muted">{p.type}</td>
-                    <td><Pill kind={p.status} /></td>
+                    <td><StatusDropdown kind={p.status} onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} /></td>
                     <td className="muted">{p.operation === 'rent' ? 'Alquiler' : 'Venta'}</td>
                     <td className="price" style={{textAlign:'right',whiteSpace:'nowrap'}}>
                       {fmtCurrency(p.price, p.currency)}
@@ -654,7 +723,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
                     ) : (
                       <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:0, aspectRatio:'4/3'}}>{p.type}</div>
                     )}
-                    <Pill kind={p.status} className="pill-overlay" />
+                    <StatusDropdown kind={p.status} overlay onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} />
                   </div>
                   <div style={{padding:12,display:'flex',flexDirection:'column',gap:6}}>
                     <div style={{fontSize:13,fontWeight:600,color:'var(--fg-primary)'}}>{p.addr}</div>

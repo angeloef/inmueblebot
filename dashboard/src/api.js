@@ -129,6 +129,18 @@ const STATUS_TO_ROLE = {
   lost:      'lost',
 };
 
+/** Reverse map: raw role from backend → dashboard pill kind */
+const ROLE_TO_PILL = {
+  prospect:  'prospect',
+  contact:   'prospect',
+  lead:      'prospect',
+  client:    'tenant',
+  tenant:    'tenant',
+  owner:     'owner',
+  buyer:     'owner',
+  lost:      'lost',
+};
+
 /** Normalize an image URL: if it's raw base64 (no data: prefix), add it so <img> can render it */
 function normalizeImgUrl(url) {
   if (!url) return '';
@@ -173,6 +185,8 @@ function toProperty(p) {
     images:    p.images ? p.images.map(normalizeImgUrl) : (photo ? [photo] : []),
     notes:     p.description ?? '',
     desc:      p.description ?? '',
+    buyer_id:  p.buyer_id ?? null,
+    tenant_id: p.tenant_id ?? null,
     _createdAt: p.created_at ?? null,
   };
 }
@@ -206,8 +220,8 @@ function toClient(l) {
   return {
     id:          String(l.id),
     name:        l.name ?? 'Sin nombre',
-    // l.status comes from _user_to_dict: 'new','contacted','qualified','converted','lost'
-    role:        STATUS_TO_ROLE[l.status] ?? 'prospect',
+    // Prefer raw role from backend (avoids round-trip loss), fallback to legacy status mapping
+    role:        l.role ? ROLE_TO_PILL[l.role] ?? 'prospect' : (STATUS_TO_ROLE[l.status] ?? 'prospect'),
     tags:        Array.isArray(l.tags) ? l.tags : [],
     phone:       l.phone ?? l.whatsapp_phone ?? '',
     email:       l.email ?? '',
@@ -216,6 +230,7 @@ function toClient(l) {
     agent:       '',
     notes:       l.notes ?? '',
     interest:    [],
+    property_relations: l.property_relations ?? [],
     visits:      0,
     lastContact: timeAgo(l.last_interaction ?? l.updated_at ?? l.created_at),
     _createdAt:  l.created_at ?? null,
@@ -317,6 +332,42 @@ export const useDeleteProperty = () => {
   return useMutation({
     mutationFn: propertyApi.remove,
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+  });
+};
+
+// ── Property Status (quick update) ──────────────────────────────────────────────
+
+export const useUpdatePropertyStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }) => http.patch(`/admin/properties/${id}/status`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+  });
+};
+
+// ── Client-Property Relationship ────────────────────────────────────────────────
+
+export const useRelateClientToProperty = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prop_id, client_id, relation, update_status = true }) =>
+      http.post(`/admin/properties/${prop_id}/relate-client`, { client_id, relation, update_status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.properties });
+      qc.invalidateQueries({ queryKey: keys.clients });
+    },
+  });
+};
+
+export const useToggleClientPropertyInterest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lead_id, property_id, interested }) =>
+      http.patch(`/admin/leads/${lead_id}/property-interest`, { property_id, interested }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.properties });
+      qc.invalidateQueries({ queryKey: keys.clients });
+    },
   });
 };
 
