@@ -307,7 +307,7 @@ export const useCreateProperty = () => {
 export const useUpdateProperty = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }) => propertyApi.update(id, data),
+    mutationFn: ({ id, ...rest }) => propertyApi.update(id, rest),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
   });
 };
@@ -345,7 +345,7 @@ export const useCreateClient = () => {
 export const useUpdateClient = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }) => clientApi.update(id, data),
+    mutationFn: ({ id, ...rest }) => clientApi.update(id, rest),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.clients }),
   });
 };
