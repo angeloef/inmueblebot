@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Primitives';
-import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification } from './api';
+import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications } from './api';
 
 export function Sidebar({ active, onNav, isOpen, onClose }) {
   const items = [
@@ -94,19 +94,28 @@ function NotificationPanel({ onClose, onAction }) {
   const markRead   = useMarkNotificationRead();
   const markAll    = useMarkAllRead();
   const deleteNotif = useDeleteNotification();
+  const deleteRead = useDeleteReadNotifications();
 
   const notifications = data?.notifications ?? [];
   const unread = data?.unread_count ?? 0;
+  const hasRead = notifications.some(n => n.read);
 
   return (
     <div className="notif-panel" onClick={e => e.stopPropagation()}>
       <div className="notif-header">
         <span className="notif-title">Notificaciones {unread > 0 && <span className="notif-badge-sm">{unread}</span>}</span>
-        {unread > 0 && (
-          <button className="notif-mark-all" onClick={() => markAll.mutate()}>
-            Marcar todo leído
-          </button>
-        )}
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          {unread > 0 && (
+            <button className="notif-mark-all" onClick={() => markAll.mutate()}>
+              Marcar todo leído
+            </button>
+          )}
+          {hasRead && (
+            <button className="notif-mark-all" style={{color:'var(--danger-500)'}} onClick={() => deleteRead.mutate()}>
+              Eliminar leídas
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="notif-list">

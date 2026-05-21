@@ -1677,6 +1677,18 @@ def delete_notification(
     return {"status": "deleted", "id": notif_id}
 
 
+@router.post("/notifications/delete-read")
+def delete_read_notifications(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Elimina todas las notificaciones ya leídas."""
+    from sqlalchemy import text as _t
+    result = db.execute(_t("DELETE FROM notifications WHERE read = TRUE"))
+    db.commit()
+    return {"status": "deleted", "count": result.rowcount}
+
+
 # ── Bot Settings ──────────────────────────────────────────────────────────────
 
 # All bot-operational settings are stored as key-value rows in bot_settings.

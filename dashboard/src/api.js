@@ -602,6 +602,14 @@ export const useDeleteNotification = () => {
   });
 };
 
+export const useDeleteReadNotifications = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => http.post('/admin/notifications/delete-read').then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+};
+
 // ─── Bot Settings ─────────────────────────────────────────────────────────────
 
 const settingsApi = {
