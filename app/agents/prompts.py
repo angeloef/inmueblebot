@@ -177,7 +177,7 @@ TOOL_DEFINITIONS = [
                     "operation_type": {
                         "type": "string",
                         "enum": ["venta", "alquiler"],
-                        "description": "Tipo de operación. Default: alquiler si no se especifica."
+                        "description": "Tipo de operación. OMITIR si el usuario menciona ambas ('alquilar o comprar', 'alquiler o venta') o no especifica. Solo incluir cuando el usuario mencione EXCLUSIVAMENTE una de las dos."
                     },
                     "sort_by": {
                         "type": "string",

@@ -336,11 +336,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             search_criteria["operation_type"] = criteria["operation_type"]
         elif criteria.get("type"):
             search_criteria["operation_type"] = criteria["type"]
-        else:
-            # Default to "alquiler" (rental) when user doesn't specify
-            # Most users contact the bot looking to rent, not buy
-            search_criteria["operation_type"] = "alquiler"
-            logger.info("[TOOL] No operation_type specified — defaulting to 'alquiler'")
+        # No default: omitting operation_type returns all properties (alquiler + venta)
         
         # Pass sort_by if provided (price_desc, price_asc, newest)
         if criteria.get("sort_by"):
