@@ -499,7 +499,22 @@ export const useDeleteEvent = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: eventApi.remove,
-    onSuccess: () => qc.refetchQueries({ queryKey: keys.events }),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.events });
+      const prev = qc.getQueryData(keys.events);
+      qc.setQueryData(keys.events, (old) => {
+        if (!old) return old;
+        return old.filter(e => String(e.id) !== String(id));
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.events, ctx.prev);
+    },
+    onSettled: () => {
+      qc.refetchQueries({ queryKey: keys.events });
+      qc.invalidateQueries({ queryKey: keys.events });
+    },
   });
 };
 
