@@ -513,7 +513,6 @@ export const useDeleteEvent = () => {
     },
     onSettled: () => {
       qc.refetchQueries({ queryKey: keys.events });
-      qc.invalidateQueries({ queryKey: keys.events });
     },
   });
 };

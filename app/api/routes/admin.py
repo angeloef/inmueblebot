@@ -1238,7 +1238,7 @@ def delete_appointment(
     if not apt:
         raise HTTPException(status_code=404, detail="Appointment not found")
     _sync_delete_gcal(db, apt)
-    apt.status = "cancelled"
+    db.delete(apt)
     db.commit()
     return {"status": "deleted", "appointment_id": apt_id}
 
