@@ -24,33 +24,35 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
       {isOpen && <div className="sb-backdrop" onClick={onClose} />}
       <aside className={`sb${isOpen ? ' open' : ''}`}>
         <div className="sb-brand">
-          <img src="/logo.svg" alt="InmuebleBot" />
           <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
             <Icon name="x" size={16} />
           </button>
+          <img src="/logo.svg" alt="InmuebleBot" />
         </div>
-        <div className="sb-section">Principal</div>
-        {items.map(it => (
-          <div key={it.id}
-               className={`sb-item ${active === it.id ? 'active' : ''}`}
-               onClick={() => handleNav(it.id)}>
-            <Icon name={it.icon} size={16} />
-            <span>{it.label}</span>
-            {it.badge && <span className="badge">{it.badge}</span>}
+        <div className="sb-nav">
+          <div className="sb-section">Principal</div>
+          {items.map(it => (
+            <div key={it.id}
+                 className={`sb-item ${active === it.id ? 'active' : ''}`}
+                 onClick={() => handleNav(it.id)}>
+              <Icon name={it.icon} size={16} />
+              <span>{it.label}</span>
+              {it.badge && <span className="badge">{it.badge}</span>}
+            </div>
+          ))}
+          {more.map(it => (
+            <div key={it.id}
+                 className={`sb-item ${active === it.id ? 'active' : ''}`}
+                 onClick={() => handleNav(it.id)}>
+              <Icon name={it.icon} size={16} />
+              <span>{it.label}</span>
+            </div>
+          ))}
+          <div className="sb-section">Sistema</div>
+          <div className={`sb-item ${active === 'settings' ? 'active' : ''}`} onClick={() => handleNav('settings')}>
+            <Icon name="settings" size={16} />
+            <span>Configuración</span>
           </div>
-        ))}
-        {more.map(it => (
-          <div key={it.id}
-               className={`sb-item ${active === it.id ? 'active' : ''}`}
-               onClick={() => handleNav(it.id)}>
-            <Icon name={it.icon} size={16} />
-            <span>{it.label}</span>
-          </div>
-        ))}
-        <div className="sb-section">Sistema</div>
-        <div className={`sb-item ${active === 'settings' ? 'active' : ''}`} onClick={() => handleNav('settings')}>
-          <Icon name="settings" size={16} />
-          <span>Configuración</span>
         </div>
         <div className="sb-bottom">
           <span className="av">MP</span>
