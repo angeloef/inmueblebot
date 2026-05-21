@@ -166,13 +166,23 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
               )}
             </div>
             {buyerClient && (
-              <div style={{marginTop:8,fontSize:12,color:'var(--success-700)'}}>
-                ✓ Comprador asignado: <strong>{buyerClient.name}</strong>
+              <div className="popover-attendee" style={{marginTop:10,padding:'10px 10px',borderRadius:8,background:'var(--success-50)',border:'1px solid var(--success-100)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(buyerClient)}>
+                <span className="av">{initials(buyerClient.name)}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--success-700)'}}>{buyerClient.name}</div>
+                  <div style={{fontSize:11,color:'var(--success-500)'}}>{buyerClient.phone || buyerClient.email || 'Sin teléfono'}</div>
+                </div>
+                <Pill kind="active">Comprador</Pill>
               </div>
             )}
             {tenantClient && (
-              <div style={{marginTop:4,fontSize:12,color:'var(--info-500)'}}>
-                ✓ Inquilino asignado: <strong>{tenantClient.name}</strong>
+              <div className="popover-attendee" style={{marginTop:8,padding:'10px 10px',borderRadius:8,background:'var(--info-50)',border:'1px solid var(--info-100)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(tenantClient)}>
+                <span className="av">{initials(tenantClient.name)}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--info-700)'}}>{tenantClient.name}</div>
+                  <div style={{fontSize:11,color:'var(--info-500)'}}>{tenantClient.phone || tenantClient.email || 'Sin teléfono'}</div>
+                </div>
+                <Pill kind="active">Inquilino</Pill>
               </div>
             )}
           </div>
