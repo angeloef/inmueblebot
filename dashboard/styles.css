@@ -539,7 +539,7 @@ input, select, textarea { font-family: inherit; }
   /* ── Topbar: evitar overflow ── */
   .tb { min-width: 0; overflow: hidden; }
   .tb-notif-wrap { position: static; }
-  .notif-panel { width: calc(100vw - 32px); right: auto; left: 0; }
+  .notif-panel { position: fixed; top: 56px; left: 16px; right: 16px; width: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════
