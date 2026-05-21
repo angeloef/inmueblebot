@@ -604,9 +604,11 @@ input, select, textarea { font-family: inherit; }
 
   /* ── Hamburger y cierre ── */
   .tb-menu-btn { display: inline-flex; }
+  .sb-brand { position: relative; }
   .sb-close {
     display: inline-flex; align-items: center; justify-content: center;
-    margin-left: auto; width: 28px; height: 28px;
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 28px; height: 28px;
     border: none; background: transparent; border-radius: 6px;
     color: var(--fg-secondary); cursor: pointer;
   }
