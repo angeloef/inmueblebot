@@ -1171,6 +1171,7 @@ def update_appointment(
         raise HTTPException(status_code=404, detail="Appointment not found")
 
     updates = data.model_dump(exclude_unset=True)
+    time_changed = "start_time" in updates or "end_time" in updates
 
     if "start_time" in updates and updates["start_time"]:
         try:
@@ -1214,7 +1215,6 @@ def update_appointment(
     if "notes" in updates:
         apt.notes = updates.pop("notes")
 
-    time_changed = "start_time" in updates or "end_time" in updates
     db.commit()
     db.refresh(apt)
     if time_changed:

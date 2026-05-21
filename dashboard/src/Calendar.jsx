@@ -560,6 +560,7 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     }
     updateEventMut.mutate({ ...event, date: newDate, start: newStart, end: newEnd }, {
       onSuccess: () => pushToast({ text: 'Evento movido.' }),
+      onError: () => pushToast({ text: 'Error al mover el evento. Intentá de nuevo.', kind: 'danger' }),
     });
   }, [updateEventMut]);
 
