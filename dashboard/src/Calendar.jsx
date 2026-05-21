@@ -521,9 +521,20 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     pushToast({ text: 'Visita cancelada — se notificó al cliente.', kind: 'danger' });
   };
   const handleDelete = (e) => {
-    deleteEventMut.mutate(e.id);
+    if (e.status === 'cancelled') {
+      // Second press: permanently delete
+      deleteEventMut.mutate(e.id, {
+        onSuccess: () => pushToast({ text: 'Evento eliminado permanentemente.', kind: 'danger' }),
+        onError:   () => pushToast({ text: 'Error al eliminar el evento.', kind: 'danger' }),
+      });
+    } else {
+      // First press: cancel the visit (marks as cancelled, notifies client)
+      updateEventMut.mutate({ ...e, status: 'cancelled' }, {
+        onSuccess: () => pushToast({ text: 'Visita cancelada — se notificó al cliente.', kind: 'danger' }),
+        onError:   () => pushToast({ text: 'Error al cancelar la visita.', kind: 'danger' }),
+      });
+    }
     setPopover(null);
-    pushToast({ text: 'Evento eliminado.', kind: 'danger' });
   };
   const handleSave = (form) => {
     const mode    = editor.mode;
