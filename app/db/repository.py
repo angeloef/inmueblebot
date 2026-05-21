@@ -250,7 +250,6 @@ class PropertyRepository(BaseRepository):
 
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS
-            from sqlalchemy import or_, func
 
             loc_clean = location.strip().lower()
             loc_norm = normalize_location(location)
