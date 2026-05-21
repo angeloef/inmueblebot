@@ -138,7 +138,10 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
                     {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => (
                       <div key={c.id} className="popover-attendee" style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
                            onClick={() => {
-                             relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true });
+                             relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true }, {
+                               onError: () => pushToast({ text: 'Error al vincular cliente. Verificá la conexión.', kind: 'danger' }),
+                               onSuccess: () => pushToast({ text: 'Cliente vinculado correctamente.', kind: 'success' }),
+                             });
                              setAssignOpen(false);
                              setAssignSearch('');
                            }}>

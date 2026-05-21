@@ -840,6 +840,13 @@ def relate_client_to_property(
     # Update user extra_data with property_relations
     uextra = _parse_extra(getattr(user, 'extra_data', None))
     relations = uextra.get("property_relations", [])
+
+    # Update client role when linking as buyer or tenant
+    if data.relation == "buyer":
+        uextra["role"] = "owner"
+    elif data.relation == "tenant":
+        uextra["role"] = "tenant"
+
     # Remove existing relation for this property if any
     relations = [r for r in relations if r.get("prop_id") != prop_id]
     if data.relation == "interested" or data.relation in ("buyer", "tenant"):
