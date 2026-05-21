@@ -15,12 +15,16 @@ const isImg = (s) => s && (
 
 function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onDelete }) {
   const { data: clients = [] }   = useClients();
+  const { data: properties = [] } = useProperties();
   const { data: allEvents = [] } = useEvents();
   const updateStatus     = useUpdatePropertyStatus();
   const relateClient     = useRelateClientToProperty();
+  // Use fresh data from the cache so drawer reflects mutation updates immediately
+  const freshProperty = properties.find(p => String(p.id) === String(property.id)) || property;
+  property = freshProperty;
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSearch, setAssignSearch] = useState('');
-  const [assignRelation, setAssignRelation] = useState('buyer');
+  const [assignRelation, setAssignRelation] = useState(freshProperty.operation === 'rent' ? 'tenant' : 'buyer');
   if (!property) return null;
 
   // Interested clients: from property_relations (new) and legacy interest array
