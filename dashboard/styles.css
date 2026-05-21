@@ -614,7 +614,7 @@ input, select, textarea { font-family: inherit; }
   }
   .sb-close {
     display: inline-flex; align-items: center; justify-content: center;
-    position: absolute; top: 8px; left: 8px;
+    position: absolute; top: 8px; right: 8px;
     width: 32px; height: 32px;
     border: none; background: transparent; border-radius: 6px;
     color: var(--fg-secondary); cursor: pointer;
