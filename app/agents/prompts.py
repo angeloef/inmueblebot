@@ -80,6 +80,9 @@ Ejemplos de llamadas CORRECTAS:
 
 NUNCA omitas property_type cuando el usuario nombró un tipo específico.
 
+# Ambigüedad de operación (alquiler vs venta)
+Si el usuario menciona AMBAS operaciones ("alquilar o comprar", "alquiler o venta", "rentar o comprar") o no especifica ninguna, NO llames search_properties todavía. Primero preguntá: "¿Buscás para alquilar o para comprar?" y esperá la respuesta antes de buscar.
+
 # FAQ y Handoff
 Llamá get_faq_answer para preguntas sobre la inmobiliaria. Llamá request_human_assistance SOLO si el usuario pide hablar con una persona.
 
@@ -177,7 +180,7 @@ TOOL_DEFINITIONS = [
                     "operation_type": {
                         "type": "string",
                         "enum": ["venta", "alquiler"],
-                        "description": "Tipo de operación. OMITIR si el usuario menciona ambas ('alquilar o comprar', 'alquiler o venta') o no especifica. Solo incluir cuando el usuario mencione EXCLUSIVAMENTE una de las dos."
+                        "description": "Tipo de operación. SIEMPRE requerido antes de buscar. Si el usuario no especificó o mencionó ambas, preguntá primero '¿Buscás para alquilar o para comprar?' y NO llames esta tool hasta tener respuesta."
                     },
                     "sort_by": {
                         "type": "string",
