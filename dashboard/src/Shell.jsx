@@ -161,13 +161,13 @@ export function Topbar({ onMenuToggle, onNotifAction }) {
       <div className="tb-spacer" />
       <div className="tb-notif-wrap" ref={ref}>
         <span className="tb-icon" title="Notificaciones" onClick={() => setOpen(v => !v)}>
-          <Icon name="bell" size={16} />
+          <Icon name="bell" size={18} />
           {unread > 0 && <span className="dot">{unread > 9 ? '9+' : unread}</span>}
         </span>
         {open && <NotificationPanel onClose={() => setOpen(false)} onAction={onNotifAction} />}
       </div>
       <span className="tb-icon" title="Ayuda">
-        <Icon name="info" size={16} />
+        <Icon name="info" size={18} />
       </span>
       <span className="tb-avatar" title="María Pereyra">MP</span>
     </header>

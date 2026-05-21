@@ -69,7 +69,7 @@ export function Button({ kind = 'secondary', size, icon, children, onClick, styl
   );
 }
 
-export function IconButton({ name, onClick, title, size = 14 }) {
+export function IconButton({ name, onClick, title, size = 16 }) {
   return (
     <button className="btn btn-ghost btn-icon" onClick={onClick} title={title} type="button">
       <Icon name={name} size={size} />

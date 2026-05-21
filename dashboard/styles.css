@@ -43,7 +43,7 @@ input, select, textarea { font-family: inherit; }
 .tb-search input:focus { border-color: var(--accent-400); background: white; box-shadow: 0 0 0 3px rgba(21,95,111,0.18); }
 .tb-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--fg-muted); }
 .tb-spacer { flex: 1; }
-.tb-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: var(--fg-secondary); position: relative; }
+.tb-icon { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: var(--fg-secondary); position: relative; }
 .tb-icon:hover { background: var(--bg-hover); color: var(--fg-primary); }
 .tb-icon .dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger-500); border: 2px solid white; }
 .tb-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-500); color: white; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; cursor: pointer; }
@@ -61,7 +61,7 @@ input, select, textarea { font-family: inherit; }
 .btn-danger { background: white; color: var(--danger-500); border-color: var(--border-strong); }
 .btn-danger:hover { background: var(--danger-50); border-color: var(--danger-100); color: var(--danger-700); }
 .btn-sm { font-size: 12px; padding: 4px 9px; }
-.btn-icon { padding: 6px; width: 28px; height: 28px; justify-content: center; }
+.btn-icon { padding: 7px; width: 32px; height: 32px; justify-content: center; }
 
 /* ───── Pills ───── */
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; line-height: 1.5; }
@@ -109,7 +109,7 @@ input, select, textarea { font-family: inherit; }
 .tbl tr.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent-500); }
 .tbl .price { font-variant-numeric: tabular-nums; font-weight: 500; }
 .tbl .muted { color: var(--fg-secondary); }
-.tbl .row-actions { display: flex; gap: 2px; opacity: 0; }
+.tbl .row-actions { display: flex; gap: 4px; opacity: 0; }
 .tbl tr:hover .row-actions { opacity: 1; }
 .tbl-empty { padding: 60px 20px; text-align: center; color: var(--fg-tertiary); font-size: 13px; }
 
