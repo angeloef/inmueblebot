@@ -382,14 +382,14 @@ export const useEventById = useEvent;
 
 export const useCreateEvent = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: eventApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }) });
+  return useMutation({ mutationFn: eventApi.create, onSuccess: () => qc.refetchQueries({ queryKey: keys.events }) });
 };
 
 export const useUpdateEvent = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: eventApi.update,
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }),
+    onSuccess: () => qc.refetchQueries({ queryKey: keys.events }),
   });
 };
 
@@ -397,7 +397,7 @@ export const useDeleteEvent = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: eventApi.remove,
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.events }),
+    onSuccess: () => qc.refetchQueries({ queryKey: keys.events }),
   });
 };
 
@@ -505,5 +505,4 @@ export const useUpdateBotSettings = () => {
   return useMutation({
     mutationFn: settingsApi.update,
     onSuccess:  () => qc.invalidateQueries({ queryKey: keys.botSettings }),
-  });
-};
+  }

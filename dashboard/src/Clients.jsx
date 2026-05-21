@@ -12,7 +12,7 @@ const ROLE_OPTIONS = [
   
 ];
 
-function ClientEditor({ client, mode, onClose, onSave }) {
+function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState({
     name:  client?.name  ?? '',
@@ -91,9 +91,9 @@ function ClientEditor({ client, mode, onClose, onSave }) {
           </div>
         </div>
         <div className="modal-foot">
-          <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button kind="primary" size="sm" icon="check" onClick={handleSave}>
-            {isEdit ? 'Guardar cambios' : 'Crear cliente'}
+          <Button kind="ghost" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button kind="primary" size="sm" icon="check" onClick={handleSave} disabled={saving}>
+            {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear cliente'}
           </Button>
         </div>
       </div>
@@ -255,8 +255,8 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
   const handleSave = (form) => {
     const mode = editor.mode;
     const clientId = editor.client?.id;
-    setEditor(null);
     if (mode === 'create') {
+      setEditor(null); // optimistic close for create
       createClientMut.mutate(form, {
         onSuccess: () => pushToast({ text: 'Cliente creado.' }),
         onError:   () => pushToast({ text: 'Error al crear el cliente.', kind: 'danger' }),
@@ -264,7 +264,7 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
     } else {
       updateClientMut.mutate({ id: clientId, ...form }, {
         onSuccess: (_, vars) => {
-          // Refresh the open drawer with updated data
+          setEditor(null); // close only on success for edit
           setOpen(c => c ? { ...c, ...form } : c);
           pushToast({ text: 'Cliente actualizado.' });
         },
@@ -364,7 +364,8 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
         <ClientEditor
           client={editor.client}
           mode={editor.mode}
-          onClose={() => setEditor(null)}
+          saving={editor.mode === 'edit' && updateClientMut.isPending}
+          onClose={() => !updateClientMut.isPending && setEditor(null)}
           onSave={handleSave}
         />
       )}

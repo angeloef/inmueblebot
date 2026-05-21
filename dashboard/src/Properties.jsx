@@ -293,7 +293,7 @@ function formatPriceDisplay(raw, currency) {
   return currency === 'USD' ? n.toLocaleString('en-US') : n.toLocaleString('es-AR');
 }
 
-function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null }) {
+function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null, saving = false }) {
   const [form, setForm] = useState(() => {
     if (initialData) {
       return {
@@ -526,9 +526,9 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
           />
         </div>
         <div className="modal-foot">
-          <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button kind="primary" size="sm" onClick={submit} disabled={!canSave}>
-            {mode === 'edit' ? 'Guardar cambios' : 'Crear propiedad'}
+          <Button kind="ghost" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button kind="primary" size="sm" onClick={submit} disabled={!canSave || saving}>
+            {saving ? 'Guardando…' : mode === 'edit' ? 'Guardar cambios' : 'Crear propiedad'}
           </Button>
         </div>
       </div>
@@ -708,11 +708,9 @@ export default function Properties({ onOpenClient, initialProperty }) {
         <NewPropertyModal
           onClose={() => setCreating(false)}
           onSave={(data) => {
+            setCreating(false);
             createProperty.mutate(data, {
-              onSuccess: () => {
-                setCreating(false);
-                pushToast({ text: 'Propiedad creada.' });
-              },
+              onSuccess: () => pushToast({ text: 'Propiedad creada.' }),
               onError: () => pushToast({ text: 'Error al crear la propiedad.', kind: 'danger' }),
             });
           }}
@@ -722,7 +720,8 @@ export default function Properties({ onOpenClient, initialProperty }) {
         <NewPropertyModal
           mode="edit"
           initialData={editing}
-          onClose={() => setEditing(null)}
+          saving={updateProperty.isPending}
+          onClose={() => !updateProperty.isPending && setEditing(null)}
           onSave={(data) => {
             updateProperty.mutate({ id: editing.id, ...data }, {
               onSuccess: () => {

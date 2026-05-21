@@ -187,7 +187,7 @@ function isPastDateTime(dateISO, timeStr) {
   return dt.getTime() < Date.now() - 60_000;
 }
 
-export function EventEditor({ event, mode, onClose, onSave }) {
+export function EventEditor({ event, mode, onClose, onSave, saving = false }) {
   const { data: clients = [] }    = useClients();
   const { data: properties = [] } = useProperties();
   const today = new Date().toISOString().slice(0, 10);
@@ -337,15 +337,15 @@ export function EventEditor({ event, mode, onClose, onSave }) {
               ⚠ No se pueden crear eventos en el pasado.
             </span>
           )}
-          <Button kind="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button kind="primary" size="sm" icon="check" onClick={() => {
+          <Button kind="ghost" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button kind="primary" size="sm" icon="check" disabled={saving} onClick={() => {
             if (mode !== 'edit' && isPastDateTime(form.date, form.start)) {
               setPastError(true);
               return;
             }
             onSave(form);
           }}>
-            {mode === 'create' ? 'Crear evento' : mode === 'reschedule' ? 'Reprogramar' : 'Guardar cambios'}
+            {saving ? 'Guardando…' : mode === 'create' ? 'Crear evento' : mode === 'reschedule' ? 'Reprogramar' : 'Guardar cambios'}
           </Button>
         </div>
       </div>

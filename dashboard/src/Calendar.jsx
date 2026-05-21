@@ -528,16 +528,19 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
   const handleSave = (form) => {
     const mode    = editor.mode;
     const eventId = editor.event?.id;
-    setEditor(null);
     if (mode === 'create') {
+      setEditor(null); // optimistic close for create
       createEventMut.mutate(form, {
         onSuccess: () => pushToast({ text: 'Evento creado.' }),
         onError:   () => pushToast({ text: 'Error al crear el evento.', kind: 'danger' }),
       });
     } else {
       updateEventMut.mutate({ id: eventId, ...form }, {
-        onSuccess: () => pushToast({ text: mode === 'reschedule' ? 'Evento reprogramado — cliente notificado.' : 'Cambios guardados.' }),
-        onError:   () => pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }),
+        onSuccess: () => {
+          setEditor(null); // close only on success for edit/reschedule
+          pushToast({ text: mode === 'reschedule' ? 'Evento reprogramado.' : 'Cambios guardados.' });
+        },
+        onError: () => pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }),
       });
     }
   };
@@ -679,7 +682,8 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
         <EventEditor
           event={editor.event}
           mode={editor.mode}
-          onClose={() => setEditor(null)}
+          saving={editor.mode !== 'create' && updateEventMut.isPending}
+          onClose={() => !updateEventMut.isPending && setEditor(null)}
           onSave={handleSave}
         />
       )}
