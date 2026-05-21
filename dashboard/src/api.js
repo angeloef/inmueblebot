@@ -372,7 +372,11 @@ const eventApi = {
 };
 
 export const useEvents = (params) =>
-  useQuery({ queryKey: [...keys.events, params], queryFn: () => eventApi.list(params) });
+  useQuery({
+    queryKey: keys.events,
+    queryFn: () => eventApi.list(params),
+    refetchInterval: 30_000,   // poll every 30s — catches WhatsApp-created appointments
+  });
 
 export const useEvent = (id) =>
   useQuery({ queryKey: keys.event(id), queryFn: () => eventApi.get(id), enabled: !!id });
