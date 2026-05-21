@@ -31,14 +31,14 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   // Interested clients: from property_relations (new) and legacy interest array
   const relatedClientIds = new Set();
   const interestedClients = clients.filter(c => {
-    const fromRelations = (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'interested');
+    const fromRelations = (c.property_relations || []).some(r => String(r.prop_id) === String(property.id) && r.relation === 'interested');
     const fromLegacy = (c.interest || []).includes(String(property.id));
     if (fromRelations || fromLegacy) relatedClientIds.add(c.id);
     return fromRelations || fromLegacy;
   });
   // Buyer/tenant from property_relations
-  const buyerClient = clients.find(c => (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'buyer'));
-  const tenantClient = clients.find(c => (c.property_relations || []).some(r => r.prop_id === property.id && r.relation === 'tenant'));
+  const buyerClient = clients.find(c => (c.property_relations || []).some(r => String(r.prop_id) === String(property.id) && r.relation === 'buyer'));
+  const tenantClient = clients.find(c => (c.property_relations || []).some(r => String(r.prop_id) === String(property.id) && r.relation === 'tenant'));
   const events = allEvents.filter(e => String(e.propId) === String(property.id));
   /** true si la propiedad es para alquiler (muestra /mes en precio) */
   const isRent = property.operation === 'rent' && property.status !== 'sale';
