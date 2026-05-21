@@ -2,11 +2,14 @@
 Repositorio de base de datos con operaciones async.
 Proporciona una capa de abstracción sobre SQLAlchemy async.
 """
+import logging
 from uuid import UUID
 from typing import TypeVar, Generic, Type, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine
-from sqlalchemy import select, update, delete, func, or_
+from sqlalchemy import select, update, delete, func, or_, and_
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.db.base import Base
 
@@ -208,31 +211,42 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.type == type)
 
         if property_type:
-            # Filter via title ILIKE for DISTINCT types only.
-            # "casa" and "departamento" are interchangeable in colloquial use — no filter.
-            # "terreno", "local", "oficina", "galpon" are genuinely distinct — filter by title.
-            _DISTINCT_TYPE_KEYWORDS = {
+            # Map request value → canonical category value stored in DB
+            _TYPE_TO_CATEGORY = {
+                "terreno": "terreno", "land": "terreno",
+                "casa": "casa", "house": "casa",
+                "departamento": "departamento", "depto": "departamento", "apartment": "departamento",
+                "ph": "ph",
+            }
+            # Fallback title keywords for properties where category IS NULL (legacy/un-categorized)
+            _CATEGORY_TITLE_KEYWORDS = {
                 "terreno": "terreno",
-                "land": "terreno",
-                "local": "local",
-                "oficina": "oficina",
-                "office": "oficina",
-                "galpon": "galpon",
-                "galpón": "galpon",
+                "casa": "casa",
+                "departamento": "departamento",
+                "ph": "ph",
             }
             pt_lower = property_type.strip().lower()
-            title_kw = _DISTINCT_TYPE_KEYWORDS.get(pt_lower)
-            if title_kw:
-                # Match title OR description so "Terreno en Barrio Norte" is found
-                from sqlalchemy import or_
+            category_val = _TYPE_TO_CATEGORY.get(pt_lower)
+            if category_val:
+                title_kw = _CATEGORY_TITLE_KEYWORDS.get(category_val, category_val)
+                # Primary: category column exact match.
+                # Fallback: title/desc ILIKE for rows where category IS NULL (legacy data).
                 query = query.where(
                     or_(
-                        Property.title.ilike(f"%{title_kw}%"),
-                        Property.description.ilike(f"%{title_kw}%"),
+                        Property.category == category_val,
+                        and_(
+                            Property.category.is_(None),
+                            or_(
+                                Property.title.ilike(f"%{title_kw}%"),
+                                Property.description.ilike(f"%{title_kw}%"),
+                            )
+                        )
                     )
                 )
-                logger.info(f"[Repo] property_type '{property_type}' → title/desc ILIKE '%{title_kw}%'")
-            # For residential types (casa, departamento, ph, duplex) → no filter needed
+                logger.info(
+                    f"[Repo] property_type '{property_type}' → category='{category_val}' "
+                    f"OR (category IS NULL AND title/desc ILIKE '%{title_kw}%')"
+                )
 
         if location:
             from app.utils.sanitizer import normalize_location, unaccent_column, strip_accents, ACCENTED_CHARS, ASCII_CHARS

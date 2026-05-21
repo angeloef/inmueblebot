@@ -94,17 +94,32 @@ function toLocalISO(dateStr, timeStr) {
 // ─── Lookup tables ────────────────────────────────────────────────────────────
 
 const PROP_TYPE_TO_LABEL = {
+  // Old English codes (extra_data.building_type) — kept for backward compat
   apartment: 'Departamento',
   house:     'Casa',
   ph:        'PH',
   local:     'Local',
   office:    'Oficina',
   land:      'Terreno',
+  // New Spanish codes (category column) — listed last so reverse mapping prefers these
+  casa:         'Casa',
+  departamento: 'Departamento',
+  terreno:      'Terreno',
 };
 
+// Reverse map: display label → API value (new Spanish codes win over old English ones)
 const PROP_LABEL_TO_TYPE = Object.fromEntries(
   Object.entries(PROP_TYPE_TO_LABEL).map(([k, v]) => [v, k])
 );
+
+// Map: display label → category column value (Spanish, lowercase)
+// Only the 4 bot-searchable types are included; Local/Oficina → null (no category)
+const PROP_LABEL_TO_CATEGORY = {
+  'Departamento': 'departamento',
+  'Casa':         'casa',
+  'PH':           'ph',
+  'Terreno':      'terreno',
+};
 
 const STATUS_TO_ROLE = {
   new:       'prospect',
@@ -142,8 +157,8 @@ function toProperty(p) {
     addr:      p.location ?? p.address ?? '',
     neigh:     p.neigh ?? p.city ?? '',
     city:      p.city ?? p.neigh ?? '',
-    // building type lives in property_type (from _prop_to_dict.extra_data.building_type)
-    type:      PROP_TYPE_TO_LABEL[p.property_type] ?? p.property_type ?? '—',
+    // Prefer category (new column), fall back to property_type (extra_data.building_type)
+    type:      PROP_TYPE_TO_LABEL[p.category] ?? PROP_TYPE_TO_LABEL[p.property_type] ?? p.property_type ?? '—',
     rooms:     bedrooms > 0 ? `${bedrooms} amb` : '—',
     m2:        p.area_m2 ?? p.area ?? 0,
     status:    p.status ?? 'available',
@@ -163,13 +178,16 @@ function toProperty(p) {
 }
 
 function fromProperty(d) {
-  // building_type → stored in Property.extra_data by admin.py
+  // category    → stored in Property.category column (new, Spanish lowercase)
+  // building_type → stored in Property.extra_data by admin.py (legacy, kept for compat)
   // operation → maps to Property.type ('venta'/'alquiler') via PropertyCreate.operation
   // city → stored in Property.extra_data['city'] by admin.py
   const cityStr = d.city || d.neigh || '';
+  const categoryVal = PROP_LABEL_TO_CATEGORY[d.type] ?? null;
   return {
     title:         d.addr ?? '',
     description:   (d.desc || d.notes) ?? '',
+    category:      categoryVal,
     building_type: PROP_LABEL_TO_TYPE[d.type] ?? 'apartment',
     operation:     d.operation === 'rent' ? 'alquiler' : 'venta',
     location:      [d.addr, d.neigh].filter(Boolean).join(', ') || d.addr || '',

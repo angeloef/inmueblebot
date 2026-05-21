@@ -242,6 +242,37 @@ def _run_startup_migration(engine):
             conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications (created_at DESC)"
             ))
+            # ── Fix 17: Add category column to properties ─────────────────
+            conn.execute(text(
+                "ALTER TABLE properties ADD COLUMN IF NOT EXISTS category VARCHAR(20)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_properties_category ON properties (category)"
+            ))
+            # ── Fix 18: Populate category from title (best-effort) ────────
+            # Order matters: terreno first (most specific), then casa, then depto, then ph
+            conn.execute(text("""
+                UPDATE properties SET category = 'terreno'
+                WHERE category IS NULL
+                  AND (title ILIKE '%terreno%' OR description ILIKE '%terreno%')
+            """))
+            conn.execute(text("""
+                UPDATE properties SET category = 'casa'
+                WHERE category IS NULL
+                  AND (title ILIKE '%casa%' OR description ILIKE '%casa%')
+            """))
+            conn.execute(text("""
+                UPDATE properties SET category = 'departamento'
+                WHERE category IS NULL
+                  AND (title ILIKE '%departamento%' OR title ILIKE '%depto%'
+                       OR description ILIKE '%departamento%')
+            """))
+            conn.execute(text("""
+                UPDATE properties SET category = 'ph'
+                WHERE category IS NULL
+                  AND (title ILIKE '%ph %' OR title ILIKE '% ph%'
+                       OR title ILIKE '%p.h.%' OR description ILIKE '%ph %')
+            """))
             # ── Fix 14: Add session_id to conversations if missing ───────
             # The Conversation model defines session_id as NOT NULL, but older
             # DB instances (pre-migration) don't have this column.
@@ -352,6 +383,7 @@ class PropertyCreate(BaseModel):
     currency: str = "ARS"
     status: str = "available"             # 'available','reserved','sold','rented'
     images: Optional[List[str]] = None    # List of image URLs
+    category: Optional[str] = None        # 'casa', 'departamento', 'ph', 'terreno' → Property.category
 
 
 class AppointmentCreate(BaseModel):
@@ -424,7 +456,8 @@ def _prop_to_dict(p):
         "id": p.id,
         "title": p.title,
         "description": p.description,
-        "property_type": extra.get("building_type", ""),   # toProperty() reads property_type
+        "category": p.category or "",                        # new: toProperty() reads category first
+        "property_type": p.category or extra.get("building_type", ""),  # backward compat
         "address": p.location,                             # toProperty() reads address/location
         "city": city,                                      # toProperty() reads city → neigh
         "neigh": city,                                     # Extra alias so the dashboard Neighborhood field is populated
@@ -634,6 +667,7 @@ def create_property(
         bathrooms=data.bathrooms,
         area_m2=data.area_m2,
         status=data.status if data.status in ("available", "reserved", "sold", "rented") else "available",
+        category=data.category,
         extra_data={"building_type": data.building_type, "city": data.city or ""},
         images=data.images,
     )
@@ -674,6 +708,9 @@ def update_property(
     if "status" in updates:
         s = updates.pop("status")
         prop.status = s if s in ("available", "reserved", "sold", "rented") else "available"
+    if "category" in updates:
+        cat = updates.pop("category")
+        prop.category = cat if cat in ("casa", "departamento", "ph", "terreno") else None
     if "building_type" in updates:
         extra = dict(prop.extra_data or {})
         extra["building_type"] = updates.pop("building_type")

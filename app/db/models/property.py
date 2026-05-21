@@ -30,18 +30,18 @@ class Property(Base):
         comment="ID de sistema externo"
     )
 
-    # Título de la propiedad
+    # Titulo de la propiedad
     title: Mapped[str] = mapped_column(
         String(300),
         nullable=False,
-        comment="Título de la propiedad"
+        comment="Titulo de la propiedad"
     )
 
-    # Descripción detallada
+    # Descripcion detallada
     description: Mapped[str] = mapped_column(
         String(5000),
         nullable=True,
-        comment="Descripción de la propiedad"
+        comment="Descripcion de la propiedad"
     )
 
     # Precio en centavos/unidades enteras (evitar floating point)
@@ -59,21 +59,21 @@ class Property(Base):
         comment="Moneda del precio"
     )
 
-    # Tipo de operación: 'venta' o 'alquiler'
+    # Tipo de operacion: venta o alquiler
     type: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        comment="Tipo de operación: venta o alquiler"
+        comment="Tipo de operacion: venta o alquiler"
     )
 
-    # Ubicación/dirección
+    # Ubicacion/direccion
     location: Mapped[str] = mapped_column(
         String(500),
         nullable=False,
-        comment="Dirección de la propiedad"
+        comment="Direccion de la propiedad"
     )
 
-    # Coordenadas geográficas (opcional)
+    # Coordenadas geograficas (opcional)
     lat: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
@@ -86,32 +86,32 @@ class Property(Base):
         comment="Longitud"
     )
 
-    # Número de habitaciones
+    # Numero de habitaciones
     bedrooms: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Cantidad de dormitorios"
     )
 
-    # Número de baños
+    # Numero de banos
     bathrooms: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        comment="Cantidad de baños"
+        comment="Cantidad de banos"
     )
 
-    # Área en metros cuadrados
+    # Area en metros cuadrados
     area_m2: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        comment="Área en metros cuadrados"
+        comment="Area en metros cuadrados"
     )
 
-    # Imágenes (base64 data URIs or S3 URLs)
+    # Imagenes (base64 data URIs or S3 URLs)
     images: Mapped[Optional[List[str]]] = mapped_column(
         ARRAY(Text),
         nullable=True,
-        comment="Lista de imágenes (data URIs base64 o URLs S3)"
+        comment="Lista de imagenes (data URIs base64 o URLs S3)"
     )
 
     # Estado de la propiedad
@@ -120,6 +120,13 @@ class Property(Base):
         default="available",
         server_default="available",
         comment="Estado: available, reserved, sold, rented"
+    )
+
+    # Tipo fisico: casa, departamento, ph, terreno
+    category: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Tipo fisico: casa, departamento, ph, terreno"
     )
 
     # Metadatos adicionales (features, amenities, etc.)
@@ -133,20 +140,20 @@ class Property(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        comment="Fecha de creación"
+        comment="Fecha de creacion"
     )
 
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         onupdate=func.now(),
-        comment="Última actualización"
+        comment="Ultima actualizacion"
     )
 
     # =========================================================================
     # RELACIONES
     # =========================================================================
-    
+
     # Citas asociadas a esta propiedad
     appointments: Mapped[List["Appointment"]] = relationship(
         "Appointment",
@@ -154,24 +161,20 @@ class Property(Base):
         cascade="all, delete-orphan"
     )
 
-    # Índices y constraints
+    # Indices y constraints
     __table_args__ = (
-        # Validar que type sea 'venta' o 'alquiler'
         CheckConstraint(
             "type IN ('venta', 'alquiler')",
             name="ck_property_type"
         ),
-        # Validar status
         CheckConstraint(
             "status IN ('available', 'reserved', 'sold', 'rented')",
             name="ck_property_status"
         ),
-        # Índice para búsqueda por ubicación
         Index("ix_properties_location", "location"),
-        # Índice para filtros de precio
         Index("ix_properties_price", "price"),
-        # Índice para filtros combinados
         Index("ix_properties_type_status", "type", "status"),
+        Index("ix_properties_category", "category"),
     )
 
     def __repr__(self) -> str:
