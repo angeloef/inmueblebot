@@ -826,7 +826,12 @@ def relate_client_to_property(
 
     # Update property extra_data with buyer/tenant ID
     extra = dict(prop.extra_data or {})
-    if data.relation == "buyer":
+    if data.relation == "none":
+        # Unlink: remove buyer/tenant references
+        extra.pop("buyer_id", None)
+        extra.pop("tenant_id", None)
+        # Don't change status on unlink
+    elif data.relation == "buyer":
         extra["buyer_id"] = data.client_id
         if data.update_status:
             prop.status = "sold"
@@ -841,22 +846,28 @@ def relate_client_to_property(
     uextra = _parse_extra(getattr(user, 'extra_data', None))
     relations = uextra.get("property_relations", [])
 
-    # Update client role when linking as buyer or tenant
-    if data.relation == "buyer":
-        uextra["role"] = "owner"
-    elif data.relation == "tenant":
-        uextra["role"] = "tenant"
+    if data.relation == "none":
+        # Unlink: remove relation, reset role to prospect if no other relations
+        relations = [r for r in relations if r.get("prop_id") != prop_id]
+        uextra["property_relations"] = relations
+        if not relations:
+            uextra["role"] = "prospect"
+    else:
+        # Update client role when linking as buyer or tenant
+        if data.relation == "buyer":
+            uextra["role"] = "owner"
+        elif data.relation == "tenant":
+            uextra["role"] = "tenant"
 
-    # Remove existing relation for this property if any
-    relations = [r for r in relations if r.get("prop_id") != prop_id]
-    if data.relation == "interested" or data.relation in ("buyer", "tenant"):
+        # Remove existing relation for this property if any
+        relations = [r for r in relations if r.get("prop_id") != prop_id]
         from datetime import datetime as _dt
         relations.append({
             "prop_id": prop_id,
             "relation": data.relation,
             "date": _dt.utcnow().isoformat(),
         })
-    uextra["property_relations"] = relations
+        uextra["property_relations"] = relations
     try:
         user.extra_data = uextra
     except AttributeError:

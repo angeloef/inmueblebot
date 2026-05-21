@@ -25,6 +25,7 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSearch, setAssignSearch] = useState('');
   const [assignRelation, setAssignRelation] = useState(freshProperty.operation === 'rent' ? 'tenant' : 'buyer');
+  const [linkEditOpen, setLinkEditOpen] = useState(null);
   if (!property) return null;
 
   // Interested clients: from property_relations (new) and legacy interest array
@@ -127,64 +128,81 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
           <div className="detail-block">
             <h3>Asignar comprador / inquilino</h3>
             <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:4}}>
-              {!assignOpen ? (
-                <Button kind="secondary" size="sm" onClick={() => setAssignOpen(true)} icon="user-plus">Vincular cliente</Button>
-              ) : (
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  <input placeholder="Buscar cliente por nombre..." value={assignSearch} onChange={e => setAssignSearch(e.target.value)}
-                         style={{width:'100%',padding:'6px 10px',fontSize:13,border:'1px solid var(--border-default)',borderRadius:6}} autoFocus />
-                  <div style={{display:'flex',gap:6}}>
-                    {[['buyer','Comprador'],['tenant','Inquilino'],['interested','Interesado']].map(([k,l]) => (
-                      <span key={k} className={`chip ${assignRelation===k?'active':''}`} onClick={()=>setAssignRelation(k)}>{l}</span>
-                    ))}
-                  </div>
-                  <div style={{maxHeight:160,overflowY:'auto',display:'flex',flexDirection:'column',gap:2}}>
-                    {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => (
-                      <div key={c.id} className="popover-attendee" style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
-                           onClick={() => {
-                             relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true }, {
-                               onError: () => pushToast({ text: 'Error al vincular cliente. Verificá la conexión.', kind: 'danger' }),
-                               onSuccess: () => pushToast({ text: 'Cliente vinculado correctamente.', kind: 'success' }),
-                             });
-                             setAssignOpen(false);
-                             setAssignSearch('');
-                           }}>
-                        <span className="av">{initials(c.name)}</span>
-                        <div style={{flex:1}}>
-                          <div className="name" style={{fontSize:13,fontWeight:500}}>{c.name}</div>
-                          <div className="meta">{c.phone || c.email}</div>
+              {(() => {
+                const linked = buyerClient || tenantClient;
+                if (linked) {
+                  const isBuyer = buyerClient === linked;
+                  const bgColor = isBuyer ? 'var(--success-50)' : 'var(--info-50)';
+                  const bdColor = isBuyer ? 'var(--success-100)' : 'var(--info-100)';
+                  return (
+                    <React.Fragment>
+                      <div className="popover-attendee" style={{padding:'10px 10px',borderRadius:8,background:bgColor,border:'1px solid '+bdColor,cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(linked)}>
+                        <span className="av">{initials(linked.name)}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:600,color:isBuyer?'var(--success-700)':'var(--info-700)'}}>{linked.name}</div>
+                          <div style={{fontSize:11,color:isBuyer?'var(--success-500)':'var(--info-500)'}}>{linked.phone || linked.email || 'Sin teléfono'}</div>
                         </div>
-                        <Pill kind={c.role} />
+                        <Pill kind="active">{isBuyer ? 'Comprador' : 'Inquilino'}</Pill>
+                        <div style={{position:'relative',marginLeft:4}} onClick={e => e.stopPropagation()}>
+                          {linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? (
+                            <div style={{position:'absolute',top:'100%',right:0,minWidth:160,background:'white',border:'1px solid var(--border-default)',borderRadius:8,boxShadow:'var(--shadow-md)',zIndex:10,padding:4}}>
+                              <div className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: isBuyer ? 'tenant' : 'buyer', update_status: true }, { onSuccess: () => pushToast({ text: 'Relación actualizada.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
+                                Cambiar a {isBuyer ? 'Inquilino' : 'Comprador'}
+                              </div>
+                              <div className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'interested', update_status: false }, { onSuccess: () => pushToast({ text: 'Cliente movido a interesados.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
+                                Cambiar a Interesado
+                              </div>
+                              <div style={{borderTop:'1px solid var(--border-subtle)',margin:'4px 0'}} />
+                              <div className="status-dropdown-item" style={{color:'var(--danger-500)'}} onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'none' }, { onSuccess: () => pushToast({ text: 'Cliente desvinculado.', kind: 'success' }), onError: () => pushToast({ text: 'Error al desvincular.', kind: 'danger' }) }); }}>
+                                Desvincular
+                              </div>
+                            </div>
+                          ) : null}
+                          <IconButton name={linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? 'x' : 'edit'} onClick={() => setLinkEditOpen(linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? null : (isBuyer ? 'buyer' : 'tenant'))} />
+                        </div>
                       </div>
-                    ))}
-                    {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).length === 0 && (
-                      <div className="muted" style={{fontSize:12,padding:8}}>Sin resultados.</div>
-                    )}
+                    </React.Fragment>
+                  );
+                }
+                return !assignOpen ? (
+                  <Button kind="secondary" size="sm" onClick={() => setAssignOpen(true)} icon="user-plus">Vincular cliente</Button>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <input placeholder="Buscar cliente por nombre..." value={assignSearch} onChange={e => setAssignSearch(e.target.value)}
+                           style={{width:'100%',padding:'6px 10px',fontSize:13,border:'1px solid var(--border-default)',borderRadius:6}} autoFocus />
+                    <div style={{display:'flex',gap:6}}>
+                      {[['buyer','Comprador'],['tenant','Inquilino'],['interested','Interesado']].map(([k,l]) => (
+                        <span key={k} className={`chip ${assignRelation===k?'active':''}`} onClick={()=>setAssignRelation(k)}>{l}</span>
+                      ))}
+                    </div>
+                    <div style={{maxHeight:160,overflowY:'auto',display:'flex',flexDirection:'column',gap:2}}>
+                      {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => (
+                        <div key={c.id} className="popover-attendee" style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
+                             onClick={() => {
+                               relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true }, {
+                                 onError: () => pushToast({ text: 'Error al vincular cliente. Verificá la conexión.', kind: 'danger' }),
+                                 onSuccess: () => pushToast({ text: 'Cliente vinculado correctamente.', kind: 'success' }),
+                               });
+                               setAssignOpen(false);
+                               setAssignSearch('');
+                             }}>
+                          <span className="av">{initials(c.name)}</span>
+                          <div style={{flex:1}}>
+                            <div className="name" style={{fontSize:13,fontWeight:500}}>{c.name}</div>
+                            <div className="meta">{c.phone || c.email}</div>
+                          </div>
+                          <Pill kind={c.role} />
+                        </div>
+                      ))}
+                      {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).length === 0 && (
+                        <div className="muted" style={{fontSize:12,padding:8}}>Sin resultados.</div>
+                      )}
+                    </div>
+                    <Button kind="ghost" size="sm" onClick={() => { setAssignOpen(false); setAssignSearch(''); }}>Cancelar</Button>
                   </div>
-                  <Button kind="ghost" size="sm" onClick={() => { setAssignOpen(false); setAssignSearch(''); }}>Cancelar</Button>
-                </div>
-              )}
+                );
+              })()}
             </div>
-            {buyerClient && (
-              <div className="popover-attendee" style={{marginTop:10,padding:'10px 10px',borderRadius:8,background:'var(--success-50)',border:'1px solid var(--success-100)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(buyerClient)}>
-                <span className="av">{initials(buyerClient.name)}</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,color:'var(--success-700)'}}>{buyerClient.name}</div>
-                  <div style={{fontSize:11,color:'var(--success-500)'}}>{buyerClient.phone || buyerClient.email || 'Sin teléfono'}</div>
-                </div>
-                <Pill kind="active">Comprador</Pill>
-              </div>
-            )}
-            {tenantClient && (
-              <div className="popover-attendee" style={{marginTop:8,padding:'10px 10px',borderRadius:8,background:'var(--info-50)',border:'1px solid var(--info-100)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(tenantClient)}>
-                <span className="av">{initials(tenantClient.name)}</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,color:'var(--info-700)'}}>{tenantClient.name}</div>
-                  <div style={{fontSize:11,color:'var(--info-500)'}}>{tenantClient.phone || tenantClient.email || 'Sin teléfono'}</div>
-                </div>
-                <Pill kind="active">Inquilino</Pill>
-              </div>
-            )}
           </div>
 
           <div className="detail-block">
