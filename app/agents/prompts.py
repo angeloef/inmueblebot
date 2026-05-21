@@ -62,12 +62,20 @@ Si el usuario dice "reprogramar" sin especificar cuál, primero mostrale sus cit
 # Rangos y Alternativas
 Cuando den alternativas ("3 o 4 dormitorios"): usá el número más bajo. El sistema busca desde esa cantidad.
 
-# property_type en search_properties
-Pasá property_type SOLO cuando el usuario pida un tipo ESPECÍFICO Y EXCLUYENTE:
-- "terreno", "lote", "campo" → property_type="terreno"
-- "casa" (explícitamente, no como sinónimo genérico) → property_type="casa"
-- "departamento", "depto", "apartamento" → property_type="departamento"
-- "propiedad", "algo para vivir", "vivienda", "inmueble", o sin especificar → NO pases property_type
+# property_type en search_properties — REGLA ESTRICTA
+SIEMPRE que el usuario mencione un tipo de propiedad concreto, incluí property_type en search_properties:
+- "terreno", "lote", "campo", "terrenos" → property_type="terreno"
+- "casa", "casas" → property_type="casa"
+- "departamento", "departamentos", "depto", "deptos", "apartamento" → property_type="departamento"
+- "propiedad", "algo para vivir", "vivienda", "inmueble", sin especificar → NO pases property_type
+
+Ejemplos de llamadas CORRECTAS:
+- Usuario: "quiero comprar un terreno" → search_properties(operation_type="venta", property_type="terreno")
+- Usuario: "busco una casa para alquilar" → search_properties(operation_type="alquiler", property_type="casa")
+- Usuario: "necesito un departamento" → search_properties(property_type="departamento")
+- Usuario: "busco algo para vivir" → search_properties() — SIN property_type
+
+NUNCA omitas property_type cuando el usuario nombró un tipo específico.
 
 # FAQ y Handoff
 Llamá get_faq_answer para preguntas sobre la inmobiliaria. Llamá request_human_assistance SOLO si el usuario pide hablar con una persona.
@@ -161,7 +169,7 @@ TOOL_DEFINITIONS = [
                     "property_type": {
                         "type": "string",
                         "enum": ["casa", "departamento", "terreno"],
-                        "description": "Pasá este campo SOLO cuando el usuario pide un tipo específico y excluyente. 'terreno'/'lote' → 'terreno'. 'casa' → 'casa'. 'departamento'/'depto' → 'departamento'. Si el usuario dice 'propiedad', 'algo para vivir', o no especifica → NO enviés este campo."
+                        "description": "OBLIGATORIO cuando el usuario menciona un tipo: 'terreno'/'lote'/'campo' → 'terreno'; 'casa' → 'casa'; 'departamento'/'depto'/'apartamento' → 'departamento'. OMITIR solo si el usuario no especificó tipo ('propiedad', 'algo para vivir', etc.)."
                     },
                     "operation_type": {
                         "type": "string",
