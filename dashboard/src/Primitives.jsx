@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 
-export function Icon({ name, size = 16, stroke = 1.5, style, className }) {
+export function Icon({ name, size = 24, stroke = 2, style, className }) {
   const paths = {
     home: <><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></>,
     building: <><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01M9 12h.01M9 15h.01M15 9h.01M15 12h.01M15 15h.01"/></>,
