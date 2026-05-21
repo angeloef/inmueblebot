@@ -341,7 +341,19 @@ export const useUpdatePropertyStatus = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, status }) => http.patch(`/admin/properties/${id}/status`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+    onMutate: async ({ id, status }) => {
+      await qc.cancelQueries({ queryKey: keys.properties });
+      const prev = qc.getQueryData(keys.properties);
+      qc.setQueryData(keys.properties, (old) => {
+        if (!old) return old;
+        return old.map(p => String(p.id) === String(id) ? { ...p, status } : p);
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
   });
 };
 
@@ -352,7 +364,27 @@ export const useRelateClientToProperty = () => {
   return useMutation({
     mutationFn: ({ prop_id, client_id, relation, update_status = true }) =>
       http.post(`/admin/properties/${prop_id}/relate-client`, { client_id, relation, update_status }),
-    onSuccess: () => {
+    onMutate: async ({ prop_id, relation }) => {
+      // Map relations to status changes
+      const relationToStatus = { buyer: 'sold', tenant: 'rented' };
+      const newStatus = relationToStatus[relation];
+      await qc.cancelQueries({ queryKey: keys.properties });
+      await qc.cancelQueries({ queryKey: keys.clients });
+      const prevProps = qc.getQueryData(keys.properties);
+      const prevClients = qc.getQueryData(keys.clients);
+      // Optimistically update property status
+      if (newStatus && prevProps) {
+        qc.setQueryData(keys.properties, (old) =>
+          old ? old.map(p => String(p.id) === String(prop_id) ? { ...p, status: newStatus } : p) : old
+        );
+      }
+      return { prevProps, prevClients };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevProps) qc.setQueryData(keys.properties, ctx.prevProps);
+      if (ctx?.prevClients) qc.setQueryData(keys.clients, ctx.prevClients);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: keys.properties });
       qc.invalidateQueries({ queryKey: keys.clients });
     },
