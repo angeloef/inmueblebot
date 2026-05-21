@@ -605,22 +605,20 @@ input, select, textarea { font-family: inherit; }
   /* ── Hamburger y cierre ── */
   .tb-menu-btn { display: inline-flex; }
   .sb-brand {
-    position: relative;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: 110px;
-    padding: 8px 8px 12px;
+    padding: 0;
   }
   .sb-close {
     display: inline-flex; align-items: center; justify-content: center;
-    position: absolute; top: 8px; right: 8px;
-    width: 32px; height: 32px;
+    align-self: flex-end;
+    width: 44px; height: 44px;
     border: none; background: transparent; border-radius: 6px;
     color: var(--fg-secondary); cursor: pointer;
+    flex-shrink: 0;
   }
   .sb-close:hover { background: var(--bg-hover); color: var(--fg-primary); }
-  .sb-brand img { margin: 0; }
+  .sb-brand img { margin: 12px 0 20px; }
   .sb-nav { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 
   /* ── Padding reducido ── */
