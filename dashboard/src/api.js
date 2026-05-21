@@ -476,7 +476,22 @@ export const useUpdateEvent = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: eventApi.update,
-    onSuccess: () => qc.refetchQueries({ queryKey: keys.events }),
+    onMutate: async (data) => {
+      await qc.cancelQueries({ queryKey: keys.events });
+      const prev = qc.getQueryData(keys.events);
+      qc.setQueryData(keys.events, (old) => {
+        if (!old) return old;
+        return old.map(e => String(e.id) === String(data.id)
+          ? { ...e, date: data.date, start: data.start, end: data.end }
+          : e
+        );
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.events, ctx.prev);
+    },
+    onSettled: () => qc.refetchQueries({ queryKey: keys.events }),
   });
 };
 
