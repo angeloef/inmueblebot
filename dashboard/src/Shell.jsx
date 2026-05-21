@@ -23,13 +23,11 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
     <>
       {isOpen && <div className="sb-backdrop" onClick={onClose} />}
       <aside className={`sb${isOpen ? ' open' : ''}`}>
+        <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
+          <Icon name="chevronLeft" size={20} />
+        </button>
         <div className="sb-brand">
-          <button className="sb-close" onClick={onClose} aria-label="Cerrar menú">
-            <Icon name="chevronLeft" size={20} />
-          </button>
-          <div className="sb-logo">
-            <img src="/logo.svg" alt="InmuebleBot" />
-          </div>
+          <img src="/logo.svg" alt="InmuebleBot" />
         </div>
         <div className="sb-nav">
           <div className="sb-section">Principal</div>
