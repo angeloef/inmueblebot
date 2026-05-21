@@ -158,7 +158,18 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
         # Operation type
         op = criteria.get("operation_type", "alquiler")
 
-        if location and noun:
+        _single = len(properties) == 1
+        if _single:
+            # Singular: "Este es el terreno que tenemos disponible:"
+            _art_sing = {"terrenos": "el terreno", "casas": "la casa",
+                         "departamentos": "el departamento", "oficinas": "la oficina",
+                         "locales": "el local", "galpones": "el galpón"}.get(noun, f"la {noun[:-1]}" if noun else "la propiedad")
+            _demo_sing = "Esta" if article == "las" else "Este"
+            if location:
+                header = f"{_demo_sing} es {_art_sing}{bed_str} en {location}:"
+            else:
+                header = f"{_demo_sing} es {_art_sing}{bed_str} que tenemos disponible:"
+        elif location and noun:
             demo = "Estas" if article == "las" else "Estos"
             header = f"{demo} son {article} {noun}{bed_str} en {location}:"
         elif noun:
