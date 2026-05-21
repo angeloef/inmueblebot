@@ -509,4 +509,5 @@ export const useUpdateBotSettings = () => {
   return useMutation({
     mutationFn: settingsApi.update,
     onSuccess:  () => qc.invalidateQueries({ queryKey: keys.botSettings }),
-  }
+  });
+};
