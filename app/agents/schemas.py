@@ -135,7 +135,7 @@ AGENT_RESPONSE_JSON_SCHEMA = {
                 "description": "Brief reasoning for debugging.",
             },
         },
-        "required": ["action", "tool_calls", "confidence"],
+        "required": ["action", "tool_calls", "response", "question", "question_field", "confidence", "reasoning"],
         "additionalProperties": False,
     },
 }
