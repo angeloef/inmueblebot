@@ -475,8 +475,55 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 logger.info("[TOOL] All fallbacks returned 0 results — returning NO_RESULTS_ASK_MORE signal")
                 return "NO_RESULTS_ASK_MORE"
         
+        # ── Discovery mode: called with NO filters → return type summary, not full list ──
+        # When the LLM receives a formatted list it reproduces it verbatim, ignoring the
+        # prompt instruction "no hagas lista". Returning a summary string forces the LLM
+        # to use it as confirmation text and ask for specifics instead.
+        is_discovery = (
+            not search_criteria.get("operation_type")
+            and not search_criteria.get("property_type")
+            and not search_criteria.get("location")
+        )
+        if is_discovery and properties:
+            from collections import Counter
+            type_counts: Counter = Counter()
+            op_counts: Counter = Counter()
+            for p in properties:
+                cat = _get_attr(p, "category", None) or _get_attr(p, "property_type", None) or "propiedad"
+                op = _get_attr(p, "type", None) or "venta"
+                type_counts[cat] += 1
+                op_counts[op] += 1
+
+            # Build human-readable type list: "3 casas, 2 departamentos, 1 terreno"
+            type_parts = []
+            for t, count in type_counts.most_common():
+                # Pluralize common types
+                plural_map = {
+                    "casa": "casas", "departamento": "departamentos", "terreno": "terrenos",
+                    "oficina": "oficinas", "local": "locales", "galpon": "galpones",
+                    "galpón": "galpones", "ph": "PHs", "propiedad": "propiedades",
+                }
+                label = plural_map.get(t.lower(), f"{t}s") if count > 1 else t
+                type_parts.append(f"{count} {label}")
+            type_summary = ", ".join(type_parts)
+
+            # Operation types available
+            ops_available = list(op_counts.keys())
+            if "alquiler" in ops_available and "venta" in ops_available:
+                op_summary = "tanto para alquiler como para venta"
+            elif "alquiler" in ops_available:
+                op_summary = "para alquiler"
+            else:
+                op_summary = "para venta"
+
+            logger.info(f"[TOOL] Discovery mode → summary: {type_summary} ({op_summary})")
+            return (
+                f"DISCOVERY_MODE: Tenemos {len(properties)} propiedades disponibles: "
+                f"{type_summary}, {op_summary}."
+            )
+
         return format_property_list(properties, search_criteria)
-        
+
     except Exception as e:
         logger.error(f"Error en busqueda de propiedades: {e}")
         return "Tuve un problema al buscar propiedades. Podrias intentar con otros criterios?"
