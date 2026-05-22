@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = Field(default=0.5, description="Temperatura por defecto para LLM")
     LLM_MAX_TOKENS: int = Field(default=1000, description="Máximo de tokens en respuesta")
 
+    # === Modular Prompts (Feature Flag) ===
+    USE_MODULAR_PROMPTS: bool = Field(
+        default=True,
+        description="Usar prompts modulares por capacidad. False = usa SYSTEM_PROMPT monolito."
+    )
+
     # === WhatsApp (Twilio) ===
     TWILIO_ACCOUNT_SID: Optional[str] = Field(default=None, description="Twilio Account SID")
     TWILIO_AUTH_TOKEN: Optional[str] = Field(default=None, description="Twilio Auth Token")

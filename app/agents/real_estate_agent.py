@@ -10,7 +10,7 @@ from loguru import logger
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
 from app.agents.prompts import get_system_prompt, TOOL_DEFINITIONS
-from app.agents.router import detect_stage, should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
+from app.agents.router import detect_stage, detect_capability, should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
@@ -134,6 +134,7 @@ class RealEstateAgent:
 
                 # ── Router-based handoff: out-of-scope or fail count threshold ──
                 _router_stage = detect_stage(user_message, merged_context, history)
+                _router_capability = detect_capability(user_message, merged_context)
                 if _router_stage == STAGE_OUT_OF_SCOPE:
                     from app.services.handoff_service import handoff_service
                     _reason = "out_of_scope"
@@ -220,7 +221,8 @@ class RealEstateAgent:
                     user_context=user_prefs,
                     phone=phone,
                     last_shown_properties=last_props if last_props else None,
-                    stage=detect_stage(user_message, merged_context, history),
+                    stage=_router_stage,
+                    capability=_router_capability,
                 )
 
                 # ── Scheduling nudge: fetch pending scheduling ONCE per turn ──────────────────
@@ -1059,6 +1061,7 @@ class RealEstateAgent:
         phone: str,
         last_shown_properties: List[Dict] = None,
         stage: str = None,
+        capability: str = None,
     ) -> List[Dict]:
         """Construye la lista de mensajes para el LLM."""
         messages = []
@@ -1068,22 +1071,16 @@ class RealEstateAgent:
             user_context["last_shown_properties"] = last_shown_properties
             logger.info(f"[Agent] Injecting {len(last_shown_properties)} properties into context")
         
-        system_prompt = get_system_prompt(user_context)
-        messages.append({"role": "system", "content": system_prompt})
-
-        # Inject conversation stage for context-aware behavior
-        if stage:
-            messages.append({
-                "role": "system",
-                "content": f"### ETAPA: {stage}"
-            })
-            logger.info(f"[Agent] Injected stage={stage} for {phone}")
-
-        # Inject sentiment/urgency tag if detected
+        # ── Detect capability if not provided ────────────────────────────────
+        if not capability:
+            from app.agents.router import detect_capability
+            capability = detect_capability(user_message, user_context)
+        
+        # ── Detect sentiment ─────────────────────────────────────────────────
+        _sentiment = None
         try:
             from app.agents.prompts import SENTIMENT_KEYWORDS
             _msg_lower = (user_message or "").lower()
-            _sentiment = None
             for _sk in SENTIMENT_KEYWORDS.get("negative", []):
                 if _sk in _msg_lower:
                     _sentiment = "NEGATIVO"
@@ -1093,85 +1090,44 @@ class RealEstateAgent:
                     if _sk in _msg_lower:
                         _sentiment = "URGENTE"
                         break
-            if _sentiment:
-                messages.append({
-                    "role": "system",
-                    "content": f"### TONO: {_sentiment}"
-                })
-                logger.info(f"[Agent] Injected sentiment={_sentiment} for {phone}")
+        except Exception:
+            pass
+        
+        # ── Build merged context for assembly ────────────────────────────────
+        merged_context = dict(user_context)
+        merged_context["_raw_message"] = user_message or ""
+        if _sentiment:
+            merged_context["_sentiment"] = _sentiment
+        
+        # ── Assemble modular system prompt ───────────────────────────────────
+        _use_modular = True
+        try:
+            from app.core.config import get_settings
+            _use_modular = get_settings().USE_MODULAR_PROMPTS
         except Exception:
             pass
 
-        # Inject returning user greeting if applicable
-        if user_context.get("is_returning"):
-            last_ref = user_context.get("last_reference", "propiedades")
-            returning_msg = (
-                f"\n### USUARIO RECURRENTE\n"
-                f"Este usuario ya ha conversado antes. "
-                f"Su última referencia fue: {last_ref}\n"
-                f"Saludalo con un mensaje cálido tipo: '¡Bienvenido de nuevo! La última vez viste [referencia]...'\n"
-            )
-            messages.append({"role": "system", "content": returning_msg})
-            logger.info(f"[Agent] Injected returning user greeting for {phone}, ref={last_ref}")
-
-        # Inject active/selected property for context continuity — BEFORE history
-        selected_id = user_context.get("selected_property_id")
-        selected_title = user_context.get("selected_property_title") or "propiedad"
-        if selected_id:
-            # Check if user is asking about scheduling so we can suppress the confirmation question
-            _sched_kws = ["visita", "agendar", "agend", "coordinar", "turno", "cita",
-                          "puedo ir", "ir a ver", "conocer", "verla", "visitarla"]
-            _user_asking_sched = any(kw in (user_message or "").lower() for kw in _sched_kws)
-
-            selected_prop_reminder = (
-                f"\n### ACTIVE PROPERTY CONTEXT\n"
-                f"Propiedad activa: [{selected_title}] (ID={selected_id}).\n"
-                f"SIEMPRE que el usuario mencione 'esa', 'la misma', 'esa propiedad', "
-                f"'el departamento que vimos', 'esa casa' → referite a [{selected_title}] ID={selected_id}.\n"
-                f"Para schedule_visit usa property_id={selected_id} (NO uses otro ID).\n"
-            )
-            if _user_asking_sched:
-                selected_prop_reminder += (
-                    f"PROHIBIDO preguntar '¿Te referís a {selected_title}?' — "
-                    f"la propiedad ya está identificada. "
-                    f"Pasá DIRECTAMENTE a preguntar el día de la visita.\n"
+        if _use_modular:
+            try:
+                from app.agents.prompt_files.loader import assemble_system_prompt
+                system_prompt = assemble_system_prompt(
+                    capability=capability or "general",
+                    stage=stage or "",
+                    context=merged_context,
                 )
-            messages.append({
-                "role": "system",
-                "content": selected_prop_reminder
-            })
-            logger.info(f"[Agent] Injected selected_property_id={selected_id} (sched={_user_asking_sched}) for {phone}")
+            except Exception as exc:
+                logger.warning(f"[Agent] Modular prompt assembly failed, using legacy: {exc}")
+                _use_modular = False
 
-        # Inject pending scheduling info for context-aware scheduling — BEFORE history
-        pending = user_context.get("pending_scheduling_info")
-        if pending and pending.get("active"):
-            saved_date = pending.get("date_str", "")
-            saved_pid = pending.get("property_id", "")
-            saved_time = pending.get("time_str", "")
-            schedule_context = (
-                "\n### PENDING SCHEDULING INFO\n"
-                "El usuario ya mencionó querer agendar una visita y se guardó esta información:\n"
-            )
-            if saved_pid:
-                schedule_context += f"  Propiedad: {saved_pid}\n"
-            if saved_date:
-                schedule_context += f"  Fecha guardada: \"{saved_date}\"\n"
-            if saved_time:
-                schedule_context += f"  Hora guardada: \"{saved_time}\"\n"
-            schedule_context += (
-                f"\nREGLA CRÍTICA: Cuando el usuario complete la información faltante, llamá schedule_visit con:\n"
-                f"  - date_str=\"{saved_date}\"  ← EXACTAMENTE este valor. NUNCA sustituyas por 'mañana' ni la fecha de hoy.\n"
-            )
-            if saved_pid:
-                schedule_context += f"  - property_id=\"{saved_pid}\"\n"
-            if saved_time:
-                schedule_context += f"  - time_str=\"{saved_time}\"\n"
-            schedule_context += "NO preguntes de nuevo por fecha ni hora — ya están guardadas.\n"
-            messages.append({
-                "role": "system",
-                "content": schedule_context
-            })
-            logger.info(f"[Agent] Injected pending scheduling info for {phone}: {pending}")
+        if not _use_modular:
+            from app.agents.prompts import get_system_prompt as legacy_sp
+            system_prompt = legacy_sp(user_context)
+            if stage:
+                system_prompt += f"\n\n### ETAPA: {stage}"
+            if _sentiment:
+                system_prompt += f"\n\n### TONO: {_sentiment}"
+        
+        messages.append({"role": "system", "content": system_prompt})
 
         # Inject last properties as system reminder with EXPLICIT index-to-ID mapping — BEFORE history
         if last_shown_properties:
@@ -1220,6 +1176,8 @@ class RealEstateAgent:
             logger.info(f"[Agent] Injected {len(existing)} existing appointments for {phone}")
 
         # Inject conversation state summary right before user message
+        selected_id = user_context.get("selected_property_id")
+        selected_title = user_context.get("selected_property_title") or "propiedad"
         if history and len(history) >= 2:
             conv_summary_parts = []
             if selected_id and selected_title:
