@@ -1245,18 +1245,10 @@ class RealEstateAgent:
                         )
 
             # Preference extraction (hybrid: LLM first, code fallback)
-            # Skip for very short / greeting-only messages — no prefs to extract
-            _SKIP_PREF_WORDS = {"hola", "buenas", "gracias", "ok", "si", "sí", "no", "genial", "dale", "buenísimo"}
-            _msg_words = set(message.lower().split())
-            _is_greeting_only = len(message.strip()) < 15 or _msg_words <= _SKIP_PREF_WORDS
             from app.core.hybrid.preference import preference_extractor
 
             pref_ctx = {"phone": phone, "current_prefs": current_prefs}
-            if not _is_greeting_only:
-                pref_result = await preference_extractor.parse(message, pref_ctx)
-            else:
-                from app.core.hybrid.base import ParseResult as _PR
-                pref_result = _PR(None, 0.0, "skipped")
+            pref_result = await preference_extractor.parse(message, pref_ctx)
 
             if pref_result.value and isinstance(pref_result.value, dict):
                 prefs = pref_result.value
@@ -1296,13 +1288,15 @@ class RealEstateAgent:
                     pref_result.parser_used,
                     {k: v for k, v in prefs.items() if v},
                 )
-            # Note: if pref_result came from parse_code, extract_and_save_preferences
-            # was already called internally by PreferenceExtractor.parse_code — skip
-            # the redundant else-branch call to avoid double-saving.
+            else:
+                # Fallback: existing regex extraction
+                await memory_manager.extract_and_save_preferences(
+                    phone, message, current_prefs
+                )
 
             logger.info("Preferencias extraidas y guardadas exitosamente")
         except Exception as e:
-            logger.error("Error guardando preferencias: %s", e, exc_info=True)
+            logger.error("Error guardando preferencias: %s", e)
     
     def _clean_response(self, response: str, tools_used: List[str]) -> str:
         """Limpia la respuesta de texto técnico/prohibido."""

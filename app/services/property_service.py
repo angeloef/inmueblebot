@@ -122,23 +122,37 @@ class PropertyService:
 
         logger.info(f"[PropertyService] Repo retornó: {total} total, {len(props)} propiedades")
 
-        # bedrooms_min now uses >= in the repo, so no extra retry needed for that.
-        # If zero results with all filters, try dropping bedrooms constraint only.
+        # If exact bedrooms match returned nothing, broaden to >= (flexible fallback)
         if not props and bedrooms is not None:
-            logger.info(f"[PropertyService] 0 results with bedrooms>={bedrooms} — retrying without bedrooms filter")
+            logger.info(f"[PropertyService] Exact bedrooms={bedrooms} returned 0 — retrying with bedrooms >= {bedrooms}")
             props, total = await repo.search(
                 type=operation_type,
                 property_type=property_type,
                 location=location,
                 budget_min=budget_min,
                 budget_max=budget_max,
-                bedrooms_min=None,
+                bedrooms_min=bedrooms + 1,   # repo now does ==, so use next value
                 bathrooms_min=bathrooms,
                 status="available",
                 limit=limit,
                 sort_by=sort_by,
                 title_search=title_search,
             )
+            # Still nothing? Try with no bedrooms filter at all
+            if not props:
+                props, total = await repo.search(
+                    type=operation_type,
+                    property_type=property_type,
+                    location=location,
+                    budget_min=budget_min,
+                    budget_max=budget_max,
+                    bedrooms_min=None,
+                    bathrooms_min=bathrooms,
+                    status="available",
+                    limit=limit,
+                    sort_by=sort_by,
+                    title_search=title_search,
+                )
 
         # Log results (even empty — let the tool layer handle fallback logic)
         if props:

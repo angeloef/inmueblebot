@@ -968,7 +968,7 @@ class MemoryManager:
 
     async def get_user_name(self, phone: str) -> Optional[str]:
         """Get user's full name from Redis or DB."""
-        ctx = await self.get_user_context(phone)
+        ctx = await self.get_context(phone)
         if ctx and ctx.get("name"):
             return ctx["name"]
         try:
