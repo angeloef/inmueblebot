@@ -94,7 +94,17 @@ def detect_stage(
     ]):
         return STAGE_FAQ
 
-    # 7. Búsqueda de propiedades
+    # 7. Detalle de propiedad (check BEFORE search when active property exists)
+    active_prop = context.get("selected_property_id") or context.get("active_property_id")
+    if active_prop:
+        detail_kw = ["ese", "esa", "eso", "foto", "fotos", "imagen", "detalle",
+                      "saber más", "saber mas", "información", "informacion",
+                      "cuánto", "cuanto", "precio", "más info", "mas info",
+                      "decime", "contame", "mostrame", "ver"]
+        if any(kw in msg_lower for kw in detail_kw):
+            return STAGE_DETAIL
+
+    # 8. Búsqueda de propiedades
     search_kw = [
         "busco", "quiero", "necesito", "mostrame", "mostrar",
         "hay", "tienen", "alquiler", "compra", "alquilar", "comprar",
@@ -107,16 +117,6 @@ def detect_stage(
     ]
     if any(kw in msg_lower for kw in search_kw):
         return STAGE_SEARCH
-
-    # 8. Detalle de propiedad — hay una propiedad activa y el usuario pregunta por ella
-    active_prop = context.get("selected_property_id") or context.get("active_property_id")
-    if active_prop:
-        detail_kw = ["ese", "esa", "eso", "foto", "fotos", "imagen", "detalle",
-                      "saber más", "saber mas", "información", "informacion",
-                      "cuánto", "cuanto", "precio", "más info", "mas info",
-                      "decime", "contame", "mostrame", "ver"]
-        if any(kw in msg_lower for kw in detail_kw):
-            return STAGE_DETAIL
 
     # 9. Contacto (agente, teléfono, etc.)
     if any(kw in msg_lower for kw in [
@@ -154,6 +154,15 @@ def detect_capability(message: str, context: dict) -> Optional[str]:
     ]):
         return CAP_SCHEDULE
 
+    # Property detail (check before search for 'mostrame', 'foto', etc.)
+    if any(kw in msg_lower for kw in [
+        "foto", "fotos", "imagen", "detalle",
+        "saber más", "más información", "información",
+        "cuánto sale", "cuanto sale", "cuál es el precio",
+        "decime de esa", "contame de esa",
+    ]):
+        return CAP_DETAIL
+
     # Property search
     if any(kw in msg_lower for kw in [
         "busco", "quiero", "necesito", "hay", "tienen",
@@ -164,15 +173,6 @@ def detect_capability(message: str, context: dict) -> Optional[str]:
         "presupuesto", "hasta", "desde",
     ]):
         return CAP_SEARCH
-
-    # Property detail
-    if any(kw in msg_lower for kw in [
-        "foto", "fotos", "detalle", "imagen",
-        "saber más", "más información", "información",
-        "cuánto sale", "cuanto sale", "cuál es el precio",
-        "decime de esa", "contame de esa",
-    ]):
-        return CAP_DETAIL
 
     # FAQ
     if any(kw in msg_lower for kw in [
@@ -215,7 +215,7 @@ def is_out_of_scope(message: str) -> bool:
         r"(cr[eé]dito|cr[eé]dito hipotecario|pr[eé]stamo|uva|uvas)",
 
         # Opinions / subjective
-        r"qu[eé] (opinión|opinas|pens[aá]s|cre[eé]s|te parece|me recomen[d]?[aá]s)",
+        r"qu[eé] (opinión|opin[áa]s|pens[aá]s|cre[eé]s|te parece|me recomen[d]?[aá]s)",
         r"es (bueno|mala|confiable|seguro)\s+(invertir|comprar|alquilar)",
         r"te (parece|parecen)",
 
@@ -224,7 +224,8 @@ def is_out_of_scope(message: str) -> bool:
         r"(clima|clima|temperatura|lluvia|pronóstico)",
         r"(noticia|política|política|f[úu]tbol|deporte)",
         r"(película|pelicula|serie|m[uú]sica|canción|cancion|libro)",
-        r"(programar|python|javascript|código|codigo|html)",
+        r"c[óo]mo (programar|hacer una págin)",
+        r"(javascript|código|codigo|html|css)",
 
         # Comparisons with other brokerages
         r"otr[oa]\s+(inmobiliaria|agenci|corredor)",
