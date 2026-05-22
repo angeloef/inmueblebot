@@ -433,9 +433,18 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             
             fb1_results = _dedup(fb1_results)
             fb2_results = _dedup(fb2_results)
-            
+
+            # Fallback 3: drop operation_type entirely — shows available properties of same
+            # physical type regardless of alquiler/venta. Covers cases where type=NULL in DB.
+            op_type = search_criteria.get("operation_type") or search_criteria.get("type")
+            fb3_criteria = {k: v for k, v in search_criteria.items()
+                            if k not in ("operation_type", "type", "budget_max", "budget_min")}
+            logger.info(f"[TOOL] Fallback 3: drop operation_type, keep property_type={fb3_criteria.get('property_type')}")
+            fb3_results = await property_service.search_properties(fb3_criteria)
+            fb3_results = _dedup(fb3_results)
+
             MAX_ALTERNATIVES = 3
-            
+
             # Show best fallback with results (closest to original query)
             if fb1_results:
                 budget_str = f" (hasta ${fb1_criteria.get('budget_max', 0):,})" if fb1_criteria.get("budget_max") else ""
@@ -451,6 +460,15 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                     f"🔱 Opciones sin filtro de presupuesto:",
                 ]
                 parts.append(format_property_list(fb2_results[:MAX_ALTERNATIVES], fb2_criteria))
+                return "\n".join(parts)
+            elif fb3_results:
+                # Found properties of the right type but not the requested operation_type
+                op_label = f"en {op_type}" if op_type else ""
+                pt_label = search_criteria.get("property_type", "propiedades")
+                parts = [
+                    f"Por el momento no tenemos {pt_label} disponibles {op_label}. Estas son las que tenemos disponibles:\n",
+                ]
+                parts.append(format_property_list(fb3_results[:MAX_ALTERNATIVES], fb3_criteria))
                 return "\n".join(parts)
             else:
                 # No results from any fallback — signal LLM to ask user for adjustments
