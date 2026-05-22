@@ -19,9 +19,21 @@ class StructuredToolCall(BaseModel):
 
     Used when action="tool_call" and the model describes tools inline
     rather than using OpenAI's native tool_calls mechanism.
+
+    arguments is a JSON-encoded string (required by OpenAI strict mode).
+    Access parsed_args for the decoded dict.
     """
     name: str = Field(..., description="Tool name")
-    arguments: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
+    arguments: str = Field(default="{}", description="Tool arguments as JSON string")
+
+    @property
+    def parsed_args(self) -> dict[str, Any]:
+        """Decode arguments from JSON string to dict."""
+        import json
+        try:
+            return json.loads(self.arguments)
+        except (json.JSONDecodeError, TypeError):
+            return {}
 
 
 class AgentResponse(BaseModel):
@@ -92,8 +104,8 @@ AGENT_RESPONSE_JSON_SCHEMA = {
                             "description": "Tool name",
                         },
                         "arguments": {
-                            "type": "object",
-                            "description": "Tool arguments",
+                            "type": "string",
+                            "description": "Tool arguments as a JSON-encoded string. Example: '{\"location\": \"Oberá\"}'",
                         },
                     },
                     "required": ["name", "arguments"],

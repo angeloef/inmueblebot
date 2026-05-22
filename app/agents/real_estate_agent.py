@@ -434,9 +434,10 @@ class RealEstateAgent:
                             # to check if the structured tool_calls list has content
                             if sr.tool_calls:
                                 # Convert structured tool_calls to native format
+                                # arguments is a JSON string in strict mode — use parsed_args
                                 from app.agents.llm_router import ToolCall as TCR
                                 llm_response.tool_calls = [
-                                    TCR(name=tc.name, arguments=tc.arguments)
+                                    TCR(name=tc.name, arguments=tc.parsed_args)
                                     for tc in sr.tool_calls
                                 ]
                                 # Don't break — fall through to tool execution below
