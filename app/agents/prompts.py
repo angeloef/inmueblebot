@@ -147,7 +147,21 @@ Casas en Oberá: desde $45,000...
 ¿Alguna te sirve?"
 """
 
-FEW_SHOT_EXAMPLES = []  # Examples are inline in SYSTEM_PROMPT → # Ejemplos de Conversación section
+
+
+# ── Sentiment / Urgency detection ──────────────────────────────────────────────
+
+SENTIMENT_KEYWORDS = {
+    "negative": [
+        "no me gusta", "no sirve", "muy caro", "no me interesa",
+        "qué mal", "que mal", "no gracias", "molesto", "aburrido",
+        "no me convence", "no quiero", "no me sirve",
+    ],
+    "urgent": [
+        "urgente", "necesito ya", "lo antes posible", "rapidísimo",
+        "ya mismo", "necesito urgente",
+    ],
+}
 
 
 TOOL_DEFINITIONS = [

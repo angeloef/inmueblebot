@@ -10,6 +10,7 @@ from loguru import logger
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
 from app.agents.prompts import get_system_prompt, TOOL_DEFINITIONS
+from app.agents.router import detect_stage, should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
@@ -131,6 +132,42 @@ class RealEstateAgent:
                         "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
                     }
 
+                # ── Router-based handoff: out-of-scope or fail count threshold ──
+                _router_stage = detect_stage(user_message, merged_context, history)
+                if _router_stage == STAGE_OUT_OF_SCOPE:
+                    from app.services.handoff_service import handoff_service
+                    _reason = "out_of_scope"
+                    _message = (
+                        "Esto escapa a lo que puedo hacer por acá. "
+                        "Te paso con un asesor humano que te va a ayudar mejor. "
+                        "Dejame pasarle el contexto de lo que veníamos hablando "
+                        "así no tenés que repetir todo."
+                    )
+                    handoff_result = await handoff_service.trigger_handoff(phone, _reason)
+                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
+                    return {
+                        "response_text": _message,
+                        "rich_content": {"action": "handoff_initiated", "reason": _reason},
+                        "tools_used": ["request_human_assistance"],
+                        "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
+                    }
+                if _router_stage == STAGE_HANDOFF or should_handoff(merged_context):
+                    from app.services.handoff_service import handoff_service
+                    _reason = "fail_threshold_reached"
+                    _message = (
+                        "Veo que estoy teniendo problemas para ayudarte con esto. "
+                        "Te paso con un asesor humano que te va a atender mejor. "
+                        "Dejame pasarle el contexto de lo que veníamos hablando."
+                    )
+                    handoff_result = await handoff_service.trigger_handoff(phone, _reason)
+                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
+                    return {
+                        "response_text": _message,
+                        "rich_content": {"action": "handoff_initiated", "reason": _reason},
+                        "tools_used": ["request_human_assistance"],
+                        "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
+                    }
+
                 # Get last_shown_properties from context for reference
                 last_props = merged_context.get("last_shown_properties", [])
 
@@ -184,7 +221,8 @@ class RealEstateAgent:
                     history=history,
                     user_context=user_prefs,
                     phone=phone,
-                    last_shown_properties=last_props if last_props else None
+                    last_shown_properties=last_props if last_props else None,
+                    stage=detect_stage(user_message, merged_context, history),
                 )
 
                 # ── Scheduling nudge: fetch pending scheduling ONCE per turn ──────────────────
@@ -561,6 +599,16 @@ class RealEstateAgent:
                                         f"{_close}"
                                     )
                                 })
+                            elif _n_results == 0:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "No se encontraron propiedades con esos criterios. "
+                                        "Ofrecele alternativas al usuario: ajustar zona, presupuesto, "
+                                        "o tipo de propiedad. Ej: 'No tengo propiedades con esos "
+                                        "filtros. ¿Probamos con otra zona o subimos un poco el presupuesto?'"
+                                    )
+                                })
                             else:
                                 # Multiple results — build plural header + closing
                                 _plural_map = {
@@ -636,16 +684,46 @@ class RealEstateAgent:
                                 )
                             })
                         elif tool_name == "get_faq_answer":
-                            messages.append({
-                                "role": "system",
-                                "content": (
-                                    "Acabás de recibir la respuesta de FAQ en el tool result de arriba. "
-                                    "Usá ESA información para responder la pregunta del usuario. "
-                                    "NO digas 'Respondiste una pregunta frecuente' — simplemente dale la respuesta. "
-                                    "Después de responder, preguntale si le queda alguna duda. "
-                                    "Ej: '¿Te queda alguna duda o quisieras consultar algo más?'"
-                                )
-                            })
+                            _faq_result = str(tool_result) if tool_result else ""
+                            if not _faq_result.strip() or "no tengo información" in _faq_result.lower() or _faq_result.strip() in ("{}", "[]"):
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "No tengo información sobre esa consulta en mi base de datos. "
+                                        "Decile al usuario que no tengo ese dato y ofrecele ayuda "
+                                        "con propiedades o visitas. "
+                                        "NO inventes una respuesta."
+                                    )
+                                })
+                            else:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "Acabás de recibir la respuesta de FAQ en el tool result de arriba. "
+                                        "Usá ESA información para responder la pregunta del usuario. "
+                                        "NO digas 'Respondiste una pregunta frecuente' — simplemente dale la respuesta. "
+                                        "Después de responder, preguntale si le queda alguna duda. "
+                                        "Ej: '¿Te queda alguna duda o quisieras consultar algo más?'"
+                                    )
+                                })
+                        elif tool_name == "cancel_appointment":
+                            if "Cita Cancelada" in str(tool_result) or "<!--CONFIRMED:" in str(tool_result):
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "La cita se canceló con éxito. Confirmale al usuario "
+                                        "y preguntale si necesita algo más. "
+                                        "Si dice que no, despedite cordialmente."
+                                    )
+                                })
+                            else:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "No se pudo cancelar la cita. Informale al usuario "
+                                        "y ofrecelé intentar de nuevo o contactar a un asesor humano."
+                                    )
+                                })
                         elif tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" in str(tool_result):
                             messages.append({
                                 "role": "system",
@@ -656,6 +734,55 @@ class RealEstateAgent:
                                     "Ej: 'Cita Agendada. [día] a las [hora]. Te esperamos, cualquier cosa avisanos.'"
                                 )
                             })
+                        elif tool_name in ("schedule_visit", "reschedule_appointment"):
+                            # Scheduling was rejected (Sunday, off-hours, etc.)
+                            _sched_result = str(tool_result).lower()
+                            if "necesito tu nombre" in _sched_result or "nombre" in _sched_result:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "El sistema necesita el nombre del usuario. "
+                                        "Preguntale su nombre y apellido cordialmente. "
+                                        "NO le preguntes día u horario de nuevo — esos datos ya están registrados."
+                                    )
+                                })
+                            elif "domingo" in _sched_result or "fuera de horario" in _sched_result or "no disponible" in _sched_result:
+                                messages.append({
+                                    "role": "system",
+                                    "content": (
+                                        "El horario no está disponible. Ofrecele 2-3 alternativas al usuario "
+                                        "(lunes a sábado de 9 a 18hs). "
+                                        "NO repitas que el horario no funciona — pasá directo a soluciones."
+                                    )
+                                })
+
+                        # ── Fail counter: track tool failures for handoff detection ──
+                        _result_str = str(tool_result) if tool_result else ""
+                        _is_empty_result = not _result_str.strip() or _result_str.strip() in ("{}", "[]", '""', "''")
+                        _is_error = "error" in _result_str.lower() or "no se pudo" in _result_str.lower()
+                        _is_no_results = "no tengo" in _result_str.lower() or "no encontr" in _result_str.lower() or "sin resultados" in _result_str.lower()
+                        _is_scheduling_rejected = tool_name in ("schedule_visit", "reschedule_appointment") and "CONFIRMED" not in _result_str and "Cita Cancelada" not in _result_str and "Cita Agendada" not in _result_str and "Cita Reprogramada" not in _result_str
+
+                        if _is_empty_result or _is_error or _is_no_results or _is_scheduling_rejected:
+                            _capability = tool_name.replace("get_", "").replace("recommend_", "").split("_")[0]
+                            _fail_key = f"{_capability}_fail_count"
+                            merged_context[_fail_key] = merged_context.get(_fail_key, 0) + 1
+                            logger.info(f"[Agent] {tool_name} failed — {_fail_key}={merged_context[_fail_key]}")
+                            # Persist to memory
+                            try:
+                                await memory_manager.update_context_field(phone, _fail_key, merged_context[_fail_key])
+                            except Exception:
+                                pass
+                        else:
+                            # Reset fail count on success
+                            _capability = tool_name.replace("get_", "").replace("recommend_", "").split("_")[0]
+                            _fail_key = f"{_capability}_fail_count"
+                            if merged_context.get(_fail_key, 0) > 0:
+                                merged_context[_fail_key] = 0
+                                try:
+                                    await memory_manager.update_context_field(phone, _fail_key, 0)
+                                except Exception:
+                                    pass
 
                         if "search_properties" in tool_name or "recommend_properties" in tool_name:
                             new_rich = self._extract_rich_content(tool_args, tool_result)
@@ -932,7 +1059,8 @@ class RealEstateAgent:
         history: List[Dict],
         user_context: Dict[str, Any],
         phone: str,
-        last_shown_properties: List[Dict] = None
+        last_shown_properties: List[Dict] = None,
+        stage: str = None,
     ) -> List[Dict]:
         """Construye la lista de mensajes para el LLM."""
         messages = []
@@ -944,6 +1072,37 @@ class RealEstateAgent:
         
         system_prompt = get_system_prompt(user_context)
         messages.append({"role": "system", "content": system_prompt})
+
+        # Inject conversation stage for context-aware behavior
+        if stage:
+            messages.append({
+                "role": "system",
+                "content": f"### ETAPA: {stage}"
+            })
+            logger.info(f"[Agent] Injected stage={stage} for {phone}")
+
+        # Inject sentiment/urgency tag if detected
+        try:
+            from app.agents.prompts import SENTIMENT_KEYWORDS
+            _msg_lower = (user_message or "").lower()
+            _sentiment = None
+            for _sk in SENTIMENT_KEYWORDS.get("negative", []):
+                if _sk in _msg_lower:
+                    _sentiment = "NEGATIVO"
+                    break
+            if not _sentiment:
+                for _sk in SENTIMENT_KEYWORDS.get("urgent", []):
+                    if _sk in _msg_lower:
+                        _sentiment = "URGENTE"
+                        break
+            if _sentiment:
+                messages.append({
+                    "role": "system",
+                    "content": f"### TONO: {_sentiment}"
+                })
+                logger.info(f"[Agent] Injected sentiment={_sentiment} for {phone}")
+        except Exception:
+            pass
 
         # Inject returning user greeting if applicable
         if user_context.get("is_returning"):
