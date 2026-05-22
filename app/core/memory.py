@@ -765,26 +765,93 @@ class MemoryManager:
     
     async def summarize_conversation(self, phone: str) -> str:
         """
-        Resume la conversación actual usando MiniMax.
-        
-        PLACEHOLDER: Por ahora solo retorna los últimos mensajes.
-        MiniMax será integrado posteriormente para generar resúmenes.
+        v2.0: Resume la conversación usando el LLM para generar un resumen compacto.
+
+        Solo resume mensajes 6+ (los primeros 5 se mantienen completos).
+        El resumen se cachea en Redis con TTL de 24h.
         """
-        messages = await self.get_recent_messages(phone)
-        
-        if not messages:
+        messages = await self.get_recent_messages(phone, limit=50)
+
+        if not messages or len(messages) <= 10:
+            return ""  # Not enough messages to justify summarization
+
+        # Summary threshold: only summarize if there are >10 messages total
+        # Keep last 5 full, summarize the rest
+        to_summarize = messages[:-5] if len(messages) > 5 else []
+        if not to_summarize:
             return ""
-        
-        # Por ahora, simplemente retornamos los últimos 5 mensajes como "resumen"
-        recent = messages[-5:]
-        summary = "\n".join([f"{m['role']}: {m['content'][:100]}" for m in recent])
-        
-        # TODO: Integrar con MiniMax para generar resumen inteligente
-        # prompt = f"Resume esta conversación en español:\n{summary}"
-        # summary = await llm_client.chat(prompt)
-        
+
+        # Build a compact representation for the LLM
+        conv_text = "\n".join([
+            f"{m['role']}: {m['content'][:200]}" for m in to_summarize
+        ])
+
+        try:
+            from app.agents.llm_router import llm_router
+
+            summary_prompt = (
+                "Resume esta conversacion de WhatsApp con un asistente inmobiliario "
+                "en Argentina. Incluye SOLO datos utiles para continuar la conversacion: "
+                "que busca el usuario (tipo de propiedad, zona, presupuesto, operacion), "
+                "que propiedades vio (IDs), si agendo visita, si pidio fotos, "
+                "y cualquier preferencia o restriccion mencionada. "
+                "Se conciso, maximo 4 lineas. No incluyas saludos ni cortesias.\n\n"
+                f"Conversacion:\n{conv_text}\n\nResumen:"
+            )
+
+            response = await llm_router.chat(
+                message=summary_prompt,
+                system_prompt="Eres un asistente que resume conversaciones.",
+                max_tokens=200,
+                temperature=0.3,
+            )
+
+            if response and len(response.strip()) > 10:
+                summary = f"[Resumen de conversacion anterior]\n{response.strip()}"
+                await self.save_conversation_summary(phone, summary)
+                logger.info(f"[Memory] Generated LLM summary for {phone[-4:]} ({len(response)} chars)")
+                return summary
+
+        except Exception as e:
+            logger.warning(f"[Memory] LLM summarization failed, using fallback: {e}")
+
+        # Fallback: simple concatenation
+        recent = to_summarize[-5:]
+        summary = "[Resumen]\n" + "\n".join([
+            f"{m['role']}: {m['content'][:100]}" for m in recent
+        ])
         await self.save_conversation_summary(phone, summary)
         return summary
+
+    # ── v2.0 Sliding window: recent messages + summary ──────────────────
+
+    async def get_messages_with_summary(self, phone: str) -> list[dict]:
+        """
+        v2.0: Returns last 5 full messages + a summary of older messages.
+
+        This keeps the context window stable regardless of conversation length.
+        Returns a list of message dicts ready for the LLM.
+        """
+        messages = await self.get_recent_messages(phone, limit=50)
+
+        if len(messages) <= 10:
+            return messages  # Short conversation, return all
+
+        # Get cached summary, or generate one
+        summary = await self.get_conversation_summary(phone)
+        if not summary or len(summary) < 20:
+            summary = await self.summarize_conversation(phone)
+
+        # Return: summary as system message + last 5 full messages
+        result = []
+        if summary:
+            result.append({
+                "role": "system",
+                "content": summary,
+            })
+
+        result.extend(messages[-5:])
+        return result
     
     # =========================================================================
     # LIMPIEZA

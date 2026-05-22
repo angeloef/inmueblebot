@@ -31,6 +31,7 @@ class LLMResponse:
         usage: dict = None,
         provider: str = "openai",
         error: str = None,
+        structured: Any = None,  # v2.0: parsed AgentResponse
     ):
         self.content = content
         self.tool_calls = tool_calls or []
@@ -38,6 +39,7 @@ class LLMResponse:
         self.usage = usage or {}
         self.provider = provider
         self.error = error
+        self.structured = structured  # v2.0: AgentResponse or None
 
     @property
     def has_tool_calls(self):
@@ -97,6 +99,7 @@ class LLMRouter:
         max_tokens=None,
         forced_provider=None,
         response_format=None,
+        structured_response: bool = False,  # v2.0: enforce AgentResponse schema
     ):
         temperature = temperature if temperature is not None else self._default_temperature
         max_tokens = max_tokens or self._default_max_tokens
@@ -106,10 +109,6 @@ class LLMRouter:
             "model": self._model,
             "messages": messages,
         }
-        # Reasoning models (gpt-5.x) use max_completion_tokens and
-        # only support temperature=default (1.0), so we omit temperature.
-        # Non-reasoning models (gpt-4.x, gpt-4.4-mini, etc.) use
-        # the standard max_tokens and support custom temperature.
         if self._model.startswith("gpt-5."):
             kwargs["max_completion_tokens"] = max_tokens
         else:
@@ -120,6 +119,17 @@ class LLMRouter:
             kwargs["tool_choice"] = "auto"
         if response_format:
             kwargs["response_format"] = response_format
+
+        # v2.0: Structured output — enforce AgentResponse JSON schema
+        # When tools are present, native tool_calls take precedence.
+        # When no tool_calls, the model's text output is parsed as AgentResponse.
+        if structured_response:
+            from app.agents.schemas import AGENT_RESPONSE_JSON_SCHEMA
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": AGENT_RESPONSE_JSON_SCHEMA,
+            }
+            logger.debug("[OpenAI] v2.0 structured output enabled (AgentResponse schema)")
 
         last_error = None
 
@@ -136,7 +146,32 @@ class LLMRouter:
                 )
                 latency = time.time() - start
                 logger.info(f"[OpenAI] respuesta en {latency:.1f}s")
-                return self._parse_response(response, latency)
+                llm_resp = self._parse_response(response, latency)
+
+                # v2.0: Parse structured AgentResponse from text content
+                if structured_response and not llm_resp.has_tool_calls and llm_resp.content:
+                    from app.agents.schemas import AgentResponse
+                    try:
+                        parsed = json.loads(llm_resp.content)
+                        llm_resp.structured = AgentResponse.model_validate(parsed)
+                        logger.info(
+                            f"[OpenAI] v2.0 structured: action={llm_resp.structured.action} "
+                            f"confidence={llm_resp.structured.confidence}"
+                        )
+                    except (json.JSONDecodeError, Exception) as e:
+                        logger.warning(
+                            f"[OpenAI] v2.0 structured parse failed: {e}. "
+                            f"Raw content: {llm_resp.content[:200]}"
+                        )
+                        # Build fallback inline to avoid import-in-except issues
+                        llm_resp.structured = AgentResponse(
+                            action="respond",
+                            response="Disculpá, tuve un problema técnico. ¿Podrías repetirme lo que necesitás?",
+                            confidence=0.0,
+                            reasoning=f"Parse error: {str(e)[:100]}",
+                        )
+
+                return llm_resp
 
             except asyncio.TimeoutError:
                 last_error = f"Timeout despues de {self._timeout}s"

@@ -266,22 +266,29 @@ async def receive_webhook(request: Request):
 
             messages = value.get("messages", [])
             if messages:
-                # Return 200 OK immediately, process in background
-                # to prevent Meta from timing out and retrying the webhook
-                async def _safe_process(messages):
+                # v2.0: Enqueue to Redis for async worker processing
+                # Return 200 OK immediately — worker picks it up
+                for msg in messages:
                     try:
-                        await process_messages(messages)
+                        from app.core.message_queue import enqueue_message
+                        phone = msg.get("from", "")
+                        text = msg.get("text", {}).get("body", "")
+                        if not text:
+                            mtype = msg.get("type", "")
+                            if mtype == "image":
+                                text = msg.get("image", {}).get("caption", "") or "[Imagen]"
+                            elif mtype == "button":
+                                text = msg.get("button", {}).get("payload", "") or msg.get("button", {}).get("id", "")
+                            elif mtype == "interactive":
+                                interactive = msg.get("interactive", {})
+                                if interactive.get("type") == "button_reply":
+                                    text = interactive.get("button_reply", {}).get("id", "")
+                                elif interactive.get("type") == "list_reply":
+                                    text = interactive.get("list_reply", {}).get("id", "")
+                        if phone and text:
+                            await enqueue_message(phone, text)
                     except Exception as e:
-                        logger.error(f"FATAL: process_messages crashed: {e}")
-                        logger.error(traceback.format_exc())
-                        # Save to dead-letter queue for retry
-                        try:
-                            from app.core.memory import memory_manager
-                            await memory_manager.save_dead_letter(messages, error=str(e))
-                        except Exception as dl_err:
-                            logger.error(f"Dead-letter save also failed: {dl_err}")
-
-                asyncio.ensure_future(_safe_process(messages))
+                        logger.error(f"[Webhook] Enqueue failed: {e}")
 
     return {"status": "ok"}
 

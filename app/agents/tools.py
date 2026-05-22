@@ -1751,45 +1751,162 @@ def format_property_details(prop) -> str:
     return format_property(prop)
 
 
-async def execute_tool(tool_name: str, arguments: dict, phone: str = None) -> str:
+async def execute_tool(tool_name: str, arguments: dict, phone: str = None):
     """
     Ejecuta una herramienta por nombre con sus argumentos.
-    
+
+    v2.0: Returns a typed dataclass (ToolResult) instead of a raw string.
+    Call .to_json() for the LLM context, .user_message for the user response.
+
     Args:
         tool_name: Nombre de la herramienta
         arguments: Argumentos de la herramienta
         phone: Número de teléfono del usuario (para algunas herramientas)
-    
+
     Returns:
-        Resultado de la ejecución como string
+        One of: SearchResult, DetailResult, ScheduleResult, etc.
+        All have .to_json() -> str and .user_message -> str
     """
     if tool_name not in TOOL_FUNCTIONS:
-        return f"Herramienta '{tool_name}' no encontrada."
-    
+        from app.agents.tool_results import SimpleResult
+        return SimpleResult(
+            action="error",
+            success=False,
+            user_message=f"Herramienta '{tool_name}' no encontrada.",
+        )
+
     func = TOOL_FUNCTIONS[tool_name]
-    
+
     try:
         if phone and tool_name in ["update_user_preferences", "get_user_preferences", "save_lead_info"]:
             arguments["phone"] = phone
-        
+
         if tool_name == "search_properties":
-            result = await func(arguments, phone=phone)
+            raw = await func(arguments, phone=phone)
         elif tool_name == "recommend_properties":
-            result = await func(arguments)
+            raw = await func(arguments)
         elif tool_name == "get_property_details":
-            result = await func(**arguments)
+            raw = await func(**arguments)
         elif tool_name in ["schedule_visit", "reschedule_appointment", "cancel_appointment", "get_my_appointments", "request_human_assistance"]:
-            result = await func(phone=phone, **arguments)
+            raw = await func(phone=phone, **arguments)
         else:
-            result = await func(**arguments)
-        
-        return result
+            raw = await func(**arguments)
+
+        return _wrap_tool_result(tool_name, raw, arguments)
+
     except TypeError as e:
         logger.error(f"Error de tipos en {tool_name}: {e}")
-        return f"Error al ejecutar {tool_name}: argumentos inválidos."
+        from app.agents.tool_results import SimpleResult
+        return SimpleResult(
+            action="error",
+            success=False,
+            user_message=f"Error al ejecutar {tool_name}: argumentos inválidos.",
+        )
     except Exception as e:
         logger.error(f"Error ejecutando {tool_name}: {e}")
-        return f"Error al ejecutar {tool_name}: {str(e)}"
+        from app.agents.tool_results import SimpleResult
+        return SimpleResult(
+            action="error",
+            success=False,
+            user_message=f"Error al ejecutar {tool_name}: {str(e)}",
+        )
+
+
+def _wrap_tool_result(tool_name: str, raw: str, arguments: dict):
+    """v2.0: Wrap a raw string tool result in a typed dataclass.
+
+    Extracts structured data from the raw string where possible.
+    For now, the user_message IS the raw string (backward compat).
+    The LLM receives both the structured metadata AND the user_message.
+    """
+    from app.agents.tool_results import (
+        SearchResult, DetailResult, ScheduleResult,
+        AppointmentListResult, AppointmentActionResult,
+        ImageResult, FAQResult, SimpleResult,
+        PropertySummary,
+    )
+
+    if tool_name in ("search_properties", "refine_search", "recommend_properties"):
+        # Extract property count from formatted output (counts 📍 markers)
+        prop_count = raw.count("📍") if raw else 0
+        return SearchResult(
+            properties=[],  # structured extraction deferred to later phase
+            total_count=prop_count,
+            criteria_applied=arguments,
+            fallback_applied="NO_RESULTS" not in raw if raw else True,
+            user_message=raw,
+        )
+
+    if tool_name == "get_property_details":
+        return DetailResult(
+            property=None,  # structured extraction deferred
+            description="",
+            image_count=0,
+            user_message=raw,
+        )
+
+    if tool_name == "schedule_visit":
+        # Parse the raw string for status signals
+        status: str = "needs_date"
+        if "Cita Agendada" in raw or "<!--CONFIRMED:" in raw:
+            status = "confirmed"
+        elif "domingo" in raw.lower() or "fuera de horario" in raw.lower():
+            status = "rejected"
+        elif "nombre" in raw.lower() and "apellido" in raw.lower():
+            status = "needs_name"
+        elif "hora" in raw.lower():
+            status = "needs_time"
+
+        return ScheduleResult(
+            status=status,
+            property_id=str(arguments.get("property_id", "")),
+            date=arguments.get("date_str"),
+            time=arguments.get("time_str"),
+            user_message=raw,
+        )
+
+    if tool_name in ("reschedule_appointment", "cancel_appointment"):
+        action = "rescheduled" if tool_name == "reschedule_appointment" else "cancelled"
+        success = "Cita Reprogramada" in raw or "Cita Cancelada" in raw or "<!--CONFIRMED:" in raw
+        return AppointmentActionResult(
+            action=action,
+            success=success,
+            appointment_id=arguments.get("appointment_id", ""),
+            user_message=raw,
+        )
+
+    if tool_name == "get_my_appointments":
+        return AppointmentListResult(
+            appointments=[],
+            count=raw.count("<!--ID:") if raw else 0,
+            user_message=raw,
+        )
+
+    if tool_name == "get_property_images":
+        return ImageResult(
+            property_id=str(arguments.get("property_id", "")),
+            image_urls=[],
+            count=0,
+            user_message=raw,
+        )
+
+    if tool_name == "get_faq_answer":
+        has_answer = bool(raw and raw.strip() and
+                         "no tengo información" not in raw.lower() and
+                         raw.strip() not in ("{}", "[]"))
+        return FAQResult(
+            question=arguments.get("question", ""),
+            answer=raw,
+            found=has_answer,
+            user_message=raw,
+        )
+
+    # Default: SimpleResult for handoff, preferences, etc.
+    return SimpleResult(
+        action=tool_name,
+        success=True,
+        user_message=raw,
+    )
 
 
 __all__ = [

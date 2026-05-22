@@ -77,6 +77,28 @@ services:
       retries: 3
       start_period: 10s
 
+  # v2.0 Chat Worker — async message processor
+  chat_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inmueblebot-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/inmueblebot
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+      - ./credentials:/app/credentials
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m app.workers.chat_worker
+
   # Streamlit Chat UI
   streamlit:
     build:

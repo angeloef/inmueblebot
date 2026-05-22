@@ -425,6 +425,25 @@ async def serve_logo():
     return JSONResponse(status_code=404, content={"detail": "Logo not found"})
 
 
+# ── Health checks (v2.0) ──────────────────────────────────────────────────
+
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """Simple health check."""
+    return {"status": "ok"}
+
+
+@app.get("/health/workers", include_in_schema=False)
+async def health_workers():
+    """Worker queue health."""
+    try:
+        from app.core.message_queue import check_health as queue_health
+        qh = await queue_health()
+        return qh
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
+
+
 # ── Routers ─────────────────────────────────────────────────────────────────
 
 # WhatsApp webhook

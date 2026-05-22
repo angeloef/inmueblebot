@@ -39,13 +39,26 @@ from app.core.config import get_settings
 
 
 class ConversationStateEnum(str, Enum):
-    """Estados posibles de la conversación."""
+    """Estados posibles de la conversación — v2.0 expanded state map."""
     IDLE = "idle"
     QUALIFYING = "qualifying"
     SEARCHING = "searching"
     VIEWING_PROPERTY = "viewing_property"
+    # ── Scheduling substates (v2.0) ──
+    SCHEDULING_ASK_DATE = "scheduling_ask_date"
+    SCHEDULING_ASK_TIME = "scheduling_ask_time"
+    SCHEDULING_CONFIRM = "scheduling_confirm"
+    SCHEDULING_ASK_NAME = "scheduling_ask_name"
+    # ── Legacy scheduling state (deprecated, maps to SCHEDULING_ASK_DATE) ──
     BOOKING = "booking"
+    # ── Post-scheduling ──
     COMPLETED = "completed"
+    # ── Appointment management ──
+    APPOINTMENT_MANAGEMENT = "appointment_management"
+    # ── FAQ ──
+    FAQ = "faq"
+    # ── Escalation ──
+    OUT_OF_SCOPE = "out_of_scope"
     HANDOFF = "handoff"
     HUMAN_ASSISTANCE = "human_assistance"
 
@@ -69,12 +82,16 @@ class ConversationState:
         ConversationStateEnum.IDLE: [
             ConversationStateEnum.QUALIFYING,
             ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.FAQ,
+            ConversationStateEnum.OUT_OF_SCOPE,
             ConversationStateEnum.HANDOFF,
             ConversationStateEnum.HUMAN_ASSISTANCE,
             ConversationStateEnum.IDLE,
         ],
         ConversationStateEnum.QUALIFYING: [
             ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.FAQ,
+            ConversationStateEnum.OUT_OF_SCOPE,
             ConversationStateEnum.QUALIFYING,
             ConversationStateEnum.HANDOFF,
             ConversationStateEnum.HUMAN_ASSISTANCE,
@@ -82,22 +99,59 @@ class ConversationState:
         ],
         ConversationStateEnum.SEARCHING: [
             ConversationStateEnum.VIEWING_PROPERTY,
-            ConversationStateEnum.QUALIFYING,
             ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.QUALIFYING,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.SCHEDULING_ASK_TIME,
+            ConversationStateEnum.OUT_OF_SCOPE,
             ConversationStateEnum.HANDOFF,
             ConversationStateEnum.HUMAN_ASSISTANCE,
             ConversationStateEnum.IDLE,
         ],
         ConversationStateEnum.VIEWING_PROPERTY: [
-            ConversationStateEnum.BOOKING,
+            ConversationStateEnum.VIEWING_PROPERTY,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
             ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.FAQ,
+            ConversationStateEnum.OUT_OF_SCOPE,
             ConversationStateEnum.HANDOFF,
             ConversationStateEnum.HUMAN_ASSISTANCE,
             ConversationStateEnum.IDLE,
         ],
+        ConversationStateEnum.SCHEDULING_ASK_DATE: [
+            ConversationStateEnum.SCHEDULING_ASK_TIME,
+            ConversationStateEnum.VIEWING_PROPERTY,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.OUT_OF_SCOPE,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        ConversationStateEnum.SCHEDULING_ASK_TIME: [
+            ConversationStateEnum.SCHEDULING_CONFIRM,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.SCHEDULING_ASK_TIME,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        ConversationStateEnum.SCHEDULING_CONFIRM: [
+            ConversationStateEnum.IDLE,
+            ConversationStateEnum.COMPLETED,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.SCHEDULING_ASK_NAME,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        ConversationStateEnum.SCHEDULING_ASK_NAME: [
+            ConversationStateEnum.SCHEDULING_CONFIRM,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        # ── Legacy BOOKING maps to SCHEDULING_ASK_DATE ──
         ConversationStateEnum.BOOKING: [
             ConversationStateEnum.COMPLETED,
             ConversationStateEnum.VIEWING_PROPERTY,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.SCHEDULING_ASK_TIME,
             ConversationStateEnum.IDLE,
             ConversationStateEnum.HANDOFF,
             ConversationStateEnum.HUMAN_ASSISTANCE,
@@ -105,12 +159,104 @@ class ConversationState:
         ConversationStateEnum.COMPLETED: [
             ConversationStateEnum.IDLE,
             ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.QUALIFYING,
+        ],
+        ConversationStateEnum.APPOINTMENT_MANAGEMENT: [
+            ConversationStateEnum.IDLE,
+            ConversationStateEnum.SCHEDULING_ASK_DATE,
+            ConversationStateEnum.SCHEDULING_ASK_TIME,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        ConversationStateEnum.FAQ: [
+            ConversationStateEnum.IDLE,
+            ConversationStateEnum.QUALIFYING,
+            ConversationStateEnum.SEARCHING,
+            ConversationStateEnum.FAQ,
+            ConversationStateEnum.HANDOFF,
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+        ],
+        ConversationStateEnum.OUT_OF_SCOPE: [
+            ConversationStateEnum.HUMAN_ASSISTANCE,
+            ConversationStateEnum.IDLE,
         ],
         ConversationStateEnum.HANDOFF: [
             ConversationStateEnum.IDLE,
         ],
         ConversationStateEnum.HUMAN_ASSISTANCE: [
             ConversationStateEnum.IDLE,
+        ],
+    }
+
+    # ── State → Allowed Tools (v2.0 tool gating) ──
+    STATE_TOOLS = {
+        ConversationStateEnum.IDLE: [],
+        ConversationStateEnum.QUALIFYING: [
+            "search_properties",
+            "get_faq_answer",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.SEARCHING: [
+            "search_properties",
+            "get_property_details",
+            "get_property_images",
+            "refine_search",
+            "recommend_properties",
+            "update_user_preferences",
+            "get_faq_answer",
+        ],
+        ConversationStateEnum.VIEWING_PROPERTY: [
+            "get_property_details",
+            "get_property_images",
+            "compare_properties",
+            "update_user_preferences",
+            "get_faq_answer",
+        ],
+        ConversationStateEnum.SCHEDULING_ASK_DATE: [
+            "schedule_visit",
+            "get_property_details",
+            "get_property_images",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.SCHEDULING_ASK_TIME: [
+            "schedule_visit",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.SCHEDULING_CONFIRM: [
+            "schedule_visit",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.SCHEDULING_ASK_NAME: [
+            "schedule_visit",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.BOOKING: [
+            "schedule_visit",
+            "get_property_details",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.COMPLETED: [
+            "search_properties",
+            "get_faq_answer",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.APPOINTMENT_MANAGEMENT: [
+            "get_my_appointments",
+            "reschedule_appointment",
+            "cancel_appointment",
+            "get_property_details",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.FAQ: [
+            "get_faq_answer",
+            "update_user_preferences",
+        ],
+        ConversationStateEnum.OUT_OF_SCOPE: [],
+        ConversationStateEnum.HANDOFF: [
+            "request_human_assistance",
+        ],
+        ConversationStateEnum.HUMAN_ASSISTANCE: [
+            "request_human_assistance",
         ],
     }
     
@@ -211,7 +357,10 @@ class ConversationState:
         try:
             r = await self._get_redis_with_retry()
             key = f"user:{phone}:state"
-            
+            prev_key = f"user:{phone}:previous_state"
+
+            # Save current state as previous before overwriting
+            await r.setex(prev_key, self.STATE_TTL, current_state)
             await r.setex(key, self.STATE_TTL, new_state)
             
             if context:
@@ -267,6 +416,46 @@ class ConversationState:
         except Exception as e:
             logger.warning(f"Redis no disponible para previous_state: {e}")
             return ConversationStateEnum.IDLE.value
+
+    # ── v2.0 methods ──────────────────────────────────────────────────────────
+
+    def get_legal_transitions(self, state: str) -> list[str]:
+        """Devuelve los estados a los que se puede transicionar legalmente desde `state`."""
+        try:
+            from_enum = ConversationStateEnum(state)
+            allowed = self.VALID_TRANSITIONS.get(from_enum, [])
+            return [s.value for s in allowed]
+        except ValueError:
+            return [ConversationStateEnum.IDLE.value]
+
+    def get_tools_for_state(self, state: str) -> list[str]:
+        """Devuelve la lista de herramientas permitidas para un estado dado."""
+        try:
+            from_enum = ConversationStateEnum(state)
+            return self.STATE_TOOLS.get(from_enum, [])
+        except ValueError:
+            return []
+
+    async def transition(
+        self,
+        phone: str,
+        from_state: str,
+        to_state: str,
+        context: Optional[dict] = None,
+    ) -> bool:
+        """Realiza una transición de estado con validación completa.
+
+        Returns True si la transición fue exitosa, False si fue rechazada.
+        No lanza excepción — loguea advertencias y rechaza silenciosamente.
+        """
+        if not self._is_valid_transition(from_state, to_state):
+            logger.warning(
+                f"[StateMachine] Transición ilegal rechazada: "
+                f"{from_state} -> {to_state} para {phone}"
+            )
+            return False
+
+        return await self.set_state(phone, to_state, context=context)
 
     async def close(self):
         """Cierra conexión Redis."""

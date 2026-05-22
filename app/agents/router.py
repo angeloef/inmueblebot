@@ -99,9 +99,18 @@ def detect_stage(
     ]):
         return STAGE_APPOINTMENT
 
-    # 5. Agendando — el flag pending_scheduling está activo
+    # 5. Agendando — el flag pending_scheduling está activo O keywords de scheduling
     pending = context.get("pending_scheduling_info")
     if pending and isinstance(pending, dict) and pending.get("active"):
+        return STAGE_SCHEDULING
+
+    # 5b. Agendando — keywords explícitos (ANTES de search para evitar falsos positivos)
+    if any(kw in msg_lower for kw in [
+        "agendar", "agendame", "agendá", "coordinar visita",
+        "reservar turno", "reservar cita", "pedir turno",
+        "ir a ver", "conocer la propiedad", "visitarla",
+        "quiero verla", "cuándo puedo ir", "cuando puedo ir",
+    ]):
         return STAGE_SCHEDULING
 
     # 6. FAQ / consulta sobre la inmobiliaria
@@ -223,7 +232,7 @@ def is_out_of_scope(message: str) -> bool:
 
     patterns = [
         # Price negotiations / appraisals
-        r"cu[aá]nto (vale|sale|cuesta|sale)\s*(una|un|la|el)?\s*(casa|depto|propiedad|terreno)",
+        r"cu[aá]nto (vale|sale|cuesta|sale)\s*(una|un|la|el|mi|mis)?\s*(casa|depto|propiedad|terreno)",
         r"mejor (oferta|precio|propuesta)",
         r"negoci[oó]r",
         r"pod[eé]s (bajar|re[bv]ajar|hacer descuento)",
@@ -291,3 +300,65 @@ def should_handoff(context: dict, capability: Optional[str] = None) -> bool:
         if context.get(f"{cap}_fail_count", 0) >= FAIL_THRESHOLD:
             return True
     return False
+
+
+# ── v2.0: Stage → State Machine state mapping ───────────────────────────────
+
+_STAGE_TO_STATE: dict[str, str] = {
+    STAGE_GREETING: "qualifying",
+    STAGE_SEARCH: "searching",
+    STAGE_DETAIL: "viewing_property",
+    STAGE_SCHEDULING: "scheduling_ask_date",
+    STAGE_APPOINTMENT: "appointment_management",
+    STAGE_FAQ: "faq",
+    STAGE_OUT_OF_SCOPE: "out_of_scope",
+    STAGE_HANDOFF: "human_assistance",
+    # STAGE_GENERAL: no mapping — defers to classifier
+}
+
+
+def propose_transition(
+    message: str,
+    current_state: str,
+    context: dict,
+    history: Optional[List[dict]] = None,
+) -> tuple[Optional[str], str]:
+    """
+    v2.0: Propone el siguiente estado basado en regex + estado actual.
+
+    Returns:
+        (proposed_state: str | None, confidence: "high" | "low")
+
+        - (state, "high"): regex matched with high confidence, proceed immediately
+        - (state, "low"): regex matched but uncertain, run classifier to confirm
+        - (None, "low"): no regex match, defer to classifier
+    """
+    stage = detect_stage(message, context, history)
+
+    # ── High-confidence matches ──
+    if stage == STAGE_GREETING:
+        return ("qualifying", "high")
+
+    if stage == STAGE_OUT_OF_SCOPE:
+        return ("out_of_scope", "high")
+
+    if stage == STAGE_HANDOFF:
+        return ("human_assistance", "high")
+
+    if stage == STAGE_APPOINTMENT:
+        return ("appointment_management", "high")
+
+    if stage == STAGE_FAQ:
+        return ("faq", "high")
+
+    if stage == STAGE_SEARCH:
+        return ("searching", "high")
+
+    if stage == STAGE_DETAIL:
+        return ("viewing_property", "high")
+
+    if stage == STAGE_SCHEDULING:
+        return ("scheduling_ask_date", "high")
+
+    # ── STAGE_GENERAL (fallback) → low confidence, defer to classifier ──
+    return (None, "low")

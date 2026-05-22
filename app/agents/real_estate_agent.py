@@ -10,19 +10,11 @@ from loguru import logger
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
 from app.agents.prompts import get_system_prompt, TOOL_DEFINITIONS
-from app.agents.router import detect_stage, detect_capability, should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
+from app.agents.router import should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
 
-
-FORBIDDEN_RESPONSE_WORDS = [
-    "llamando a la función", "llamando a", "calling", "calling function",
-    "print(", "tool_call", "tool(",
-    "function(", "search_properties(", "get_property_details(",
-    "arguments", "debug", "depurando", "logging",
-    "[function", "[tool", "tool call"
-]
 
 
 class RealEstateAgent:
@@ -121,21 +113,41 @@ class RealEstateAgent:
                 except Exception as e:
                     logger.warning(f"[Agent] Could not load existing appointments: {e}")
 
-                if self._detect_handoff_request(user_message):
-                    from app.services.handoff_service import handoff_service
-                    handoff_result = await handoff_service.trigger_handoff(phone, "user_requested")
-                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
-                    return {
-                        "response_text": handoff_result.get("message", "Un agente humano te contactará pronto."),
-                        "rich_content": {"action": "handoff_initiated"},
-                        "tools_used": ["request_human_assistance"],
-                        "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
-                    }
+                # v2.0: Handoff detection is now handled by the regex router
+                # (propose_transition → out_of_scope / human_assistance states)
 
-                # ── Router-based handoff: out-of-scope or fail count threshold ──
-                _router_stage = detect_stage(user_message, merged_context, history)
-                _router_capability = detect_capability(user_message, merged_context)
-                if _router_stage == STAGE_OUT_OF_SCOPE:
+                # ── v2.0: State-driven routing with regex-first transition proposal ──
+                from app.agents.router import propose_transition as _regex_propose
+                from app.agents.router import STAGE_OUT_OF_SCOPE, STAGE_HANDOFF, should_handoff
+
+                _current_sm_state = merged_context.get("current_state", "idle")
+                _proposed_state, _proposal_conf = _regex_propose(
+                    user_message, _current_sm_state, merged_context, history
+                )
+
+                if _proposal_conf == "high" and _proposed_state:
+                    # Regex router is confident — do the state transition now
+                    _transitioned = await state_machine.transition(
+                        phone, _current_sm_state, _proposed_state
+                    )
+                    if _transitioned:
+                        _next_state = _proposed_state
+                    else:
+                        # Illegal transition — fall back to current state
+                        _next_state = _current_sm_state
+                    logger.info(
+                        f"[Agent] v2.0 regex router: {_current_sm_state} -> {_next_state} "
+                        f"(conf={_proposal_conf}, transitioned={_transitioned})"
+                    )
+                else:
+                    # Low confidence — keep current state, classifier handles intent
+                    _next_state = _current_sm_state
+                    logger.info(
+                        f"[Agent] v2.0 regex router: staying in {_next_state} (conf={_proposal_conf})"
+                    )
+
+                # ── Out-of-scope / handoff: still fast-path these ──
+                if _next_state == "out_of_scope":
                     from app.services.handoff_service import handoff_service
                     _reason = "out_of_scope"
                     _message = (
@@ -151,7 +163,7 @@ class RealEstateAgent:
                         "tools_used": ["request_human_assistance"],
                         "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
                     }
-                if _router_stage == STAGE_HANDOFF or should_handoff(merged_context):
+                if _next_state == "human_assistance" or should_handoff(merged_context):
                     from app.services.handoff_service import handoff_service
                     _reason = "fail_threshold_reached"
                     _message = (
@@ -166,6 +178,21 @@ class RealEstateAgent:
                         "tools_used": ["request_human_assistance"],
                         "next_state": ConversationStateEnum.HUMAN_ASSISTANCE.value
                     }
+
+                # ── v2.0: Gate tools by state ──
+                _allowed_tools = state_machine.get_tools_for_state(_next_state)
+                if _allowed_tools:
+                    _gated_tools = [
+                        t for t in self.tools
+                        if t["function"]["name"] in _allowed_tools
+                    ]
+                    logger.info(
+                        f"[Agent] v2.0 tool gating: state={_next_state}, "
+                        f"allowed={_allowed_tools}, "
+                        f"before={len(self.tools)} after={len(_gated_tools)}"
+                    )
+                else:
+                    _gated_tools = self.tools  # STATE_TOOLS empty → no gating (IDLE, OUT_OF_SCOPE)
 
                 # Get last_shown_properties from context for reference
                 last_props = merged_context.get("last_shown_properties", [])
@@ -221,8 +248,8 @@ class RealEstateAgent:
                     user_context=user_prefs,
                     phone=phone,
                     last_shown_properties=last_props if last_props else None,
-                    stage=_router_stage,
-                    capability=_router_capability,
+                    stage=_next_state,
+                    capability=None,
                 )
 
                 # ── Scheduling nudge: fetch pending scheduling ONCE per turn ──────────────────
@@ -324,15 +351,16 @@ class RealEstateAgent:
                 reschedule_failures = 0
                 for iteration in range(self.MAX_TOOL_CALLS):
                     break_out = False
-                    # Phase 4: Add detailed logging for tools + intent detection
-                    tools_count = len(self.tools) if self.tools else 0
+                    # v2.0: Use state-gated tools
+                    tools_count = len(_gated_tools) if _gated_tools else 0
 
                     logger.info(f"[Agent] Iteration {iteration + 1}: Sending {tools_count} tools to LLM")
 
                     llm_response = await self.llm.ainvoke(
                         messages=messages,
-                        tools=self.tools,
-                        temperature=0.7
+                        tools=_gated_tools,
+                        temperature=0.7,
+                        structured_response=True,  # v2.0: enforce AgentResponse schema
                     )
 
                     # Token usage logging
@@ -359,50 +387,82 @@ class RealEstateAgent:
                         logger.info(f"[Agent] No tools called (provider: {llm_response.provider})")
 
                     if not llm_response.has_tool_calls:
-                        # Anti-hallucination guard: if this was a property search but the LLM
-                        # never called the search tool, don't accept a made-up response.
-                        search_was_called = any(
-                            "search_properties" in t or "recommend_properties" in t
-                            for t in tools_used
-                        )
-                        if intent == Intent.PROPERTY_SEARCH and not search_was_called:
-                            logger.warning("[Agent] PROPERTY_SEARCH intent but no search tool called — blocking potential hallucination")
-                            response_text = "No encontré propiedades disponibles con esos criterios en este momento. Podés intentar con otros filtros o contactar a un agente."
-                        else:
-                            # Search hallucination guard: if LLM said "voy a buscar"/"buscando"
-                            # without actually calling search, force it to search.
-                            _resp_lower = (llm_response.content or "").lower()
-                            _said_search = any(p in _resp_lower for p in
-                                ["voy a buscar", "vamos a buscar", "vamos a encontrar",
-                                 "buscando", "déjame buscar", "un momento",
-                                 "voy a revisar", "voy a consultar",
-                                 "voy a fijarme", "voy a ver", "vamos a ver",
-                                 "voy a chequear"])
-                            _user_wants_search = any(p in (user_message or "").lower() for p in
-                                ["busco", "buscar", "buscando", "quiero", "necesito",
-                                 "departamento", "casa", "alquilar", "alquiler",
-                                 "comprar", "terreno", "propiedad", "ph",
-                                 "departamento", "local", "oficina"])
+                        # v2.0: Use structured AgentResponse for text responses
+                        if llm_response.structured is not None:
+                            sr = llm_response.structured
+                            logger.info(
+                                f"[Agent] v2.0 structured: action={sr.action} "
+                                f"confidence={sr.confidence:.2f}"
+                            )
+                            if sr.action == "respond":
+                                # v2.0: Progressive escalation based on confidence
+                                _base_response = sr.response or llm_response.content or ""
+                                if sr.confidence < 0.5:
+                                    # Very low confidence — handoff with context
+                                    logger.warning(
+                                        f"[Agent] Low confidence ({sr.confidence:.2f}) — escalating to human"
+                                    )
+                                    from app.services.handoff_service import handoff_service
+                                    handoff_result = await handoff_service.trigger_handoff(
+                                        phone, "low_confidence"
+                                    )
+                                    response_text = handoff_result.get(
+                                        "message",
+                                        "Te paso con un asesor humano que te va a ayudar mejor."
+                                    )
+                                elif sr.confidence < 0.7:
+                                    # Moderate confidence — ask clarifying question instead
+                                    _question = sr.question or "¿Podrías darme más detalles?"
+                                    logger.info(
+                                        f"[Agent] Moderate confidence ({sr.confidence:.2f}) — asking clarification"
+                                    )
+                                    response_text = _question
+                                elif sr.confidence < 0.9:
+                                    # Good but not great — append confirmation prompt
+                                    response_text = _base_response + "\n\n¿Entendí bien tu consulta?"
+                                    logger.info(
+                                        f"[Agent] Good confidence ({sr.confidence:.2f}) — confirming with user"
+                                    )
+                                else:
+                                    # High confidence — respond autonomously
+                                    response_text = _base_response
+                                break
+                            elif sr.action == "ask_question":
+                                response_text = sr.question or sr.response or llm_response.content or ""
+                                break
+                            # action="tool_call" with no native tool_calls: fall through
+                            # to check if the structured tool_calls list has content
+                            if sr.tool_calls:
+                                # Convert structured tool_calls to native format
+                                from app.agents.llm_router import ToolCall as TCR
+                                llm_response.tool_calls = [
+                                    TCR(name=tc.name, arguments=tc.arguments)
+                                    for tc in sr.tool_calls
+                                ]
+                                # Don't break — fall through to tool execution below
+                            else:
+                                response_text = sr.response or llm_response.content or ""
+                                break
 
-                            if _said_search and _user_wants_search and not search_was_called:
-                                # Only force search if the LLM is NOT asking a question.
-                                # If the response has "?" or "¿", the LLM is guiding the conversation (REGLA 7).
-                                _is_question = "?" in _resp_lower or "¿" in _resp_lower
-                                if not _is_question:
-                                    # Force-inject a system message: correct the LLM
-                                    logger.warning("[Agent] LLM said 'voy a buscar' but didn't call search_properties — forcing corrective message")
-                                    messages.append({
-                                        "role": "system",
-                                        "content": (
-                                            "ACABÁS DE DECIR 'voy a buscar' pero NO llamaste search_properties(). "
-                                            "Las búsquedas NO existen en tu texto. Solo existen si llamás la función. "
-                                            "LLAMÁ search_properties() AHORA con los criterios del usuario. "
-                                            "No sigas conversando sin buscar."
-                                        )
-                                    })
-                                    continue  # Go to next iteration (force the LLM to search)
-
-                            response_text = llm_response.content
+                        # v2.0: Anti-hallucination guard (simplified — structured output
+                        # makes "voy a buscar" patterns impossible. Only check intent mismatch.)
+                        if not response_text:
+                            search_was_called = any(
+                                "search_properties" in t or "recommend_properties" in t
+                                for t in tools_used
+                            )
+                            if intent == Intent.PROPERTY_SEARCH and not search_was_called:
+                                logger.warning(
+                                    "[Agent] PROPERTY_SEARCH intent but no search tool called "
+                                    "— blocking potential hallucination"
+                                )
+                                response_text = (
+                                    "No encontré propiedades disponibles con esos criterios "
+                                    "en este momento. Podés intentar con otros filtros o "
+                                    "contactar a un agente."
+                                )
+                            else:
+                                response_text = llm_response.content or ""
                         break
 
                     # PHASE 1.5: Execute tool calls
@@ -413,73 +473,10 @@ class RealEstateAgent:
                         logger.info(f"Tool call: {tool_name} con args: {tool_args}")
                         tools_used.append(tool_name)
 
-                        # PROPERTY_ID GUARD: if LLM calls schedule_visit with wrong property_id,
-                        # force it to use selected_property_id from context
-                        if tool_name == "schedule_visit":
-                            try:
-                                _ctx = await memory_manager.get_user_context(phone)
-                                _selected = _ctx.get("selected_property_id")
-                                _arg_pid = tool_args.get("property_id")
-                                if _selected and _arg_pid and str(_selected) != str(_arg_pid):
-                                    logger.warning(
-                                        f"[Agent] 🛡️ PROPERTY_ID MISMATCH: LLM wants property_id={_arg_pid} "
-                                        f"but selected_property_id={_selected}. FORCING CORRECTION."
-                                    )
-                                    # Override the LLM's property_id with the active one
-                                    tool_args["property_id"] = str(_selected)
-                                    tool_args["_corrected_from"] = str(_arg_pid)
-                            except Exception as _e:
-                                logger.warning(f"[Agent] Property guard error (non-fatal): {_e}")
-
-                        # SCHEDULING GUARD: if user just said "id 18" or similar without scheduling intent,
-                        # and LLM called schedule_visit, suppress it and redirect to get_property_details
-                        # Skip guard if already in booking flow or user is giving time
-                        _skip_guard = False
-                        _current_state = merged_context.get("current_state", "")
-                        # Skip if in booking OR viewing_property (bot just showed photos/details and offered visit)
-                        if _current_state in (ConversationStateEnum.BOOKING.value,
-                                              ConversationStateEnum.VIEWING_PROPERTY.value):
-                            _skip_guard = True
-                        # Skip guard if there's an active pending scheduling context
-                        if _turn_pending_sched.get("active") and _turn_pending_sched.get("property_id"):
-                            _skip_guard = True
-                            logger.info(f"[Agent] 🛡️ SCHEDULING GUARD skipped: active pending_scheduling for {phone}")
-                        if user_message:
-                            _time_patterns = ["a las", "para las", "a la", "para la", ":00", "pm", "am"]
-                            if any(p in user_message.lower() for p in _time_patterns):
-                                _skip_guard = True
-                            if any(c.isdigit() for c in user_message) and len(user_message.strip().split()) <= 3:
-                                # "a las 5", "para las 4pm", "17:00" — clear time response
-                                _skip_guard = True
-                            # Pure affirmative response (user confirming a scheduling offer the bot made)
-                            _affirmative_words = {
-                                "sí", "si", "dale", "ok", "bueno", "claro", "perfecto",
-                                "genial", "ya", "vamos", "por", "favor", "porfa", "obvio",
-                                "sip", "sep", "vá", "va", "bárbaro", "barbaro"
-                            }
-                            import re as _re
-                            _msg_words = set(_re.sub(r'[^a-záéíóúüñ\s]', '', user_message.lower()).split())
-                            if _msg_words and _msg_words.issubset(_affirmative_words):
-                                _skip_guard = True
-                                logger.info(f"[Agent] 🛡️ SCHEDULING GUARD skipped: pure affirmative '{user_message}'")
-                        if not _skip_guard and tool_name == "schedule_visit" and user_message:
-                            _sched_keywords = ["agendar", "visita", "visitar", "cita", "reservar",
-                                               "reserva", "turno", "conocer", "ver en persona",
-                                               "ir a ver", "recorrer", "mostrar"]
-                            _user_lower = user_message.lower()
-                            _has_sched_intent = any(kw in _user_lower for kw in _sched_keywords)
-                            _is_simple_ref = any(phrase in _user_lower for phrase in [
-                                "id ", "el id", "muestrame", "pasame datos", "ver la",
-                                "quiero ver", "dame info", "informacion de", "detalles de"
-                            ])
-                            if not _has_sched_intent and (_is_simple_ref or len(_user_lower.strip().split()) <= 3):
-                                logger.warning(
-                                    f"[Agent] 🛡️ SCHEDULING GUARD: user message '{user_message[:50]}' "
-                                    f"has no scheduling keywords. Suppressing schedule_visit → redirecting to details."
-                                )
-                                # Replace with a get_property_details call instead
-                                tool_name = "get_property_details"
-                                tool_args = {"property_id": tool_args.get("property_id", "")}
+                        # v2.0: Property ID guard and Scheduling guard REMOVED.
+                        # State-gated tools (Phase 1) prevent the LLM from calling
+                        # schedule_visit in non-scheduling states, and structured
+                        # output (Phase 2) prevents hallucinated property IDs.
 
                         tool_result = await execute_tool(
                             tool_name=tool_name,
@@ -487,23 +484,28 @@ class RealEstateAgent:
                             phone=phone
                         )
 
+                        # v2.0: Typed tool result — extract user_message and JSON for LLM
+                        _result_user_msg = getattr(tool_result, 'user_message', str(tool_result))
+                        _result_json = tool_result.to_json() if hasattr(tool_result, 'to_json') else str(tool_result)
+
                         # SHORT-CIRCUIT: if tool result IS the final answer, skip remaining LLM iterations
-                        if isinstance(tool_result, str):
-                            # General: any tool result with <!--CONFIRMED:--> is a final confirmation message
-                            if "<!--CONFIRMED:" in tool_result:
-                                response_text = tool_result
+                        if hasattr(tool_result, 'user_message'):
+                            _umsg = _result_user_msg
+                            if "<!--CONFIRMED:" in _umsg:
+                                response_text = _umsg
                                 logger.info(f"[Agent] Short-circuit: {tool_name} succeeded with confirmation, using result directly")
                                 break_out = True
                                 break
-                            if tool_name == "cancel_appointment" and "Cita Cancelada" in tool_result:
-                                response_text = tool_result
+                            if tool_name == "cancel_appointment" and "Cita Cancelada" in _umsg:
+                                response_text = _umsg
                                 logger.info(f"[Agent] Short-circuit: {tool_name} succeeded, using confirmation directly")
                                 break_out = True
                                 break
 
                         # Reschedule failure counter: max 3 consecutive failures
                         if tool_name == "reschedule_appointment":
-                            if not isinstance(tool_result, str) or "<!--CONFIRMED:" not in str(tool_result):
+                            _umsg = _result_user_msg
+                            if "<!--CONFIRMED:" not in _umsg:
                                 reschedule_failures += 1
                                 logger.warning(
                                     f"[Agent] reschedule_appointment failed ({reschedule_failures}/3): "
@@ -515,22 +517,19 @@ class RealEstateAgent:
                                     break_out = True
                                     break
                             else:
-                                # Success — reset counter
                                 reschedule_failures = 0
 
-                        # Detect tool loops — same tool called twice consecutively = break
+                        # Detect tool loops
                         if len(tools_used) >= 2:
                             last_two = tools_used[-2:]
                             if last_two[0] == last_two[1]:
                                 logger.warning(f"[Agent] Loop detected: same tool called twice: {last_two[0]}. Breaking.")
-                                # If it's a scheduling tool, propagate success or break failure loop
                                 if last_two[0] in ("schedule_visit", "reschedule_appointment", "cancel_appointment"):
-                                    result_str = str(tool_result)
-                                    if "<!--CONFIRMED:" in result_str or "Cita Reprogramada" in result_str or "Cita Cancelada" in result_str or "Cita Agendada" in result_str:
-                                        response_text = tool_result
+                                    _umsg = _result_user_msg
+                                    if "<!--CONFIRMED:" in _umsg or "Cita Reprogramada" in _umsg or "Cita Cancelada" in _umsg or "Cita Agendada" in _umsg:
+                                        response_text = _umsg
                                         logger.info(f"[Agent] Scheduling tool {last_two[0]} succeeded despite loop — confirmation used")
                                     else:
-                                        # Tool failed and is looping — break BOTH loops with friendly fallback
                                         response_text = "Lo siento, estoy teniendo dificultades técnicas con la reprogramación. Por favor intentá de nuevo más tarde o contactá a un asesor."
                                         logger.info(f"[Agent] Scheduling tool {last_two[0]} failed in loop — breaking outer loop too")
                                     break_out = True
@@ -556,89 +555,45 @@ class RealEstateAgent:
                             "role": "tool",
                             "name": tool_name,
                             "tool_call_id": f"call_{iteration}",
-                            "content": str(tool_result)
+                            "content": _result_json  # v2.0: structured JSON for LLM
                         })
 
-                        # ── Plan B: Inject contextual next-step guidance ──
+                        # ── v2.0 Plan B: Contextual next-step guidance ──
+                        # Simplified — tool results carry structured data (total_count, status, etc.)
                         if tool_name == "search_properties":
-                            # Count results by counting 📍 markers in the returned string
-                            _result_str = str(tool_result)
-                            _n_results = _result_str.count("📍")
-                            # Extract only the 📍 property lines (no header/footer from tool)
-                            _prop_lines = [l for l in _result_str.split("\n") if l.startswith("📍")]
-                            _prop_lines_str = "\n".join(_prop_lines)
+                            _n_results = getattr(tool_result, 'total_count', 0)
                             _pt = tool_args.get("property_type", "").lower()
 
-                            if _n_results == 1:
-                                # Single result — build singular header + extract title
-                                _title = _prop_lines[0][2:].split(" — ")[0].strip() if _prop_lines else ""
-                                _close = (
-                                    f"¿Querés saber algo más de {_title}?"
-                                    if _title
-                                    else "¿Querés saber algo más de esta propiedad?"
-                                )
-                                _sing_map = {
-                                    "terreno": "el terreno",
-                                    "casa": "la casa",
-                                    "departamento": "el departamento",
-                                    "ph": "el PH",
-                                }
-                                _tipo_sing = _sing_map.get(_pt, "la propiedad")
-                                _loc = tool_args.get("location", "")
-                                _header = (
-                                    f"Este es {_tipo_sing} que tenemos en {_loc}:"
-                                    if _loc
-                                    else f"Este es {_tipo_sing} que tenemos disponible:"
-                                )
-                                messages.append({
-                                    "role": "system",
-                                    "content": (
-                                        f"Respondé EXACTAMENTE con este texto, sin modificar ni agregar nada:\n\n"
-                                        f"{_header}\n"
-                                        f"{_prop_lines_str}\n"
-                                        f"{_close}"
-                                    )
-                                })
-                            elif _n_results == 0:
+                            if _n_results == 0:
                                 messages.append({
                                     "role": "system",
                                     "content": (
                                         "No se encontraron propiedades con esos criterios. "
                                         "Ofrecele alternativas al usuario: ajustar zona, presupuesto, "
-                                        "o tipo de propiedad. Ej: 'No tengo propiedades con esos "
-                                        "filtros. ¿Probamos con otra zona o subimos un poco el presupuesto?'"
+                                        "o tipo de propiedad."
                                     )
                                 })
                             else:
-                                # Multiple results — build plural header + closing
                                 _plural_map = {
-                                    "terreno": ("terrenos", "los"),
-                                    "casa": ("casas", "las"),
-                                    "departamento": ("departamentos", "los"),
-                                    "ph": ("PH", "los"),
+                                    "terreno": ("terrenos", "los"), "casa": ("casas", "las"),
+                                    "departamento": ("departamentos", "los"), "ph": ("PH", "los"),
                                 }
                                 _noun, _art = _plural_map.get(_pt, ("propiedades", "las"))
                                 _loc = tool_args.get("location", "")
                                 _header = (
                                     f"Estos son {_art} {_noun} que tenemos en {_loc}:"
-                                    if _loc
-                                    else f"Estos son {_art} {_noun} que tenemos disponibles:"
+                                    if _loc else f"Estos son {_art} {_noun} que tenemos disponibles:"
                                 )
                                 messages.append({
                                     "role": "system",
                                     "content": (
-                                        f"Respondé EXACTAMENTE con este texto, sin modificar ni agregar nada:\n\n"
-                                        f"{_header}\n"
-                                        f"{_prop_lines_str}\n"
-                                        f"¿Querés más información de alguno de estos {_noun}?"
+                                        f"El tool result contiene {_n_results} propiedades en structured JSON. "
+                                        f"Usa los datos del tool result para responder. "
+                                        f"Header sugerido: '{_header}'. "
+                                        f"Cerrando sugerido: 'Queres mas informacion de alguno de estos {_noun}?'"
                                     )
                                 })
                         elif tool_name == "get_property_details":
-                            _prop_info = ""
-                            if isinstance(tool_result, str) and tool_result:
-                                _first_line = tool_result.split('\n')[0] if '\n' in tool_result else tool_result[:60]
-                                _prop_info = f" Los datos REALES: {_first_line}."
-                            # Context-aware follow-up: don't ask what user already told us
                             _u_lower = (user_message or "").lower()
                             _wants_photos = any(kw in _u_lower for kw in ["foto", "imagen", "imag"])
                             _wants_visit  = any(kw in _u_lower for kw in ["visita", "agendar", "coordinar", "reservar"])
@@ -647,31 +602,19 @@ class RealEstateAgent:
                                 _follow_up = (
                                     f"El usuario ya pidio FOTOS y VISITA. "
                                     f"Llama get_property_images(property_id={_pid_det}) ahora. "
-                                    "Luego pregunta dia y horario para schedule_visit. "
-                                    "NO preguntes 'fotos o visita' — ya lo dijo."
+                                    "Luego pregunta dia y horario para schedule_visit."
                                 )
                             elif _wants_photos:
-                                _follow_up = (
-                                    f"El usuario ya pidio las fotos. "
-                                    f"Llama get_property_images(property_id={_pid_det}) AHORA. NO preguntes."
-                                )
+                                _follow_up = f"El usuario ya pidio las fotos. Llama get_property_images(property_id={_pid_det}) AHORA."
                             elif _wants_visit:
-                                _follow_up = (
-                                    "El usuario ya quiere coordinar visita. "
-                                    "Preguntale dia y horario directamente."
-                                )
+                                _follow_up = "El usuario ya quiere coordinar visita. Preguntale dia y horario directamente."
                             else:
-                                _follow_up = (
-                                    "Presentalos de forma conversacional y preguntale "
-                                    "si le gustaria ver las fotos o coordinar una visita. "
-                                    "Ej: '¿Te gustaria ver las fotos o preferis coordinar una visita?'"
-                                )
+                                _follow_up = "Presenta los datos y pregunta si quiere ver fotos o coordinar una visita."
                             messages.append({
                                 "role": "system",
                                 "content": (
-                                    "Acabas de recibir los DATOS REALES de la propiedad en el tool result. "
-                                    "Usa EXACTAMENTE esos datos. "
-                                    f"{_prop_info} {_follow_up}"
+                                    "Acabas de recibir los DATOS REALES de la propiedad en el tool result (structured JSON). "
+                                    f"Usa EXACTAMENTE esos datos. {_follow_up}"
                                 )
                             })
                         elif tool_name == "compare_properties":
@@ -979,8 +922,7 @@ class RealEstateAgent:
                 if not response_text:
                     response_text = "Tuve un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?"
 
-                # Clean response - remove forbidden words/patterns
-                response_text = self._clean_response(response_text, tools_used)
+                # v2.0: Structured output eliminates need for _clean_response
 
                 # Anti-hallucination guard: detect if LLM claims actions (schedule/cancel/etc.)
                 # without having called the corresponding tool. If detected, replace with honesty.
@@ -1413,57 +1355,6 @@ class RealEstateAgent:
         except Exception as e:
             logger.error("Error guardando preferencias: %s", e)
     
-    def _clean_response(self, response: str, tools_used: List[str]) -> str:
-        """Limpia la respuesta de texto técnico/prohibido."""
-        if not tools_used:
-            return response
-        
-        response_lower = response.lower()
-        
-        # Check for forbidden patterns
-        has_forbidden = any(word in response_lower for word in FORBIDDEN_RESPONSE_WORDS)
-        
-        if has_forbidden:
-            logger.warning(f"[Agent] ⚠️ Response contains forbidden words, cleaning...")
-            
-            # Try to regenerate with a clean message
-            logger.info(f"[Agent] Regenerating clean response...")
-        
-        # Replace common bad patterns with cleaner text
-        cleaned = response
-        
-        # Remove "I'm calling..." / "Llamando a la función..." patterns
-        import re
-        patterns_to_remove = [
-            r".*\(Llamando\s+a\s+la\s+función.*\)",
-            r".*\(calling.*function.*\)",
-            r".*\(search_properties.*\)",
-            r"print\(.*\)",
-            r"\[tool[_\s]call.*\]",
-        ]
-        
-        for pattern in patterns_to_remove:
-            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
-        
-        # If still contains forbidden, try to extract just the property list
-        if any(word in cleaned.lower() for word in FORBIDDEN_RESPONSE_WORDS):
-            # Extract property-like content
-            lines = cleaned.split('\n')
-            good_lines = []
-            for line in lines:
-                if not any(word in line.lower() for word in FORBIDDEN_RESPONSE_WORDS):
-                    good_lines.append(line)
-            cleaned = '\n'.join(good_lines)
-        
-        # Final cleanup - trim excessive whitespace
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-        cleaned = cleaned.strip()
-        
-        if cleaned != response:
-            logger.info(f"[Agent] ✓ Response cleaned: {len(cleaned)} chars")
-        
-        return cleaned or "Encontré propiedades que pueden interesarte. ¿Querés más detalles?"
-
     @staticmethod
     def _detect_action_hallucination(text: str, tools_used: List[str]) -> str:
         """
