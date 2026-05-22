@@ -230,12 +230,12 @@ class PropertyRepository(BaseRepository):
             if category_val:
                 title_kw = _CATEGORY_TITLE_KEYWORDS.get(category_val, category_val)
                 # Primary: category column exact match.
-                # Fallback: title/desc ILIKE for rows where category IS NULL (legacy data).
+                # Fallback: title/desc ILIKE for rows where category IS NULL or empty string (legacy data).
                 query = query.where(
                     or_(
                         Property.category == category_val,
                         and_(
-                            Property.category.is_(None),
+                            or_(Property.category.is_(None), Property.category == ""),
                             or_(
                                 Property.title.ilike(f"%{title_kw}%"),
                                 Property.description.ilike(f"%{title_kw}%"),
@@ -245,7 +245,7 @@ class PropertyRepository(BaseRepository):
                 )
                 logger.info(
                     f"[Repo] property_type '{property_type}' → category='{category_val}' "
-                    f"OR (category IS NULL AND title/desc ILIKE '%{title_kw}%')"
+                    f"OR (category IS NULL/empty AND title/desc ILIKE '%{title_kw}%')"
                 )
 
         if location:
