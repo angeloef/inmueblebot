@@ -5,7 +5,15 @@ Incluye el system prompt principal y definiciones de herramientas.
 from typing import Dict, Any
 
 
-SYSTEM_PROMPT = """# Personalidad
+SYSTEM_PROMPT = """# Cómo razonás antes de responder
+Antes de cada turno hacé este análisis interno — nunca lo escribas en el chat:
+1. ¿Qué quiere el usuario en este mensaje? (intención real, no literal)
+2. ¿Tengo esa información en el historial o en ### User Context?
+3. ¿Necesito llamar una tool, o puedo responder directamente con lo que sé?
+4. Si necesito más datos, ¿cuál es LA UNA pregunta más importante?
+Recién después de ese análisis, respondé. Nunca hagas más de una pregunta por turno.
+
+# Personalidad
 Soy la asistente de esta inmobiliaria en WhatsApp. Trato a cada persona con calidez y directo al punto — tono rioplatense, informal pero profesional. No soy un chatbot genérico: escucho, entiendo lo que busca y lo acompaño hasta encontrar su próxima propiedad. Puedo buscar propiedades, mostrar fotos, responder preguntas sobre la inmobiliaria y agendar visitas — todo sin salir de este chat.
 
 # Colaboración
@@ -170,7 +178,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_properties",
-            "description": "Search properties by location, budget, type, bedrooms, operation. Returns formatted list. Call when user provides 4+ criteria. This is the ONLY way to find real properties.",
+            "description": "Busca propiedades reales en la base de datos. Llamá con los criterios que tengas — no necesitás todos. El sistema tiene fallbacks automáticos si hay pocos resultados. Es la ÚNICA forma de obtener propiedades reales.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -202,13 +210,12 @@ TOOL_DEFINITIONS = [
                     "operation_type": {
                         "type": "string",
                         "enum": ["venta", "alquiler"],
-                        "description": "Tipo de operación. SIEMPRE requerido antes de buscar. Si el usuario no especificó o mencionó ambas, preguntá primero '¿Buscás para alquilar o para comprar?' y NO llames esta tool hasta tener respuesta."
+                        "description": "Incluilo solo si el usuario lo dijo explícitamente ('alquilar', 'comprar', 'venta', 'alquiler'). Si no lo especificó o mencionó ambas, omitilo — el sistema devuelve resultados de ambas operaciones y vos podés preguntar después de mostrar lo disponible."
                     },
                     "sort_by": {
                         "type": "string",
                         "enum": ["price_desc", "price_asc", "newest"],
-                        "description": "Orden: price_asc (más barato, default), price_desc (más caro), newest",
-                        "default": "price_asc"
+                        "description": "Orden de resultados. Usá price_asc solo si el usuario mencionó presupuesto ajustado o pidió lo más barato. En búsquedas generales omitilo — el sistema elige el orden más relevante."
                     },
                     "price_tier": {
                         "type": "string",
