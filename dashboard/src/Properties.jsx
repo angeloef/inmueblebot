@@ -826,14 +826,11 @@ export default function Properties({ onOpenClient, initialProperty }) {
         <NewPropertyModal
           mode="edit"
           initialData={editing}
-          saving={updateProperty.isPending}
-          onClose={() => !updateProperty.isPending && setEditing(null)}
+          onClose={() => setEditing(null)}
           onSave={(data) => {
+            setEditing(null);
             updateProperty.mutate({ id: editing.id, ...data }, {
-              onSuccess: () => {
-                setEditing(null);
-                pushToast({ text: 'Propiedad actualizada.' });
-              },
+              onSuccess: () => pushToast({ text: 'Propiedad actualizada.' }),
               onError: () => pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }),
             });
           }}
