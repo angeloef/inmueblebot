@@ -216,7 +216,7 @@ TOOL_DEFINITIONS = [
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Resultados máximos (default 8)",
+                         "description": "Cantidad de resultados a devolver. DEFAULT 10. Pasá limit=10 siempre para mostrar el máximo de opciones. Si el usuario pide 'más opciones', llamá de nuevo con limit=10.",
                         "default": 10
                     }
                 },
