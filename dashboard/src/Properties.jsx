@@ -764,7 +764,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
                   <div style={{padding:12,display:'flex',flexDirection:'column',gap:6}}>
                     <div style={{fontSize:13,fontWeight:600,color:'var(--fg-primary)'}}>{p.addr}</div>
                     <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh}</div>
-                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
+                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.type && p.type + ' · '}{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
                     <div className="tabular" style={{fontSize:14,fontWeight:600,marginTop:2,display:'flex',alignItems:'baseline',gap:5}}>
                       {fmtCurrency(p.price, p.currency)}
                       <span style={{fontSize:10,fontWeight:500,color:'var(--fg-muted)',letterSpacing:'0.02em'}}>{p.currency}</span>
