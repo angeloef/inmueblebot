@@ -293,7 +293,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             from app.core.hybrid.location import location_parser
 
             loc_result = await location_parser.parse(raw_loc, {})
-            if loc_result.value:
+            if loc_result.value and loc_result.confidence >= 0.5:
                 search_criteria["location"] = loc_result.value
                 logger.info(
                     "[TOOL] Location: raw=%r -> parsed=%r (parser=%s, conf=%.2f)",
@@ -302,6 +302,15 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                     loc_result.parser_used,
                     loc_result.confidence,
                 )
+            elif loc_result.value and loc_result.confidence < 0.5:
+                # Location is too vague ("zona céntrica", "cerca del río", "zona norte", etc.)
+                # Searching with this would return 0 results every time.
+                # Signal the LLM to ask the user for a specific city instead.
+                logger.info(
+                    "[TOOL] Location confidence too low (%.2f) for %r — returning LOCATION_UNCLEAR",
+                    loc_result.confidence, raw_loc,
+                )
+                return f"LOCATION_UNCLEAR: '{raw_loc}'"
             else:
                 search_criteria["location"] = raw_loc
                 logger.info("[TOOL] Location parser fallo, usando raw: %r", raw_loc)
