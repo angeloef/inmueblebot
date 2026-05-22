@@ -68,8 +68,27 @@ def detect_stage(
     if is_out_of_scope(message):
         return STAGE_OUT_OF_SCOPE
 
-    # 3. Saludo inicial (primera interacción)
-    if is_new_session:
+    # 3. Saludo inicial — solo si el primer mensaje ES realmente un saludo
+    GREETING_KW = ["hola", "buenas", "buen día", "buen dia", "buenas tardes",
+                   "buenas noches", "buenos días", "buenos dias", "qué tal",
+                   "que tal", "hello", "hi", "hey", "saludos"]
+    _is_just_greeting = is_new_session and not any(
+        kw in msg_lower for kw in [
+            # Search keywords
+            "busco", "buscando", "quiero", "necesito", "hay", "tienen",
+            "alquilar", "alquiler", "comprar", "compra", "venta",
+            "departamento", "casa", "terreno",
+            "propiedad", "inmueble",
+            "presupuesto", "precio",
+            # Appointment keywords
+            "reprogramar", "cancelar", "mis citas",
+            # FAQ keywords
+            "horario", "dirección", "teléfono",
+            # Scheduling kewords
+            "visita", "agendar",
+        ]
+    ) and any(kw in msg_lower for kw in GREETING_KW)
+    if _is_just_greeting:
         return STAGE_GREETING
 
     # 4. Gestión de turnos (reschedule/cancel) — palabras clave fuertes
