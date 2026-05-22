@@ -266,8 +266,9 @@ async def receive_webhook(request: Request):
 
             messages = value.get("messages", [])
             if messages:
-                # v2.0: Enqueue to Redis for async worker processing
-                # Return 200 OK immediately — worker picks it up
+                # v2.0: Dual-path processing
+                # 1. Enqueue to Redis for durability (worker can pick up if server restarts)
+                # 2. Process inline for immediate response (Render has no worker process)
                 for msg in messages:
                     try:
                         from app.core.message_queue import enqueue_message
@@ -289,6 +290,15 @@ async def receive_webhook(request: Request):
                             await enqueue_message(phone, text)
                     except Exception as e:
                         logger.error(f"[Webhook] Enqueue failed: {e}")
+
+                # Inline processing fallback (Render has no worker process)
+                async def _safe_process(msgs):
+                    try:
+                        await process_messages(msgs)
+                    except Exception as e:
+                        logger.error(f"[Webhook] process_messages crashed: {e}")
+
+                asyncio.ensure_future(_safe_process(messages))
 
     return {"status": "ok"}
 
