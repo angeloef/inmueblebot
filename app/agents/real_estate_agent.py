@@ -144,7 +144,6 @@ class RealEstateAgent:
                         "así no tenés que repetir todo."
                     )
                     handoff_result = await handoff_service.trigger_handoff(phone, _reason)
-                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
                     return {
                         "response_text": _message,
                         "rich_content": {"action": "handoff_initiated", "reason": _reason},
@@ -160,7 +159,6 @@ class RealEstateAgent:
                         "Dejame pasarle el contexto de lo que veníamos hablando."
                     )
                     handoff_result = await handoff_service.trigger_handoff(phone, _reason)
-                    await state_machine.set_state(phone, ConversationStateEnum.HUMAN_ASSISTANCE.value)
                     return {
                         "response_text": _message,
                         "rich_content": {"action": "handoff_initiated", "reason": _reason},

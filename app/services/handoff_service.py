@@ -40,13 +40,13 @@ class HandoffService:
         
         try:
             logger.info(f"Generando resumen de conversación para {phone}")
-            
+
             context = await memory_manager.get_user_context(phone)
-            recent_messages = context.get("recent_messages", [])[-10:]
-            preferences = context.get("preferences", {})
+            recent_messages = await memory_manager.get_recent_messages(phone, limit=10)
+            preferences = await memory_manager.get_user_preferences(phone) or {}
             lead_score = context.get("lead_score", 0)
             current_state = context.get("current_state", "unknown")
-            
+
             user_info = preferences.get("name", "Cliente")
             location = preferences.get("location_preferences", "No especificada")
             budget = preferences.get("budget_max")
