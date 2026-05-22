@@ -380,8 +380,8 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             except Exception as e:
                 logger.warning(f"[TOOL] Could not resolve price_tier '{price_tier}': {e}")
         
-        # Ensure limit is at least 2 for a focused first result set
-        search_criteria["limit"] = max(criteria.get("limit", 4), 2)
+        # Default limit: 8 results per search. Bot can request more/fewer.
+        search_criteria["limit"] = max(criteria.get("limit", 8), 2)
         logger.info(f"[TOOL] Limit final: {search_criteria['limit']}")
         
         logger.info("[TOOL] Llamando a property_service.search_properties...")
