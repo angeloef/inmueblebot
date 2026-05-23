@@ -77,7 +77,7 @@ for i in range(12):
     price = beds * random.randint(35000, 55000)
     properties.append({
         'id': i + 1,
-        'title': f"Departamento {'en ' + zone if random.random() > 0.3 else ''}{beds} amb",
+        'title': f"Departamento {'en ' + zone + ' ' if random.random() > 0.3 else ''}{beds} amb",
         'type': 'alquiler', 'category': 'departamento',
         'location': f"{make_street()}, {zone}, Oberá, Misiones",
         'price': price, 'currency': 'ARS',

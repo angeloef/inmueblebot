@@ -3,6 +3,7 @@ Herramientas del agente de bienes raíces.
 Funciones async que pueden ser llamadas por el LLM via tool calling.
 """
 import json
+import re
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from loguru import logger
@@ -220,10 +221,18 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
             location_clean = location
         location_clean = location_clean[:40] + "..." if len(location_clean) > 40 else location_clean
 
-        # Feature info
+        # Feature info — skip bedrooms if title already includes "X amb"
         feat_parts = []
-        if bedrooms:
+        _title_has_amb = bool(re.search(r'\d+\s*amb', title, re.IGNORECASE))
+        if bedrooms and not _title_has_amb:
             feat_parts.append(f"{bedrooms} ambiente{'s' if bedrooms > 1 else ''}")
+        # Show bathrooms and area (always useful, never redundant with title)
+        bathrooms = _get_attr(prop, "bathrooms")
+        area = _get_attr(prop, "area_m2")
+        if bathrooms:
+            feat_parts.append(f"{bathrooms} baño{'s' if bathrooms > 1 else ''}")
+        if area:
+            feat_parts.append(f"{area}m²")
 
         feature_str = " — ".join(feat_parts) if feat_parts else ""
 
