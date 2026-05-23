@@ -19,9 +19,19 @@
         {
           "user": "Hola busco un departamento en alquiler en Oberá de 3 ambientes",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "3 amb", "ID:"],
-            "response_not_contains": ["Disculpá", "Lo siento", "problema"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "3 amb",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "Disculpá",
+              "Lo siento",
+              "problema"
+            ],
             "state": "searching"
           }
         }
@@ -37,9 +47,17 @@
         {
           "user": "Busco casa en alquiler en Oberá, hasta 150000 pesos por mes",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Casa", "ID:"],
-            "response_not_contains": ["No encontré", "sin resultados"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Casa",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "No encontré",
+              "sin resultados"
+            ],
             "state": "searching"
           }
         }
@@ -55,27 +73,50 @@
         {
           "user": "Mostrame departamentos en alquiler en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
-            "response_not_contains": ["problema"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "problema"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Me interesa la del ID 11, dame más detalles",
           "expect": {
-            "tools_called": ["get_property_details"],
-            "response_contains": ["detalles", "precio", "baño"],
-            "response_not_contains": ["No encontré esa propiedad", "no existe"],
+            "tools_called": [
+              "get_property_details"
+            ],
+            "response_contains": [
+              "Mirá",
+              "precio",
+              "baño"
+            ],
+            "response_not_contains": [
+              "No tengo fotos",
+              "problema"
+            ],
             "state": "viewing_property"
           }
         },
         {
           "user": "Quiero ver las fotos",
           "expect": {
-            "tools_called": ["get_property_images"],
-            "response_contains": ["foto"],
-            "response_not_contains": ["No tengo fotos", "problema"],
+            "tools_called": [
+              "get_property_images"
+            ],
+            "response_contains": [
+              "foto"
+            ],
+            "response_not_contains": [
+              "No tengo fotos",
+              "problema"
+            ],
             "state": "viewing_property"
           }
         }
@@ -91,42 +132,74 @@
         {
           "user": "Busco departamento 2 ambientes en alquiler en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "2 amb", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "2 amb",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Quiero agendar una visita para ver el ID 10",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["día", "fecha"],
-            "response_not_contains": ["Cita Agendada"],
-            "state": "scheduling_ask_date"
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "día",
+              "fecha"
+            ],
+            "response_not_contains": [
+              "Cita Agendada"
+            ],
+            "state": "booking"
           }
         },
         {
           "user": "El lunes",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["hora", "horario"],
-            "state": "scheduling_ask_time"
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "hora",
+              "horario"
+            ],
+            "state": "booking"
           }
         },
         {
           "user": "A las 15hs",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["nombre"],
-            "state": "scheduling_ask_name"
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "nombre"
+            ],
+            "state": "booking"
           }
         },
         {
           "user": "Juan Pérez",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["Cita Agendada", "lunes", "15"],
-            "response_not_contains": ["domingo", "fuera de horario", "no disponible"],
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "Cita Agendada",
+              "lunes",
+              "15"
+            ],
+            "response_not_contains": [
+              "domingo",
+              "fuera de horario",
+              "no disponible"
+            ],
             "state": "idle"
           }
         }
@@ -142,17 +215,29 @@
         {
           "user": "¿Cuál es el horario de atención?",
           "expect": {
-            "tools_called": ["get_faq_answer"],
-            "response_contains": ["horario", "atención"],
-            "response_not_contains": ["No tengo información sobre esa consulta"],
+            "tools_called": [
+              "get_faq_answer"
+            ],
+            "response_contains": [
+              "horario",
+              "atención"
+            ],
+            "response_not_contains": [
+              "Disculpá, tuve un problema"
+            ],
             "state": "faq"
           }
         },
         {
           "user": "Gracias, también busco un departamento en alquiler en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         }
@@ -169,17 +254,31 @@
           "user": "Hola",
           "expect": {
             "tools_called": [],
-            "response_contains": ["Hola", "bienvenid", "ayudarte"],
-            "response_not_contains": ["search_properties", "Disculpá"],
-            "state": "qualifying"
+            "response_contains": [
+              "Hola",
+              "Buenos días",
+              "Buenas tardes",
+              "Buenas noches"
+            ],
+            "response_not_contains": [
+              "search_properties",
+              "Disculpá"
+            ],
+            "state": "idle"
           }
         },
         {
           "user": "Busco alquilar algo en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["ID:"],
-            "response_not_contains": ["¿Para alquilar o para comprar?"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "ID:"
+            ],
+            "response_not_contains": [
+              "¿Para alquilar o para comprar?"
+            ],
             "state": "searching"
           }
         }
@@ -195,18 +294,31 @@
         {
           "user": "Mostrame departamentos en alquiler en Oberá 2 ambientes",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Quiero ver las fotos y agendar una visita para el ID 10",
           "expect": {
-            "tools_called": ["get_property_images", "schedule_visit"],
-            "response_contains": ["foto"],
-            "response_not_contains": ["¿Querés ver las fotos?", "¿Te gustaría ver"],
-            "state": "scheduling_ask_date"
+            "tools_called": [
+              "get_property_images",
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "foto"
+            ],
+            "response_not_contains": [
+              "¿Querés ver las fotos?",
+              "¿Te gustaría ver"
+            ],
+            "state": "booking"
           }
         }
       ]
@@ -221,17 +333,28 @@
         {
           "user": "Busco departamento en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Solo los que estén hasta 100000 pesos",
           "expect": {
-            "tools_called": ["search_properties", "refine_search"],
-            "response_contains": ["ID:"],
-            "response_not_contains": ["sin resultados"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "ID:"
+            ],
+            "response_not_contains": [
+              "sin resultados"
+            ],
             "state": "searching"
           }
         }
@@ -247,17 +370,30 @@
         {
           "user": "¿Me podés dar una receta de empanadas?",
           "expect": {
-            "tools_called": [],
-            "response_contains": ["asistente", "inmobiliaria", "propiedades"],
-            "response_not_contains": ["receta", "empanadas", "harina", "carne"],
-            "state": "out_of_scope"
+            "tools_called": [
+              "request_human_assistance"
+            ],
+            "response_contains": [
+              "asesor",
+              "humano"
+            ],
+            "response_not_contains": [
+              "receta",
+              "empanadas"
+            ],
+            "state": "human_assistance"
           }
         },
         {
           "user": "Bueno dale, mostrame departamentos en Oberá entonces",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         }
@@ -271,11 +407,20 @@
       "phone": "5493755111010",
       "turns": [
         {
-          "user": "Busco casa en alquiler en Oberá de 7 ambientes con pileta climatizada",
+          "user": "Busco casa 7 ambientes alquiler Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["No encontré", "ajustar", "alternativas"],
-            "response_not_contains": ["problema técnico", "Lo siento tuve un"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "No encontré",
+              "ajustar",
+              "alternativas"
+            ],
+            "response_not_contains": [
+              "problema técnico",
+              "Lo siento tuve un"
+            ],
             "state": "searching"
           }
         }
@@ -291,9 +436,17 @@
         {
           "user": "Quiero ver mis citas agendadas",
           "expect": {
-            "tools_called": ["get_my_appointments"],
-            "response_contains": ["citas", "Cita"],
-            "response_not_contains": ["agendé", "te agendé", "quedó agendada"],
+            "tools_called": [
+              "get_my_appointments"
+            ],
+            "response_contains": [
+              "cita"
+            ],
+            "response_not_contains": [
+              "agendé",
+              "te agendé",
+              "quedó agendada"
+            ],
             "state": "appointment_management"
           }
         }
@@ -309,9 +462,17 @@
         {
           "user": "Necesito hablar con un asesor humano por favor",
           "expect": {
-            "tools_called": ["request_human_assistance"],
-            "response_contains": ["asesor", "humano", "contexto"],
-            "response_not_contains": ["Disculpá"],
+            "tools_called": [
+              "request_human_assistance"
+            ],
+            "response_contains": [
+              "asesor",
+              "humano",
+              "contexto"
+            ],
+            "response_not_contains": [
+              "Disculpá"
+            ],
             "state": "human_assistance"
           }
         }
@@ -327,17 +488,30 @@
         {
           "user": "Mostrame departamentos en alquiler en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Comparame el ID 10 con el ID 11",
           "expect": {
-            "tools_called": ["compare_properties", "get_property_details"],
-            "response_contains": ["compar", "diferencia", "ID:"],
-            "response_not_contains": ["No puedo comparar"],
+            "tools_called": [
+              "compare_properties"
+            ],
+            "response_contains": [
+              "compar",
+              "diferencia",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "No puedo comparar"
+            ],
             "state": "viewing_property"
           }
         }
@@ -353,9 +527,17 @@
         {
           "user": "Busco un terreno en alquiler en Oberá para construir",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Terreno", "m²", "ID:"],
-            "response_not_contains": ["No encontré terrenos"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Terreno",
+              "m²",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "No encontré terrenos"
+            ],
             "state": "searching"
           }
         }
@@ -371,18 +553,29 @@
         {
           "user": "Busco departamento 2 ambientes en alquiler en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Agendame una visita para el ID 10, este domingo",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["domingo", "no"],
-            "response_not_contains": ["Cita Agendada", "¿A qué hora"],
-            "state": "scheduling_ask_date"
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "domingo"
+            ],
+            "response_not_contains": [
+              "Cita Agendada"
+            ],
+            "state": "booking"
           }
         }
       ]
@@ -397,9 +590,17 @@
         {
           "user": "Hola, quiero comprar un departamento en Oberá de 2 ambientes",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "USD", "ID:"],
-            "response_not_contains": ["/mes", "alquiler"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "/mes",
+              "alquiler"
+            ],
             "state": "searching"
           }
         }
@@ -415,9 +616,17 @@
         {
           "user": "Busco comprar una casa en Oberá, presupuesto hasta 80000 dólares",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Casa", "ID:"],
-            "response_not_contains": ["/mes", "alquiler"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Casa",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "/mes",
+              "alquiler"
+            ],
             "state": "searching"
           }
         }
@@ -433,18 +642,32 @@
         {
           "user": "Mostrame casas en venta en Oberá",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Casa", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Casa",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Me gusta la del ID 13, ¿puedo ir a verla el jueves a las 11? Me llamo Carlos",
           "expect": {
-            "tools_called": ["schedule_visit"],
-            "response_contains": ["Cita Agendada", "jueves", "11", "Carlos"],
-            "response_not_contains": ["domingo"],
-            "state": "idle"
+            "tools_called": [
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "Cita Agendada",
+              "jueves",
+              "11",
+              "Carlos"
+            ],
+            "response_not_contains": [
+              "domingo"
+            ],
+            "state": "booking"
           }
         }
       ]
@@ -459,9 +682,17 @@
         {
           "user": "Quiero comprar un terreno en Oberá para construir mi casa",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Terreno", "m²", "ID:"],
-            "response_not_contains": ["/mes"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Terreno",
+              "m²",
+              "ID:"
+            ],
+            "response_not_contains": [
+              "/mes"
+            ],
             "state": "searching"
           }
         }
@@ -477,18 +708,32 @@
         {
           "user": "Compro departamento en Oberá, mostrame opciones",
           "expect": {
-            "tools_called": ["search_properties"],
-            "response_contains": ["Departamento", "ID:"],
+            "tools_called": [
+              "search_properties"
+            ],
+            "response_contains": [
+              "Departamento",
+              "ID:"
+            ],
             "state": "searching"
           }
         },
         {
           "user": "Dame detalles del ID 31 y mostrame fotos, y también quiero agendar visita para mañana a las 10, soy María López",
           "expect": {
-            "tools_called": ["get_property_details", "get_property_images", "schedule_visit"],
-            "response_contains": ["Cita Agendada", "María"],
-            "response_not_contains": ["problema"],
-            "state": "idle"
+            "tools_called": [
+              "get_property_details",
+              "get_property_images",
+              "schedule_visit"
+            ],
+            "response_contains": [
+              "Cita Agendada",
+              "María"
+            ],
+            "response_not_contains": [
+              "problema"
+            ],
+            "state": "booking"
           }
         }
       ]

@@ -1914,10 +1914,19 @@ def _wrap_tool_result(tool_name: str, raw: str, arguments: dict):
         )
 
     if tool_name == "get_property_images":
+        # Parse the JSON result to extract actual image URLs
+        image_urls = []
+        count = 0
+        try:
+            parsed = json.loads(raw)
+            image_urls = parsed.get("images", [])
+            count = len(image_urls)
+        except (json.JSONDecodeError, TypeError):
+            pass
         return ImageResult(
             property_id=str(arguments.get("property_id", "")),
-            image_urls=[],
-            count=0,
+            image_urls=image_urls,
+            count=count,
             user_message=raw,
         )
 
