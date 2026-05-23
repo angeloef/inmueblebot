@@ -7,11 +7,12 @@ Determina:
 - Si el mensaje está fuera de alcance
 - Si se debe hacer handoff por límite de reintentos
 
-NO es una llamada LLM — es regex + flags de estado. Rápido, determinista.
+Regex-first, LLM-fallback para casos ambiguos. Rápido, determinista.
 """
 
 import re
 from typing import Optional, List
+from loguru import logger
 
 # ── Etapas de conversación ─────────────────────────────────────────────────────
 
@@ -27,6 +28,83 @@ STAGE_GENERAL         = "CONVERSACION_GENERAL"
 STAGE_OUT_OF_SCOPE    = "OUT_OF_SCOPE"
 STAGE_HANDOFF         = "HANDOFF_REQUIRED"
 
+
+# ── v3.0: LLM FAQ classifier (regex-first, LLM-fallback) ────────────────────
+
+_FAQ_CLASSIFIER_MESSAGES = [
+    {
+        "role": "system",
+        "content": (
+            "Sos un clasificador de intencion. Responde SOLO con 'FAQ' o 'NO'.\\n"
+            "Responde 'FAQ' si el mensaje es una pregunta sobre el funcionamiento "
+            "de una inmobiliaria, el proceso de alquilar/comprar, requisitos, "
+            "documentacion, garantias, formas de pago, horarios, comisiones, o "
+            "cualquier tema operativo de una inmobiliaria.\\n"
+            "Responde 'NO' si el mensaje busca propiedades, agenda visitas, "
+            "gestiona turnos, o cualquier cosa que no sea una consulta informativa."
+        ),
+    },
+]
+
+
+async def is_likely_faq(message: str) -> bool:
+    """Quick LLM check: is this message an FAQ question about real estate?
+    
+    Used as fallback when regex can't determine if a message is FAQ or search.
+    Returns False on any error (graceful degradation to regex-only behavior).
+    """
+    try:
+        from app.agents.llm_router import llm_router
+        msgs = list(_FAQ_CLASSIFIER_MESSAGES)
+        msgs.append({"role": "user", "content": message[:300]})
+        resp = await llm_router.ainvoke(
+            messages=msgs,
+            tools=None,
+            temperature=0,
+            max_tokens=5,
+        )
+        result = (resp.content or "").strip().upper()
+        return "FAQ" in result
+    except Exception as e:
+        logger.warning(f"[Router] FAQ classifier failed: {e}")
+        return False
+
+
+async def is_legitimate_real_estate(message: str) -> bool:
+    """Quick LLM check: is this a legitimate real estate question that the
+    regex incorrectly flagged as out-of-scope?
+    
+    Used to override out-of-scope false positives (e.g., 'que opinas de la
+    escritura?' sounds like opinion but is actually about property title).
+    """
+    try:
+        from app.agents.llm_router import llm_router
+        msgs = [
+            {
+                "role": "system",
+                "content": (
+                    "Sos un clasificador. Responde SOLO 'SI' o 'NO'.\\n"
+                    "Responde 'SI' si el mensaje es una consulta legitima sobre "
+                    "el negocio inmobiliario (alquiler, compra, propiedades, "
+                    "visitas, tramites, precios, financiacion, etc.).\\n"
+                    "Responde 'NO' SOLO si el mensaje es claramente de otro rubro "
+                    "(recetas, medicina, tecnologia, deportes, clima, etc.)."
+                ),
+            },
+            {"role": "user", "content": message[:300]},
+        ]
+        resp = await llm_router.ainvoke(
+            messages=msgs,
+            tools=None,
+            temperature=0,
+            max_tokens=5,
+        )
+        result = (resp.content or "").strip().upper()
+        return "SI" in result
+    except Exception as e:
+        logger.warning(f"[Router] Out-of-scope override failed: {e}")
+        return False
+
 # ── Capacidades del bot ───────────────────────────────────────────────────────
 
 CAP_SEARCH    = "search"
@@ -41,7 +119,7 @@ ALL_CAPABILITIES = [CAP_SEARCH, CAP_DETAIL, CAP_SCHEDULE, CAP_APPOINT, CAP_FAQ, 
 FAIL_THRESHOLD = 2  # Intentos fallidos por capacidad antes de handoff
 
 
-def detect_stage(
+async def detect_stage(
     message: str,
     context: dict,
     history: Optional[List[dict]] = None,
@@ -68,7 +146,14 @@ def detect_stage(
 
     # 2. Fuera de alcance (se verifica temprano)
     if is_out_of_scope(message):
-        return STAGE_OUT_OF_SCOPE
+        # v3.0: LLM override — legitimate real estate questions that
+        # the regex incorrectly flagged (e.g., 'que opinas de la escritura?'
+        # contains 'opinás' but is actually about property titles)
+        if await is_legitimate_real_estate(message):
+            logger.info(f"[Router] Out-of-scope overridden by LLM: '{message[:80]}'")
+            # Don't return — fall through to FAQ/search detection below
+        else:
+            return STAGE_OUT_OF_SCOPE
 
     # 3. Saludo inicial — solo si el primer mensaje ES realmente un saludo
     GREETING_KW = ["hola", "buenas", "buen día", "buen dia", "buenas tardes",
@@ -123,6 +208,17 @@ def detect_stage(
         "abren", "cierran", "días de atención", "dias de atencion",
     ]):
         return STAGE_FAQ
+
+    # 6b. v3.0: LLM FAQ fallback — catches questions like
+    # "como serie el tema para ingresar a alquilar?" that don't match keywords
+    _question_patterns = ["?", "como ", "cómo ", "que ", "qué ", "cual ", "cuál ",
+                          "cuando ", "cuándo ", "donde ", "dónde ", "cuanto ",
+                          "cuánto ", "quien ", "quién ", "cuales ", "cuáles ",
+                          "seria ", "sería "]
+    if any(msg_lower.startswith(p) or p in msg_lower for p in _question_patterns):
+        if await is_likely_faq(message):
+            logger.info(f"[Router] FAQ detected by LLM: '{message[:80]}'")
+            return STAGE_FAQ
 
     # 7. Detalle de propiedad (check BEFORE search when active property exists)
     active_prop = context.get("selected_property_id") or context.get("active_property_id")
@@ -334,7 +430,7 @@ _STAGE_TO_STATE: dict[str, str] = {
 }
 
 
-def propose_transition(
+async def propose_transition(
     message: str,
     current_state: str,
     context: dict,
@@ -350,7 +446,7 @@ def propose_transition(
         - (state, "low"): regex matched but uncertain, run classifier to confirm
         - (None, "low"): no regex match, defer to classifier
     """
-    stage = detect_stage(message, context, history)
+    stage = await detect_stage(message, context, history)
 
     # ── High-confidence matches ──
     if stage == STAGE_GREETING:

@@ -121,7 +121,7 @@ class RealEstateAgent:
                 from app.agents.router import STAGE_OUT_OF_SCOPE, STAGE_HANDOFF, should_handoff
 
                 _current_sm_state = merged_context.get("current_state", "idle")
-                _proposed_state, _proposal_conf = _regex_propose(
+                _proposed_state, _proposal_conf = await _regex_propose(
                     user_message, _current_sm_state, merged_context, history
                 )
 
