@@ -471,7 +471,12 @@ class RealEstateAgent:
                                     )
                                     break
                             else:
-                                response_text = sr.response or llm_response.content or ""
+                                # action="tool_call" but no tool_calls — use response field,
+                                # but NEVER fall back to raw content (could be JSON leak)
+                                response_text = sr.response or (
+                                    "Disculpá, tuve un problema al procesar tu consulta. "
+                                    "¿Podrías repetirmelo de otra manera?"
+                                )
                                 break
 
                         # v2.0: Anti-hallucination guard (simplified — structured output
