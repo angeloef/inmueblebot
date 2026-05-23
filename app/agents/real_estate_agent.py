@@ -436,11 +436,37 @@ class RealEstateAgent:
                                 # Convert structured tool_calls to native format
                                 # arguments is a JSON string in strict mode — use parsed_args
                                 from app.agents.llm_router import ToolCall as TCR
-                                llm_response.tool_calls = [
-                                    TCR(name=tc.name, arguments=tc.parsed_args)
-                                    for tc in sr.tool_calls
-                                ]
-                                # Don't break — fall through to tool execution below
+                                converted = []
+                                for tc in sr.tool_calls:
+                                    name = tc.name
+                                    # ── Defensive: strip "functions." prefix (LLM hallucination) ──
+                                    if name.startswith("functions."):
+                                        name = name[len("functions."):]
+                                        logger.warning(
+                                            f"[Agent] Stripped 'functions.' prefix from tool name: "
+                                            f"'{tc.name}' -> '{name}'"
+                                        )
+                                    # ── Validate tool exists ──
+                                    if name not in TOOL_FUNCTIONS:
+                                        logger.warning(
+                                            f"[Agent] Structured tool call ignored — unknown tool: '{name}'"
+                                        )
+                                        continue
+                                    converted.append(TCR(name=name, arguments=tc.parsed_args))
+                                if converted:
+                                    llm_response.tool_calls = converted
+                                    # Don't break — fall through to tool execution below
+                                else:
+                                    # All structured tool calls were invalid — safe fallback
+                                    logger.error(
+                                        "[Agent] All structured tool_calls invalid — "
+                                        "sending safe fallback instead of raw JSON"
+                                    )
+                                    response_text = (
+                                        "Disculpá, tuve un problema al procesar tu consulta. "
+                                        "¿Podrías repetirmelo de otra manera?"
+                                    )
+                                    break
                             else:
                                 response_text = sr.response or llm_response.content or ""
                                 break

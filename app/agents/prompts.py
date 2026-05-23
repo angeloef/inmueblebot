@@ -564,6 +564,10 @@ _STRUCTURED_OUTPUT_INSTRUCTION = (
     '- question: pregunta para el usuario (solo si action="ask_question")\n'
     '- question_field: "date" | "time" | "name" | "generic" | null\n'
     '- tool_calls: lista de herramientas a llamar (solo si action="tool_call")\n'
+    "  Cada tool call debe tener: {\"name\": \"search_properties\", \"arguments\": \"{...json...}\"}\n"
+    "  USA LOS NOMBRES EXACTOS: search_properties, get_property_details, get_property_images,\n"
+    "  schedule_visit, get_my_appointments, get_faq_answer, etc. NUNCA agregues prefijos como\n"
+    "  'functions.' o 'function.' — solo el nombre pelado de la herramienta.\n"
     "- confidence: tu nivel de confianza de 0.0 a 1.0\n"
     "- reasoning: breve explicacion interna (no se muestra al usuario)\n\n"
     "NUNCA respondas con texto libre. Siempre usa el formato JSON. "
