@@ -198,9 +198,21 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
         _cat_labels = {"departamento": "Departamento", "casa": "Casa", "terreno": "Terreno"}
         cat_label = _cat_labels.get(category.lower() if category else "", "Propiedad")
         
-        # ── Zone from location (second comma part, strip Oberá/Misiones) ──
-        loc_parts = [p.strip() for p in location.split(",")]
-        zone = loc_parts[1] if len(loc_parts) >= 2 else loc_parts[0]
+        # ── Zone from extra_data.zone, or parse from location ──
+        extra_raw = _get_attr(prop, "extra_data", None)
+        if isinstance(extra_raw, dict):
+            zone = extra_raw.get("zone", "")
+        elif isinstance(extra_raw, str):
+            try:
+                extra_raw = json.loads(extra_raw)
+                zone = extra_raw.get("zone", "") if isinstance(extra_raw, dict) else ""
+            except (json.JSONDecodeError, TypeError):
+                zone = ""
+        else:
+            zone = ""
+        if not zone:
+            loc_parts = [p.strip() for p in location.split(",")]
+            zone = loc_parts[1] if len(loc_parts) >= 2 else loc_parts[0]
         
         # ── Price ──
         price = _get_attr(prop, "price", 0)
