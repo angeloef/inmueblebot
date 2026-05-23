@@ -93,7 +93,7 @@ def sanitize_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
 
             # Validar enum property_type dentro del branch str (donde siempre cae)
             if key == "property_type":
-                ALLOWED_PROPERTY_TYPES = {"casa", "departamento", "terreno", "oficina", "local", "galpon"}
+                ALLOWED_PROPERTY_TYPES = {"casa", "departamento", "terreno", "oficina", "local", "galpon", "ph", "duplex"}
                 if value not in ALLOWED_PROPERTY_TYPES:
                     logger.warning(
                         f"[Sanitizer] Invalid property_type '{value}' (not in enum), "

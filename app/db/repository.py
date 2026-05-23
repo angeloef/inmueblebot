@@ -218,17 +218,26 @@ class PropertyRepository(BaseRepository):
                 "departamento": "departamento", "depto": "departamento", "apartment": "departamento",
                 "ph": "ph",
             }
-            # Fallback title keywords for properties where category IS NULL (legacy/un-categorized)
-            _CATEGORY_TITLE_KEYWORDS = {
-                "terreno": "terreno",
-                "casa": "casa",
-                "departamento": "departamento",
-                "ph": "ph",
+            # Fallback title keywords for properties where category IS NULL (legacy/un-categorized).
+            # MUST include common abbreviations — a property titled "Depto 2 amb" with
+            # category=NULL won't match the single keyword "departamento" alone.
+            _CATEGORY_TITLE_KEYWORDS: dict[str, list[str]] = {
+                "terreno":       ["terreno", "lote"],
+                "casa":          ["casa"],
+                "departamento":  ["departamento", "depto", "dpto"],
+                "ph":            ["ph", "duplex"],
             }
             pt_lower = property_type.strip().lower()
             category_val = _TYPE_TO_CATEGORY.get(pt_lower)
             if category_val:
-                title_kw = _CATEGORY_TITLE_KEYWORDS.get(category_val, category_val)
+                title_kws = _CATEGORY_TITLE_KEYWORDS.get(category_val, [category_val])
+                if isinstance(title_kws, str):
+                    title_kws = [title_kws]
+                # Build OR of ILIKE patterns for each keyword (handles abbreviations)
+                kw_filters = []
+                for kw in title_kws:
+                    kw_filters.append(Property.title.ilike(f"%{kw}%"))
+                    kw_filters.append(Property.description.ilike(f"%{kw}%"))
                 # Primary: category column exact match.
                 # Fallback: title/desc ILIKE for rows where category IS NULL (legacy data).
                 query = query.where(
@@ -236,16 +245,13 @@ class PropertyRepository(BaseRepository):
                         Property.category == category_val,
                         and_(
                             Property.category.is_(None),
-                            or_(
-                                Property.title.ilike(f"%{title_kw}%"),
-                                Property.description.ilike(f"%{title_kw}%"),
-                            )
+                            or_(*kw_filters),
                         )
                     )
                 )
                 logger.info(
                     f"[Repo] property_type '{property_type}' → category='{category_val}' "
-                    f"OR (category IS NULL AND title/desc ILIKE '%{title_kw}%')"
+                    f"OR (category IS NULL AND title/desc ILIKE any of {title_kws})"
                 )
 
         if location:
@@ -298,8 +304,9 @@ class PropertyRepository(BaseRepository):
             query = query.where(Property.price <= budget_max)
         
         if bedrooms_min is not None:
-            # Exact match by default; caller can pass bedrooms_max > bedrooms_min to broaden
-            query = query.where(Property.bedrooms == bedrooms_min)
+            # Minimum bedrooms — user asking for "3 dormitorios" means >= 3, not exactly 3.
+            # Consistent with bathrooms_min (>=) and area_min (>=) below.
+            query = query.where(Property.bedrooms >= bedrooms_min)
         
         if bathrooms_min is not None:
             query = query.where(Property.bathrooms >= bathrooms_min)
