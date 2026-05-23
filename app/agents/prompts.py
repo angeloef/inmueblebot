@@ -593,16 +593,37 @@ _STATE_PROMPTS = {
         "- No pregunto datos que el usuario ya dio\n"
         "- Siempre incluyo property_type si el usuario menciono un tipo concreto\n\n"
     ),
-    "viewing_property": _sp(
-        "El usuario esta viendo una propiedad especifica. Puedo mostrar detalles, fotos, o coordinar visita.\n"
+        "viewing_property": _sp(
+        "El usuario esta viendo una propiedad. El router ya detecto si quiere detalles, fotos o comparar.\n"
         "Herramientas: get_property_details, get_property_images, compare_properties.\n\n"
         "REGLAS:\n"
-        "- Si el usuario dice 'si' o confirma que quiere MAS INFORMACION -> llama get_property_details. - Si el usuario dice 'si' a 'ver fotos' o pide EXPLICITAMENTE fotos -> llama get_property_images. - NUNCA muestres fotos si el usuario solo pidio 'mas informacion'. Fotos != informacion. - Si el usuario pide fotos -> get_property_images AHORA, no preguntes de nuevo\n"
         "- Si el usuario pide agendar -> pregunta el dia\n"
-        "- Si el usuario pide fotos Y agendar -> get_property_images primero, luego pregunta dia\n"
-        '- Si el usuario dice "esa", "fotos", "agendar" -> usa la propiedad activa\n\n'
+        '- Si el usuario dice \"esa\", \"fotos\", \"agendar\" -> usa la propiedad activa\n\n'
     ),
-    "scheduling_ask_date": _sp(
+    "viewing_detail": _sp(
+        "El usuario pidio mas informacion de una propiedad.\n"
+        "Herramienta principal: get_property_details.\n"
+        "Tambien disponible: get_property_images (por si despues pide fotos).\n\n"
+        "LLAMA get_property_details AHORA con el ID de la propiedad activa.\n"
+        "NO preguntes si quiere ver la info — el usuario ya confirmo que SI.\n"
+        "Despues de mostrar los detalles, preguntale si quiere ver fotos o agendar visita.\n\n"
+    ),
+    "viewing_photos": _sp(
+        "El usuario pidio ver las fotos de una propiedad.\n"
+        "Herramienta principal: get_property_images.\n"
+        "Tambien disponible: get_property_details.\n\n"
+        "LLAMA get_property_images AHORA con el ID de la propiedad activa.\n"
+        "NO preguntes si quiere ver las fotos — el usuario ya confirmo que SI.\n"
+        "Despues de mostrar las fotos, preguntale si quiere mas detalles o agendar visita.\n\n"
+    ),
+    "viewing_compare": _sp(
+        "El usuario quiere comparar propiedades.\n"
+        "Herramienta principal: compare_properties.\n"
+        "Tambien disponible: get_property_details.\n\n"
+        "LLAMA compare_properties con los IDs de las propiedades a comparar.\n"
+        "Despues de comparar, preguntale cual le interesa mas.\n\n"
+    ),
+"scheduling_ask_date": _sp(
         "El usuario quiere agendar una visita. Tengo que preguntar el dia.\n"
         "Herramienta: schedule_visit.\n\n"
         'Pregunta: "Que dia te queda bien? Atendemos de lunes a sabado de 9 a 18hs."\n'

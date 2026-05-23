@@ -18,6 +18,8 @@ from typing import Optional, List
 STAGE_GREETING        = "SALUDO_INICIAL"
 STAGE_SEARCH          = "BUSQUEDA"
 STAGE_DETAIL          = "DETALLE_PROPIEDAD"
+STAGE_PHOTOS          = "FOTOS"               # v3.0: user explicitly asks for photos
+STAGE_COMPARE         = "COMPARAR"            # v3.0: user asks to compare properties
 STAGE_SCHEDULING      = "AGENDANDO"
 STAGE_APPOINTMENT     = "GESTION_TURNOS"
 STAGE_FAQ             = "CONSULTA"
@@ -125,7 +127,20 @@ def detect_stage(
     # 7. Detalle de propiedad (check BEFORE search when active property exists)
     active_prop = context.get("selected_property_id") or context.get("active_property_id")
     if active_prop:
-        detail_kw = ["ese", "esa", "eso", "foto", "fotos", "imagen", "detalle",
+        # 7a. Explicit photo request (check first — most specific)
+        photo_kw = ["foto", "fotos", "imagen", "imágenes", "imagenes", "ver foto",
+                     "mostrar foto", "mira", "mírame"]
+        if any(kw in msg_lower for kw in photo_kw):
+            return STAGE_PHOTOS
+        
+        # 7b. Compare request
+        compare_kw = ["comparar", "comparame", "diferencia entre", "cual es mejor",
+                       "cuál es mejor", "comparación", "comparacion"]
+        if any(kw in msg_lower for kw in compare_kw):
+            return STAGE_COMPARE
+        
+        # 7c. Generic detail/info request
+        detail_kw = ["ese", "esa", "eso", "detalle",
                       "saber más", "saber mas", "información", "informacion",
                       "cuánto", "cuanto", "precio", "más info", "mas info",
                       "decime", "contame", "mostrame", "ver"]
@@ -307,7 +322,9 @@ def should_handoff(context: dict, capability: Optional[str] = None) -> bool:
 _STAGE_TO_STATE: dict[str, str] = {
     STAGE_GREETING: "qualifying",
     STAGE_SEARCH: "searching",
-    STAGE_DETAIL: "viewing_property",
+    STAGE_DETAIL: "viewing_detail",
+    STAGE_PHOTOS: "viewing_photos",
+    STAGE_COMPARE: "viewing_compare",
     STAGE_SCHEDULING: "scheduling_ask_date",
     STAGE_APPOINTMENT: "appointment_management",
     STAGE_FAQ: "faq",
@@ -355,7 +372,13 @@ def propose_transition(
         return ("searching", "high")
 
     if stage == STAGE_DETAIL:
-        return ("viewing_property", "high")
+        return ("viewing_detail", "high")
+
+    if stage == STAGE_PHOTOS:
+        return ("viewing_photos", "high")
+
+    if stage == STAGE_COMPARE:
+        return ("viewing_compare", "high")
 
     if stage == STAGE_SCHEDULING:
         return ("scheduling_ask_date", "high")
