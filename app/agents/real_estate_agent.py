@@ -1195,13 +1195,36 @@ class RealEstateAgent:
         
         return messages
     
-    def _extract_rich_content(self, tool_args: dict, tool_result: str) -> dict:
-        """Extrae rich content desde el resultado de la herramienta."""
+    def _extract_rich_content(self, tool_args: dict, tool_result) -> dict:
+        """Extrae rich content desde el resultado de la herramienta.
+
+        v2.0: tool_result can be a typed dataclass (ImageResult, SearchResult, etc.)
+        or a raw string. Handles both."""
         import re
+        
+        # ── v2.0: Handle typed tool results ──
+        if hasattr(tool_result, 'image_urls') and hasattr(tool_result, 'count'):
+            # ImageResult — extract image URLs directly
+            urls = getattr(tool_result, 'image_urls', [])
+            count = getattr(tool_result, 'count', 0)
+            if urls and count > 0:
+                logger.info(f"[RichContent] Extracted {count} image URLs from ImageResult")
+                return {
+                    "action": "show_property_images",
+                    "images": urls,
+                    "property_id": str(tool_args.get("property_id", "")),
+                }
+            return {"action": "general_response", "message": "No se encontraron imágenes."}
+        
+        if hasattr(tool_result, 'user_message'):
+            # Any other typed result — use its user_message string
+            raw = getattr(tool_result, 'user_message', str(tool_result))
+        else:
+            raw = str(tool_result) if tool_result else ""
         
         try:
             # Try extract images from <!--IMAGES:...--> comment
-            images_match = re.search(r'<!--IMAGES:(\[[^\]]+\])-->', tool_result)
+            images_match = re.search(r'<!--IMAGES:(\[[^\]]+\])-->', raw)
             if images_match:
                 try:
                     images_data = json.loads(images_match.group(1))
@@ -1213,9 +1236,9 @@ class RealEstateAgent:
                 except json.JSONDecodeError:
                     pass
             
-            # Try extract images if tool_result contains JSON with images
+            # Try extract images if raw contains JSON with images
             try:
-                data = json.loads(tool_result)
+                data = json.loads(raw)
                 if isinstance(data, dict) and data.get("images"):
                     return {
                         "action": "show_property_images",
@@ -1225,28 +1248,28 @@ class RealEstateAgent:
                 pass
             properties = []
             
-            if "Encontré" in tool_result and "propiedades" in tool_result:
+            if "Encontré" in raw and "propiedades" in raw:
                 return {
                     "action": "show_search_results",
                     "search_criteria": tool_args,
-                    "message": tool_result
+                    "message": raw
                 }
             
-            if "ID de propiedad:" in tool_result or "ID:" in tool_result:
+            if "ID de propiedad:" in raw or "ID:" in raw:
                 import re
-                id_match = re.search(r'ID[:\s]*`?([a-zA-Z0-9-]+)`?', tool_result)
+                id_match = re.search(r'ID[:\s]*`?([a-zA-Z0-9-]+)`?', raw)
                 if id_match:
                     return {
                         "action": "show_property_details",
                         "property_id": id_match.group(1),
-                        "message": tool_result
+                        "message": raw
                     }
             
-            return {"action": "general_response", "message": tool_result}
+            return {"action": "general_response", "message": raw}
             
         except Exception as e:
             logger.error(f"Error extract rich content: {e}")
-            return {"action": "general_response", "message": tool_result}
+            return {"action": "general_response", "message": raw if raw else str(tool_result)}
     
     def _determine_next_state(
         self,
