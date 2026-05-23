@@ -577,8 +577,7 @@ _STATE_PROMPTS = {
         "El usuario recien empieza. Todavia no tengo sus criterios de busqueda. "
         "Mi trabajo es entender que busca: alquiler o compra? que tipo de propiedad? en que zona? presupuesto? cuantos ambientes?\n\n"
         "Herramientas disponibles: search_properties, get_faq_answer.\n"
-        "Si el usuario ya dio criterios claros (tipo + operacion + zona + presupuesto o ambientes), busca con search_properties. Si todavia no tengo 4 criterios, pregunto de a una cosa por vez, cordialmente. "
-        "Si falta informacion esencial, pregunta de a una cosa por vez.\n\n"
+        "Si el usuario ya dio criterios claros (tipo + operacion + zona + presupuesto o ambientes), busca con search_properties. REGLA ESTRICTA: si tengo 3 criterios o menos, PREGUNTO el que falta. No busco hasta completar los 4. NUNCA asumo que el usuario quiere ver todo. "
     ),
     "searching": _sp(
         "Estoy buscando propiedades para el usuario. Ya tengo algunos criterios. "
