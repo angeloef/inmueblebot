@@ -120,7 +120,15 @@ class RealEstateAgent:
                 from app.agents.router import propose_transition as _regex_propose
                 from app.agents.router import STAGE_OUT_OF_SCOPE, STAGE_HANDOFF, should_handoff
 
-                _current_sm_state = merged_context.get("current_state", "idle")
+                # Always sync state from Redis — context can be stale
+                _current_sm_state = await state_machine.get_state(phone)
+                if _current_sm_state in ("human_assistance", "handoff"):
+                    # Terminal state from previous session — auto-reset
+                    logger.info(
+                        f"[Agent] Resetting from terminal state '{_current_sm_state}' for {phone}"
+                    )
+                    await state_machine.reset_state(phone)
+                    _current_sm_state = "idle"
                 _proposed_state, _proposal_conf = await _regex_propose(
                     user_message, _current_sm_state, merged_context, history
                 )
