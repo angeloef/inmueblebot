@@ -284,11 +284,21 @@ class PropertyRepository(BaseRepository):
                 )
 
             # Strategy 3: Individual words (>2 chars) OR'd together
-            # e.g. "calle sarmiento" matches anything containing "calle" OR "sarmiento"
-            words = [w for w in loc_clean.split() if len(w) > 2]
-            # Also add normalized words (deduplicated)
+            # e.g. "calle sarmiento" matches anything containing "sarmiento"
+            # BUT skip generic words that appear in almost every location
+            # ("barrio", "calle", "oberá", "misiones", etc.) — they match everything.
+            _STOP_WORDS = {
+                "barrio", "calle", "avenida", "av", "av.", "obera", "oberá",
+                "misiones", "centro", "pasaje", "ruta", "boulevard", "bvar",
+                "camino", "autopista", "villa", "san", "las", "los", "del",
+                "de", "la", "el", "y", "en",
+            }
+            words = [w for w in loc_clean.split()
+                     if len(w) > 2 and w not in _STOP_WORDS]
+            # Also add normalized words (deduplicated), same stop-word filter
             if loc_norm and loc_norm != loc_clean:
-                norm_words = [w for w in loc_norm.split() if len(w) > 2]
+                norm_words = [w for w in loc_norm.split()
+                              if len(w) > 2 and w not in _STOP_WORDS]
                 words.extend(w for w in norm_words if w not in words)
             if words:
                 word_filters = [Property.location.ilike(f"%{w}%") for w in words]
