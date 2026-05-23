@@ -130,10 +130,23 @@ class RealEstateAgent:
                     _transitioned = await state_machine.transition(
                         phone, _current_sm_state, _proposed_state
                     )
+                    if not _transitioned:
+                        # Illegal transition — if stuck in a terminal state
+                        # (human_assistance, handoff, completed), auto-reset to idle first
+                        _terminal_states = {"human_assistance", "handoff", "completed",
+                                            "out_of_scope"}
+                        if _current_sm_state in _terminal_states:
+                            logger.info(
+                                f"[Agent] Stuck in terminal state '{_current_sm_state}' — "
+                                f"auto-resetting to idle before transition to '{_proposed_state}'"
+                            )
+                            await state_machine.reset_state(phone)
+                            _transitioned = await state_machine.transition(
+                                phone, "idle", _proposed_state
+                            )
                     if _transitioned:
                         _next_state = _proposed_state
                     else:
-                        # Illegal transition — fall back to current state
                         _next_state = _current_sm_state
                     logger.info(
                         f"[Agent] v2.0 regex router: {_current_sm_state} -> {_next_state} "
