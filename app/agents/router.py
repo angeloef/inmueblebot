@@ -123,6 +123,7 @@ async def detect_stage(
     message: str,
     context: dict,
     history: Optional[List[dict]] = None,
+    current_state: Optional[str] = None,
 ) -> str:
     """
     Detecta la etapa actual de la conversación usando flags de estado + keywords.
@@ -131,6 +132,7 @@ async def detect_stage(
         message: Mensaje del usuario
         context: Contexto combinado del usuario (merged_context)
         history: Historial de mensajes recientes
+        current_state: Estado actual del state machine (para follow-up detection)
 
     Returns:
         str: Una de las constantes STAGE_*
@@ -250,7 +252,7 @@ async def detect_stage(
         "departamento", "casa", "terreno", "ph", "local",
         "propiedad", "propiedades", "inmueble", "inmuebles",
         "presupuesto", "hasta", "desde", "precio",
-        "zona", "barrio", "ubicación", "ubicacion",
+        "zona", "barrio", "ubicación", "ubicacion", "centro", "cerca",
         "dormitorio", "ambientes", "baños", "cochera",
         "opciones", "alternativas", "catálogo", "catalogo", "listado",
     ]
@@ -264,7 +266,21 @@ async def detect_stage(
     ]):
         return STAGE_FAQ  # Reutiliza FAQ stage, contact_info se maneja por tools
 
-    # 10. Fallback
+    # 10. Searching-state follow-up: user is refining/continuing a search
+    #    e.g. "y cerca del centro?", "mejor en Palermo", "con cochera"
+    _searching_states = {"searching", "viewing_detail", "viewing_photos",
+                          "viewing_compare"}
+    if current_state and current_state in _searching_states:
+        _refinement_kw = [
+            "centro", "cerca", "zona", "barrio", "ubicación", "ubicacion",
+            "alrededor", "alrededores", "por", "mejor en", "que tal",
+            "cómo es", "como es", "y ", "con ", "sin ",
+        ]
+        # Short follow-up message that mentions location-like terms
+        if len(msg_lower) < 100 and any(kw in msg_lower for kw in _refinement_kw):
+            return STAGE_SEARCH
+
+    # 11. Fallback
     return STAGE_GENERAL
 
 
@@ -446,7 +462,7 @@ async def propose_transition(
         - (state, "low"): regex matched but uncertain, run classifier to confirm
         - (None, "low"): no regex match, defer to classifier
     """
-    stage = await detect_stage(message, context, history)
+    stage = await detect_stage(message, context, history, current_state)
 
     # ── High-confidence matches ──
     if stage == STAGE_GREETING:

@@ -1444,7 +1444,9 @@ class RealEstateAgent:
 
             logger.info("Preferencias extraidas y guardadas exitosamente")
         except Exception as e:
-            logger.error("Error guardando preferencias: %s", e)
+            import traceback
+            logger.error(f"Error guardando preferencias: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     @staticmethod
     def _detect_action_hallucination(text: str, tools_used: List[str]) -> str:
