@@ -260,6 +260,11 @@ class PropertyRepository(BaseRepository):
             loc_clean = location.strip().lower()
             loc_norm = normalize_location(location)
 
+            # ── Pre-processing: collapse repeated chars (common typos: krausse→krause, barrioo→barrio) ──
+            import re as _re
+            loc_clean = _re.sub(r'(.)\1+', r'\1', loc_clean)
+            loc_norm = _re.sub(r'(.)\1+', r'\1', loc_norm) if loc_norm else loc_norm
+
             # Build multiple matching strategies for flexible address search
             filters = []
 
