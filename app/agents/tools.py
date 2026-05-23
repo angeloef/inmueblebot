@@ -184,74 +184,96 @@ def format_property_list(properties: List, criteria: dict = None) -> str:
     else:
         lines.append(f"Encontré {len(properties)} propiedades:\n")
 
-    # ── Property lines — A8 style: 📍 {title} — {price} — {features} ──
+    # ── Property lines ──
     for i, prop in enumerate(properties, 1):
-        title = _get_attr(prop, "title", "Sin título")
-        title = title[:50] + "..." if len(title) > 50 else title
-
+        # Extract structured data
+        bedrooms = _get_attr(prop, "bedrooms")
+        bathrooms = _get_attr(prop, "bathrooms")
+        area = _get_attr(prop, "area_m2")
+        prop_type = _get_attr(prop, "type", "venta")
+        category = _get_attr(prop, "category", "")
+        location = _get_attr(prop, "location", "Sin ubicación")
+        
+        # ── Type label ──
+        _cat_labels = {"departamento": "Departamento", "casa": "Casa", "terreno": "Terreno"}
+        cat_label = _cat_labels.get(category.lower() if category else "", "Propiedad")
+        
+        # ── Zone from location (second comma part, strip Oberá/Misiones) ──
+        loc_parts = [p.strip() for p in location.split(",")]
+        zone = loc_parts[1] if len(loc_parts) >= 2 else loc_parts[0]
+        
+        # ── Price ──
         price = _get_attr(prop, "price", 0)
         try:
             price = int(float(str(price)))
         except (ValueError, TypeError):
             price = 0
-
         cur = _get_attr(prop, "currency", "ARS")
-        prop_type = _get_attr(prop, "type", "venta")
-        if cur != "USD":
-            currency_prefix = f"{cur} "
-        else:
-            currency_prefix = ""
         if prop_type == "alquiler":
-            price_str = f"{currency_prefix}${price:,}/mes"
+            price_str = f"${price:,}/mes" if cur == "USD" else f"{cur} ${price:,}/mes"
         else:
-            price_str = f"{currency_prefix}${price:,}"
-
-        bedrooms = _get_attr(prop, "bedrooms")
-
-        location = _get_attr(prop, "location", "Sin ubicación")
-        # Strip city name from location if it repeats the user's search city
-        if criteria and criteria.get("location"):
-            search_city = criteria["location"].lower()
-            location_clean = location
-            if location.lower().endswith(f", {search_city}") or location.lower().endswith(f", {search_city}"):
-                location_clean = location.rsplit(",", 1)[0].strip()
-            elif location.lower().startswith(f"{search_city} "):
-                location_clean = location[len(search_city):].strip().lstrip(",").strip()
+            price_str = f"${price:,}" if cur == "USD" else f"{cur} ${price:,}"
+        
+        # ── Build segments with | separators ──
+        # Segment 1: {Tipo} en {zona} - {beds} amb
+        if bedrooms:
+            seg1 = f"{cat_label} en {zone} - {bedrooms} amb"
         else:
-            location_clean = location
-        location_clean = location_clean[:40] + "..." if len(location_clean) > 40 else location_clean
-
-        # Feature info — skip bedrooms if title already includes "X amb"
-        feat_parts = []
-        _title_has_amb = bool(re.search(r'\d+\s*amb', title, re.IGNORECASE))
-        if bedrooms and not _title_has_amb:
-            feat_parts.append(f"{bedrooms} ambiente{'s' if bedrooms > 1 else ''}")
-        # Show bathrooms and area (always useful, never redundant with title)
-        bathrooms = _get_attr(prop, "bathrooms")
-        area = _get_attr(prop, "area_m2")
+            seg1 = f"{cat_label} en {zone}"
+        
+        # Segment 2: price
+        seg2 = price_str
+        
+        # Segment 3: bathrooms
         if bathrooms:
-            feat_parts.append(f"{bathrooms} baño{'s' if bathrooms > 1 else ''}")
+            seg3 = f"{bathrooms} baño{'s' if bathrooms > 1 else ''}"
+        else:
+            seg3 = ""
+        
+        # Segment 4: m²
         if area:
-            feat_parts.append(f"{area}m²")
-
-        feature_str = " — ".join(feat_parts) if feat_parts else ""
-
-        # Get property ID for reference
+            seg4 = f"{area}m²"
+        else:
+            seg4 = ""
+        
+        # Segment 5: ID
         _oid = _get_attr(prop, "original_id", None)
         _pid = str(_oid) if _oid else str(_get_attr(prop, "id", f"prop-{i}"))[:8]
-
-        line = f"📍 {title} — {price_str}"
-        if feature_str:
-            line += f" — {feature_str}"
-        line += f" | ID: {_pid}"
-
+        seg5 = f"ID: {_pid}"
+        
+        parts = [seg1, seg2]
+        if seg3:
+            parts.append(seg3)
+        if seg4:
+            parts.append(seg4)
+        parts.append(seg5)
+        
+        line = "📍 " + " | ".join(parts)
         lines.append(line)
 
-    # ── Footer ──
+    # ── Footer: helpful, personality-driven, mentions what else they can refine ──
     if criteria:
-        location = criteria.get("location", "")
+        # Detect what criteria the user could still add to narrow down
+        missing = []
+        if not criteria.get("budget_max") and not criteria.get("budget_min"):
+            missing.append("presupuesto")
+        if not criteria.get("bedrooms"):
+            missing.append("cantidad de ambientes")
+        if not criteria.get("bathrooms"):
+            missing.append("baños")
+        
         lines.append("")
-        lines.append("Si te interesa alguna, solo decime la direccion o ID y te paso mas detalles.")
+        if missing:
+            hint = ", ".join(missing)
+            lines.append(
+                f"Indicame el ID o la dirección si te interesó alguno y te paso más detalles. "
+                f"También podés decirme si tenés alguna preferencia más, como {hint}, "
+                f"y ajusto la búsqueda."
+            )
+        else:
+            lines.append(
+                "Indicame el ID o la dirección si te interesó alguno y te paso más detalles."
+            )
     else:
         lines.append("")
         lines.append("¿Te interesa alguna?")
