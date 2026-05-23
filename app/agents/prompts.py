@@ -597,7 +597,7 @@ _STATE_PROMPTS = {
         "El usuario esta viendo una propiedad especifica. Puedo mostrar detalles, fotos, o coordinar visita.\n"
         "Herramientas: get_property_details, get_property_images, compare_properties.\n\n"
         "REGLAS:\n"
-        "- Si el usuario pide fotos -> get_property_images AHORA, no preguntes de nuevo\n"
+        "- Si el usuario dice 'si' o confirma que quiere MAS INFORMACION -> llama get_property_details. - Si el usuario dice 'si' a 'ver fotos' o pide EXPLICITAMENTE fotos -> llama get_property_images. - NUNCA muestres fotos si el usuario solo pidio 'mas informacion'. Fotos != informacion. - Si el usuario pide fotos -> get_property_images AHORA, no preguntes de nuevo\n"
         "- Si el usuario pide agendar -> pregunta el dia\n"
         "- Si el usuario pide fotos Y agendar -> get_property_images primero, luego pregunta dia\n"
         '- Si el usuario dice "esa", "fotos", "agendar" -> usa la propiedad activa\n\n'
