@@ -455,7 +455,10 @@ class RealEstateAgent:
                                     converted.append(TCR(name=name, arguments=tc.parsed_args))
                                 if converted:
                                     llm_response.tool_calls = converted
-                                    # Don't break — fall through to tool execution below
+                                    # Continue to next iteration — has_tool_calls is now True,
+                                    # so the loop will skip the structured-output block and
+                                    # fall directly into tool execution (# PHASE 1.5 below)
+                                    continue
                                 else:
                                     # All structured tool calls were invalid — safe fallback
                                     logger.error(
