@@ -1,0 +1,29 @@
+name: InmuebleBot Conversation Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # manual trigger from GitHub UI
+  schedule:
+    - cron: '0 12 * * *'   # daily at 12:00 UTC
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run conversation tests
+        run: python3 tests/run_conversation_tests.py --output results.json
+        env:
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          INMUEBLEBOT_API_URL: https://inmueblebot-api.onrender.com
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: results.json
