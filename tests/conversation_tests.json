@@ -1,0 +1,497 @@
+{
+  "meta": {
+    "version": "1.0",
+    "description": "20 test conversations for InmuebleBot v2.0 — covers all chatbot functions. 15 rent, 5 buy.",
+    "endpoint": "POST https://inmueblebot-api.onrender.com/admin/simulate",
+    "auth": "X-API-Key header required",
+    "total_tests": 20,
+    "rent_tests": 15,
+    "buy_tests": 5
+  },
+  "tests": [
+    {
+      "id": "rent_01_basic_search",
+      "name": "Rent — Basic departamento search",
+      "description": "User searches for departamentos in alquiler with bedrooms. No budget, no zone refinement.",
+      "operation": "rent",
+      "phone": "5493755111001",
+      "turns": [
+        {
+          "user": "Hola busco un departamento en alquiler en Oberá de 3 ambientes",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "3 amb", "ID:"],
+            "response_not_contains": ["Disculpá", "Lo siento", "problema"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_02_search_with_budget",
+      "name": "Rent — Search with budget constraint",
+      "description": "User searches with budget_max specified. Should expand budget by 20%.",
+      "operation": "rent",
+      "phone": "5493755111002",
+      "turns": [
+        {
+          "user": "Busco casa en alquiler en Oberá, hasta 150000 pesos por mes",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Casa", "ID:"],
+            "response_not_contains": ["No encontré", "sin resultados"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_03_detail_then_photos",
+      "name": "Rent — Search → detail → photos",
+      "description": "Search, user picks a property by ID, then asks for photos.",
+      "operation": "rent",
+      "phone": "5493755111003",
+      "turns": [
+        {
+          "user": "Mostrame departamentos en alquiler en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "response_not_contains": ["problema"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Me interesa la del ID 11, dame más detalles",
+          "expect": {
+            "tools_called": ["get_property_details"],
+            "response_contains": ["detalles", "precio", "baño"],
+            "response_not_contains": ["No encontré esa propiedad", "no existe"],
+            "state": "viewing_property"
+          }
+        },
+        {
+          "user": "Quiero ver las fotos",
+          "expect": {
+            "tools_called": ["get_property_images"],
+            "response_contains": ["foto"],
+            "response_not_contains": ["No tengo fotos", "problema"],
+            "state": "viewing_property"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_04_full_schedule_flow",
+      "name": "Rent — Full scheduling flow (search → select → schedule)",
+      "description": "Complete flow: search, select property, schedule a visit with date and time.",
+      "operation": "rent",
+      "phone": "5493755111004",
+      "turns": [
+        {
+          "user": "Busco departamento 2 ambientes en alquiler en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "2 amb", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Quiero agendar una visita para ver el ID 10",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["día", "fecha"],
+            "response_not_contains": ["Cita Agendada"],
+            "state": "scheduling_ask_date"
+          }
+        },
+        {
+          "user": "El lunes",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["hora", "horario"],
+            "state": "scheduling_ask_time"
+          }
+        },
+        {
+          "user": "A las 15hs",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["nombre"],
+            "state": "scheduling_ask_name"
+          }
+        },
+        {
+          "user": "Juan Pérez",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["Cita Agendada", "lunes", "15"],
+            "response_not_contains": ["domingo", "fuera de horario", "no disponible"],
+            "state": "idle"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_05_faq_then_search",
+      "name": "Rent — FAQ question then property search",
+      "description": "User asks an FAQ question first, then pivots to searching.",
+      "operation": "rent",
+      "phone": "5493755111005",
+      "turns": [
+        {
+          "user": "¿Cuál es el horario de atención?",
+          "expect": {
+            "tools_called": ["get_faq_answer"],
+            "response_contains": ["horario", "atención"],
+            "response_not_contains": ["No tengo información sobre esa consulta"],
+            "state": "faq"
+          }
+        },
+        {
+          "user": "Gracias, también busco un departamento en alquiler en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_06_greeting_only",
+      "name": "Rent — Greeting only (no criteria)",
+      "description": "User just says hi. Bot should greet back and ask qualifying questions.",
+      "operation": "rent",
+      "phone": "5493755111006",
+      "turns": [
+        {
+          "user": "Hola",
+          "expect": {
+            "tools_called": [],
+            "response_contains": ["Hola", "bienvenid", "ayudarte"],
+            "response_not_contains": ["search_properties", "Disculpá"],
+            "state": "qualifying"
+          }
+        },
+        {
+          "user": "Busco alquilar algo en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["ID:"],
+            "response_not_contains": ["¿Para alquilar o para comprar?"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_07_multi_intent_photos_schedule",
+      "name": "Rent — Multi-intent: photos + schedule in one message",
+      "description": "User asks for photos AND to schedule in the same message after viewing a property.",
+      "operation": "rent",
+      "phone": "5493755111007",
+      "turns": [
+        {
+          "user": "Mostrame departamentos en alquiler en Oberá 2 ambientes",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Quiero ver las fotos y agendar una visita para el ID 10",
+          "expect": {
+            "tools_called": ["get_property_images", "schedule_visit"],
+            "response_contains": ["foto"],
+            "response_not_contains": ["¿Querés ver las fotos?", "¿Te gustaría ver"],
+            "state": "scheduling_ask_date"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_08_refine_search",
+      "name": "Rent — Search then refine with more criteria",
+      "description": "User searches broadly, then narrows down by adding budget.",
+      "operation": "rent",
+      "phone": "5493755111008",
+      "turns": [
+        {
+          "user": "Busco departamento en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Solo los que estén hasta 100000 pesos",
+          "expect": {
+            "tools_called": ["search_properties", "refine_search"],
+            "response_contains": ["ID:"],
+            "response_not_contains": ["sin resultados"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_09_out_of_scope",
+      "name": "Rent — Out of scope → redirection",
+      "description": "User asks something completely off-topic. Bot should redirect to real estate.",
+      "operation": "rent",
+      "phone": "5493755111009",
+      "turns": [
+        {
+          "user": "¿Me podés dar una receta de empanadas?",
+          "expect": {
+            "tools_called": [],
+            "response_contains": ["asistente", "inmobiliaria", "propiedades"],
+            "response_not_contains": ["receta", "empanadas", "harina", "carne"],
+            "state": "out_of_scope"
+          }
+        },
+        {
+          "user": "Bueno dale, mostrame departamentos en Oberá entonces",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_10_zero_results_adjust",
+      "name": "Rent — Zero results → bot suggests adjustments",
+      "description": "Search with criteria too narrow. Bot should suggest alternatives.",
+      "operation": "rent",
+      "phone": "5493755111010",
+      "turns": [
+        {
+          "user": "Busco casa en alquiler en Oberá de 7 ambientes con pileta climatizada",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["No encontré", "ajustar", "alternativas"],
+            "response_not_contains": ["problema técnico", "Lo siento tuve un"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_11_appointment_management",
+      "name": "Rent — View my appointments",
+      "description": "User asks to see their scheduled appointments.",
+      "operation": "rent",
+      "phone": "5493755111011",
+      "turns": [
+        {
+          "user": "Quiero ver mis citas agendadas",
+          "expect": {
+            "tools_called": ["get_my_appointments"],
+            "response_contains": ["citas", "Cita"],
+            "response_not_contains": ["agendé", "te agendé", "quedó agendada"],
+            "state": "appointment_management"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_12_handoff_request",
+      "name": "Rent — Explicit handoff request",
+      "description": "User explicitly asks for a human agent.",
+      "operation": "rent",
+      "phone": "5493755111012",
+      "turns": [
+        {
+          "user": "Necesito hablar con un asesor humano por favor",
+          "expect": {
+            "tools_called": ["request_human_assistance"],
+            "response_contains": ["asesor", "humano", "contexto"],
+            "response_not_contains": ["Disculpá"],
+            "state": "human_assistance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_13_property_comparison",
+      "name": "Rent — Compare two properties",
+      "description": "User searches, then asks to compare two properties.",
+      "operation": "rent",
+      "phone": "5493755111013",
+      "turns": [
+        {
+          "user": "Mostrame departamentos en alquiler en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Comparame el ID 10 con el ID 11",
+          "expect": {
+            "tools_called": ["compare_properties", "get_property_details"],
+            "response_contains": ["compar", "diferencia", "ID:"],
+            "response_not_contains": ["No puedo comparar"],
+            "state": "viewing_property"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_14_terreno_search",
+      "name": "Rent — Search for terreno (land)",
+      "description": "User searches for terrenos in alquiler.",
+      "operation": "rent",
+      "phone": "5493755111014",
+      "turns": [
+        {
+          "user": "Busco un terreno en alquiler en Oberá para construir",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Terreno", "m²", "ID:"],
+            "response_not_contains": ["No encontré terrenos"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rent_15_scheduling_sunday_rejection",
+      "name": "Rent — Schedule visit for Sunday (should reject)",
+      "description": "Bot should reject Sunday appointments early, before asking for time.",
+      "operation": "rent",
+      "phone": "5493755111015",
+      "turns": [
+        {
+          "user": "Busco departamento 2 ambientes en alquiler en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Agendame una visita para el ID 10, este domingo",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["domingo", "no"],
+            "response_not_contains": ["Cita Agendada", "¿A qué hora"],
+            "state": "scheduling_ask_date"
+          }
+        }
+      ]
+    },
+    {
+      "id": "buy_01_basic_search",
+      "name": "Buy — Basic departamento search",
+      "description": "User searches for departamentos for sale in Oberá.",
+      "operation": "buy",
+      "phone": "5493755112001",
+      "turns": [
+        {
+          "user": "Hola, quiero comprar un departamento en Oberá de 2 ambientes",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "USD", "ID:"],
+            "response_not_contains": ["/mes", "alquiler"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "buy_02_casa_with_budget",
+      "name": "Buy — Casa search with budget",
+      "description": "User searches for a house with a USD budget limit.",
+      "operation": "buy",
+      "phone": "5493755112002",
+      "turns": [
+        {
+          "user": "Busco comprar una casa en Oberá, presupuesto hasta 80000 dólares",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Casa", "ID:"],
+            "response_not_contains": ["/mes", "alquiler"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "buy_03_full_schedule_flow",
+      "name": "Buy — Full flow search → select → schedule for purchase",
+      "description": "User finds a property for sale and schedules a visit.",
+      "operation": "buy",
+      "phone": "5493755112003",
+      "turns": [
+        {
+          "user": "Mostrame casas en venta en Oberá",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Casa", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Me gusta la del ID 13, ¿puedo ir a verla el jueves a las 11? Me llamo Carlos",
+          "expect": {
+            "tools_called": ["schedule_visit"],
+            "response_contains": ["Cita Agendada", "jueves", "11", "Carlos"],
+            "response_not_contains": ["domingo"],
+            "state": "idle"
+          }
+        }
+      ]
+    },
+    {
+      "id": "buy_04_terreno_buy",
+      "name": "Buy — Terreno purchase search",
+      "description": "User searches for land to buy.",
+      "operation": "buy",
+      "phone": "5493755112004",
+      "turns": [
+        {
+          "user": "Quiero comprar un terreno en Oberá para construir mi casa",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Terreno", "m²", "ID:"],
+            "response_not_contains": ["/mes"],
+            "state": "searching"
+          }
+        }
+      ]
+    },
+    {
+      "id": "buy_05_detail_photos_schedule",
+      "name": "Buy — Detail + photos + schedule for purchase",
+      "description": "User gets details of a property, views photos, then schedules.",
+      "operation": "buy",
+      "phone": "5493755112005",
+      "turns": [
+        {
+          "user": "Compro departamento en Oberá, mostrame opciones",
+          "expect": {
+            "tools_called": ["search_properties"],
+            "response_contains": ["Departamento", "ID:"],
+            "state": "searching"
+          }
+        },
+        {
+          "user": "Dame detalles del ID 31 y mostrame fotos, y también quiero agendar visita para mañana a las 10, soy María López",
+          "expect": {
+            "tools_called": ["get_property_details", "get_property_images", "schedule_visit"],
+            "response_contains": ["Cita Agendada", "María"],
+            "response_not_contains": ["problema"],
+            "state": "idle"
+          }
+        }
+      ]
+    }
+  ]
+}
