@@ -2,7 +2,7 @@
 Seed script: 50 Oberá properties with images, categories, real street names.
 Run: python3 seed_obera.py
 """
-import asyncio, asyncpg, io, base64, random
+import asyncio, asyncpg, io, base64, random, json
 from PIL import Image
 
 DB = "postgresql://inmueblebot_user:XSqFG4FiC0q5OXXn1CiND25aHX076isu@dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com/inmueblebot_rfv1"
@@ -185,11 +185,14 @@ async def seed():
         images = TYPE_IMAGES[p['category']]
         await conn.execute("""
             INSERT INTO properties (id, title, description, price, currency, type, location,
-                                    bedrooms, bathrooms, area_m2, images, status, category, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+                                    bedrooms, bathrooms, area_m2, images, status, category, extra_data, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
         """, p['id'], p['title'], p['description'], p['price'], p['currency'],
            p['type'], p['location'], p['bedrooms'], p['bathrooms'], p['area_m2'],
-           images, p['status'], p['category'])
+           images, p['status'], p['category'],
+           json.dumps({'city': 'Oberá, Misiones',
+                       'zone': p['location'].split(',')[1].strip() if ',' in p['location'] else '',
+                       'street': p['location'].split(',')[0].strip()}))
 
     count = await conn.fetchval("SELECT count(*) FROM properties")
     print(f"Inserted {count} properties")
