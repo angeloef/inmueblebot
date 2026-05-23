@@ -284,10 +284,24 @@ class RealEstateAgent:
                         messages.append({"role": "system", "content": " ".join(_nudge_parts)})
                         logger.info(f"[Agent] 📅 START-OF-TURN scheduling nudge injected for {phone} (pid={_tp_pid})")
 
-                # ── Photo nudge: if user asks for photos with a selected property, force get_property_images ──
+                # ── Photo nudge: if user asks for photos, or says "si" to photo offer ──
                 _photo_keywords_turn = ["foto", "imagen", "imag", "ver foto", "mostrar foto", "mira"]
                 _user_wants_photos = any(kw in (user_message or "").lower() for kw in _photo_keywords_turn)
                 _selected_pid = merged_context.get("selected_property_id")
+                # Also detect affirmative response to previous photo offer
+                _affirmative = {"si", "sí", "dale", "bueno", "ok", "okay", "claro", "obvio", "porfa", "porfavor", "por favor"}
+                _msg_clean = (user_message or "").lower().strip().rstrip(".!?")
+                _is_affirmative = _msg_clean in _affirmative or _msg_clean.startswith("si ") or _msg_clean.startswith("sí ")
+                if _is_affirmative and _selected_pid and not _user_wants_photos:
+                    # Check if bot's last message offered photos
+                    _last_bot_msg = ""
+                    for _m in reversed(history or []):
+                        if _m.get("role") == "assistant":
+                            _last_bot_msg = (_m.get("content") or "").lower()
+                            break
+                    if "foto" in _last_bot_msg or "mostrar las fotos" in _last_bot_msg:
+                        _user_wants_photos = True
+                        logger.info(f"[Agent] 📷 Affirmative response to photo offer detected: '{user_message}'")
                 if _user_wants_photos and _selected_pid and not _turn_pending_sched.get("active"):
                     _also_wants_sched = any(kw in (user_message or "").lower() for kw in
                         ["agendar", "visita", "coordinar", "reservar", "turno", "cita"])
@@ -615,17 +629,29 @@ class RealEstateAgent:
                                 }
                                 _noun, _art = _plural_map.get(_pt, ("propiedades", "las"))
                                 _loc = tool_args.get("location", "")
-                                _header = (
-                                    f"Estos son {_art} {_noun} que tenemos en {_loc}:"
-                                    if _loc else f"Estos son {_art} {_noun} que tenemos disponibles:"
-                                )
+                                if _n_results == 1:
+                                    # Singular: one property found
+                                    _art_sing_map = {"terrenos": "el terreno", "casas": "la casa",
+                                                     "departamentos": "el departamento", "PH": "el PH"}
+                                    _art_sing = _art_sing_map.get(_noun, f"la propiedad")
+                                    _header = (
+                                        f"Este es {_art_sing} que tenemos en {_loc}:"
+                                        if _loc else f"Este es {_art_sing} que tenemos disponible:"
+                                    )
+                                    _footer = f"Queres mas informacion de este {_noun[:-1] if _noun.endswith('s') else _noun}?"
+                                else:
+                                    _header = (
+                                        f"Estos son {_art} {_noun} que tenemos en {_loc}:"
+                                        if _loc else f"Estos son {_art} {_noun} que tenemos disponibles:"
+                                    )
+                                    _footer = f"Queres mas informacion de alguno de estos {_noun}?"
                                 messages.append({
                                     "role": "system",
                                     "content": (
                                         f"El tool result contiene {_n_results} propiedades en structured JSON. "
                                         f"Usa los datos del tool result para responder. "
                                         f"Header sugerido: '{_header}'. "
-                                        f"Cerrando sugerido: 'Queres mas informacion de alguno de estos {_noun}?'"
+                                        f"Cerrando sugerido: '{_footer}'"
                                     )
                                 })
                         elif tool_name == "get_property_details":
