@@ -472,15 +472,33 @@ def _prop_to_dict(p):
     """Serializa Property al shape que espera el dashboard (compatible con toProperty())."""
     extra = p.extra_data or {}
     city = extra.get("city", "")
+    zone = extra.get("zone", "")
+    street = extra.get("street", "")
+    
+    # If extra_data has structured fields, use them. Otherwise fall back to parsing location.
+    if street and zone:
+        address = street
+        neigh = zone
+        display_city = city
+    elif p.location:
+        parts = [x.strip() for x in p.location.split(",")]
+        address = parts[0] if parts else p.location
+        neigh = parts[1] if len(parts) > 1 else ""
+        display_city = parts[2] + ", " + parts[3] if len(parts) >= 4 else (", ".join(parts[1:]) if len(parts) > 1 else "")
+    else:
+        address = ""
+        neigh = ""
+        display_city = ""
+    
     return {
         "id": p.id,
         "title": p.title,
         "description": p.description,
-        "category": p.category or "",                        # new: toProperty() reads category first
-        "property_type": p.category or extra.get("building_type", ""),  # backward compat
-        "address": p.location,                             # toProperty() reads address/location
-        "city": city,                                      # toProperty() reads city → neigh
-        "neigh": city,                                     # Extra alias so the dashboard Neighborhood field is populated
+        "category": p.category or "",
+        "property_type": p.category or extra.get("building_type", ""),
+        "address": address,                                   # street only
+        "city": display_city,                                 # city for display
+        "neigh": neigh,                                       # zone/barrio
         "price": p.price,
         "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms,
