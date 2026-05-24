@@ -384,7 +384,7 @@ class RealEstateAgent:
                 if user_prefs.get("budget_max") or user_prefs.get("budget_min"):
                     _criteria_count += 1
                     _known_criteria["presupuesto"] = user_prefs.get("budget_max") or user_prefs.get("budget_min")
-                if _criteria_count < 4 and _next_state in ("searching", "qualifying"):
+                if _criteria_count < 4 and _next_state in ("searching",):
                     _missing = [k for k in ("zona", "operación", "tipo", "ambientes", "presupuesto")
                                 if k not in _known_criteria]
                     _criteria_msg = (
