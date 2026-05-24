@@ -695,10 +695,16 @@ class RealEstateAgent:
                                             f"[Agent] Stripped 'functions.' prefix from tool name: "
                                             f"'{tc.name}' -> '{name}'"
                                         )
-                                    # ── Validate tool exists ──
+                                    # ── Validate tool exists AND is currently gated ──
                                     if name not in TOOL_FUNCTIONS:
                                         logger.warning(
                                             f"[Agent] Structured tool call ignored — unknown tool: '{name}'"
+                                        )
+                                        continue
+                                    if _gated_tools and name not in {t["function"]["name"] for t in _gated_tools}:
+                                        logger.warning(
+                                            f"[Agent] Structured tool call ignored — '{name}' not in gated tools "
+                                            f"for state {_next_state}"
                                         )
                                         continue
                                     converted.append(TCR(name=name, arguments=tc.parsed_args))
