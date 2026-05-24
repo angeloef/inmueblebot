@@ -474,7 +474,7 @@ class RealEstateAgent:
                 # ── Active property auto-resolve: don't ask which property ──
                 _ref_kw = ["esta", "esta", "ese", "esa", "eso", "esa propiedad", "esa casa", "ese depto"]
                 _user_msg_lower = (user_message or "").lower().strip()
-                if _user_msg_lower == "si":
+                if _user_msg_lower in ("si", "sí"):
                     _has_active = bool(merged_context.get("selected_property_id") or merged_context.get("last_shown_properties"))
                     if _has_active:
                         _shown_list = merged_context.get("last_shown_properties") or []

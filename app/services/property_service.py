@@ -124,26 +124,6 @@ class PropertyService:
 
         logger.info(f"[PropertyService] Repo retornó: {total} total, {len(props)} propiedades")
 
-        # If no results with bedrooms filter, retry without it entirely.
-        # (The repo now uses >= so this only triggers when NO properties
-        # have >= the requested number of bedrooms.)
-        if not props and bedrooms is not None:
-            logger.info(f"[PropertyService] bedrooms >= {bedrooms} returned 0 — retrying without bedrooms filter")
-            props, total = await repo.search(
-                type=operation_type,
-                property_type=property_type,
-                location=location,
-                zone=zone,
-                budget_min=budget_min,
-                budget_max=budget_max,
-                bedrooms_min=None,
-                bathrooms_min=bathrooms,
-                status="available",
-                limit=limit,
-                sort_by=sort_by,
-                title_search=title_search,
-            )
-
         # Log results (even empty — let the tool layer handle fallback logic)
         if props:
             logger.info(f"[PropertyService] Propiedades encontradas ({len(props)}):")

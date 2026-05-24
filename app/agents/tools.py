@@ -464,6 +464,23 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
             except Exception as e:
                 logger.warning(f"[TOOL] Could not save last_shown_properties: {e}")
 
+        # Helper to save last_shown_properties from fallback results too
+        async def _save_fallback_props(phone, results):
+            if not phone or not results:
+                return
+            try:
+                fallback_prop_list = []
+                for prop in results:
+                    original_id = _get_attr(prop, "original_id", None)
+                    fallback_prop_list.append({
+                        "id": str(original_id) if original_id else str(_get_attr(prop, "id", "")),
+                        "title": _get_attr(prop, "title", ""),
+                    })
+                await memory_manager.update_context_field(phone, "last_shown_properties", fallback_prop_list)
+                logger.info(f"[TOOL] Saved {len(fallback_prop_list)} fallback properties to last_shown_properties")
+            except Exception as e:
+                logger.warning(f"[TOOL] Could not save fallback last_shown_properties: {e}")
+
         # If no results, try fallback searches with relaxed criteria
         if not properties:
             logger.info("[TOOL] No results found — trying fallback searches")
@@ -511,6 +528,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
 
             # Show best fallback with results (closest to original query)
             if fb1_results:
+                await _save_fallback_props(phone, fb1_results)
                 budget_str = f" (hasta ${fb1_criteria.get('budget_max', 0):,})" if fb1_criteria.get("budget_max") else ""
                 parts = [
                     f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
@@ -519,6 +537,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 parts.append(format_property_list(fb1_results[:MAX_ALTERNATIVES], fb1_criteria))
                 return "\n".join(parts)
             elif fb2_results:
+                await _save_fallback_props(phone, fb2_results)
                 parts = [
                     f"No encontré {search_criteria.get('property_type', 'propiedades')} en {search_criteria.get('location', 'esa zona')} con esos filtros exactos. Pero tengo estas alternativas:\n",
                     f"🔱 Opciones sin filtro de presupuesto:",
@@ -526,6 +545,7 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 parts.append(format_property_list(fb2_results[:MAX_ALTERNATIVES], fb2_criteria))
                 return "\n".join(parts)
             elif fb3_results:
+                await _save_fallback_props(phone, fb3_results)
                 # Found properties of the right type but not the requested operation_type
                 op_label = f"en {op_type}" if op_type else ""
                 pt_label = search_criteria.get("property_type", "propiedades")
@@ -535,6 +555,21 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
                 parts.append(format_property_list(fb3_results[:MAX_ALTERNATIVES], fb3_criteria))
                 return "\n".join(parts)
             else:
+                # Fallback 4: drop bedrooms — maybe no properties with that many bedrooms
+                fb4_criteria = {k: v for k, v in search_criteria.items()
+                                if k != "bedrooms"}
+                logger.info(f"[TOOL] Fallback 4: drop bedrooms, keep location={fb4_criteria.get('location')}")
+                fb4_results = await property_service.search_properties(fb4_criteria)
+                fb4_results = _dedup(fb4_results)
+                if fb4_results:
+                    await _save_fallback_props(phone, fb4_results)
+                    bedrooms_str = search_criteria.get("bedrooms", "")
+                    parts = [
+                        f"No encontré propiedades de {bedrooms_str} ambientes en {search_criteria.get('location', 'esa zona')}. Pero tengo estas opciones disponibles:\n",
+                        f"🔱 Otras opciones en la zona:",
+                    ]
+                    parts.append(format_property_list(fb4_results[:MAX_ALTERNATIVES], fb4_criteria))
+                    return "\n".join(parts)
                 # No results from any fallback — signal LLM to ask user for adjustments
                 logger.info("[TOOL] All fallbacks returned 0 results — returning NO_RESULTS_ASK_MORE signal")
                 return "NO_RESULTS_ASK_MORE"
