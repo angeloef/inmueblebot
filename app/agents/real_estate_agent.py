@@ -437,6 +437,17 @@ class RealEstateAgent:
                     messages.append({"role": "system", "content": _greet_first_msg})
                     logger.info("[Agent] Greeting + criteria ≥4 — forcing respond_with_sequence")
 
+                # ── Budget nudge: when 4/5 criteria are known and budget is missing ──
+                if _criteria_count == 4 and "presupuesto" not in _known_criteria and _next_state == "searching":
+                    _budget_nudge = (
+                        "NOTA: Al usuario solo le falta indicar el presupuesto. "
+                        "Si los resultados de busqueda son muchos, deciselo y preguntale "
+                        "si tiene un presupuesto maximo en mente para acotar la busqueda. "
+                        "Si hay pocos resultados o uno solo, mostraselos igual."
+                    )
+                    messages.append({"role": "system", "content": _budget_nudge})
+                    logger.info("[Agent] Budget nudge: 4/5 criteria, budget missing")
+
                 # ── State-aware closing rules: prevent redundant offers ──
                 # After a visit is scheduled or in FAQ mode, the bot should
                 # NOT offer property details, photos, or scheduling again.
@@ -471,6 +482,13 @@ class RealEstateAgent:
                             "content": "El usuario dijo 'sí' refiriéndose a la propiedad activa. Respondé directo sin preguntar cuál."
                         })
                         logger.info("[Agent] Auto-resolve: 'si' → active property")
+                        # Override state to viewing_property so search_properties is gated out
+                        if _next_state in ("searching", "qualifying"):
+                            _next_state = "viewing_property"
+                            _allowed_tools = state_machine.get_tools_for_state(_next_state)
+                            if _allowed_tools:
+                                _gated_tools = [t for t in self.tools if t["function"]["name"] in _allowed_tools]
+                            logger.info("[Agent] Auto-resolve: state overridden to viewing_property, tools regated")
                 elif any(kw in _user_msg_lower for kw in _ref_kw):
                     _prop_id = merged_context.get("selected_property_id")
                     if _prop_id:
@@ -479,6 +497,13 @@ class RealEstateAgent:
                             "content": f"El usuario se refiere a la propiedad activa (ID={_prop_id}). Respondé directo sin preguntar cuál."
                         })
                         logger.info("[Agent] Auto-resolve: reference → active property %s", _prop_id)
+                        # Override state to viewing_property so search_properties is gated out
+                        if _next_state in ("searching", "qualifying"):
+                            _next_state = "viewing_property"
+                            _allowed_tools = state_machine.get_tools_for_state(_next_state)
+                            if _allowed_tools:
+                                _gated_tools = [t for t in self.tools if t["function"]["name"] in _allowed_tools]
+                            logger.info("[Agent] Auto-resolve: state overridden to viewing_property, tools regated")
 
                 # ── Scheduling step instructions ──
                 if _next_state == "scheduling_ask_date":
