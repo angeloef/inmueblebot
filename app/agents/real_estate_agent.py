@@ -477,11 +477,16 @@ class RealEstateAgent:
                 if _user_msg_lower == "si":
                     _has_active = bool(merged_context.get("selected_property_id") or merged_context.get("last_shown_properties"))
                     if _has_active:
+                        _si_prop_id = merged_context.get("selected_property_id") or (merged_context.get("last_shown_properties") or [{}])[0].get("id")
                         messages.append({
                             "role": "system",
-                            "content": "El usuario dijo 'sí' refiriéndose a la propiedad activa. Respondé directo sin preguntar cuál."
+                            "content": (
+                                f"El usuario dijo 'sí' — quiere más información de la propiedad activa (ID={_si_prop_id}). "
+                                f"LLAMÁ get_property_details(property_id={_si_prop_id}) para obtener los detalles completos. "
+                                "NO repitas la línea de la lista de resultados — usá la herramienta para obtener la info fresca."
+                            )
                         })
-                        logger.info("[Agent] Auto-resolve: 'si' → active property")
+                        logger.info("[Agent] Auto-resolve: 'si' → get_property_details for property %s", _si_prop_id)
                         # Override state to viewing_property so search_properties is gated out
                         if _next_state in ("searching", "qualifying"):
                             _next_state = "viewing_property"
@@ -494,9 +499,13 @@ class RealEstateAgent:
                     if _prop_id:
                         messages.append({
                             "role": "system",
-                            "content": f"El usuario se refiere a la propiedad activa (ID={_prop_id}). Respondé directo sin preguntar cuál."
+                            "content": (
+                                f"El usuario se refiere a la propiedad activa (ID={_prop_id}). "
+                                f"LLAMÁ get_property_details(property_id={_prop_id}) para obtener los detalles completos. "
+                                "NO repitas la línea de la lista de resultados."
+                            )
                         })
-                        logger.info("[Agent] Auto-resolve: reference → active property %s", _prop_id)
+                        logger.info("[Agent] Auto-resolve: reference → get_property_details for %s", _prop_id)
                         # Override state to viewing_property so search_properties is gated out
                         if _next_state in ("searching", "qualifying"):
                             _next_state = "viewing_property"
