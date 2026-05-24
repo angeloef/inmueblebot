@@ -717,7 +717,12 @@ class MemoryManager:
         merged["last_search_criteria"] = redis_context.get("last_search_criteria")
         
         merged["conversation_stage"] = redis_context.get("conversation_stage", "new")
-        
+
+        # Context fields needed by the agent's auto-resolve and nudges
+        merged["last_shown_properties"] = redis_context.get("last_shown_properties")
+        merged["selected_property_id"] = redis_context.get("selected_property_id")
+        merged["pending_scheduling_info"] = redis_context.get("pending_scheduling_info")
+
         return merged
     
     # =========================================================================
