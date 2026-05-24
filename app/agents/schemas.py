@@ -36,6 +36,26 @@ class StructuredToolCall(BaseModel):
             return {}
 
 
+class MessageSegment(BaseModel):
+    """A single segment in a multi-message response sequence.
+
+    Used when action="respond_with_sequence". Each segment is sent as
+    a separate WhatsApp message with a small delay between them.
+    """
+    type: Literal["text", "images"] = Field(
+        default="text",
+        description="Segment type: 'text' for a text message, 'images' for images with caption",
+    )
+    content: Optional[str] = Field(
+        default=None,
+        description="Text content for 'text' segments, or caption for 'images' segments",
+    )
+    images: Optional[list[str]] = Field(
+        default=None,
+        description="Image URLs — only for 'images' segments (max 4)",
+    )
+
+
 class AgentResponse(BaseModel):
     """v2.0 structured LLM response schema.
 
@@ -44,13 +64,14 @@ class AgentResponse(BaseModel):
     When the LLM responds with text, the text MUST parse as this schema.
     """
 
-    action: Literal["tool_call", "respond", "ask_question"] = Field(
+    action: Literal["tool_call", "respond", "ask_question", "respond_with_sequence"] = Field(
         ...,
         description=(
             "What to do next: "
             "'tool_call' = execute the tool calls listed, "
-            "'respond' = deliver the response text, "
-            "'ask_question' = ask the user a question"
+            "'respond' = deliver the response text as a single message, "
+            "'ask_question' = ask the user a question, "
+            "'respond_with_sequence' = send multiple sequential messages"
         ),
     )
     tool_calls: list[StructuredToolCall] = Field(
@@ -68,6 +89,15 @@ class AgentResponse(BaseModel):
     question_field: Optional[Literal["date", "time", "name", "generic"]] = Field(
         default=None,
         description="What information the question is asking for.",
+    )
+    segments: Optional[list[MessageSegment]] = Field(
+        default=None,
+        description=(
+            "Sequential messages to send one by one. "
+            "Only when action='respond_with_sequence'. "
+            "Example: a warm greeting first, then immediately the next question "
+            "as a separate message. Max 4 segments."
+        ),
     )
     confidence: float = Field(
         default=1.0,
@@ -91,8 +121,8 @@ AGENT_RESPONSE_JSON_SCHEMA = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["tool_call", "respond", "ask_question"],
-                "description": "What to do next: tool_call, respond, or ask_question",
+                "enum": ["tool_call", "respond", "ask_question", "respond_with_sequence"],
+                "description": "What to do next: tool_call, respond, ask_question, or respond_with_sequence",
             },
             "tool_calls": {
                 "type": "array",
@@ -126,6 +156,31 @@ AGENT_RESPONSE_JSON_SCHEMA = {
                 "enum": ["date", "time", "name", "generic", None],
                 "description": "What the question is asking for.",
             },
+            "segments": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["text", "images"],
+                            "description": "'text' or 'images'",
+                        },
+                        "content": {
+                            "type": ["string", "null"],
+                            "description": "Text content or image caption",
+                        },
+                        "images": {
+                            "type": ["array", "null"],
+                            "items": {"type": "string"},
+                            "description": "Image URLs (max 4, for 'images' segments)",
+                        },
+                    },
+                    "required": ["type"],
+                    "additionalProperties": False,
+                },
+                "description": "Sequential message segments for respond_with_sequence.",
+            },
             "confidence": {
                 "type": "number",
                 "description": "Self-reported confidence 0.0-1.0",
@@ -135,7 +190,10 @@ AGENT_RESPONSE_JSON_SCHEMA = {
                 "description": "Brief reasoning for debugging.",
             },
         },
-        "required": ["action", "tool_calls", "response", "question", "question_field", "confidence", "reasoning"],
+        "required": [
+            "action", "tool_calls", "response", "question", "question_field",
+            "segments", "confidence", "reasoning"
+        ],
         "additionalProperties": False,
     },
 }

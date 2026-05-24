@@ -493,6 +493,44 @@ class RealEstateAgent:
                             elif sr.action == "ask_question":
                                 response_text = sr.question or sr.response or llm_response.content or ""
                                 break
+                            elif sr.action == "respond_with_sequence":
+                                # Multi-message sequence: build response_plan in rich_content
+                                if sr.segments:
+                                    _segments = []
+                                    for _seg in sr.segments:
+                                        if _seg.type == "text":
+                                            _segments.append({
+                                                "type": "text",
+                                                "content": _seg.content or "",
+                                            })
+                                        elif _seg.type == "images":
+                                            _segments.append({
+                                                "type": "images",
+                                                "images": (_seg.images or [])[:4],
+                                                "caption": _seg.content or "",
+                                            })
+                                    if _segments:
+                                        rich_content["response_plan"] = _segments
+                                        # Use first text segment as fallback response_text
+                                        for _s in _segments:
+                                            if _s["type"] == "text" and _s.get("content"):
+                                                response_text = _s["content"]
+                                                break
+                                        if not response_text:
+                                            response_text = _segments[0].get("content", "")
+                                        logger.info(
+                                            "[Agent] respond_with_sequence: %d segment(s), "
+                                            "first: %s",
+                                            len(_segments),
+                                            response_text[:60],
+                                        )
+                                else:
+                                    # Empty segments — fallback to safe response
+                                    response_text = (
+                                        "Disculpá, tuve un problema al procesar tu consulta. "
+                                        "¿Podrías repetirmelo de otra manera?"
+                                    )
+                                break
                             # action="tool_call" with no native tool_calls: fall through
                             # to check if the structured tool_calls list has content
                             if sr.tool_calls:
