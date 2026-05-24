@@ -421,6 +421,22 @@ class RealEstateAgent:
                         f"Missing: {_missing}. search_properties removed from tools."
                     )
 
+                # ── Greeting + criteria: respond_with_sequence instead of silent search ──
+                # When the first message is a greeting AND has enough search criteria,
+                # the LLM should greet warmly FIRST, then present results.
+                _greeting_kw_4 = ["hola", "buenas", "buen día", "buenas tardes", "buenas noches", "hello", "hi", "hey"]
+                _is_greeting_msg = any(kw in _msg_lower_4 for kw in _greeting_kw_4)
+                if _is_greeting_msg and _criteria_count >= 4 and _next_state == "searching":
+                    _greet_first_msg = (
+                        "INSTRUCCION: El usuario saludo Y dio suficientes criterios de busqueda en este mismo mensaje. "
+                        "Usá `action: respond_with_sequence` para enviar DOS mensajes:\n"
+                        "  segment 1: saludo calido y breve (ej: '¡Hola! Buenas tardes 😊')\n"
+                        "  segment 2: la informacion que pidio o la siguiente pregunta\n"
+                        "NO mezcles todo en un solo mensaje."
+                    )
+                    messages.append({"role": "system", "content": _greet_first_msg})
+                    logger.info("[Agent] Greeting + criteria ≥4 — forcing respond_with_sequence")
+
                 # ── State-aware closing rules: prevent redundant offers ──
                 # After a visit is scheduled or in FAQ mode, the bot should
                 # NOT offer property details, photos, or scheduling again.
