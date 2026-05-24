@@ -406,6 +406,29 @@ class RealEstateAgent:
                         f"Missing: {_missing}. search_properties removed from tools."
                     )
 
+                # ── State-aware closing rules: prevent redundant offers ──
+                # After a visit is scheduled or in FAQ mode, the bot should
+                # NOT offer property details, photos, or scheduling again.
+                if _next_state in ("completed", "faq", "human_assistance", "handoff"):
+                    _closing_rule = (
+                        "REGLAS DE CIERRE: El usuario ya completo su objetivo o esta consultando. "
+                        "Respondé SOLO a lo que pregunta. "
+                        "NO ofrezcas enviar mas detalles, mostrar fotos, ni agendar visitas. "
+                        "NO preguntes '¿Queres que te muestre las fotos?' ni '¿Queres agendar una visita?'. "
+                        "Si corresponde, pregunta simplemente: '¿Alguna otra consulta?'"
+                    )
+                    messages.append({"role": "system", "content": _closing_rule})
+                    logger.info("[Agent] Closing rule injected for state=%s", _next_state)
+                elif _next_state in ("viewing_property", "viewing_detail", "viewing_photos", "viewing_compare"):
+                    _closing_rule = (
+                        "REGLAS DE CIERRE: El usuario ya esta viendo los detalles de una propiedad. "
+                        "NO preguntes '¿Queres que te muestre los detalles?' porque ya los tiene. "
+                        "Si el usuario no pidio fotos explicitamente, NO ofrezcas fotos. "
+                        "Respondé solo a la pregunta del usuario."
+                    )
+                    messages.append({"role": "system", "content": _closing_rule})
+                    logger.info("[Agent] Viewing closing rule injected for state=%s", _next_state)
+
                 tools_used = []
                 response_text = ""
                 rich_content = {}
