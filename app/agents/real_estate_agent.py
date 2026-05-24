@@ -477,23 +477,37 @@ class RealEstateAgent:
                 if _user_msg_lower == "si":
                     _has_active = bool(merged_context.get("selected_property_id") or merged_context.get("last_shown_properties"))
                     if _has_active:
-                        _si_prop_id = merged_context.get("selected_property_id") or (merged_context.get("last_shown_properties") or [{}])[0].get("id")
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                f"El usuario dijo 'sí' — quiere más información de la propiedad activa (ID={_si_prop_id}). "
-                                f"LLAMÁ get_property_details(property_id={_si_prop_id}) para obtener los detalles completos. "
-                                "NO repitas la línea de la lista de resultados — usá la herramienta para obtener la info fresca."
-                            )
-                        })
-                        logger.info("[Agent] Auto-resolve: 'si' → get_property_details for property %s", _si_prop_id)
-                        # Override state to viewing_property so search_properties is gated out
-                        if _next_state in ("searching", "qualifying"):
-                            _next_state = "viewing_property"
-                            _allowed_tools = state_machine.get_tools_for_state(_next_state)
-                            if _allowed_tools:
-                                _gated_tools = [t for t in self.tools if t["function"]["name"] in _allowed_tools]
-                            logger.info("[Agent] Auto-resolve: state overridden to viewing_property, tools regated")
+                        _shown_list = merged_context.get("last_shown_properties") or []
+                        _has_selected = bool(merged_context.get("selected_property_id"))
+                        if _has_selected or len(_shown_list) <= 1:
+                            # Single property or already selected → auto-resolve to get_property_details
+                            _si_prop_id = merged_context.get("selected_property_id") or (_shown_list[0] if _shown_list else {}).get("id")
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    f"El usuario dijo 'sí' — quiere más información de la propiedad activa (ID={_si_prop_id}). "
+                                    f"LLAMÁ get_property_details(property_id={_si_prop_id}) para obtener los detalles completos. "
+                                    "NO repitas la línea de la lista de resultados — usá la herramienta para obtener la info fresca."
+                                )
+                            })
+                            logger.info("[Agent] Auto-resolve: 'si' → get_property_details for property %s", _si_prop_id)
+                            # Override state to viewing_property so search_properties is gated out
+                            if _next_state in ("searching", "qualifying"):
+                                _next_state = "viewing_property"
+                                _allowed_tools = state_machine.get_tools_for_state(_next_state)
+                                if _allowed_tools:
+                                    _gated_tools = [t for t in self.tools if t["function"]["name"] in _allowed_tools]
+                                logger.info("[Agent] Auto-resolve: state overridden to viewing_property, tools regated")
+                        else:
+                            # Multiple properties, no selection — "si" is ambiguous
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "El usuario dijo 'sí' pero hay múltiples propiedades en la lista. "
+                                    "Preguntale cuál de ellas le interesa. Mencioná los IDs disponibles."
+                                )
+                            })
+                            logger.info("[Agent] Auto-resolve: 'si' is ambiguous (%d properties)", len(_shown_list))
                 elif any(kw in _user_msg_lower for kw in _ref_kw):
                     _prop_id = merged_context.get("selected_property_id")
                     if _prop_id:
