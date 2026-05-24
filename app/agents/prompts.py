@@ -185,7 +185,11 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "Ciudad o zona (ej: 'Posadas', 'Oberá', 'Asunción', 'Encarnación')"
+                        "description": "Ciudad (ej: 'Posadas', 'Oberá', 'Asunción', 'Encarnación')"
+                    },
+                    "zone": {
+                        "type": "string",
+                        "description": "Zona o barrio específico (ej: 'Centro', 'Barrio Krause', 'Terminal'). Opcional — si no se especifica, busca en toda la ciudad indicada."
                     },
                     "budget_max": {
                         "type": "number",

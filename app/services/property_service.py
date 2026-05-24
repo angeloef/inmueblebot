@@ -93,6 +93,7 @@ class PropertyService:
         
         # Extraer criterios
         location = criteria.get("location")
+        zone = criteria.get("zone")
         budget_min = criteria.get("budget_min")
         budget_max = criteria.get("budget_max")
         bedrooms = criteria.get("bedrooms")
@@ -110,6 +111,7 @@ class PropertyService:
             type=operation_type,
             property_type=property_type,
             location=location,
+            zone=zone,
             budget_min=budget_min,
             budget_max=budget_max,
             bedrooms_min=bedrooms,
@@ -131,6 +133,7 @@ class PropertyService:
                 type=operation_type,
                 property_type=property_type,
                 location=location,
+                zone=zone,
                 budget_min=budget_min,
                 budget_max=budget_max,
                 bedrooms_min=None,

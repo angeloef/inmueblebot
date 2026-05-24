@@ -376,6 +376,7 @@ class PropertyCreate(BaseModel):
     operation: Optional[str] = "venta"    # 'venta' or 'alquiler' → Property.type
     location: Optional[str] = None        # Property.location
     city: Optional[str] = None            # City name → Property.extra_data['city']
+    zone: Optional[str] = None             # Zone/barrio → Property.extra_data['zone']
     price: Optional[int] = 0              # Property.price (integer cents/USD)
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
@@ -695,6 +696,18 @@ def create_property(
             separator = ", " if location else ""
             location = f"{location}{separator}{city_str}"
 
+    # Build extra_data with structured fields
+    extra_data_dict = {"building_type": data.building_type, "city": data.city or ""}
+
+    # Store zone: explicit field first, then try to extract from location string
+    if data.zone:
+        extra_data_dict["zone"] = data.zone
+    elif location and ", " in location:
+        # Extract zone from location string: "Av. Cabildo 2350, Centro" → zone="Centro"
+        _loc_parts = location.split(", ", 1)
+        if len(_loc_parts) > 1 and _loc_parts[1].strip():
+            extra_data_dict["zone"] = _loc_parts[1].strip()
+
     prop = Property(
         id=_next_property_id(db),
         title=data.title or data.location or "Sin título",
@@ -708,7 +721,7 @@ def create_property(
         area_m2=data.area_m2,
         status=data.status if data.status in ("available", "reserved", "sold", "rented") else "available",
         category=data.category,
-        extra_data={"building_type": data.building_type, "city": data.city or ""},
+        extra_data=extra_data_dict,
         images=data.images,
     )
     db.add(prop)
@@ -758,6 +771,10 @@ def update_property(
     if "city" in updates:
         extra = dict(prop.extra_data or {})
         extra["city"] = updates.pop("city")
+        prop.extra_data = extra
+    if "zone" in updates:
+        extra = dict(prop.extra_data or {})
+        extra["zone"] = updates.pop("zone")
         prop.extra_data = extra
     if "currency" in updates:
         prop.currency = updates.pop("currency")

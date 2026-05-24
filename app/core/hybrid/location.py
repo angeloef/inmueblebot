@@ -42,6 +42,13 @@ def _code_normalize(raw: str) -> ParseResult:
         search_text = search_text.replace(accented, plain)
     for city in _KNOWN_CITIES:
         if city in search_text:
+            # Extract city name preserving zone info after it
+            city_idx = search_text.index(city)
+            city_end = city_idx + len(city)
+            remaining = search_text[city_end:].strip()
+            if remaining:
+                combined = f"{city.title()} {remaining}"
+                return ParseResult(combined, 0.7, "code")
             return ParseResult(city.title(), 0.7, "code")
     # Fallback: strip prefixes + numbers (current logic)
     loc = raw_lower

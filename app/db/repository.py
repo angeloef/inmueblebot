@@ -172,6 +172,7 @@ class PropertyRepository(BaseRepository):
         type: Optional[str] = None,
         property_type: Optional[str] = None,
         location: Optional[str] = None,
+        zone: Optional[str] = None,
         budget_min: Optional[int] = None,
         budget_max: Optional[int] = None,
         bedrooms_min: Optional[int] = None,
@@ -311,7 +312,22 @@ class PropertyRepository(BaseRepository):
 
             # Combine all strategies with OR — any matching strategy returns results
             query = query.where(or_(*filters))
-        
+
+        # Zone filter: narrows to a specific neighborhood/barrio within the city
+        # Uses extra_data->>zone (new format from dashboard), falls back to location ILIKE
+        if zone:
+            zone_clean = zone.strip().lower()
+            import re as _re2
+            zone_clean = _re2.sub(r'(.)\\1+', r'\\1', zone_clean)
+            zone_filters = [
+                # Primary: extra_data->>'zone' JSONB field (when property created via dashboard)
+                func.lower(Property.extra_data['zone'].astext()).like(f"%{zone_clean}%"),
+                # Fallback: location ILIKE for old seeded data where zone is in the location string
+                Property.location.ilike(f"%{zone_clean}%"),
+            ]
+            query = query.where(or_(*zone_filters))
+            logger.info("[Repo] Zone filter applied: %r", zone_clean)
+
         if budget_min is not None:
             query = query.where(Property.price >= budget_min)
         

@@ -329,7 +329,10 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
         criteria = sanitize_criteria(criteria)
         
         search_criteria = {}
-        
+
+        # ── Zone: passed explicitly by LLM via new 'zone' parameter ──
+        _explicit_zone = criteria.get("zone")
+
         # Normalize location using hybrid parser
         if criteria.get("location"):
             raw_loc = criteria["location"].strip()
@@ -337,17 +340,30 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
 
             loc_result = await location_parser.parse(raw_loc, {})
             if loc_result.value:
-                search_criteria["location"] = loc_result.value
+                parsed_loc = loc_result.value
                 logger.info(
                     "[TOOL] Location: raw=%r -> parsed=%r (parser=%s, conf=%.2f)",
                     raw_loc,
-                    loc_result.value,
+                    parsed_loc,
                     loc_result.parser_used,
                     loc_result.confidence,
                 )
+                # Try to extract city and zone from the parsed location
+                # Parsed format could be "Obera" (city only) or "Obera centro" (city + zone)
+                _parts = parsed_loc.split(" ", 1)
+                search_criteria["location"] = _parts[0]  # city always goes to location
+                # If parser returned zone info AND LLM didn't pass explicit zone, use it
+                if len(_parts) > 1 and not _explicit_zone:
+                    _explicit_zone = _parts[1]
+                    logger.info("[TOOL] Zone extracted from location: %r", _explicit_zone)
             else:
                 search_criteria["location"] = raw_loc
                 logger.info("[TOOL] Location parser fallo, usando raw: %r", raw_loc)
+
+        # Handle explicit zone from LLM or extracted from location
+        if _explicit_zone:
+            search_criteria["zone"] = _explicit_zone
+            logger.info("[TOOL] Zone filter: %r", _explicit_zone)
         
         if criteria.get("budget_max"):
             raw_budget = int(criteria["budget_max"])

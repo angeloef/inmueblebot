@@ -366,11 +366,12 @@ class RealEstateAgent:
 
                 # ── 4-criteria minimum enforcement: prevent premature search ──
                 # Count how many criteria the LLM has for search_properties
+                # NOTE: city + zone count as ONE criterion (both are "location")
                 _criteria_count = 0
                 _known_criteria = {}
-                if user_prefs.get("location"):
+                if user_prefs.get("location") or user_prefs.get("city"):
                     _criteria_count += 1
-                    _known_criteria["zona"] = user_prefs["location"]
+                    _known_criteria["zona"] = user_prefs.get("location") or user_prefs.get("city") or ""
                 if user_prefs.get("operation_type"):
                     _criteria_count += 1
                     _known_criteria["operación"] = user_prefs["operation_type"]
