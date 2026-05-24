@@ -176,7 +176,7 @@ AGENT_RESPONSE_JSON_SCHEMA = {
                             "description": "Image URLs (max 4, for 'images' segments)",
                         },
                     },
-                    "required": ["type"],
+                    "required": ["type", "content", "images"],
                     "additionalProperties": False,
                 },
                 "description": "Sequential message segments for respond_with_sequence.",
