@@ -199,6 +199,9 @@ async def detect_stage(
         "reservar turno", "reservar cita", "pedir turno",
         "ir a ver", "conocer la propiedad", "visitarla",
         "quiero verla", "cuándo puedo ir", "cuando puedo ir",
+        "a partir de cuando", "desde cuando", "puedo alquilar",
+        "cuando puedo", "está disponible", "está libre",
+        "fecha de entrada", "puedo visitar", "disponible para",
     ]):
         return STAGE_SCHEDULING
 
