@@ -10,7 +10,7 @@ from loguru import logger
 from app.agents.llm_router import llm_router, LLMResponse
 from app.agents.tools import execute_tool, TOOL_FUNCTIONS
 from app.agents.prompts import get_system_prompt, TOOL_DEFINITIONS
-from app.agents.router import should_handoff, STAGE_HANDOFF, STAGE_OUT_OF_SCOPE
+from app.agents.router import should_handoff
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
