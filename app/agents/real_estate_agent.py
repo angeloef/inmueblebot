@@ -121,10 +121,10 @@ class RealEstateAgent:
 
                 # Always sync state from Redis — context can be stale
                 _current_sm_state = await state_machine.get_state(phone)
-                if _current_sm_state in ("human_assistance", "handoff"):
-                    # Terminal state from previous session — auto-reset
+                if _current_sm_state != "idle":
+                    # Any non-idle state from a previous session — auto-reset
                     logger.info(
-                        f"[Agent] Resetting from terminal state '{_current_sm_state}' for {phone}"
+                        f"[Agent] Resetting from previous session state '{_current_sm_state}' for {phone}"
                     )
                     await state_machine.reset_state(phone)
                     _current_sm_state = "idle"
@@ -367,23 +367,38 @@ class RealEstateAgent:
                 # ── 4-criteria minimum enforcement: prevent premature search ──
                 # Count how many criteria the LLM has for search_properties
                 # NOTE: city + zone count as ONE criterion (both are "location")
+
+                # Inline detection: scan the current message for criteria keywords
+                # even before PreferenceExtractor saves them to user_prefs
+                _msg_lower_4 = (user_message or "").lower()
+                _inline_op = any(kw in _msg_lower_4 for kw in ["alquilar", "alquiler", "comprar", "compra", "venta"])
+                _inline_type = any(kw in _msg_lower_4 for kw in ["departamento", "depto", "casa", "terreno", "ph", "local", "propiedad"])
+                _inline_bed = any(kw in _msg_lower_4 for kw in ["ambientes", "dormitorio", "habitacion"])
+                _inline_budget = any(kw in _msg_lower_4 for kw in ["presupuesto", "hasta", "desde", "precio", "$", "mil"])
+                # Location: check if message mentions a known city name
+                _inline_location = any(
+                    city in _msg_lower_4
+                    for city in ["obera", "oberá", "posadas", "encarnacion", "encarnación",
+                                 "asuncion", "asunción", "centro", "barrio"]
+                )
+
                 _criteria_count = 0
                 _known_criteria = {}
-                if user_prefs.get("location") or user_prefs.get("city") or user_prefs.get("location_preferences"):
+                if user_prefs.get("location") or user_prefs.get("city") or user_prefs.get("location_preferences") or _inline_location:
                     _criteria_count += 1
                     _known_criteria["zona"] = user_prefs.get("location") or user_prefs.get("city") or user_prefs.get("location_preferences") or ""
-                if user_prefs.get("operation_type"):
+                if user_prefs.get("operation_type") or _inline_op:
                     _criteria_count += 1
-                    _known_criteria["operación"] = user_prefs["operation_type"]
-                if user_prefs.get("property_type"):
+                    _known_criteria["operación"] = user_prefs.get("operation_type") or ""
+                if user_prefs.get("property_type") or _inline_type:
                     _criteria_count += 1
-                    _known_criteria["tipo"] = user_prefs["property_type"]
-                if user_prefs.get("bedrooms"):
+                    _known_criteria["tipo"] = user_prefs.get("property_type") or ""
+                if user_prefs.get("bedrooms") or _inline_bed:
                     _criteria_count += 1
-                    _known_criteria["ambientes"] = user_prefs["bedrooms"]
-                if user_prefs.get("budget_max") or user_prefs.get("budget_min"):
+                    _known_criteria["ambientes"] = user_prefs.get("bedrooms") or ""
+                if user_prefs.get("budget_max") or user_prefs.get("budget_min") or _inline_budget:
                     _criteria_count += 1
-                    _known_criteria["presupuesto"] = user_prefs.get("budget_max") or user_prefs.get("budget_min")
+                    _known_criteria["presupuesto"] = user_prefs.get("budget_max") or user_prefs.get("budget_min") or ""
                 if _criteria_count < 4 and _next_state in ("searching",):
                     _missing = [k for k in ("zona", "operación", "tipo", "ambientes", "presupuesto")
                                 if k not in _known_criteria]

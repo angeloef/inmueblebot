@@ -908,6 +908,9 @@ class MemoryManager:
                 f"user:{phone}:context",
                 f"user:{phone}:messages",
                 f"user:{phone}:summary",
+                f"user:{phone}:state",
+                f"user:{phone}:previous_state",
+                f"user:{phone}:state_context",
             ]
             for key in keys:
                 await r.delete(key)
