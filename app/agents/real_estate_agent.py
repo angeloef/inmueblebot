@@ -364,6 +364,47 @@ class RealEstateAgent:
                     messages.append({"role": "system", "content": _mi_msg_content})
                     logger.info(f"[Agent] Multi-intent: {list(_mi_intents.keys())}")
 
+                # ── 4-criteria minimum enforcement: prevent premature search ──
+                # Count how many criteria the LLM has for search_properties
+                _criteria_count = 0
+                _known_criteria = {}
+                if user_prefs.get("location"):
+                    _criteria_count += 1
+                    _known_criteria["zona"] = user_prefs["location"]
+                if user_prefs.get("operation_type"):
+                    _criteria_count += 1
+                    _known_criteria["operación"] = user_prefs["operation_type"]
+                if user_prefs.get("property_type"):
+                    _criteria_count += 1
+                    _known_criteria["tipo"] = user_prefs["property_type"]
+                if user_prefs.get("bedrooms"):
+                    _criteria_count += 1
+                    _known_criteria["ambientes"] = user_prefs["bedrooms"]
+                if user_prefs.get("budget_max") or user_prefs.get("budget_min"):
+                    _criteria_count += 1
+                    _known_criteria["presupuesto"] = user_prefs.get("budget_max") or user_prefs.get("budget_min")
+                if _criteria_count < 4 and _next_state in ("searching", "qualifying"):
+                    _missing = [k for k in ("zona", "operación", "tipo", "ambientes", "presupuesto")
+                                if k not in _known_criteria]
+                    _criteria_msg = (
+                        f"REGLAS ESTRICTAS: Tenes {_criteria_count}/5 criterios del usuario "
+                        f"({', '.join(f'{k}={v}' for k, v in _known_criteria.items())}). "
+                        f"NO podes llamar search_properties hasta tener AL MENOS 4 criterios. "
+                        f"Te faltan: {', '.join(_missing)}. "
+                        f"NO preguntes todo de una vez. Pregunta SOLO un criterio por turno. "
+                        f"Hace una pregunta mas para obtener el siguiente criterio faltante."
+                    )
+                    messages.append({"role": "system", "content": _criteria_msg})
+                    # Also block search_properties tool from the gated tools
+                    _gated_tools = [t for t in _gated_tools
+                                    if t["function"]["name"] != "search_properties"]
+                    _gated_tools = [t for t in _gated_tools
+                                    if t["function"]["name"] != "recommend_properties"]
+                    logger.info(
+                        f"[Agent] 4-criteria block: {_criteria_count}/5 known. "
+                        f"Missing: {_missing}. search_properties removed from tools."
+                    )
+
                 tools_used = []
                 response_text = ""
                 rich_content = {}

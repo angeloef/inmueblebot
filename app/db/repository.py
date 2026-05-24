@@ -294,7 +294,7 @@ class PropertyRepository(BaseRepository):
             # ("barrio", "calle", "oberá", "misiones", etc.) — they match everything.
             _STOP_WORDS = {
                 "barrio", "calle", "avenida", "av", "av.", "obera", "oberá",
-                "misiones", "centro", "pasaje", "ruta", "boulevard", "bvar",
+                "misiones", "pasaje", "ruta", "boulevard", "bvar",
                 "camino", "autopista", "villa", "san", "las", "los", "del",
                 "de", "la", "el", "y", "en",
             }
