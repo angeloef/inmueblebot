@@ -314,18 +314,12 @@ class PropertyRepository(BaseRepository):
             query = query.where(or_(*filters))
 
         # Zone filter: narrows to a specific neighborhood/barrio within the city
-        # Uses extra_data->>zone (new format from dashboard), falls back to location ILIKE
+        # Uses location ILIKE (zone is embedded in location field in the DB)
         if zone:
             zone_clean = zone.strip().lower()
             import re as _re2
             zone_clean = _re2.sub(r'(.)\\1+', r'\\1', zone_clean)
-            zone_filters = [
-                # Primary: extra_data->>'zone' JSONB field (when property created via dashboard)
-                func.lower(Property.extra_data['zone'].astext()).like(f"%{zone_clean}%"),
-                # Fallback: location ILIKE for old seeded data where zone is in the location string
-                Property.location.ilike(f"%{zone_clean}%"),
-            ]
-            query = query.where(or_(*zone_filters))
+            query = query.where(Property.location.ilike(f"%{zone_clean}%"))
             logger.info("[Repo] Zone filter applied: %r", zone_clean)
 
         if budget_min is not None:

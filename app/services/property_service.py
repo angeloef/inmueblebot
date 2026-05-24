@@ -158,15 +158,17 @@ class PropertyService:
         """Return sample properties when database is unavailable."""
         from uuid import uuid4
         from datetime import datetime
-        
+
         logger.info("[PropertyService] Usando FALLBACK PROPERTIES (Database no disponible)")
-        
+
         location = criteria.get("location", "").lower().strip() if criteria.get("location") else ""
-        budget_max = criteria.get("budget_max", 1000000)
+        zone = criteria.get("zone", "").lower().strip() if criteria.get("zone") else ""
+        budget_max = criteria.get("budget_max") or 1000000
         bedrooms = criteria.get("bedrooms", 0)
         prop_type = criteria.get("property_type", "").lower()
-        
+
         logger.info(f"[PropertyService] Fallback - Location filter: '{location}'")
+        logger.info(f"[PropertyService] Fallback - Zone filter: '{zone}'")
         logger.info(f"[PropertyService] Fallback - Bedrooms min: {bedrooms}")
         logger.info(f"[PropertyService] Fallback - Property type: '{prop_type}'")
         
@@ -192,18 +194,27 @@ class PropertyService:
             # Budget filter
             if s["price"] > budget_max:
                 continue
-            # Bedrooms filter - MINIMUM
-            if bedrooms and s["beds"] != bedrooms:
+            # Bedrooms filter - MINIMUM (>=)
+            if bedrooms and s["beds"] < bedrooms:
                 continue
             # Type filter
             if prop_type and prop_type != s["type"]:
                 continue
-            # Location filter - FLEXIBLE (case insensitive, partial match)
+            # Location filter - accent-insensitive (case insensitive, partial match)
             loc_lower = s["loc"].lower()
             title_lower = s["title"].lower()
             if location:
-                # Match "obera" in "Oberá Centro", "Oberá Norte", etc.
-                if "obera" not in loc_lower and "obera" not in title_lower:
+                # Check WITH accents (accented match) and WITHOUT (accent-stripped match)
+                # e.g. "obera" should match "Oberá" → strip accents on both sides
+                loc_no_accent = loc_lower.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u").replace("ü","u")
+                loc_match = location in loc_lower or location in loc_no_accent or location in title_lower
+                if not loc_match:
+                    continue
+            # Zone filter - match loc field against zone keyword
+            if zone:
+                zone_no_accent = zone.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
+                zone_in_loc = zone in loc_lower or zone_no_accent in loc_lower
+                if not zone_in_loc:
                     continue
             filtered.append(s)
         
