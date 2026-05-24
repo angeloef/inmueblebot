@@ -367,6 +367,11 @@ async def search_properties(criteria: Dict[str, Any], phone: str = None) -> str:
         
         if criteria.get("budget_max"):
             raw_budget = int(criteria["budget_max"])
+            # Argentine context: users often say "250" meaning 250,000 ARS
+            # If the number is unrealistically low (< 1000), assume they meant thousands
+            if raw_budget < 1000:
+                raw_budget = raw_budget * 1000
+                logger.info(f"[TOOL] Budget {criteria['budget_max']} seems low — interpreted as {raw_budget} ARS")
             # Expand +20%: user's budget is a TARGET, not a hard cap.
             # This surfaces options slightly above what they said while still being relevant.
             search_criteria["budget_max"] = int(raw_budget * 1.20)
@@ -1621,7 +1626,8 @@ async def get_property_images(property_id: str) -> str:
                     prop = await repo.get(int_id)
                     if prop and getattr(prop, "images", None):
                         images = _to_public_image_urls(prop.images, str(int_id))
-                        return json.dumps({"images": images})
+                        prop_title = getattr(prop, "title", f"Propiedad {int_id}")
+                        return json.dumps({"images": images, "title": prop_title})
         except Exception:
             pass
         # Try UUID via service

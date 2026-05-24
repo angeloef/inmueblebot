@@ -193,11 +193,11 @@ TOOL_DEFINITIONS = [
                     },
                     "budget_max": {
                         "type": "number",
-                        "description": "Presupuesto máximo en USD (ej: 150000). Para términos vagos usá price_tier."
+                        "description": "Presupuesto máximo en ARS (pesos argentinos). Ej: 250000 para $250.000/mes"
                     },
                     "budget_min": {
                         "type": "number",
-                        "description": "Presupuesto mínimo en USD"
+                        "description": "Presupuesto mínimo en ARS (pesos argentinos)"
                     },
                     "bedrooms": {
                         "type": "number",

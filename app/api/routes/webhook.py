@@ -459,12 +459,15 @@ async def process_messages(messages: List[Dict[str, Any]]):
                         elif seg_type == "images":
                             images = segment.get("images", [])
                             caption = sanitize_bot_response(segment.get("caption", ""))
+                            if not caption:
+                                caption = "Fotos de la propiedad"
                             for i, url in enumerate(images[:4]):
                                 try:
+                                    img_caption = f"{caption} — {i+1}/{len(images[:4])}" if len(images[:4]) > 1 else caption
                                     img_result = await whatsapp_client.send_image(
                                         to=phone_to,
                                         image_url=url,
-                                        caption=caption
+                                        caption=img_caption
                                     )
                                     if img_result is None or (isinstance(img_result, dict) and img_result.get("error")):
                                         logger.warning(f"[Webhook] Plan image {seg_idx}.{i} failed: {img_result}")
@@ -506,10 +509,12 @@ async def process_messages(messages: List[Dict[str, Any]]):
                             await asyncio.sleep(0.5)
                         for i, url in enumerate(images[:4]):
                             try:
+                                caption_base = rich_content.get("caption", "Fotos de la propiedad")
+                                img_caption = f"{caption_base} — {i+1}/{len(images[:4])}" if len(images[:4]) > 1 else caption_base
                                 img_result = await whatsapp_client.send_image(
                                     to=phone_to,
                                     image_url=url,
-                                    caption=rich_content.get("caption", "")
+                                    caption=img_caption
                                 )
                                 if img_result is None or (isinstance(img_result, dict) and img_result.get("error")):
                                     logger.warning(f"Image send failed (index {i}, url truncated: {url[:60]}...): result={img_result}")

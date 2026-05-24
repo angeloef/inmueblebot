@@ -116,9 +116,8 @@ class RealEstateAgent:
                 # v2.0: Handoff detection is now handled by the regex router
                 # (propose_transition → out_of_scope / human_assistance states)
 
-                # ── v2.0: State-driven routing with regex-first transition proposal ──
-                from app.agents.router import propose_transition as _regex_propose
-                from app.agents.router import STAGE_OUT_OF_SCOPE, STAGE_HANDOFF, should_handoff
+                # ── Dual classifier: lightweight regex + LLM with tiebreaker ──
+                from app.agents.router import resolve_state, should_handoff
 
                 # Always sync state from Redis — context can be stale
                 _current_sm_state = await state_machine.get_state(phone)
@@ -129,42 +128,43 @@ class RealEstateAgent:
                     )
                     await state_machine.reset_state(phone)
                     _current_sm_state = "idle"
-                _proposed_state, _proposal_conf = await _regex_propose(
+                _next_state, _classification_method = await resolve_state(
                     user_message, _current_sm_state, merged_context, history
                 )
 
-                if _proposal_conf == "high" and _proposed_state:
-                    # Regex router is confident — do the state transition now
+                # Attempt transition to the resolved state
+                if _next_state and _next_state != _current_sm_state:
                     _transitioned = await state_machine.transition(
-                        phone, _current_sm_state, _proposed_state
+                        phone, _current_sm_state, _next_state
                     )
                     if not _transitioned:
-                        # Illegal transition — if stuck in a terminal state
-                        # (human_assistance, handoff, completed), auto-reset to idle first
+                        # Illegal transition — if stuck in a terminal state, auto-reset first
                         _terminal_states = {"human_assistance", "handoff", "completed",
                                             "out_of_scope"}
                         if _current_sm_state in _terminal_states:
                             logger.info(
                                 f"[Agent] Stuck in terminal state '{_current_sm_state}' — "
-                                f"auto-resetting to idle before transition to '{_proposed_state}'"
+                                f"auto-resetting to idle before transition to '{_next_state}'"
                             )
                             await state_machine.reset_state(phone)
                             _transitioned = await state_machine.transition(
-                                phone, "idle", _proposed_state
+                                phone, "idle", _next_state
                             )
                     if _transitioned:
-                        _next_state = _proposed_state
+                        logger.info(
+                            f"[Agent] Dual classifier: {_current_sm_state} -> {_next_state} "
+                            f"(method={_classification_method})"
+                        )
                     else:
+                        logger.info(
+                            f"[Agent] Dual classifier: stay in {_current_sm_state} "
+                            f"(transition rejected, method={_classification_method})"
+                        )
                         _next_state = _current_sm_state
-                    logger.info(
-                        f"[Agent] v2.0 regex router: {_current_sm_state} -> {_next_state} "
-                        f"(conf={_proposal_conf}, transitioned={_transitioned})"
-                    )
                 else:
-                    # Low confidence — keep current state, classifier handles intent
-                    _next_state = _current_sm_state
                     logger.info(
-                        f"[Agent] v2.0 regex router: staying in {_next_state} (conf={_proposal_conf})"
+                        f"[Agent] Dual classifier: stay in {_next_state} "
+                        f"(method={_classification_method})"
                     )
 
                 # ── Out-of-scope / handoff: still fast-path these ──
@@ -428,6 +428,52 @@ class RealEstateAgent:
                     )
                     messages.append({"role": "system", "content": _closing_rule})
                     logger.info("[Agent] Viewing closing rule injected for state=%s", _next_state)
+
+                # ── Active property auto-resolve: don't ask which property ──
+                _ref_kw = ["esta", "esta", "ese", "esa", "eso", "esa propiedad", "esa casa", "ese depto"]
+                _user_msg_lower = (user_message or "").lower().strip()
+                if _user_msg_lower == "si":
+                    _has_active = bool(merged_context.get("selected_property_id") or merged_context.get("last_shown_properties"))
+                    if _has_active:
+                        messages.append({
+                            "role": "system",
+                            "content": "El usuario dijo 'sí' refiriéndose a la propiedad activa. Respondé directo sin preguntar cuál."
+                        })
+                        logger.info("[Agent] Auto-resolve: 'si' → active property")
+                elif any(kw in _user_msg_lower for kw in _ref_kw):
+                    _prop_id = merged_context.get("selected_property_id")
+                    if _prop_id:
+                        messages.append({
+                            "role": "system",
+                            "content": f"El usuario se refiere a la propiedad activa (ID={_prop_id}). Respondé directo sin preguntar cuál."
+                        })
+                        logger.info("[Agent] Auto-resolve: reference → active property %s", _prop_id)
+
+                # ── Scheduling step instructions ──
+                if _next_state == "scheduling_ask_date":
+                    messages.append({
+                        "role": "system",
+                        "content": "Estás en el paso de preguntar el DÍA de la visita. "
+                                   "Cuando el usuario dé el día, pasá al paso de preguntar la HORA. "
+                                   "NO preguntes el nombre todavía."
+                    })
+                    logger.info("[Agent] Scheduling step: ask_date")
+                elif _next_state == "scheduling_ask_time":
+                    messages.append({
+                        "role": "system",
+                        "content": "Estás en el paso de preguntar la HORA. "
+                                   "El usuario ya dio la fecha. Preguntá solo la hora. "
+                                   "NO preguntes el nombre todavía."
+                    })
+                    logger.info("[Agent] Scheduling step: ask_time")
+                elif _next_state == "scheduling_ask_name":
+                    messages.append({
+                        "role": "system",
+                        "content": "Estás en el paso del NOMBRE. "
+                                   "El usuario ya dio fecha y hora. "
+                                   "Preguntá solo el nombre completo para agendar."
+                    })
+                    logger.info("[Agent] Scheduling step: ask_name")
 
                 tools_used = []
                 response_text = ""
@@ -1241,6 +1287,13 @@ class RealEstateAgent:
                 system_prompt += f"\n\n### TONO: {_sentiment}"
         
         messages.append({"role": "system", "content": system_prompt})
+
+        # No re-greeting: when conversation has history, don't greet again
+        if history and len(history) >= 2:
+            messages.append({
+                "role": "system",
+                "content": "NO saludes de nuevo. El usuario ya está en una conversación activa. Respondé directo sin 'Buenas tardes' ni 'Hola'."
+            })
 
         # Inject last properties as system reminder with EXPLICIT index-to-ID mapping — BEFORE history
         if last_shown_properties:
