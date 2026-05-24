@@ -369,9 +369,9 @@ class RealEstateAgent:
                 # NOTE: city + zone count as ONE criterion (both are "location")
                 _criteria_count = 0
                 _known_criteria = {}
-                if user_prefs.get("location") or user_prefs.get("city"):
+                if user_prefs.get("location") or user_prefs.get("city") or user_prefs.get("location_preferences"):
                     _criteria_count += 1
-                    _known_criteria["zona"] = user_prefs.get("location") or user_prefs.get("city") or ""
+                    _known_criteria["zona"] = user_prefs.get("location") or user_prefs.get("city") or user_prefs.get("location_preferences") or ""
                 if user_prefs.get("operation_type"):
                     _criteria_count += 1
                     _known_criteria["operación"] = user_prefs["operation_type"]
