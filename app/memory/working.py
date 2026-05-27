@@ -120,7 +120,7 @@ async def _get_redis():
     """Get Redis connection or None if unavailable."""
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
+        r = aioredis.from_url(settings.resolve_redis_url(), socket_connect_timeout=1)
         await r.ping()
         return r
     except Exception:

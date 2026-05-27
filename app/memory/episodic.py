@@ -12,8 +12,8 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 settings = get_settings()
-from app.core.cs_database import async_session
-from app.models.user_episode import UserEpisode
+from app.db.session import async_session_factory
+from app.db.models.user_episode import UserEpisode
 
 
 async def save_episode(
@@ -28,7 +28,7 @@ async def save_episode(
 ) -> None:
     """Save a session episode to PostgreSQL and Redis cache."""
     # PostgreSQL (durable)
-    async with async_session() as session:
+    async with async_session_factory() as session:
         episode = UserEpisode(
             phone=phone,
             session_id=session_id,
@@ -73,7 +73,7 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
             return [json.loads(e if isinstance(e, str) else e.decode()) for e in entries]
 
     # PostgreSQL fallback
-    async with async_session() as session:
+    async with async_session_factory() as session:
         result = await session.execute(
             select(UserEpisode)
             .where(UserEpisode.phone == phone)
@@ -143,7 +143,7 @@ async def _get_redis():
     """Get Redis connection or None if unavailable."""
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
+        r = aioredis.from_url(settings.resolve_redis_url(), socket_connect_timeout=1)
         await r.ping()
         return r
     except Exception:

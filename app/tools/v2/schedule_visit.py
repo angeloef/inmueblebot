@@ -1,10 +1,20 @@
-"""Schedule a visit to view a property.
+"""Schedule a visit to view a property — creates Appointment in DB + Google Calendar.
 
 The scheduling specialist handles all field gathering. This tool is
-called ONLY when all data is confirmed — it validates and registers.
+called ONLY when all data is confirmed — it validates and persists.
 """
 
 import re
+from datetime import datetime, timezone, timedelta
+from uuid import UUID
+
+from loguru import logger
+
+from app.db.session import async_session_factory
+from app.db.models import User, Property
+from app.db.repository import UserRepository
+from app.services.appointment_service import appointment_service, format_appointment_confirmation
+from app.utils.date_parser import format_datetime_argentina, get_argentina_now
 
 
 async def schedule_visit(
@@ -15,8 +25,17 @@ async def schedule_visit(
     horario: str = "",
     consulta: str = "",
 ) -> str:
-    """Register a visit request for a property. Called only when confirmed."""
-    # Validate required fields (specialist should have gathered these already)
+    """Register a visit in the DB. Called by the scheduling specialist when all fields are confirmed.
+
+    Args:
+        property_id: The numeric ID of the property.
+        nombre: Full name of the interested person.
+        telefono: Contact phone number.
+        dia: Natural language day expression (e.g., "viernes", "mañana").
+        horario: Natural language time (e.g., "tarde", "15:00", "a las 10").
+        consulta: Any additional question or note.
+    """
+    # ── Validate required fields ────────────────────────────────
     missing = []
     if not property_id:
         missing.append("ID de propiedad")
@@ -24,19 +43,128 @@ async def schedule_visit(
         missing.append("nombre")
     if not telefono:
         missing.append("teléfono")
-    
+    if not dia:
+        missing.append("día")
+
     if missing:
         return (
             f"⚠️ Faltan datos para confirmar: {', '.join(missing)}. "
             f"El especialista debe recolectarlos antes de llamar a schedule_visit."
         )
-    
-    # Validate time is within operating hours
-    if horario:
-        time_valid, time_msg = _validate_time(horario, dia)
-        if not time_valid:
-            return time_msg
-    
+
+    # ── Parse date/time ─────────────────────────────────────────
+    combined_input = f"{dia} {horario}".strip()
+    now = get_argentina_now()
+
+    from app.core.hybrid.date import date_parser as hybrid_date_parser
+
+    parse_ctx = {
+        "date_str": dia,
+        "time_str": horario,
+        "reference_dt": now,
+    }
+    date_result = await hybrid_date_parser.parse(combined_input, parse_ctx)
+    parsed_dt = date_result.value
+
+    if not parsed_dt:
+        # Fallback: try basic Spanish day name + time parsing
+        parsed_dt = _parse_simple_date(dia, horario, now)
+
+    if not parsed_dt:
+        return (
+            f"No pude entender la fecha '{dia} {horario}'. "
+            f"¿Podés ser más específico? Por ejemplo: 'viernes 14:00' o 'mañana a la tarde'."
+        )
+
+    start_datetime = parsed_dt
+
+    # ── Business hours check ────────────────────────────────────
+    weekday = start_datetime.weekday()
+    hour = start_datetime.hour
+    if weekday == 6:
+        return (
+            "Los domingos no realizamos visitas. Nuestro horario es "
+            "lunes a sábado de 9:00 a 18:00 hs. ¿Qué otro día te viene bien?"
+        )
+    if not (9 <= hour < 18):
+        return (
+            f"El horario de las {start_datetime.strftime('%H:%M')} hs está fuera de nuestro "
+            f"horario de atención (9:00 a 18:00 hs). ¿A qué hora preferís?"
+        )
+
+    # ── Look up or create user ──────────────────────────────────
+    async with async_session_factory() as session:
+        user_repo = UserRepository(User, session)
+        user = await user_repo.get_by_phone(telefono)
+
+        if not user:
+            # Create minimal user
+            try:
+                from uuid import uuid4 as _uuid4
+                user = User(
+                    id=_uuid4(),
+                    whatsapp_phone=telefono,
+                    name=nombre.strip(),
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+                logger.info(f"[schedule_visit] New user created: {user.id} phone={telefono}")
+            except Exception as e:
+                logger.error(f"[schedule_visit] Failed to create user: {e}")
+                return "Tuve un problema al registrarte. ¿Podrías intentar de nuevo?"
+
+        # Update name if missing
+        if not user.name and nombre:
+            try:
+                await user_repo.update(user.id, name=nombre.strip())
+                await session.commit()
+                logger.info(f"[schedule_visit] Name updated for {telefono}: {nombre}")
+            except Exception as e:
+                logger.warning(f"[schedule_visit] Could not update name: {e}")
+
+    # ── Create appointment ──────────────────────────────────────
+    try:
+        result = await appointment_service.create_appointment(
+            user_id=user.id,
+            property_id=property_id,
+            start_time=start_datetime,
+            type="visit",
+            notes=consulta or None,
+            user_phone=telefono,
+        )
+    except Exception as e:
+        logger.error(f"[schedule_visit] create_appointment failed: {e}")
+        return "Tuve un problema técnico al agendar. ¿Podrías intentar en unos minutos?"
+
+    if not isinstance(result, dict) or not result.get("success"):
+        msg = result.get("message", "Horario no disponible") if isinstance(result, dict) else "Error al agendar"
+        suggestions = result.get("suggested_times", []) if isinstance(result, dict) else []
+        if suggestions:
+            lines = [f"- {s.get('formatted', str(s))}" for s in suggestions[:3]]
+            return f"⚠️ {msg}\n\n🎯 Horarios disponibles:\n" + "\n".join(lines) + "\n\n¿Alguno te sirve?"
+        return f"⚠️ {msg}\n\n¿Qué otro horario te conviene?"
+
+    # ── Success ─────────────────────────────────────────────────
+    appointment = result.get("appointment")
+    if appointment:
+        # Send dashboard notification
+        try:
+            from app.services.notification_service import notification_service
+            await notification_service.visit_scheduled(
+                phone=telefono,
+                property_title=f"Propiedad #{property_id}",
+                datetime_str=format_datetime_argentina(appointment.start_time)
+                if hasattr(appointment, "start_time") else dia,
+                property_id=property_id,
+                event_id=getattr(appointment, "id", None),
+            )
+        except Exception:
+            logger.debug("[schedule_visit] Notification send failed (non-fatal)")
+
+        return format_appointment_confirmation(appointment, f"Propiedad #{property_id}")
+
+    # ── Fallback confirmation (no appointment object) ───────────
     lines = [
         "✅ ¡Visita agendada!",
         "",
@@ -50,95 +178,73 @@ async def schedule_visit(
         lines.append(f"🕐 Horario: {horario}")
     if consulta:
         lines.append(f"💬 Consulta: {consulta}")
-    
     lines.append("")
     lines.append(
         "Te vamos a confirmar por WhatsApp en las próximas 24-48 hs "
         "con la dirección exacta y horario coordinado. ¡Gracias!"
     )
-    
     return "\n".join(lines)
 
 
-def _validate_time(horario: str, dia: str = "") -> tuple[bool, str]:
-    """Validate that the time is within operating hours.
-    
-    Operating hours:
-    - Mon-Fri: 09:00-12:00 and 15:00-18:00
-    - Sat: 09:00-12:00
-    - Sun: closed
-    
-    Returns (is_valid, error_message).
-    """
+def _parse_simple_date(dia: str, horario: str, now: datetime) -> datetime | None:
+    """Simple fallback date parser for common Spanish expressions."""
+    dia_lower = dia.lower().strip()
     horario_lower = horario.lower().strip()
-    
-    # Check if it's a Saturday — only morning available
-    dia_lower = dia.lower().strip() if dia else ""
-    is_saturday = any(d in dia_lower for d in ["sábado", "sabado", "saturday"])
-    
-    # Parse known time formats
-    # "8pm", "20:00", "20hs", "8 de la noche", "noche", "tarde", "mañana", etc.
-    
-    # Broad time-of-day categories
-    if horario_lower in ("mañana", "manana", "maã±ana"):
-        return True, ""
-    if horario_lower in ("tarde",):
-        return True, ""
-    if horario_lower in ("noche", "madrugada"):
-        return False, (
-            "⏰ Lo siento, no hacemos visitas de noche. Nuestros horarios son "
-            "09:00-12:00 y 15:00-18:00 (sábados solo 09:00-12:00). "
-            "¿Te sirve a las 16:00?"
-        )
-    
-    # Try to extract hour
-    hour = None
-    # "8pm", "8 pm", "8:00pm"
-    m = re.search(r"(\d{1,2})\s*(?::(\d{2}))?\s*(pm|am|p\.m\.|a\.m\.)", horario_lower)
+
+    # Map day names to offsets from today
+    day_map = {
+        "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+        "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5,
+        "domingo": 6,
+    }
+
+    target_weekday = None
+    for name, offset in day_map.items():
+        if name in dia_lower:
+            target_weekday = offset
+            break
+
+    if target_weekday is None and "mañana" in dia_lower:
+        target_weekday = (now.weekday() + 1) % 7
+    elif target_weekday is None and "hoy" in dia_lower:
+        target_weekday = now.weekday()
+
+    if target_weekday is None:
+        return None
+
+    # Calculate days until target weekday
+    current = now.weekday()
+    days_ahead = target_weekday - current
+    if days_ahead <= 0:
+        days_ahead += 7
+
+    target_date = now + timedelta(days=days_ahead)
+
+    # Parse time
+    hour = 16  # default afternoon
+    minute = 0
+
+    time_map = {
+        "mañana": 10, "manana": 10,
+        "tarde": 16,
+        "noche": 18,
+    }
+
+    for name, h in time_map.items():
+        if name in horario_lower:
+            hour = h
+            break
+
+    # Try numeric time: "15:00", "15hs", "15", "8pm"
+    m = re.search(r"(\d{1,2})[:h]?\s*(pm|am)?", horario_lower)
     if m:
         h = int(m.group(1))
-        is_pm = "p" in m.group(3) if m.group(3) else False
+        is_pm = m.group(2) == "pm" if m.group(2) else False
         if is_pm and h != 12:
             h += 12
         elif not is_pm and h == 12:
             h = 0
-        hour = h
-    else:
-        # "20:00", "20hs", "20"
-        m = re.search(r"(\d{1,2})[:h]", horario_lower)
-        if m:
-            hour = int(m.group(1))
-        else:
-            m = re.match(r"^(\d{1,2})$", horario_lower)
-            if m:
-                h = int(m.group(1))
-                # Assume 1-7 = PM, 8-12 = AM (unless > 12, then it's 24h)
-                if h <= 7:
-                    hour = h + 12
-                elif h <= 12:
-                    hour = h
-                elif h <= 23:
-                    hour = h
-    
-    if hour is not None:
-        if is_saturday and hour >= 12:
-            return False, (
-                f"⏰ Los sábados solo hacemos visitas de 09:00 a 12:00. "
-                f"¿Te sirve a las 10:00 del sábado, o preferís un día de semana a las {horario}?"
-            )
-        if hour < 9:
-            return False, (
-                f"⏰ Nuestro horario comienza a las 09:00. ¿Te sirve a las 09:00 o preferís más tarde?"
-            )
-        if 12 <= hour < 15:
-            return False, (
-                f"⏰ De 12:00 a 15:00 estamos cerrados. ¿Te sirve a las 15:00 o preferís otro horario?"
-            )
-        if hour >= 18:
-            return False, (
-                f"⏰ Nuestro último turno es a las 18:00. ¿Te sirve a las 16:00 o preferís más temprano?"
-            )
-        return True, ""
-    
-    # Unrecognized format — accept it (specialist should have validated)
-    return True, ""
+        if 0 <= h <= 23:
+            hour = h
+
+    return target_date.replace(hour=hour, minute=minute, second=0, microsecond=0)

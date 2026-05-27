@@ -11,8 +11,8 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 settings = get_settings()
-from app.core.cs_database import async_session
-from app.models.user_episode import ZoneStat
+from app.db.session import async_session_factory
+from app.db.models.user_episode import ZoneStat
 
 
 # Zone knowledge — static base data
@@ -62,7 +62,7 @@ async def get_zone_info(zone_name: str) -> Optional[dict]:
         return None
 
     # Enrich with search count from PostgreSQL
-    async with async_session() as session:
+    async with async_session_factory() as session:
         result = await session.execute(
             select(ZoneStat).where(ZoneStat.zone_name == zone_name)
         )
@@ -88,7 +88,7 @@ async def get_zone_info(zone_name: str) -> Optional[dict]:
 
 async def increment_zone_search(zone_name: str) -> None:
     """Increment the search counter for a zone."""
-    async with async_session() as session:
+    async with async_session_factory() as session:
         result = await session.execute(
             select(ZoneStat).where(ZoneStat.zone_name == zone_name)
         )
@@ -121,7 +121,7 @@ async def _get_redis():
     """Get Redis connection or None if unavailable."""
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
+        r = aioredis.from_url(settings.resolve_redis_url(), socket_connect_timeout=1)
         await r.ping()
         return r
     except Exception:
