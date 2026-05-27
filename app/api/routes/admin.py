@@ -1398,6 +1398,8 @@ async def simulate_conversation_turn(
         timing: Tiempos de procesamiento
     """
     from app.agents.real_estate_agent import real_estate_agent
+    from app.core.config import get_settings
+    settings = get_settings()
     import time
 
     phone = body.phone
@@ -1414,10 +1416,18 @@ async def simulate_conversation_turn(
     start_time = time.time()
 
     try:
-        result = await real_estate_agent.process_turn(
-            phone=phone,
-            user_message=message,
-        )
+        # ── v2.0 Router Feature Flag ──────────────────────────────────
+        if settings.USE_V2_ROUTER:
+            from app.routers.v2_adapter import process_turn_v2
+            result = await process_turn_v2(
+                phone=phone,
+                user_message=message,
+            )
+        else:
+            result = await real_estate_agent.process_turn(
+                phone=phone,
+                user_message=message,
+            )
     except Exception as e:
         logger.error(f"[Simulate] process_turn failed: {e}")
         import traceback
@@ -1734,6 +1744,7 @@ _ALLOWED_SETTINGS = {
     "company_name":         "Nombre de la inmobiliaria",
     "business_hours":       "Horario de atención",
     "agent_whatsapp":       "WhatsApp del agente humano (handoffs)",
+    "use_v2_router":        "Activar router v2 (ChatbotSerio S1+S2). true/false",
 }
 
 
@@ -1741,6 +1752,7 @@ class BotSettingsUpdate(BaseModel):
     company_name:     Optional[str] = None
     business_hours:   Optional[str] = None
     agent_whatsapp:   Optional[str] = None
+    use_v2_router:    Optional[str] = None  # "true" / "false"
 
 
 @router.get("/settings")
