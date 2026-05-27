@@ -1417,7 +1417,20 @@ async def simulate_conversation_turn(
 
     try:
         # ── v2.0 Router Feature Flag ──────────────────────────────────
-        if settings.USE_V2_ROUTER:
+        # Check bot_settings DB first, fall back to env var
+        use_v2 = settings.USE_V2_ROUTER
+        try:
+            from app.agents.prompts import _get_cached_bot_settings
+            bot_cfg = _get_cached_bot_settings()
+            db_val = (bot_cfg or {}).get("use_v2_router", "")
+            if db_val == "true":
+                use_v2 = True
+            elif db_val == "false":
+                use_v2 = False
+        except Exception:
+            pass
+
+        if use_v2:
             from app.routers.v2_adapter import process_turn_v2
             result = await process_turn_v2(
                 phone=phone,

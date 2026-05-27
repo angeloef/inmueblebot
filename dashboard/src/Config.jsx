@@ -28,6 +28,32 @@ function Field({ label, hint, children }) {
   );
 }
 
+// ── Toggle switch (inline, saves immediately) ─────────────────────────────────
+
+function ToggleField({ label, hint, value, onChange, saving }) {
+  const isOn = value === 'true';
+  return (
+    <div className="field config-field">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <label style={{ marginBottom: 0 }}>{label}</label>
+          {hint && <div className="config-hint">{hint}</div>}
+        </div>
+        <button
+          type="button"
+          className={`toggle-switch ${isOn ? 'toggle-on' : 'toggle-off'}`}
+          onClick={() => onChange(isOn ? 'false' : 'true')}
+          disabled={saving}
+          title={isOn ? 'Click para desactivar' : 'Click para activar'}
+        >
+          <span className="toggle-knob" />
+          <span className="toggle-label">{isOn ? 'V2' : 'V1'}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Config() {
@@ -38,8 +64,10 @@ export default function Config() {
   const [companyName,   setCompanyName]   = useState('');
   const [bizHours,      setBizHours]      = useState('');
   const [agentWA,       setAgentWA]       = useState('');
+  const [useV2Router,   setUseV2Router]   = useState('false');
   const [dirty,         setDirty]         = useState(false);
   const [saving,        setSaving]        = useState(false);
+  const [toggling,      setToggling]      = useState(false);
 
   // Populate form from fetched settings
   useEffect(() => {
@@ -47,6 +75,7 @@ export default function Config() {
     setCompanyName(settings.company_name   ?? '');
     setBizHours(   settings.business_hours ?? '');
     setAgentWA(    settings.agent_whatsapp ?? '');
+    setUseV2Router(settings.use_v2_router  ?? 'false');
     setDirty(false);
   }, [settings]);
 
@@ -77,7 +106,28 @@ export default function Config() {
     setCompanyName(settings.company_name   ?? '');
     setBizHours(   settings.business_hours ?? '');
     setAgentWA(    settings.agent_whatsapp ?? '');
+    setUseV2Router(settings.use_v2_router  ?? 'false');
     setDirty(false);
+  };
+
+  const handleToggleRouter = async (newValue) => {
+    setToggling(true);
+    const prev = useV2Router;
+    setUseV2Router(newValue); // optimistic
+    try {
+      await updateMut.mutateAsync({ use_v2_router: newValue });
+      pushToast({
+        text: newValue === 'true'
+          ? 'Router V2 activado. El bot usará el nuevo sistema S1+S2.'
+          : 'Router V1 activado. El bot usará el sistema clásico.',
+        kind: 'success',
+      });
+    } catch (err) {
+      setUseV2Router(prev); // rollback
+      pushToast({ text: 'Error al cambiar el router.', kind: 'danger' });
+    } finally {
+      setToggling(false);
+    }
   };
 
   if (isLoading) return (
@@ -96,6 +146,8 @@ export default function Config() {
       </div>
     </div>
   );
+
+  const v2Active = useV2Router === 'true';
 
   return (
     <div className="page-view">
@@ -117,6 +169,24 @@ export default function Config() {
       </div>
 
       <div className="config-body">
+
+        {/* ── Sistema ── */}
+        <Section
+          title="Sistema"
+          description="Control del motor del chatbot. Los cambios aplican en el próximo mensaje recibido."
+        >
+          <ToggleField
+            label="Router del chatbot"
+            hint={
+              v2Active
+                ? 'V2 activo: S1 (regex rápido) + S2 (coordinador con especialistas). Respuestas más naturales, scheduling conversacional.'
+                : 'V1 activo: clasificador de intent + agente monolítico. Sistema clásico y estable.'
+            }
+            value={useV2Router}
+            onChange={handleToggleRouter}
+            saving={toggling}
+          />
+        </Section>
 
         {/* ── Identidad ── */}
         <Section
@@ -163,7 +233,7 @@ export default function Config() {
               type="text"
               value={agentWA}
               onChange={markDirty(setAgentWA)}
-              placeholder="ej: +5493764123456"
+              placeholder="ej: +549****3456"
               maxLength={20}
             />
           </Field>

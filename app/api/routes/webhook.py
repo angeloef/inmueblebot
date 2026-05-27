@@ -66,6 +66,27 @@ def _check_user_rate_limit(phone: str) -> bool:
     return True
 
 
+def _resolve_use_v2_router(settings) -> bool:
+    """Check if v2 router should be used — env var OR bot_settings DB.
+
+    Priority: bot_settings DB value overrides env var if explicitly set to 'true'/'false'.
+    Falls back to settings.USE_V2_ROUTER env var.
+    """
+    # Check bot_settings from DB (cached via prompt loader's 5-min cache)
+    try:
+        from app.agents.prompts import _get_cached_bot_settings
+        bot_cfg = _get_cached_bot_settings()
+        db_val = (bot_cfg or {}).get("use_v2_router", "")
+        if db_val == "true":
+            return True
+        if db_val == "false":
+            return False
+    except Exception:
+        pass
+    # Fallback to env var
+    return bool(settings.USE_V2_ROUTER)
+
+
 @dataclass
 class WhatsAppIncomingMessage:
     """Parsed incoming WhatsApp message from Meta."""
@@ -427,7 +448,8 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 continue
 
             # ── v2.0 Router Feature Flag ──────────────────────────────────
-            if settings.USE_V2_ROUTER:
+            use_v2 = _resolve_use_v2_router(settings)
+            if use_v2:
                 from app.routers.v2_adapter import process_turn_v2
                 result = await process_turn_v2(
                     phone=phone,
