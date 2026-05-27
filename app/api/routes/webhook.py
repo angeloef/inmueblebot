@@ -609,3 +609,5 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
         except Exception as e:
             logger.error(f"Error processing: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
