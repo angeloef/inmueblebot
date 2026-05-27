@@ -426,10 +426,19 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 )
                 continue
 
-            result = await real_estate_agent.process_turn(
-                phone=phone,
-                user_message=text
-            )
+            # ── v2.0 Router Feature Flag ──────────────────────────────────
+            if settings.USE_V2_ROUTER:
+                from app.routers.v2_adapter import process_turn_v2
+                result = await process_turn_v2(
+                    phone=phone,
+                    user_message=text,
+                    media_url=media_url,
+                )
+            else:
+                result = await real_estate_agent.process_turn(
+                    phone=phone,
+                    user_message=text
+                )
 
             turn_time = time.time() - start_time
             tools_used = result.get("tools_used", []) if result else []

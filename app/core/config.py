@@ -133,6 +133,13 @@ class Settings(BaseSettings):
 
     # === Identidad del negocio ===
     COMPANY_NAME: str = Field(default="la inmobiliaria", description="Nombre de la inmobiliaria (usado en saludo inicial y mensajes de alcance)")
+    INMOBILIARIA_NAME: str = Field(default="Inmobiliaria Oberá", description="Nombre completo de la inmobiliaria (usado en greetings)")
+
+    # === v2.0 Router Feature Flags (ChatbotSerio merge) ===
+    USE_V2_ROUTER: bool = Field(default=False, description="Usar el nuevo router S1+S2 de ChatbotSerio. False = router v1.x")
+    S1_CONFIDENCE_THRESHOLD: float = Field(default=0.70, description="Umbral de confianza para aceptar match de S1 (regex)")
+    MAX_SCHEDULING_LOOPS: int = Field(default=5, description="Máximo de turnos en bucle de scheduling antes de escape")
+    MEMORY_TIERS_ENABLED: bool = Field(default=True, description="Activar memoria episódica/semántica para cross-session context")
 
     # === Configuración de la aplicación ===
     API_PREFIX: str = Field(default="/api", description="Prefijo para rutas API")
