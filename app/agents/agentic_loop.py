@@ -10,7 +10,7 @@ Orchestrates the complete agentic reasoning cycle:
 The thinking is always hidden from the user. Only the final response is shown.
 """
 
-from app.agents.schemas import CSAgentResponse as AgentResponse, StructuredToolCall
+from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
 from app.agents.thinking import think, summarize_thinking
 from app.agents.planner import build_plan, ExecutionPlan
 from app.agents.observer import observe, build_observation_report, Observation
@@ -61,7 +61,7 @@ async def run_agentic_loop(
     # ── PHASE 3-4: ACT + OBSERVE ─────────────────────────────
     import json as _json
     for step in plan.steps:
-        tc = StructuredToolCall(
+        tc = CSStructuredToolCall(
             id=f"plan_{step.tool_name}",
             name=step.tool_name,
             arguments=step.arguments,

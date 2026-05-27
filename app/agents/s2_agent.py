@@ -3,7 +3,7 @@
 import json
 
 from app.agents.cs_llm_client import get_client
-from app.agents.schemas import CSAgentResponse as AgentResponse, StructuredToolCall
+from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
 from app.agents.escalation import assess_confidence, build_clarification_message
 from app.core.config import get_settings
 settings = get_settings()
@@ -95,7 +95,7 @@ async def process_message(
     # Step 2: Execute tool calls if any
     if choice.tool_calls:
         for tc in choice.tool_calls:
-            parsed = StructuredToolCall(
+            parsed = CSStructuredToolCall(
                 id=tc.id,
                 name=tc.function.name,
                 arguments={},
@@ -223,7 +223,7 @@ async def process_message_multistep(
     for tc in choice.tool_calls:
         from app.agents.schemas import MessageChunk as MC
 
-        parsed = StructuredToolCall(
+        parsed = CSStructuredToolCall(
             id=tc.id,
             name=tc.function.name,
             arguments={},
@@ -343,7 +343,7 @@ async def process_message_with_specialist(
     import json as _json
     if choice.tool_calls:
         for tc in choice.tool_calls:
-            parsed = StructuredToolCall(id=tc.id, name=tc.function.name, arguments={})
+            parsed = CSStructuredToolCall(id=tc.id, name=tc.function.name, arguments={})
             try:
                 parsed.arguments = _json.loads(tc.function.arguments)
             except _json.JSONDecodeError:

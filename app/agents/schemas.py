@@ -253,3 +253,12 @@ class ChatResponse(BaseModel):
     tools_called: list[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0)
     messages: list[MessageChunk] = Field(default_factory=list)
+
+
+# ── ChatbotSerio's StructuredToolCall (arguments is dict, not string) ────────
+
+class CSStructuredToolCall(BaseModel):
+    """ChatbotSerio's tool call type — arguments is a dict, not a JSON string."""
+    id: str = Field(..., description="Tool call ID")
+    name: str = Field(..., description="Function name")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="Parsed arguments")

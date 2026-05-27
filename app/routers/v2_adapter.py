@@ -63,7 +63,7 @@ async def process_turn_v2(
         return result
 
     except Exception as e:
-        logger.error(f"[V2] Router error: {e}", exc_info=True)
+        logger.opt(exception=True).error("[V2] Router error: {}", str(e))
         return {
             "response_text": "Disculpá, tuve un problema técnico. ¿Podés intentar de nuevo?",
             "tools_used": [],

@@ -2,7 +2,7 @@
 
 from typing import Any, Callable
 
-from app.agents.schemas import StructuredToolCall
+from app.agents.schemas import CSCSStructuredToolCall
 from app.tools.v2.echo_tool import echo
 from app.tools.v2.time_tool import get_time
 from app.tools.v2.search_properties import search_properties
@@ -221,7 +221,7 @@ def get_tools_schema() -> list[dict[str, Any]]:
     return [schema for _, _, schema in TOOL_REGISTRY.values()]
 
 
-async def execute_tool(tool_call: StructuredToolCall) -> str:
+async def execute_tool(tool_call: CSStructuredToolCall) -> str:
     """Execute a tool by name and return its string result.
 
     Handles both sync and async tools transparently.
