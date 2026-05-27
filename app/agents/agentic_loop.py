@@ -135,7 +135,7 @@ async def run_agentic_loop(
 
     # Final LLM call to synthesize response
     final_response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=messages,
         temperature=0.3,
         max_completion_tokens=512,

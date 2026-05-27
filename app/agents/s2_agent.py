@@ -80,7 +80,7 @@ async def process_message(
 
     # Step 1: LLM decides — may return tool calls or direct answer
     response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
@@ -129,7 +129,7 @@ async def process_message(
 
         # Step 3: Final response with tool results — enforce json_schema
         final_response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=settings.OPENAI_MODEL,
             messages=messages,
             temperature=0.3,
             max_completion_tokens=1024,
@@ -200,7 +200,7 @@ async def process_message_multistep(
 
     # Step 1: LLM decides
     response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
@@ -265,7 +265,7 @@ async def process_message_multistep(
 
     # Step 3: Final LLM call for closing text
     closing_response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=messages,
         temperature=0.3,
         max_completion_tokens=1024,
@@ -327,7 +327,7 @@ async def process_message_with_specialist(
 
     # Step 1: LLM decides with filtered tools
     response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=messages,
         tools=filtered_tools if filtered_tools else None,
         tool_choice="auto" if filtered_tools else None,
@@ -361,7 +361,7 @@ async def process_message_with_specialist(
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
 
         final_response = await client.chat.completions.create(
-            model=settings.LLM_MODEL, messages=messages,
+            model=settings.OPENAI_MODEL, messages=messages,
             temperature=0.3, max_completion_tokens=512,
             response_format=FINAL_RESPONSE_SCHEMA,
         )

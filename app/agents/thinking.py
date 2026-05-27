@@ -47,7 +47,7 @@ async def think(
 
     try:
         response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=settings.OPENAI_MODEL,
             messages=[{"role": "user", "content": full_context}],
             temperature=0.2,
             max_completion_tokens=256,

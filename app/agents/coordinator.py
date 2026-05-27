@@ -175,7 +175,7 @@ Mensaje del usuario: "{message}"
 Respondé SOLO con una palabra: search, scheduling, knowledge, negotiator, o rapport."""
 
     response = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=settings.OPENAI_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         max_completion_tokens=10,
