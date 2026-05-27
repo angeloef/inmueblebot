@@ -16,6 +16,42 @@ from app.db.session import async_session_factory
 from app.db.models.user_episode import UserEpisode
 
 
+async def _pg_available() -> bool:
+    """Check if user_episodes table exists in PostgreSQL."""
+    try:
+        from sqlalchemy import text
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1 FROM user_episodes LIMIT 0"))
+        return True
+    except Exception:
+        return False
+
+
+async def _ensure_user_episodes_table() -> bool:
+    """Create user_episodes table if it doesn't exist. Returns True if created."""
+    try:
+        from sqlalchemy import text
+        async with async_session_factory() as session:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_episodes (
+                    id SERIAL PRIMARY KEY,
+                    phone VARCHAR(30) NOT NULL,
+                    session_id VARCHAR(100) UNIQUE NOT NULL,
+                    summary TEXT DEFAULT '',
+                    turn_count INTEGER DEFAULT 0,
+                    last_tool_called VARCHAR(50),
+                    search_criteria JSONB,
+                    properties_viewed JSONB DEFAULT '[]',
+                    intent_outcome VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            await session.commit()
+        return True
+    except Exception:
+        return False
+
+
 async def save_episode(
     phone: str,
     session_id: str,
@@ -27,20 +63,24 @@ async def save_episode(
     intent_outcome: str | None = None,
 ) -> None:
     """Save a session episode to PostgreSQL and Redis cache."""
-    # PostgreSQL (durable)
-    async with async_session_factory() as session:
-        episode = UserEpisode(
-            phone=phone,
-            session_id=session_id,
-            summary=summary,
-            turn_count=turn_count,
-            search_criteria=search_criteria,
-            properties_viewed=properties_viewed or [],
-            last_tool_called=last_tool,
-            intent_outcome=intent_outcome,
-        )
-        session.add(episode)
-        await session.commit()
+    # PostgreSQL (durable) — gracefully skip if table missing
+    try:
+        async with async_session_factory() as session:
+            episode = UserEpisode(
+                phone=phone,
+                session_id=session_id,
+                summary=summary,
+                turn_count=turn_count,
+                search_criteria=search_criteria,
+                properties_viewed=properties_viewed or [],
+                last_tool_called=last_tool,
+                intent_outcome=intent_outcome,
+            )
+            session.add(episode)
+            await session.commit()
+    except Exception:
+        # Table may not exist yet — Redis is enough
+        pass
 
     # Redis cache (fast retrieval)
     redis = await _get_redis()
@@ -64,6 +104,7 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
     """Get recent session episodes for a user.
 
     Tries Redis first, falls back to PostgreSQL.
+    Gracefully handles missing user_episodes table.
     """
     redis = await _get_redis()
     if redis:
@@ -72,26 +113,29 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
         if entries:
             return [json.loads(e if isinstance(e, str) else e.decode()) for e in entries]
 
-    # PostgreSQL fallback
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(UserEpisode)
-            .where(UserEpisode.phone == phone)
-            .order_by(UserEpisode.created_at.desc())
-            .limit(limit)
-        )
-        episodes = result.scalars().all()
-        return [
-            {
-                "session_id": e.session_id,
-                "summary": e.summary,
-                "turn_count": e.turn_count,
-                "search_criteria": e.search_criteria,
-                "properties_viewed": e.properties_viewed,
-                "timestamp": e.created_at.isoformat() if e.created_at else "",
-            }
-            for e in episodes
-        ]
+    # PostgreSQL fallback — gracefully skip if table missing
+    try:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(UserEpisode)
+                .where(UserEpisode.phone == phone)
+                .order_by(UserEpisode.created_at.desc())
+                .limit(limit)
+            )
+            episodes = result.scalars().all()
+            return [
+                {
+                    "session_id": e.session_id,
+                    "summary": e.summary,
+                    "turn_count": e.turn_count,
+                    "search_criteria": e.search_criteria,
+                    "properties_viewed": e.properties_viewed,
+                    "timestamp": e.created_at.isoformat() if e.created_at else "",
+                }
+                for e in episodes
+            ]
+    except Exception:
+        return []
 
 
 async def get_last_episode(phone: str) -> Optional[dict]:
