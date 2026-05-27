@@ -3,13 +3,13 @@
 from typing import Any, Callable
 
 from app.agents.schemas import StructuredToolCall
-from app.tools.v2.v2.echo_tool import echo
-from app.tools.v2.v2.time_tool import get_time
-from app.tools.v2.v2.search_properties import search_properties
-from app.tools.v2.v2.get_property_details import get_property_details
-from app.tools.v2.v2.get_property_images import get_property_images
-from app.tools.v2.v2.get_faq_answer import get_faq_answer
-from app.tools.v2.v2.schedule_visit import schedule_visit
+from app.tools.v2.echo_tool import echo
+from app.tools.v2.time_tool import get_time
+from app.tools.v2.search_properties import search_properties
+from app.tools.v2.get_property_details import get_property_details
+from app.tools.v2.get_property_images import get_property_images
+from app.tools.v2.get_faq_answer import get_faq_answer
+from app.tools.v2.schedule_visit import schedule_visit
 
 # Registry: tool name → (function, is_async, schema dict)
 TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
