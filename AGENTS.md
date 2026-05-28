@@ -1270,3 +1270,29 @@ get_system_prompt(): remove .format() — ahora inyecta contexto como User Conte
 5. Graceful if calendar not configured (catches exception, logs warning)
 
 **Audit:** Sub-worker code audit passed (0 CRITICAL/HIGH issues in new code). Pre-existing findings noted: debug endpoint leaks verify token (unrelated).
+
+### Sprint 30 — V2 search: add zone-drop fallback for landmark searches (May 28, 2026)
+
+**Commit:** `392c44c`
+
+**Problem:** User searched "departamentos cerca de UNAM, 1 dormitorio" — bot found 1 terreno and 1 casa near UNAM instead of showing the 12 departamentos de 1 dormitorio available in other zones. The Fallback 1 kept `operation + zona` but dropped `tipo` and `dormitorios`, so it surfaced irrelevant property types near the landmark.
+
+**Root cause:** `app/tools/v2/search_properties.py` had only one fallback path: drop tipo/budget/bedrooms, keep operation+zona. When a landmark had zero matching properties of the requested type, it offered unrelated types near that landmark instead of matching types elsewhere.
+
+**Fix:** Added **Fallback 2** in `search_properties.py` (lines 108-139):
+- After Fallback 1 finds nearby properties, checks if ANY match the user's `mapped_tipo`
+- If not → runs `operation + tipo + dormitorios` (NO zona) → shows matching types in all of Oberá
+- Message: "No encontré X específicamente en ZONA. Pero hay N X en otras zonas de Oberá"
+
+**Test results (4/4 pass):**
+| Test | Result |
+|------|--------|
+| depto cerca UNAM, 1 dorm | Fallback 2 → 6 deptos in other zones ✅ |
+| depto cerca UNAM (no dorm) | Fallback 2 → 12 deptos in other zones ✅ |
+| properties near Terminal | Direct match (2 deptos) → no fallback needed ✅ |
+| casa cerca UNAM | Direct match (1 casa) → no fallback needed ✅ |
+
+**Files changed:** `app/tools/v2/search_properties.py` (+53/-20 lines)
+- Moved `tipo_map` to module level so it's available in fallback logic
+- Added `mapped_tipo` early computation
+- Added Fallback 2 check + query + response format
