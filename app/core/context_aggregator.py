@@ -116,6 +116,12 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
         )
 
     # Known property data (for answering cost/service questions without re-fetching)
+    if belief.selected_property_id and belief.last_tool_called == "get_property_images":
+        parts.append(
+            "⚠️ NO OFREZCAS FOTOS: Ya le enviaste las fotos de esta propiedad "
+            "en el turno anterior. NO digas 'si querés te paso las fotos' ni "
+            "ofrezcas mostrarlas de nuevo — el usuario ya las tiene."
+        )
     if belief.selected_property_id and belief.last_tool_called == "get_property_details":
         if belief.last_property_data:
             parts.append(

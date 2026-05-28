@@ -64,10 +64,33 @@ async def get_property_images(property_id: int = 0) -> str:
             })
 
         public_urls = _to_public_image_urls(prop.images, property_id)
-        display_text = f"📸 Fotos de '{prop.title}' ({len(public_urls)} imágenes)"
+        friendly_title = _build_friendly_title(prop)
+        display_text = f"📸 Fotos de '{friendly_title}' ({len(public_urls)} imágenes)"
 
         return json.dumps({
             "display_text": display_text,
             "images": public_urls,
-            "title": prop.title,
+            "title": friendly_title,
         })
+
+
+def _build_friendly_title(prop: Property) -> str:
+    """Generate a natural-sounding title from category + location zone.
+
+    E.g. 'Casa 3 dormitorios Barrio 100 Viviendas' → 'Casa en Barrio 100 Viviendas'
+    """
+    category = prop.category.capitalize() if prop.category else "Propiedad"
+    # Extract zone/neighborhood from location string
+    # Location format: "Calle Dinamarca 1176, Barrio 100 Viviendas, Oberá, Misiones"
+    try:
+        location = prop.location or ""
+        parts = [p.strip() for p in location.split(",")]
+        if len(parts) >= 2:
+            zone = parts[1]
+            # Skip generic city/province parts
+            if zone.lower() in ("oberá", "obera", "misiones"):
+                zone = parts[0] if parts[0] else location
+            return f"{category} en {zone}"
+    except Exception:
+        pass
+    return prop.title or f"{category}"
