@@ -100,12 +100,19 @@ async def _try_pre_llm_shortcut(
     if belief.selected_property_id:
         photo_kw = ["fotos", "foto", "imagenes", "imágenes", "imagen", "mostrame fotos", "ver fotos"]
         if any(kw in msg_lower for kw in photo_kw):
-            # If the user also asked for details/info in the same message,
-            # bail out to the LLM specialist so it can call both tools.
-            detail_kw = ["detalles", "detalle", "info", "información", "informacion",
-                         "datos", "características", "caracteristicas", "más info",
-                         "mas info", "más detalles", "mas detalles", "más información"]
-            if any(kw in msg_lower for kw in detail_kw):
+            # Bail to LLM if the message also asks for something else.
+            # The LLM specialist handles multi-tool requests (details+photos,
+            # photos+scheduling, etc.) while the shortcut only does pure photos.
+            _other_intent_kw = [
+                "detalles", "detalle", "info", "información", "informacion",
+                "datos", "características", "caracteristicas",
+                "agendar", "visita", "visitar", "coordinar", "cita",
+                "conocer", "ir a ver", "cuándo", "cuando", "horario",
+                "comparar", "compará", "compara",
+                "busco", "buscando", "buscar", "mostrame", "listame",
+                "pasame", "decime", "contame",
+            ]
+            if any(kw in msg_lower for kw in _other_intent_kw):
                 return None  # Let LLM specialist handle multi-tool request
             from app.tools.v2.get_property_images import get_property_images
             import json as _json
