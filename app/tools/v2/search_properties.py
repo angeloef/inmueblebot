@@ -57,26 +57,27 @@ async def search_properties(
     All filters are optional — omitted filters match everything.
     Returns a human-readable list of matching properties.
     """
+    # Map common user terms to stored values (computed early for fallback use)
+    tipo_map = {
+        "departamento": "departamento",
+        "depto": "departamento",
+        "departamentos": "departamento",
+        "deptos": "departamento",
+        "casa": "casa",
+        "casas": "casa",
+        "ph": "ph",
+        "terreno": "terreno",
+        "terrenos": "terreno",
+    }
+    mapped_tipo = tipo_map.get(tipo.lower(), tipo.lower()) if tipo else ""
+
     async with async_session_factory() as session:
         stmt = select(Property)
 
         if operation:
             stmt = stmt.where(Property.type == operation.lower())
-        if tipo:
-            # Map common user terms to stored values
-            tipo_map = {
-                "departamento": "departamento",
-                "depto": "departamento",
-                "departamentos": "departamento",
-                "deptos": "departamento",
-                "casa": "casa",
-                "casas": "casa",
-                "ph": "ph",
-                "terreno": "terreno",
-                "terrenos": "terreno",
-            }
-            mapped = tipo_map.get(tipo.lower(), tipo.lower())
-            stmt = stmt.where(Property.category == mapped)
+        if mapped_tipo:
+            stmt = stmt.where(Property.category == mapped_tipo)
         if zona:
             zone_filters = _build_zone_filters(zona)
             stmt = stmt.where(or_(*zone_filters))
@@ -91,11 +92,9 @@ async def search_properties(
         filters_desc = _describe_filters(operation, tipo, zona, presupuesto_max, dormitorios)
 
         if not properties:
-            # ── Relaxed fallback ────────────────────────────────────────────
-            # When the exact search returns nothing, drop tipo / budget /
-            # bedrooms and re-query with only operation + zona to see what
-            # IS available nearby.  This gives the user a useful alternative
-            # instead of a dead-end "no results" message.
+            # ── Fallback 1: operation + zona ───────────────────────────────
+            # Drop tipo / budget / bedrooms and re-query with only operation +
+            # zona to see what IS available nearby.
             fallback = select(Property)
             if operation:
                 fallback = fallback.where(Property.type == operation.lower())
@@ -106,6 +105,40 @@ async def search_properties(
             nearby = fallback_result.scalars().all()
 
             if nearby:
+                # ── Fallback 2: drop zona, keep operation + tipo + dormitorios ──
+                # When the user asked for a specific property type near a
+                # landmark and Fallback 1 only found OTHER types, try dropping
+                # the zona filter and showing matching types in all of Oberá.
+                nearby_has_matching_tipo = (
+                    not mapped_tipo
+                    or any(p.category == mapped_tipo for p in nearby)
+                )
+
+                if not nearby_has_matching_tipo:
+                    fallback2 = select(Property)
+                    if operation:
+                        fallback2 = fallback2.where(Property.type == operation.lower())
+                    if mapped_tipo:
+                        fallback2 = fallback2.where(Property.category == mapped_tipo)
+                    if dormitorios > 0:
+                        fallback2 = fallback2.where(Property.bedrooms == dormitorios)
+
+                    fb2_result = await session.execute(fallback2)
+                    tipo_matches = fb2_result.scalars().all()
+
+                    if tipo_matches:
+                        tipo_word = tipo if tipo else "propiedades"
+                        dorm_part = (
+                            f" de {dormitorios} dormitorio{'s' if dormitorios != 1 else ''}"
+                            if dormitorios > 0 else ""
+                        )
+                        return (
+                            f"No encontré {tipo_word}s{dorm_part} específicamente en {zona}. "
+                            f"Pero hay {len(tipo_matches)} {tipo_word}s{dorm_part} en otras zonas "
+                            f"de Oberá. ¿Querés que te las muestre?"
+                        )
+
+                # ── Show Fallback 1 results (nearby summary) ──────────────────
                 # Group nearby results by (operation, category)
                 counts: dict[tuple[str, str], int] = {}
                 for p in nearby:
