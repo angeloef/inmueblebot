@@ -236,6 +236,21 @@ async def route_message(
         # Start fresh
         belief = get_belief(session_id)
 
+    # ── /ResetMemory command ──────────────────────────────────
+    # If user sends exactly "/ResetMemory", clear all session state and restart fresh.
+    if message.strip().lower() == "/resetmemory":
+        logger.info(f"[Router] 🧹 /ResetMemory triggered for {session_id}")
+        await clear_working_memory(session_id)
+        clear_saved_state(session_id)
+        return (
+            ChatResponse(
+                response="✅ Memoria reiniciada. ¿En qué puedo ayudarte?",
+                tools_called=[],
+                confidence=1.0,
+            ),
+            get_belief(session_id), "reset-memory", 0,
+        )
+
     # ── Cross-session context ─────────────────────────────────
     cross_session_context = ""
     if phone and belief.turn_count == 0:
