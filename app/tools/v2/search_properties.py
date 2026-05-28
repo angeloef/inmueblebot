@@ -173,7 +173,7 @@ async def search_properties(
             # No results at all — keep the original message
             return f"No encontré propiedades{filters_desc}. ¿Querés ajustar algún filtro?"
 
-        lines = [f"Encontré {len(properties)} propiedades{filters_desc}:\n"]
+        lines = [f"Encontré {len(properties)} {_plural('propiedad', len(properties))}{filters_desc}:\n"]
         for p in properties:
             price_str = f"${p.price:,.0f}/mes" if p.type == "alquiler" else f"${p.price:,.0f}"
             tipo_str = p.category.capitalize()
@@ -188,6 +188,13 @@ async def search_properties(
             )
             if specs:
                 lines.append(f"       {specs}")
+
+        # ── Post-search suggestion ───────────────────────────────────────
+        # After showing results, suggest filtering by missing criteria
+        missing_tip = _build_missing_criteria_tip(operation, tipo, zona, presupuesto_max, dormitorios)
+        if missing_tip:
+            lines.append("")
+            lines.append(missing_tip)
 
         return "\n".join(lines)
 
@@ -209,6 +216,37 @@ def _extract_zone(location: str) -> str:
     return parts[0]
 
 
+def _plural(word: str, count: int) -> str:
+    """Return singular or plural form based on count. 1 propiedad / 5 propiedades."""
+    if count == 1:
+        return word
+    return word + "s"
+
+
+def _build_missing_criteria_tip(
+    operation: str, tipo: str, zona: str,
+    presupuesto_max: float, dormitorios: int,
+) -> str:
+    """Suggest filtering by criteria the user hasn't specified yet."""
+    missing = []
+    if not zona:
+        missing.append("zona")
+    if not presupuesto_max:
+        missing.append("presupuesto")
+    if not dormitorios:
+        missing.append("dormitorios")
+
+    if not missing:
+        return ""
+
+    if len(missing) == 1:
+        return f"Si querés, puedo filtrar por {missing[0]}."
+    elif len(missing) == 2:
+        return f"Si querés, puedo filtrar por {missing[0]} o {missing[1]}."
+    else:
+        return f"Si querés, puedo filtrar por {missing[0]}, {missing[1]} o {missing[2]}."
+
+
 def _describe_filters(
     operation: str = "",
     tipo: str = "",
@@ -218,17 +256,17 @@ def _describe_filters(
 ) -> str:
     """Build a human-readable description of active filters."""
     parts = []
-    if operation:
-        parts.append(f"{operation}")
     if tipo:
-        parts.append(tipo)
+        parts.append(tipo + ("s" if tipo[-1] != "s" else ""))
+    if operation:
+        parts.append(f"en {operation}")
     if zona:
         parts.append(f"en {zona}")
     if presupuesto_max > 0:
         parts.append(f"hasta ${presupuesto_max:,.0f}")
     if dormitorios > 0:
-        parts.append(f"{dormitorios}+ dormitorios")
+        parts.append(f"{dormitorios} dormitorio{'s' if dormitorios > 1 else ''}")
 
     if not parts:
         return ""
-    return " para " + ", ".join(parts)
+    return " " + ", ".join(parts)
