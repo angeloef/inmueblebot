@@ -66,21 +66,32 @@ async def process_turn_v2(
 
         # ── Build response_plan for multi-message image sending ────────────
         if images:
+            _plan_segments: list[dict] = []
+
+            # If details were also fetched, include them first from the
+            # agentic loop's intermediate MessageChunks. The LLM's final
+            # response may only mention photos — we recover the details
+            # text from the tool result stored in messages.
+            if "get_property_details" in (response.tools_called or []):
+                _details_text = _extract_detail_chunk(response)
+                if _details_text:
+                    _plan_segments.append({"type": "text", "content": _details_text})
+
             # Intro text: friendly opener + photo context
             intro = _build_photo_intro(image_title, len(images), response_text)
+            _plan_segments.append({"type": "text", "content": intro})
+            # Images: no caption — clean photos
+            _plan_segments.append({"type": "images", "images": images[:4], "caption": ""})
             # Follow-up CTA
             follow_up = (
                 "¿Tenés alguna consulta? ¿O te gustaría coordinar una visita "
                 "para verlo en persona?"
             )
-            result["rich_content"]["response_plan"] = [
-                {"type": "text", "content": intro},
-                {"type": "images", "images": images[:4], "caption": f"Fotos — {image_title}" if image_title else "Fotos de la propiedad"},
-                {"type": "text", "content": follow_up},
-            ]
-            # Suppress response_text only when it's a short photo header
-            # so the response_plan handles all content. If the LLM generated
-            # a longer response (mixed content), let it flow through too.
+            _plan_segments.append({"type": "text", "content": follow_up})
+
+            result["rich_content"]["response_plan"] = _plan_segments
+            # Suppress response_text only for pure photo requests
+            # (multi-tool: details were added to response_plan above)
             if len(response_text) < 200:
                 result["response_text"] = ""
 
@@ -137,6 +148,22 @@ def _clean_photo_response(text: str) -> str:
     # Collapse multiple blank lines
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
     return text
+
+
+def _extract_detail_chunk(response) -> str:
+    """Extract property details text from the agentic loop's MessageChunks.
+
+    When the LLM calls get_property_details then get_property_images in one
+    turn, the intermediate tool results are stored in response.messages as
+    MessageChunk objects. We recover the details text from the chunk whose
+    tool_used field is 'get_property_details'.
+    """
+    if not response.messages:
+        return ""
+    for chunk in response.messages:
+        if getattr(chunk, "tool_used", "") == "get_property_details":
+            return getattr(chunk, "text", "")
+    return ""
 
 
 def _build_photo_intro(title: str, count: int, fallback: str) -> str:

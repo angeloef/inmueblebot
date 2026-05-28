@@ -175,17 +175,38 @@ async def search_properties(
 
         lines = [f"Encontré {len(properties)} propiedades{filters_desc}:\n"]
         for p in properties:
-            op_label = "Alquiler" if p.type == "alquiler" else "Venta"
             price_str = f"${p.price:,.0f}/mes" if p.type == "alquiler" else f"${p.price:,.0f}"
             tipo_str = p.category.capitalize()
-            bedrooms_str = f"{p.bedrooms} dormitorio{'s' if p.bedrooms != 1 else ''}" if p.bedrooms > 0 else "Monoambiente"
+            zone = _extract_zone(p.location)
+            beds_str = f"{p.bedrooms} dorm" if p.bedrooms and p.bedrooms > 0 else ""
+            area_str = f"{p.area_m2:.0f}m²" if p.area_m2 and p.area_m2 > 0 else ""
+            baths_str = f"{int(p.bathrooms)} baño{'s' if p.bathrooms != 1 else ''}" if p.bathrooms and p.bathrooms > 0 else ""
+            specs = " · ".join(s for s in [beds_str, baths_str, area_str] if s)
 
             lines.append(
-                f"  [{p.id}] {tipo_str} en {p.location} — {op_label} {price_str}\n"
-                f"       {bedrooms_str} | {p.area_m2:.0f}m² | {p.title}"
+                f"  [{p.id}] {tipo_str} en {zone} — {price_str}"
             )
+            if specs:
+                lines.append(f"       {specs}")
 
         return "\n".join(lines)
+
+
+def _extract_zone(location: str) -> str:
+    """Extract neighborhood/zone from a full location string.
+
+    'Calle Dinamarca 1176, Barrio 100 Viviendas, Oberá, Misiones'
+    → 'Barrio 100 Viviendas'
+    """
+    if not location:
+        return location
+    parts = [p.strip() for p in location.split(",")]
+    if len(parts) >= 2:
+        zone = parts[1]
+        if zone.lower() not in ("oberá", "obera", "misiones"):
+            return zone
+        return parts[0]
+    return parts[0]
 
 
 def _describe_filters(
