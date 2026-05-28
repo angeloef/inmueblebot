@@ -101,15 +101,23 @@ async def _try_pre_llm_shortcut(
         photo_kw = ["fotos", "foto", "imagenes", "imágenes", "imagen", "mostrame fotos", "ver fotos"]
         if any(kw in msg_lower for kw in photo_kw):
             from app.tools.v2.get_property_images import get_property_images
+            import json as _json
             result_text = await get_property_images(property_id=belief.selected_property_id)
+            # get_property_images now returns JSON: {display_text, images, title}
+            # Parse it so the response text is user-friendly and images are available
+            try:
+                parsed = _json.loads(result_text)
+                display_text = parsed.get("display_text", result_text)
+            except Exception:
+                display_text = result_text
             belief.last_tool_called = "get_property_images"
             return (
                 ChatResponse(
-                    response=result_text,
+                    response=display_text,
                     tools_called=["get_property_images"],
                     confidence=0.99,
                 ),
-                ["get_property_images"],
+                belief,
                 0.99,
                 "pre-llm::photos",
             )
