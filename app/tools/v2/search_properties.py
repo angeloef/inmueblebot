@@ -91,6 +91,53 @@ async def search_properties(
         filters_desc = _describe_filters(operation, tipo, zona, presupuesto_max, dormitorios)
 
         if not properties:
+            # ── Relaxed fallback ────────────────────────────────────────────
+            # When the exact search returns nothing, drop tipo / budget /
+            # bedrooms and re-query with only operation + zona to see what
+            # IS available nearby.  This gives the user a useful alternative
+            # instead of a dead-end "no results" message.
+            fallback = select(Property)
+            if operation:
+                fallback = fallback.where(Property.type == operation.lower())
+            if zona:
+                fallback = fallback.where(or_(*_build_zone_filters(zona)))
+
+            fallback_result = await session.execute(fallback)
+            nearby = fallback_result.scalars().all()
+
+            if nearby:
+                # Group nearby results by (operation, category)
+                counts: dict[tuple[str, str], int] = {}
+                for p in nearby:
+                    op_label = "alquiler" if p.type == "alquiler" else "venta"
+                    key = (op_label, p.category)
+                    counts[key] = counts.get(key, 0) + 1
+
+                # Build a natural summary: "2 casas en alquiler, 1 terreno en alquiler, y 1 casa en venta"
+                items = []
+                for (op, cat), count in sorted(counts.items(), key=lambda x: -x[1]):
+                    # Simple pluralisation
+                    cat_plural = cat if cat in ("ph",) else cat + ("s" if count != 1 else "")
+                    items.append(f"{count} {cat_plural} en {op}")
+
+                if len(items) == 1:
+                    summary = items[0]
+                elif len(items) == 2:
+                    summary = f"{items[0]} y {items[1]}"
+                else:
+                    summary = ", ".join(items[:-1]) + f", y {items[-1]}"
+
+                tipo_word = tipo if tipo else "propiedades"
+                tipo_plural = tipo_word if tipo_word in ("ph",) else tipo_word + ("s" if tipo_word[-1] != "s" else "")
+                zona_part = f" en {zona}" if zona else ""
+
+                return (
+                    f"No encontré {tipo_plural} en {operation}{zona_part}. "
+                    f"Pero hay {len(nearby)} propiedades cerca: "
+                    f"{summary}. ¿Querés que te las muestre?"
+                )
+
+            # No results at all — keep the original message
             return f"No encontré propiedades{filters_desc}. ¿Querés ajustar algún filtro?"
 
         lines = [f"Encontré {len(properties)} propiedades{filters_desc}:\n"]
