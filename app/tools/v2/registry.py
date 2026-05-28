@@ -2,7 +2,7 @@
 
 from typing import Any, Callable
 
-from app.agents.schemas import CSCSStructuredToolCall
+from app.agents.schemas import CSStructuredToolCall
 from app.tools.v2.echo_tool import echo
 from app.tools.v2.time_tool import get_time
 from app.tools.v2.search_properties import search_properties
