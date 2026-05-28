@@ -2,10 +2,47 @@
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.db.session import async_session_factory
 from app.db.models.property import Property
+
+# ── Landmark aliases: users say "cerca de la UNAM" but the DB zone may not
+# contain that literal string. This maps known landmarks to the location/zone
+# keywords that actually exist in the DB for properties near that landmark.
+#
+# Extend this dict as new landmarks are identified. The value is a list of
+# SQLAlchemy filter conditions expressed as (column, search_term) pairs.
+# The first column is the primary match; additional columns broaden recall.
+_LANDMARK_ALIASES: dict[str, list[tuple]] = {
+    # UNAM (Universidad Nacional de Misiones, Oberá campus) is near the city
+    # center. Properties near UNAM may have "UNAM" in title/description but
+    # their location field often says "Centro", "Barrio Norte", etc.
+    "unam": [
+        (Property.location, "%UNAM%"),
+        (Property.title, "%UNAM%"),
+        (Property.description, "%UNAM%"),
+    ],
+}
+
+
+def _build_zone_filters(zona: str) -> list:
+    """Build WHERE conditions for a zone/landmark search term.
+
+    1. Exact match via location ILIKE (existing behavior).
+    2. If the zone matches a known landmark alias, also search title and
+       description for that landmark name — catches properties whose address
+       doesn't include the landmark but whose listing text does.
+    """
+    filters = [Property.location.ilike(f"%{zona}%")]
+
+    # Check landmark aliases (case-insensitive)
+    zona_lower = zona.strip().lower()
+    if zona_lower in _LANDMARK_ALIASES:
+        for col, pattern in _LANDMARK_ALIASES[zona_lower]:
+            filters.append(col.ilike(pattern))
+
+    return filters
 
 
 async def search_properties(
@@ -41,7 +78,8 @@ async def search_properties(
             mapped = tipo_map.get(tipo.lower(), tipo.lower())
             stmt = stmt.where(Property.category == mapped)
         if zona:
-            stmt = stmt.where(Property.location.ilike(f"%{zona}%"))
+            zone_filters = _build_zone_filters(zona)
+            stmt = stmt.where(or_(*zone_filters))
         if presupuesto_max > 0:
             stmt = stmt.where(Property.price <= presupuesto_max)
         if dormitorios > 0:
