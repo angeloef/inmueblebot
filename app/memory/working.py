@@ -82,6 +82,7 @@ def _serialize_belief(belief: ConversationBeliefState) -> str:
         "scheduling_loop_count": belief.scheduling_loop_count,
         "turn_count": belief.turn_count,
         "history": belief.history[-5:],  # last 5 messages
+        "last_updated_at": belief.last_updated_at,
     })
 
 
@@ -113,6 +114,7 @@ def _deserialize_belief(data: str | bytes, session_id: str) -> ConversationBelie
         scheduling_loop_count=d.get("scheduling_loop_count", 0),
         turn_count=d.get("turn_count", 0),
         history=d.get("history", []),
+        last_updated_at=d.get("last_updated_at", 0.0),
     )
 
 

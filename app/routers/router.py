@@ -3,11 +3,18 @@
 import re
 import time
 
+from loguru import logger
+
 from app.agents.schemas import CSAgentResponse as AgentResponse, ChatResponse
-from app.core.belief_state import ConversationBeliefState, get_belief
+from app.core.belief_state import (
+    ConversationBeliefState,
+    get_belief,
+    is_session_stale,
+    SESSION_INACTIVITY_TIMEOUT,
+)
 from app.core.context_aggregator import build_context_prompt
 from app.core.state_transitioner import update_belief
-from app.memory.working import save_working_memory, load_working_memory
+from app.memory.working import save_working_memory, load_working_memory, clear_working_memory
 from app.memory.episodic import build_greeting_from_episodes
 from app.memory.user_model import build_personalized_context
 from app.routers.system1 import format_response, match_pattern
@@ -208,6 +215,25 @@ async def route_message(
     # ── Load belief state ─────────────────────────────────────
     belief = await load_working_memory(session_id)
     if belief is None:
+        belief = get_belief(session_id)
+
+    # ── Session staleness check: auto-reset if inactive too long ──
+    # V1 had this reset; V2 was missing it. When a user comes back
+    # after more than SESSION_INACTIVITY_TIMEOUT (30 min), the old
+    # belief state (turn_count, zone, operation) is wiped so the next
+    # message starts fresh. This mirrors the v1 real_estate_agent.py
+    # behavior of resetting the state machine on stale sessions.
+    if is_session_stale(belief):
+        logger.info(
+            f"[Router] ⏱️ Stale session detected for {session_id} — "
+            f"turn_count={belief.turn_count}, last_updated={belief.last_updated_at:.0f}, "
+            f"timeout={SESSION_INACTIVITY_TIMEOUT}s. Resetting to fresh state."
+        )
+        # Clear Redis so the old state isn't loaded on the next message
+        await clear_working_memory(session_id)
+        # Also clear the specialist persistence state
+        clear_saved_state(session_id)
+        # Start fresh
         belief = get_belief(session_id)
 
     # ── Cross-session context ─────────────────────────────────

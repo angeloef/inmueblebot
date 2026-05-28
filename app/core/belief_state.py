@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# ⏱️ Inactivity threshold: if more than this many seconds have passed since
+# the last turn, the session is considered stale and gets auto-reset.
+SESSION_INACTIVITY_TIMEOUT = 30 * 60  # 30 minutes
+
+
 @dataclass
 class ConversationBeliefState:
     """Accumulated conversation state across multiple turns.
@@ -47,6 +52,10 @@ class ConversationBeliefState:
 
     turn_count: int = 0
     history: list[str] = field(default_factory=list)  # last N user messages
+
+    # ⏱️ Timestamp (epoch seconds) of the most recent user message.
+    # Used to detect stale sessions and auto-reset.
+    last_updated_at: float = 0.0
 
     # ── Computed ───────────────────────────────────────────────
 
@@ -159,3 +168,23 @@ def save_belief(belief: ConversationBeliefState) -> None:
 def clear_session(session_id: str) -> None:
     """Remove a session from the store."""
     _session_store.pop(session_id, None)
+
+
+def is_session_stale(belief: ConversationBeliefState) -> bool:
+    """Return True if the session has been inactive longer than the timeout.
+
+    A session is stale when:
+    1. It has accumulated data (turn_count > 0), AND
+    2. More than SESSION_INACTIVITY_TIMEOUT seconds have passed since the last message,
+       OR last_updated_at was never set (migration from pre-timestamp belief states).
+    """
+    if belief.turn_count == 0:
+        return False
+    # Migration: if last_updated_at is 0.0 (legacy entry that predates the timestamp
+    # field), treat it as stale so the next message starts fresh. This prevents
+    # old zone/operation/turn_count from persisting across conversations.
+    if belief.last_updated_at <= 0:
+        return True
+    import time
+    elapsed = time.time() - belief.last_updated_at
+    return elapsed >= SESSION_INACTIVITY_TIMEOUT

@@ -5,6 +5,7 @@ that accumulates criteria across turns.
 """
 
 import re
+import time
 from app.core.belief_state import ConversationBeliefState
 
 
@@ -303,5 +304,8 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
             resolved_id = belief.last_search_ids[idx]
             belief.selected_property_id = resolved_id
             belief.active_intents.add("ordinal_reference")
+
+    # ⏱️ Update timestamp for session staleness detection
+    belief.last_updated_at = time.time()
 
     return belief
