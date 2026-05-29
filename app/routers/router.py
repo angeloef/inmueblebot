@@ -28,6 +28,64 @@ from app.agents.conversation_manager import (
 
 S1_CONFIDENCE_THRESHOLD = 0.70
 
+_OUT_OF_SCOPE_RESPONSE = (
+    "Soy un asistente inmobiliario especializado en propiedades en Oberá, Misiones. "
+    "Puedo ayudarte a buscar casas, departamentos, terrenos o PH en alquiler o venta. "
+    "¿En qué querés que te ayude?"
+)
+
+# ── Out-of-scope keyword patterns ──────────────────────────────────
+# If a message contains ANY of these AND does NOT contain any real
+# estate keywords, it's treated as off-topic. This prevents the bot
+# from engaging with dating advice, recipes, jokes, spam, etc.
+_OUT_OF_SCOPE_PATTERNS: list[str] = [
+    r"\bnovia\b", r"\bnovio\b", r"\bcita\b.*\bamorosa\b", r"\bconseguir\b.*\bnovi",
+    r"\breceta\b", r"\bcocina\b", r"\bchiste\b", r"\badivinanza\b",
+    r"\bclima\b", r"\bpronóstico\b", r"\btiempo\b.*\bva a\b",
+    r"\bfútbol\b", r"\bfutbol\b", r"\bpartido\b.*\bjugó\b",
+    r"\bpelícula\b", r"\bserie\b.*\brecomend", r"\bmúsica\b.*\bescuchar\b",
+    r"\btinder\b", r"\bbumble\b", r"\bhappn\b",
+    r"\bsexo\b", r"\bsexual\b", r"\bporno\b",
+    r"\bhackear\b", r"\bhacker\b", r"\bcontraseña\b.*\bolvid",
+    r"\bganar\s+dinero\b", r"\binvertir\b.*\bcripto\b",
+    r"\bcurriculum\b", r"\bcv\b", r"\btrabajo\b.*\bbusco\b",
+    # Generic: message is clearly not about real estate
+    # Triggered only when NO real estate keywords are present
+]
+
+# Real estate keywords — if ANY are present, bypass out-of-scope check
+_IN_SCOPE_KEYWORDS: list[str] = [
+    "alquiler", "alquilar", "alquilo", "venta", "comprar", "vender",
+    "casa", "departamento", "depto", "dpto", "terreno", "ph", "duplex",
+    "propiedad", "propiedades", "inmueble", "inmobiliaria", "inmobiliario",
+    "obera", "oberá", "misiones", "zona", "barrio", "dormitorio",
+    "presupuesto", "precio", "fotos", "detalles", "visita", "visitar",
+    "requisitos", "garantía", "garantia", "contrato", "mascota",
+    "servicios", "luz", "agua", "gas", "cochera", "patio", "quincho",
+    "monoambiente", "ambientes", "m²", "m2", "metros", "cubiertos",
+    "agendar", "coordinamos", "mostrame", "busco", "buscando",
+]
+
+def _is_out_of_scope(message: str) -> bool:
+    """Check if message is clearly not a real estate request.
+
+    Returns True if the message matches off-topic patterns AND has
+    no real estate keywords. This prevents the bot from engaging with
+    spam, dating advice, recipes, chitchat, etc.
+    """
+    msg_lower = message.lower().strip()
+
+    # If any real estate keyword is present, it's in scope
+    if any(kw in msg_lower for kw in _IN_SCOPE_KEYWORDS):
+        return False
+
+    # Check against out-of-scope patterns
+    for pattern in _OUT_OF_SCOPE_PATTERNS:
+        if re.search(pattern, msg_lower):
+            return True
+
+    return False
+
 
 def _clear_scheduling_state(belief: ConversationBeliefState) -> None:
     """Clear scheduling state after completion or escape."""
@@ -271,6 +329,21 @@ async def route_message(
                 confidence=1.0,
             ),
             get_belief(session_id), "reset-memory", 0,
+        )
+
+    # ── Out-of-scope guard ────────────────────────────────────
+    # Detect clearly non-real-estate requests and redirect politely.
+    # This runs BEFORE any S1 patterns so the bot never engages with
+    # off-topic content (dating advice, recipes, jokes, chitchat, etc.)
+    if _is_out_of_scope(message):
+        logger.info(f"[Router] 🚫 Out-of-scope blocked for {session_id}: {message[:80]}")
+        return (
+            ChatResponse(
+                response=_OUT_OF_SCOPE_RESPONSE,
+                tools_called=[],
+                confidence=1.0,
+            ),
+            belief, "out-of-scope", 0,
         )
 
     # ── Cross-session context ─────────────────────────────────
