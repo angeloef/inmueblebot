@@ -1810,3 +1810,42 @@ def update_bot_settings(
     except Exception:
         pass
     return {"status": "updated", "keys": list(updates.keys())}
+
+
+# ── Data cleanup ───────────────────────────────────────────────────────
+
+CLIENT_TABLES = [
+    "appointments",
+    "conversations",
+    "messages",
+    "user_episodes",
+    "users",
+]
+
+
+@router.post("/cleanup-clients")
+async def cleanup_clients(
+    confirm: str = "",
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Delete ALL client data. Requires ?confirm=yes."""
+    if confirm != "yes":
+        counts = {}
+        for table in CLIENT_TABLES:
+            r = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+            counts[table] = r.scalar()
+        return {
+            "status": "preview",
+            "message": "Add ?confirm=yes to actually delete",
+            "tables": counts,
+        }
+    results = {}
+    for table in CLIENT_TABLES:
+        r = db.execute(text(f"DELETE FROM {table}"))
+        results[table] = r.rowcount
+    db.commit()
+    return {
+        "status": "deleted",
+        "tables": results,
+    }
