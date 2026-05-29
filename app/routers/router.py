@@ -350,11 +350,12 @@ async def route_message(
 
     # ── Cross-session context ─────────────────────────────────
     cross_session_context = ""
-    if phone and belief.turn_count == 0:
-        greeting = await build_greeting_from_episodes(phone)
+    canonical_id = session_id or phone
+    if canonical_id and belief.turn_count == 0:
+        greeting = await build_greeting_from_episodes(canonical_id)
         if greeting:
             cross_session_context = greeting
-        persona_ctx = await build_personalized_context(phone)
+        persona_ctx = await build_personalized_context(canonical_id)
         if persona_ctx:
             cross_session_context += "\n\n" + persona_ctx
 

@@ -14,6 +14,7 @@ from app.agents.router import should_handoff
 from app.core.memory import memory_manager
 from app.core.state_machine import state_machine, ConversationStateEnum
 from app.core.intent import Intent
+from app.core.identity import get_identity_key
 
 
 
@@ -39,9 +40,10 @@ class RealEstateAgent:
     
     def _get_user_lock(self, phone: str) -> asyncio.Lock:
         """Get or create per-user lock to serialize turns."""
-        if phone not in self._user_locks:
-            self._user_locks[phone] = asyncio.Lock()
-        return self._user_locks[phone]
+        identity_key = get_identity_key() or phone
+        if identity_key not in self._user_locks:
+            self._user_locks[identity_key] = asyncio.Lock()
+        return self._user_locks[identity_key]
     
     async def process_turn(
         self,

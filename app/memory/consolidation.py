@@ -13,6 +13,7 @@ from app.memory.user_model import update_persona
 from app.memory.semantic import increment_zone_search
 from app.memory.procedural import get_most_used_skill
 from app.core.belief_state import ConversationBeliefState
+from app.core.identity import get_identity_key
 
 
 async def consolidate_session(
@@ -36,15 +37,16 @@ async def consolidate_session(
     }
 
     session_id = belief.session_id
+    canonical_id = get_identity_key() or phone
 
     # 1. Generate summary
     summary = _summarize_session(belief)
     results["summary"] = summary
 
     # 2. Save episode (if phone provided)
-    if phone:
+    if canonical_id:
         await save_episode(
-            phone=phone,
+            phone=canonical_id,
             session_id=session_id,
             summary=summary,
             turn_count=belief.turn_count,
@@ -68,7 +70,7 @@ async def consolidate_session(
         if belief.selected_property_id:
             updates["properties_viewed"] = [belief.selected_property_id]
 
-        await update_persona(phone, updates)
+        await update_persona(canonical_id, updates)
         results["persona_updated"] = True
 
         # 4. Update zone stats

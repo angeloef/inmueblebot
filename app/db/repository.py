@@ -91,6 +91,8 @@ class UserRepository(BaseRepository):
     
     async def get_by_phone(self, phone: str) -> Optional["User"]:
         """Obtiene un usuario por número de WhatsApp."""
+        if not phone:
+            return None
         result = await self.session.execute(
             select(self.model).where(self.model.whatsapp_phone == phone)
         )
@@ -108,13 +110,17 @@ class UserRepository(BaseRepository):
         )
         return result.scalars().first()
 
-    async def get_or_create(self, phone: str) -> "User":
-        """Obtiene usuario por phone o crea uno nuevo."""
+    async def get_or_create(self, phone: str, bsuid: Optional[str] = None) -> "User":
+        """Obtiene usuario por phone o BSUID, o crea uno nuevo."""
         from app.db.models import User
-        user = await self.get_by_phone(phone)
+        user = None
+        if bsuid:
+            user = await self.get_by_bsuid(bsuid)
+        if not user and phone:
+            user = await self.get_by_phone(phone)
         is_new = user is None
         if not user:
-            user = User(whatsapp_phone=phone)
+            user = User(whatsapp_phone=phone or None, bsuid=bsuid or None)
             self.session.add(user)
             await self.session.flush()
             await self.session.refresh(user)
@@ -123,7 +129,8 @@ class UserRepository(BaseRepository):
             try:
                 import asyncio
                 from app.services.notification_service import notification_service
-                asyncio.ensure_future(notification_service.new_lead(phone=phone))
+                if phone:
+                    asyncio.ensure_future(notification_service.new_lead(phone=phone))
             except Exception:
                 pass
         return user

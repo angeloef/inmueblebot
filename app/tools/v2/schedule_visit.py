@@ -121,7 +121,7 @@ async def schedule_visit(
                     extra["contact_phone"] = telefono
                 user = User(
                     id=_uuid4(),
-                    whatsapp_phone=identity_phone,
+                    whatsapp_phone=identity_phone or None,
                     bsuid=session_bsuid or None,
                     name=nombre.strip() if nombre else None,
                     extra_data=extra or None,
@@ -141,7 +141,7 @@ async def schedule_visit(
             update_fields: dict = {}
             if session_bsuid and user.bsuid != session_bsuid:
                 update_fields["bsuid"] = session_bsuid
-            if telefono and telefono != user.whatsapp_phone:
+            if telefono and user.whatsapp_phone and telefono != user.whatsapp_phone:
                 extra = dict(user.extra_data or {})
                 if extra.get("contact_phone") != telefono:
                     extra["contact_phone"] = telefono
@@ -163,7 +163,7 @@ async def schedule_visit(
             start_time=start_datetime,
             type="visit",
             notes=consulta or None,
-            user_phone=user.whatsapp_phone,
+            user_phone=user.whatsapp_phone or user.bsuid or "Unknown",
         )
     except Exception as e:
         logger.error(f"[schedule_visit] create_appointment failed: {e}")
@@ -184,7 +184,7 @@ async def schedule_visit(
         try:
             from app.services.notification_service import notification_service
             await notification_service.visit_scheduled(
-                phone=user.whatsapp_phone,
+                phone=user.whatsapp_phone or user.bsuid or "Unknown",
                 property_title=f"Propiedad #{property_id}",
                 datetime_str=format_datetime_argentina(appointment.start_time)
                 if hasattr(appointment, "start_time") else dia,

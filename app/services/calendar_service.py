@@ -332,7 +332,7 @@ class CalendarService:
                 'summary': f'🏠 Visita: {property_title}',
                 'description': (
                     f'Visita programada por InmuebleBot\n'
-                    f'Cliente: {user_phone}\n'
+                    f'Cliente: {user_phone or "Sin teléfono"}\n'
                     f'Propiedad ID: {property_id}\n'
                     f'Notas: {notes or "Sin notas"}'
                 ),

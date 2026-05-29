@@ -36,6 +36,7 @@ import json
 from loguru import logger
 
 from app.core.config import get_settings
+from app.core.identity import get_identity_key
 
 
 class ConversationStateEnum(str, Enum):
@@ -377,9 +378,10 @@ class ConversationState:
     
     async def get_state(self, phone: str) -> str:
         """Obtiene el estado actual de la conversación del usuario."""
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:state"
+            key = f"user:{identity_key}:state"
             state = await r.get(key)
             if state:
                 return state
@@ -397,27 +399,28 @@ class ConversationState:
     ) -> bool:
         """Establece un nuevo estado para la conversación."""
         current_state = await self.get_state(phone)
-        
+
         if not allow_invalid and not self._is_valid_transition(current_state, new_state):
             error_msg = f"Transición inválida: {current_state} -> {new_state}"
             logger.warning(f"{error_msg} para {phone}")
             raise TransitionError(error_msg)
-        
+
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:state"
-            prev_key = f"user:{phone}:previous_state"
+            key = f"user:{identity_key}:state"
+            prev_key = f"user:{identity_key}:previous_state"
 
             # Save current state as previous before overwriting
             await r.setex(prev_key, self.STATE_TTL, current_state)
             await r.setex(key, self.STATE_TTL, new_state)
-            
+
             if context:
-                context_key = f"user:{phone}:state_context"
+                context_key = f"user:{identity_key}:state_context"
                 context["state"] = new_state
                 context["updated_at"] = datetime.utcnow().isoformat()
                 await r.setex(context_key, self.STATE_TTL, json.dumps(context, default=str))
-            
+
             logger.info(f"Estado cambiado para {phone}: {current_state} -> {new_state}")
             return True
         except Exception as e:
@@ -426,9 +429,10 @@ class ConversationState:
     
     async def get_state_context(self, phone: str) -> Optional[dict]:
         """Obtiene el contexto adicional del estado actual."""
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:state_context"
+            key = f"user:{identity_key}:state_context"
             data = await r.get(key)
             if data:
                 return json.loads(data)
@@ -439,14 +443,15 @@ class ConversationState:
     
     async def reset_state(self, phone: str) -> bool:
         """Resetea el estado a idle y limpia el contexto."""
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
             keys = [
-                f"user:{phone}:state",
-                f"user:{phone}:state_context",
+                f"user:{identity_key}:state",
+                f"user:{identity_key}:state_context",
             ]
             await r.delete(*keys)
-            
+
             logger.info(f"Estado reseteado para {phone}")
             return True
         except Exception as e:
@@ -455,9 +460,10 @@ class ConversationState:
     
     async def get_previous_state(self, phone: str) -> str:
         """Obtiene el estado anterior de la conversación."""
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:previous_state"
+            key = f"user:{identity_key}:previous_state"
             state = await r.get(key)
             if state:
                 return state

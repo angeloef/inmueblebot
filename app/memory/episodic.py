@@ -8,8 +8,9 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
+from app.core.identity import get_identity_key
 from app.core.config import get_settings
 settings = get_settings()
 from app.db.session import async_session_factory
@@ -36,6 +37,7 @@ async def _ensure_user_episodes_table() -> bool:
                 CREATE TABLE IF NOT EXISTS user_episodes (
                     id SERIAL PRIMARY KEY,
                     phone VARCHAR(30) NOT NULL,
+                    bsuid VARCHAR(100),
                     session_id VARCHAR(100) UNIQUE NOT NULL,
                     summary TEXT DEFAULT '',
                     turn_count INTEGER DEFAULT 0,
@@ -68,6 +70,7 @@ async def save_episode(
         async with async_session_factory() as session:
             episode = UserEpisode(
                 phone=phone,
+                bsuid=get_identity_key() or None,
                 session_id=session_id,
                 summary=summary,
                 turn_count=turn_count,
@@ -85,7 +88,7 @@ async def save_episode(
     # Redis cache (fast retrieval)
     redis = await _get_redis()
     if redis:
-        key = f"episodic:{phone}"
+        key = f"episodic:{get_identity_key() or phone}"
         entry = json.dumps({
             "session_id": session_id,
             "summary": summary,
@@ -108,7 +111,7 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
     """
     redis = await _get_redis()
     if redis:
-        entries = await redis.lrange(f"episodic:{phone}", 0, limit - 1)
+        entries = await redis.lrange(f"episodic:{get_identity_key() or phone}", 0, limit - 1)
         await redis.aclose()
         if entries:
             return [json.loads(e if isinstance(e, str) else e.decode()) for e in entries]
@@ -116,9 +119,10 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
     # PostgreSQL fallback — gracefully skip if table missing
     try:
         async with async_session_factory() as session:
+            identity_key = get_identity_key()
             result = await session.execute(
                 select(UserEpisode)
-                .where(UserEpisode.phone == phone)
+                .where((UserEpisode.bsuid == identity_key) | (UserEpisode.phone == phone))
                 .order_by(UserEpisode.created_at.desc())
                 .limit(limit)
             )

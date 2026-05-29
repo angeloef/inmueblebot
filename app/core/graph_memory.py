@@ -15,15 +15,17 @@ import time
 from typing import Optional
 from loguru import logger
 
+from app.core.identity import get_identity_key
+
 
 # ── Key patterns ─────────────────────────────────────────────────────────
 
 def _viewed_key(phone: str) -> str:
-    return f"graph:user:{phone}:viewed"
+    return f"graph:user:{get_identity_key() or phone}:viewed"
 
 
 def _scheduled_key(phone: str) -> str:
-    return f"graph:user:{phone}:scheduled"
+    return f"graph:user:{get_identity_key() or phone}:scheduled"
 
 
 def _similar_key(property_id: str) -> str:
@@ -133,8 +135,9 @@ async def get_user_graph_context(phone: str) -> dict:
 
     Returns a dict suitable for injection into the system prompt.
     """
-    views = await get_viewed_properties(phone, limit=5)
-    appointments = await get_scheduled_appointments(phone)
+    identity_key = get_identity_key() or phone
+    views = await get_viewed_properties(identity_key, limit=5)
+    appointments = await get_scheduled_appointments(identity_key)
 
     context = {}
 

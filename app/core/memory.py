@@ -28,6 +28,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.identity import get_identity_key
 from app.db.models import User
 from app.db.repository import UserRepository
 
@@ -152,6 +153,7 @@ class MemoryManager:
         Obtiene el contexto actual del usuario desde Redis.
         Si Redis no está disponible, retorna contexto desde fallback en memoria.
         """
+        identity_key = get_identity_key() or phone
         _DEFAULT = {
             "current_state": "idle",
             "last_search_criteria": None,
@@ -162,36 +164,37 @@ class MemoryManager:
 
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:context"
+            key = f"user:{identity_key}:context"
             data = await r.get(key)
             if data:
                 context = json.loads(data)
                 # Sync fallback cache so it's always up to date
-                self._fallback_context[phone] = context
+                self._fallback_context[identity_key] = context
                 return context
             return _DEFAULT
         except Exception as e:
             logger.debug(f"[Memory] Redis unavailable, using fallback context: {e}")
-            return self._fallback_context.get(phone, _DEFAULT)
+            return self._fallback_context.get(identity_key, _DEFAULT)
     
     async def save_user_context(self, phone: str, context: dict) -> bool:
         """
         Guarda el contexto del usuario en Redis.
         Siempre mantiene una copia en el fallback en memoria.
         """
+        identity_key = get_identity_key() or phone
         # Always keep a local copy for fallback
         context["updated_at"] = datetime.utcnow().isoformat()
-        self._fallback_context[phone] = context
+        self._fallback_context[identity_key] = context
 
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:context"
+            key = f"user:{identity_key}:context"
             await r.setex(key, self.CONTEXT_TTL, json.dumps(context, default=str))
-            logger.debug(f"Contexto guardado para {phone}")
+            logger.debug(f"Contexto guardado para {identity_key}")
             return True
         except Exception as e:
             logger.warning(
-                f"[Memory] Redis down, context saved to fallback for {phone}: {e}"
+                f"[Memory] Redis down, context saved to fallback for {identity_key}: {e}"
             )
             return True  # Return True — the data is available in fallback
     
@@ -199,9 +202,10 @@ class MemoryManager:
         """
         Actualiza un campo específico del contexto.
         """
-        context = await self.get_user_context(phone)
+        identity_key = get_identity_key() or phone
+        context = await self.get_user_context(identity_key)
         context[field] = value
-        return await self.save_user_context(phone, context)
+        return await self.save_user_context(identity_key, context)
     
     # =========================================================================
     # MÉTODOS DE SCHEDULING (CONTEXT-AWARE)
@@ -212,10 +216,11 @@ class MemoryManager:
         Guarda información de scheduling pendiente cuando el usuario menciona:
         - "quiero agendar para mañana a las 7pm"
         - "puedo ver el PH en centro para el viernes"
-        
+
         El agente debe guardar esto y usarlo cuando el usuario seleccione una propiedad.
         """
-        context = await self.get_user_context(phone)
+        identity_key = get_identity_key() or phone
+        context = await self.get_user_context(identity_key)
         
         context["pending_scheduling_info"] = {
             "active": True,
@@ -225,24 +230,26 @@ class MemoryManager:
             "saved_at": datetime.utcnow().isoformat(),
         }
         
-        logger.info(f"[Memory] Pending scheduling saved for {phone}: property={property_id}, date={date_str}, time={time_str}")
-        return await self.save_user_context(phone, context)
+        logger.info(f"[Memory] Pending scheduling saved for {identity_key}: property={property_id}, date={date_str}, time={time_str}")
+        return await self.save_user_context(identity_key, context)
     
     async def get_pending_scheduling(self, phone: str) -> Optional[dict]:
         """
         Obtiene información de scheduling pendiente.
         Returns None si no hay información guardada.
         """
-        context = await self.get_user_context(phone)
+        identity_key = get_identity_key() or phone
+        context = await self.get_user_context(identity_key)
         return context.get("pending_scheduling_info")
     
     async def clear_pending_scheduling(self, phone: str) -> bool:
         """
         Limpia la información de scheduling pendiente (después de agendar exitosamente).
         """
-        context = await self.get_user_context(phone)
+        identity_key = get_identity_key() or phone
+        context = await self.get_user_context(identity_key)
         context["pending_scheduling_info"] = None
-        return await self.save_user_context(phone, context)
+        return await self.save_user_context(identity_key, context)
 
     async def is_duplicate_message(self, message_id: str, ttl: int = 300) -> bool:
         """
@@ -364,6 +371,7 @@ class MemoryManager:
         Mantiene los últimos MAX_MESSAGES mensajes.
         Siempre mantiene una copia en el fallback en memoria.
         """
+        identity_key = get_identity_key() or phone
         message = {
             "role": role,
             "content": content,
@@ -372,15 +380,15 @@ class MemoryManager:
         }
 
         # Always keep a local copy for fallback
-        existing = self._fallback_messages.get(phone, [])
+        existing = self._fallback_messages.get(identity_key, [])
         existing.append(message)
         if len(existing) > self.MAX_MESSAGES:
             existing = existing[-self.MAX_MESSAGES:]
-        self._fallback_messages[phone] = existing
+        self._fallback_messages[identity_key] = existing
 
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:messages"
+            key = f"user:{identity_key}:messages"
             
             # Obtener mensajes actuales
             existing_json = await r.get(key)
@@ -395,11 +403,11 @@ class MemoryManager:
             
             # Guardar con TTL
             await r.setex(key, self.MESSAGES_TTL, json.dumps(messages, default=str))
-            logger.debug(f"Mensaje ({role}) guardado para {phone}")
+            logger.debug(f"Mensaje ({role}) guardado para {identity_key}")
             return True
         except Exception as e:
             logger.warning(
-                f"[Memory] Redis down, message saved to fallback for {phone}: {e}"
+                f"[Memory] Redis down, message saved to fallback for {identity_key}: {e}"
             )
             return True  # Return True — the data is available in fallback
     
@@ -408,19 +416,20 @@ class MemoryManager:
         Obtiene los últimos N mensajes de la conversación.
         Con fallback en memoria si Redis no está disponible.
         """
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
-            key = f"user:{phone}:messages"
+            key = f"user:{identity_key}:messages"
             data = await r.get(key)
             if data:
                 messages = json.loads(data)
                 # Sync fallback cache
-                self._fallback_messages[phone] = messages
+                self._fallback_messages[identity_key] = messages
                 return messages[-limit:] if len(messages) > limit else messages
             return []
         except Exception as e:
             logger.debug(f"[Memory] Redis unavailable, using fallback messages: {e}")
-            messages = self._fallback_messages.get(phone, [])
+            messages = self._fallback_messages.get(identity_key, [])
             return messages[-limit:] if messages else []
     
     # =========================================================================
@@ -437,6 +446,7 @@ class MemoryManager:
         Actualiza las preferencias del usuario en PostgreSQL.
         Usa UserRepository para persistir en la tabla users.
         """
+        identity_key = get_identity_key() or phone
         import json
         
         try:
@@ -447,7 +457,7 @@ class MemoryManager:
             
             async with db_session:
                 user_repo = UserRepository(User, db_session)
-                user = await user_repo.get_or_create(phone)
+                user = await user_repo.get_or_create(identity_key)
                 
                 update_fields = {}
                 if "name" in preferences:
@@ -492,11 +502,11 @@ class MemoryManager:
                 if update_fields:
                     await user_repo.update(user.id, **update_fields)
                     await db_session.commit()
-                    logger.info(f"Preferencias actualizadas para {phone}")
+                    logger.info(f"Preferencias actualizadas para {identity_key}")
                 
                 return True
         except Exception as e:
-            logger.error(f"Error al actualizar preferencias de {phone}: {e}")
+            logger.error(f"Error al actualizar preferencias de {identity_key}: {e}")
             return False
     
     async def get_user_preferences(self, phone: str, db_session=None) -> Optional[dict]:
@@ -504,6 +514,7 @@ class MemoryManager:
         Obtiene las preferencias del usuario desde PostgreSQL.
         Con fallback silencioso si no hay BD.
         """
+        identity_key = get_identity_key() or phone
         try:
             from app.db.session import async_session_factory
             
@@ -515,7 +526,12 @@ class MemoryManager:
             
             async with db_session:
                 user_repo = UserRepository(User, db_session)
-                user = await user_repo.get_by_phone(phone)
+                user = None
+                # Try BSUID first if identity_key differs from phone
+                if identity_key != phone:
+                    user = await user_repo.get_by_bsuid(identity_key)
+                if not user:
+                    user = await user_repo.get_by_phone(phone)
                 
                 if user:
                     return {
@@ -550,6 +566,7 @@ class MemoryManager:
         Returns:
             Diccionario de preferencias extraídas
         """
+        identity_key = get_identity_key() or phone
         import re
         
         new_prefs = {}
@@ -671,8 +688,8 @@ class MemoryManager:
                 new_prefs["property_type"] = [pt]
         
         if new_prefs:
-            await self.update_user_preferences(phone, new_prefs)
-            logger.info(f"Preferencias extraídas y guardadas para {phone}: {new_prefs}")
+            await self.update_user_preferences(identity_key, new_prefs)
+            logger.info(f"Preferencias extraídas y guardadas para {identity_key}: {new_prefs}")
         
         # Only save clean extraction, not the full context, to avoid recursive nesting
         last_criteria = {
@@ -681,7 +698,7 @@ class MemoryManager:
                                if k in ("property_type", "bedrooms", "bathrooms", "budget_min", "budget_max",
                                         "location_preferences", "operation_type")},
         }
-        await self.update_context_field(phone, "last_search_criteria", last_criteria)
+        await self.update_context_field(identity_key, "last_search_criteria", last_criteria)
         
         return new_prefs
     
@@ -693,14 +710,15 @@ class MemoryManager:
         Returns:
             Diccionario con preferencias combinadas de ambas fuentes
         """
+        identity_key = get_identity_key() or phone
         try:
-            redis_context = await self.get_user_context(phone)
+            redis_context = await self.get_user_context(identity_key)
         except Exception as e:
             logger.warning(f"Error get_user_context, usando default: {e}")
             redis_context = {"current_state": "idle", "conversation_stage": "new"}
         
         try:
-            postgres_prefs = await self.get_user_preferences(phone)
+            postgres_prefs = await self.get_user_preferences(identity_key)
         except Exception as e:
             logger.warning(f"Error get_user_preferences, usando vacío: {e}")
             postgres_prefs = None
@@ -736,36 +754,38 @@ class MemoryManager:
         
         Por ahora retorna un resumen básico desde Redis.
         """
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
         except Exception as e:
             logger.debug(f"[Memory] Redis no disponible para summary: {e}")
             return ""
-        key = f"user:{phone}:summary"
+        key = f"user:{identity_key}:summary"
         
         try:
             summary = await r.get(key)
             return summary if summary else ""
         except Exception as e:
-            logger.error(f"Error al obtener summary de {phone}: {e}")
+            logger.error(f"Error al obtener summary de {identity_key}: {e}")
             return ""
     
     async def save_conversation_summary(self, phone: str, summary: str) -> bool:
         """
         Guarda el resumen de conversación (generado por LLM).
         """
+        identity_key = get_identity_key() or phone
         try:
             r = await self._get_redis_with_retry()
         except Exception as e:
             logger.debug(f"[Memory] Redis no disponible para save summary: {e}")
             return False
-        key = f"user:{phone}:summary"
+        key = f"user:{identity_key}:summary"
         
         try:
             await r.setex(key, self.MESSAGES_TTL, summary)
             return True
         except Exception as e:
-            logger.warning(f"Error al guardar summary de {phone}: {e}")
+            logger.warning(f"Error al guardar summary de {identity_key}: {e}")
             return False
     
     async def summarize_conversation(self, phone: str) -> str:
@@ -775,7 +795,8 @@ class MemoryManager:
         Solo resume mensajes 6+ (los primeros 5 se mantienen completos).
         El resumen se cachea en Redis con TTL de 24h.
         """
-        messages = await self.get_recent_messages(phone, limit=50)
+        identity_key = get_identity_key() or phone
+        messages = await self.get_recent_messages(identity_key, limit=50)
 
         if not messages or len(messages) <= 10:
             return ""  # Not enough messages to justify summarization
@@ -813,8 +834,8 @@ class MemoryManager:
 
             if response and len(response.strip()) > 10:
                 summary = f"[Resumen de conversacion anterior]\n{response.strip()}"
-                await self.save_conversation_summary(phone, summary)
-                logger.info(f"[Memory] Generated LLM summary for {phone[-4:]} ({len(response)} chars)")
+                await self.save_conversation_summary(identity_key, summary)
+                logger.info(f"[Memory] Generated LLM summary for {str(identity_key)[-4:]} ({len(response)} chars)")
                 return summary
 
         except Exception as e:
@@ -825,7 +846,7 @@ class MemoryManager:
         summary = "[Resumen]\n" + "\n".join([
             f"{m['role']}: {m['content'][:100]}" for m in recent
         ])
-        await self.save_conversation_summary(phone, summary)
+        await self.save_conversation_summary(identity_key, summary)
         return summary
 
     # ── v2.0 Sliding window: recent messages + summary ──────────────────
@@ -837,15 +858,16 @@ class MemoryManager:
         This keeps the context window stable regardless of conversation length.
         Returns a list of message dicts ready for the LLM.
         """
-        messages = await self.get_recent_messages(phone, limit=50)
+        identity_key = get_identity_key() or phone
+        messages = await self.get_recent_messages(identity_key, limit=50)
 
         if len(messages) <= 10:
             return messages  # Short conversation, return all
 
         # Get cached summary, or generate one
-        summary = await self.get_conversation_summary(phone)
+        summary = await self.get_conversation_summary(identity_key)
         if not summary or len(summary) < 20:
-            summary = await self.summarize_conversation(phone)
+            summary = await self.summarize_conversation(identity_key)
 
         # Return: summary as system message + last 5 full messages
         result = []
@@ -867,9 +889,10 @@ class MemoryManager:
         Limpia la memoria de corto plazo (Redis + fallback en memoria).
         Mantiene las preferencias en PostgreSQL.
         """
+        identity_key = get_identity_key() or phone
         # Always clear fallback first
-        self._fallback_context.pop(phone, None)
-        self._fallback_messages.pop(phone, None)
+        self._fallback_context.pop(identity_key, None)
+        self._fallback_messages.pop(identity_key, None)
 
         try:
             r = await self._get_redis_with_retry()
@@ -879,18 +902,18 @@ class MemoryManager:
         
         try:
             keys = [
-                f"user:{phone}:context",
-                f"user:{phone}:messages",
-                f"user:{phone}:summary",
+                f"user:{identity_key}:context",
+                f"user:{identity_key}:messages",
+                f"user:{identity_key}:summary",
             ]
             
             for key in keys:
                 await r.delete(key)
             
-            logger.info(f"Memoria de corto plazo limpiada para {phone}")
+            logger.info(f"Memoria de corto plazo limpiada para {identity_key}")
             return True
         except Exception as e:
-            logger.error(f"Error al limpiar memoria de {phone}: {e}")
+            logger.error(f"Error al limpiar memoria de {identity_key}: {e}")
             return False
     
     async def reset_user_context(self, phone: str) -> bool:
@@ -902,24 +925,25 @@ class MemoryManager:
 
         Returns True on success (even if PostgreSQL cleanup fails).
         """
+        identity_key = get_identity_key() or phone
         # 1. Always clear in-memory fallback first
-        self._fallback_context.pop(phone, None)
-        self._fallback_messages.pop(phone, None)
+        self._fallback_context.pop(identity_key, None)
+        self._fallback_messages.pop(identity_key, None)
 
         # 2. Clear Redis keys
         try:
             r = await self._get_redis_with_retry()
             keys = [
-                f"user:{phone}:context",
-                f"user:{phone}:messages",
-                f"user:{phone}:summary",
-                f"user:{phone}:state",
-                f"user:{phone}:previous_state",
-                f"user:{phone}:state_context",
+                f"user:{identity_key}:context",
+                f"user:{identity_key}:messages",
+                f"user:{identity_key}:summary",
+                f"user:{identity_key}:state",
+                f"user:{identity_key}:previous_state",
+                f"user:{identity_key}:state_context",
             ]
             for key in keys:
                 await r.delete(key)
-            logger.info(f"[Memory] Redis context reset for {phone}")
+            logger.info(f"[Memory] Redis context reset for {identity_key}")
         except Exception as e:
             logger.debug(f"[Memory] Redis unavailable for reset, fallback cleared: {e}")
 
@@ -932,7 +956,12 @@ class MemoryManager:
 
             async with async_session_factory() as session:
                 user_repo = UserRepository(User, session)
-                user = await user_repo.get_by_phone(phone)
+                user = None
+                # Try BSUID first if identity_key differs from phone
+                if identity_key != phone:
+                    user = await user_repo.get_by_bsuid(identity_key)
+                if not user:
+                    user = await user_repo.get_by_phone(phone)
                 if user:
                     user_id = user.id
 
@@ -948,7 +977,7 @@ class MemoryManager:
                         ),
                         {"uid": user_id},
                     )
-                    logger.info(f"[Memory] User preferences cleared (raw SQL) for {phone}")
+                    logger.info(f"[Memory] User preferences cleared (raw SQL) for {identity_key}")
 
                     # Delete appointments via raw SQL (no autoflush risk)
                     from app.db.models import Appointment
@@ -958,7 +987,7 @@ class MemoryManager:
                     )
                     apt_count = apt_result.rowcount
                     if apt_count:
-                        logger.info(f"[Memory] Deleted {apt_count} appointments for {phone}")
+                        logger.info(f"[Memory] Deleted {apt_count} appointments for {identity_key}")
 
                     # Delete conversations via raw SQL
                     conv_result = await session.execute(
@@ -967,16 +996,16 @@ class MemoryManager:
                     )
                     conv_count = conv_result.rowcount
                     if conv_count:
-                        logger.info(f"[Memory] Deleted {conv_count} conversations for {phone}")
+                        logger.info(f"[Memory] Deleted {conv_count} conversations for {identity_key}")
 
                     await session.commit()
-                    logger.info(f"[Memory] PostgreSQL full reset for {phone}")
+                    logger.info(f"[Memory] PostgreSQL full reset for {identity_key}")
                 else:
-                    logger.info(f"[Memory] No user record found for {phone}, nothing to reset in DB")
+                    logger.info(f"[Memory] No user record found for {identity_key}, nothing to reset in DB")
         except Exception as e:
-            logger.warning(f"[Memory] PostgreSQL reset failed for {phone}: {e}")
+            logger.warning(f"[Memory] PostgreSQL reset failed for {identity_key}: {e}")
 
-        logger.info(f"[Memory] Contexto completamente reseteado para {phone}")
+        logger.info(f"[Memory] Contexto completamente reseteado para {identity_key}")
         return True
 
     async def clear_user(self, phone: str) -> bool:
@@ -984,12 +1013,13 @@ class MemoryManager:
         Limpia toda la memoria del usuario (Redis + PostgreSQL).
         Alias para compatibilidad con frontend.
         """
+        identity_key = get_identity_key() or phone
         try:
-            await self.clear_short_term_memory(phone)
-            logger.info(f"Usuario {phone} limpiado completamente")
+            await self.clear_short_term_memory(identity_key)
+            logger.info(f"Usuario {identity_key} limpiado completamente")
             return True
         except Exception as e:
-            logger.error(f"Error al limpiar usuario {phone}: {e}")
+            logger.error(f"Error al limpiar usuario {identity_key}: {e}")
             return False
     
     async def close(self):
@@ -1043,7 +1073,8 @@ class MemoryManager:
 
     async def get_user_name(self, phone: str) -> Optional[str]:
         """Get user's full name from Redis or DB."""
-        ctx = await self.get_user_context(phone)
+        identity_key = get_identity_key() or phone
+        ctx = await self.get_user_context(identity_key)
         if ctx and ctx.get("name"):
             return ctx["name"]
         try:
@@ -1053,14 +1084,20 @@ class MemoryManager:
 
             async with async_session_factory() as session:
                 repo = UserRepository(User, session)
-                user = await repo.get_by_phone(phone)
+                user = None
+                # Try BSUID first if identity_key differs from phone
+                if identity_key != phone:
+                    user = await repo.get_by_bsuid(identity_key)
+                if not user:
+                    user = await repo.get_by_phone(phone)
                 return user.name if user and user.name else None
         except Exception:
             return None
 
     async def save_user_name(self, phone: str, name: str) -> None:
         """Save user's full name to both Redis and DB."""
-        await self.update_context_field(phone, "name", name)
+        identity_key = get_identity_key() or phone
+        await self.update_context_field(identity_key, "name", name)
         try:
             from app.db.repository import UserRepository
             from app.db.models import User
@@ -1068,7 +1105,12 @@ class MemoryManager:
 
             async with async_session_factory() as session:
                 repo = UserRepository(User, session)
-                user = await repo.get_by_phone(phone)
+                user = None
+                # Try BSUID first if identity_key differs from phone
+                if identity_key != phone:
+                    user = await repo.get_by_bsuid(identity_key)
+                if not user:
+                    user = await repo.get_by_phone(phone)
                 if user:
                     await repo.update(user.id, name=name)
                     await session.commit()

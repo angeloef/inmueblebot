@@ -335,6 +335,24 @@ def _run_startup_migration(engine):
             conn.execute(text(
                 "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context JSONB"
             ))
+            # ── Fix 19: Make whatsapp_phone nullable for BSUID-only users ──────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE users ALTER COLUMN whatsapp_phone DROP NOT NULL"
+                ))
+                logger.info("Migration Fix 19: whatsapp_phone set nullable")
+            except Exception as e:
+                logger.warning(f"Migration Fix 19 (whatsapp_phone nullable): {e}")
+
+            # ── Fix 20: Drop unique constraint on whatsapp_phone ───────────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_whatsapp_phone_key"
+                ))
+                logger.info("Migration Fix 20: whatsapp_phone unique constraint dropped")
+            except Exception as e:
+                logger.warning(f"Migration Fix 20 (drop unique): {e}")
+
             conn.commit()
         _migration_done = True
     except Exception as exc:
@@ -498,7 +516,8 @@ def _user_to_dict(u):
     role = extra.get("role", "prospect")
     return {
         "id": str(u.id),
-        "phone": u.whatsapp_phone,
+        "phone": u.whatsapp_phone or u.bsuid or "N/A",
+        "bsuid": u.bsuid,
         "name": u.name,
         "email": extra.get("email"),
         "role": role,                                      # raw role, no round-trip loss
@@ -620,14 +639,12 @@ def create_lead(
     _: bool = Depends(verify_admin_api_key),
 ):
     from app.db.models import User
-    # whatsapp_phone is NOT NULL unique — generate a placeholder for admin-created leads
-    phone = data.phone or f"admin_{_uuid.uuid4().hex[:10]}"
     extra = {
         "email": data.email,
         "role": data.role or "prospect",
         "notes": data.notes,
     }
-    user = User(whatsapp_phone=phone, name=data.name)
+    user = User(whatsapp_phone=data.phone or None, name=data.name)
     # extra_data column is added by startup migration; set it after object creation
     try:
         user.extra_data = extra
@@ -1124,7 +1141,7 @@ def _sync_create_gcal(db: Session, apt, data, user_uuid) -> None:
             from app.db.models import User
             user = db.query(User).filter(User.id == user_uuid).first()
             if user:
-                user_phone = user.whatsapp_phone
+                user_phone = user.whatsapp_phone or user.bsuid or "Unknown"
 
         # Get property title
         prop_title = "Sin propiedad"
@@ -1186,7 +1203,7 @@ def _sync_update_gcal(db: Session, apt) -> None:
                 from app.db.models import User
                 user = db.query(User).filter(User.id == apt.user_id).first()
                 if user:
-                    user_phone = user.whatsapp_phone
+                    user_phone = user.whatsapp_phone or user.bsuid or "Unknown"
             prop_title = f"Propiedad {apt.property_id}"
             from app.db.models import Property
             prop = db.query(Property).filter(Property.id == apt.property_id).first()

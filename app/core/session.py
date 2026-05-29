@@ -12,6 +12,8 @@ from typing import Optional, Dict, Tuple
 from datetime import datetime
 from loguru import logger
 
+from app.core.identity import get_identity_key
+
 # ---------------------------------------------------------------------------
 # Per-user async locks
 # ---------------------------------------------------------------------------
@@ -35,6 +37,7 @@ def get_user_lock(phone: str) -> asyncio.Lock:
     exceeds _LOCK_CLEANUP_THRESHOLD entries.
     """
     now = time.monotonic()
+    identity_key = get_identity_key() or phone
 
     # Lazy cleanup — only pay the cost when the dict is large
     if len(_user_locks) > _LOCK_CLEANUP_THRESHOLD:
@@ -44,13 +47,13 @@ def get_user_lock(phone: str) -> asyncio.Lock:
         if stale:
             logger.debug(f"[Session] Pruned {len(stale)} stale locks; {len(_user_locks)} remaining")
 
-    if phone not in _user_locks:
-        _user_locks[phone] = (asyncio.Lock(), now)
+    if identity_key not in _user_locks:
+        _user_locks[identity_key] = (asyncio.Lock(), now)
     else:
-        lock, _ = _user_locks[phone]
-        _user_locks[phone] = (lock, now)   # refresh timestamp on access
+        lock, _ = _user_locks[identity_key]
+        _user_locks[identity_key] = (lock, now)   # refresh timestamp on access
 
-    return _user_locks[phone][0]
+    return _user_locks[identity_key][0]
 
 
 def active_lock_count() -> int:

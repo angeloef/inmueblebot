@@ -57,12 +57,18 @@ def _is_duplicate(message_id: str) -> bool:
 
 
 def _check_user_rate_limit(phone: str) -> bool:
-    """Return True if this user should be allowed through."""
+    """Return True if this user should be allowed through.
+    
+    Uses the identity key (BSUID-first, phone fallback) from the current turn's
+    contact context to rate-limit by the canonical identity."""
+    from app.core.identity import get_current_contact
+    _contact = get_current_contact()
+    identity_key = _contact.get("bsuid") or phone
     now = time.time()
-    last = _user_locks.get(phone)
+    last = _user_locks.get(identity_key)
     if last and (now - last) < _USER_RATE_LIMIT:
         return False
-    _user_locks[phone] = now
+    _user_locks[identity_key] = now
     return True
 
 
@@ -366,7 +372,9 @@ async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
         from app.db.repository import UserRepository
         async with async_session_factory() as session:
             repo = UserRepository(User, session)
-            user = await repo.get_by_phone(phone)
+            user = await repo.get_by_bsuid(bsuid) if bsuid else None
+            if not user:
+                user = await repo.get_by_phone(phone)
             if user and user.bsuid != bsuid:
                 await repo.update(user.id, bsuid=bsuid)
                 await session.commit()

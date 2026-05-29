@@ -31,3 +31,13 @@ def set_current_contact(phone: Optional[str], bsuid: Optional[str] = None) -> No
 def get_current_contact() -> Contact:
     """Return the current turn's session identity ({'phone', 'bsuid'})."""
     return _current_contact.get()
+
+
+def get_identity_key() -> str:
+    """Return the canonical identity key for this turn: BSUID-first, phone fallback.
+
+    MUST be called inside an async task where set_current_contact() was already called.
+    Returns empty string if neither is available (edge case — should not happen in prod).
+    """
+    contact = get_current_contact()
+    return contact.get("bsuid") or contact.get("phone") or ""

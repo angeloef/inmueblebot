@@ -1281,11 +1281,20 @@ async def reschedule_appointment_tool(
         if not apt_uuid and phone:
             try:
                 from app.db.models import User
+                from app.core.identity import get_current_contact
                 from datetime import timezone as tz
                 async with async_session_factory() as db:
-                    user_repo_q = select(User).where(User.whatsapp_phone == phone)
-                    user_result = await db.execute(user_repo_q)
-                    user = user_result.scalar_one_or_none()
+                    _contact = get_current_contact()
+                    _bsuid = _contact.get("bsuid")
+                    user = None
+                    if _bsuid:
+                        user_q_bsuid = select(User).where(User.bsuid == _bsuid)
+                        user_result = await db.execute(user_q_bsuid)
+                        user = user_result.scalar_one_or_none()
+                    if not user:
+                        user_repo_q = select(User).where(User.whatsapp_phone == phone)
+                        user_result = await db.execute(user_repo_q)
+                        user = user_result.scalar_one_or_none()
                     if user:
                         now_utc = datetime.now(tz.utc)
                         apt_q = (
@@ -1471,9 +1480,18 @@ async def cancel_appointment_tool(
         if not apt_uuid and phone:
             try:
                 async with async_session_factory() as db:
-                    user_q = select(User).where(User.whatsapp_phone == phone)
-                    user_result = await db.execute(user_q)
-                    user = user_result.scalar_one_or_none()
+                    from app.core.identity import get_current_contact
+                    _contact = get_current_contact()
+                    _bsuid = _contact.get("bsuid")
+                    user = None
+                    if _bsuid:
+                        user_q = select(User).where(User.bsuid == _bsuid)
+                        user_result = await db.execute(user_q)
+                        user = user_result.scalar_one_or_none()
+                    if not user:
+                        user_q = select(User).where(User.whatsapp_phone == phone)
+                        user_result = await db.execute(user_q)
+                        user = user_result.scalar_one_or_none()
                     if user:
                         now_utc = datetime.now(tz.utc)
                         apt_q = (
@@ -1550,7 +1568,14 @@ async def get_my_appointments(phone: str = None) -> str:
         
         async with async_session_factory() as session:
             user_repo = UserRepository(User, session)
-            user = await user_repo.get_by_phone(phone)
+            from app.core.identity import get_current_contact
+            _contact = get_current_contact()
+            _bsuid = _contact.get("bsuid")
+            user = None
+            if _bsuid:
+                user = await user_repo.get_by_bsuid(_bsuid)
+            if not user and phone:
+                user = await user_repo.get_by_phone(phone)
             
             if not user:
                 return "No tienes citas programadas."

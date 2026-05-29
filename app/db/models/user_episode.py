@@ -15,6 +15,7 @@ class UserEpisode(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     phone: Mapped[str] = mapped_column(String(30), index=True)
+    bsuid: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     session_id: Mapped[str] = mapped_column(String(100), unique=True)
 
     # Session summary

@@ -4,6 +4,7 @@ Crea y gestiona notificaciones para el dashboard del agente inmobiliario.
 Usa la tabla `notifications` en PostgreSQL (creada vía auto-migración en admin.py).
 """
 from loguru import logger
+from typing import Optional
 
 
 # ── Tipos de notificación ─────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ class NotificationService:
         type: str,
         title: str,
         body: str = "",
-        phone: str = None,
+        phone: Optional[str] = None,
         metadata: dict = None,
     ) -> bool:
         """Inserta una notificación en la tabla `notifications`."""

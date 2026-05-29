@@ -1330,3 +1330,49 @@ get_system_prompt(): remove .format() — ahora inyecta contexto como User Conte
 - Moved `tipo_map` to module level so it's available in fallback logic
 - Added `mapped_tipo` early computation
 - Added Fallback 2 check + query + response format
+
+### Sprint 31 — BSUID-Ready Migration (Issues 5+6) (May 29, 2026)
+
+**Problem:** When Meta enables BSUID-only users (June 2026), users without phone numbers will break every Redis key, DB constraint, and identity resolution path.
+
+**Changes made across the full stack:**
+
+**New helper:** `app/core/identity.py:get_identity_key()` — returns BSUID-first, phone fallback from the ContextVar set at turn entry.
+
+**DB Layer:**
+- `User.whatsapp_phone`: Made `nullable=True`, `unique=False` (was NOT NULL + UNIQUE)
+- `UserBase` schema: `whatsapp_phone` is now `Optional[str]`, added `bsuid` field
+- `UserRepository.get_by_phone()`: guard against empty phone
+- `UserRepository.get_or_create()`: accepts optional `bsuid`, tries BSUID lookup first
+- `UserEpisode` model: added `bsuid` column
+- `create_lead()` admin route: removed admin_* phone placeholder hack, just passes `whatsapp_phone=data.phone or None`
+
+**Memory Layer (all Redis keys BSUID-first):**
+- `app/core/memory.py`: All `user:{phone}:*` keys → `user:{identity_key}:*`; fallback dicts use identity_key; DB lookups try BSUID first
+- `app/core/state_machine.py`: All `user:{phone}:state|previous_state|state_context` keys → identity_key
+- `app/core/graph_memory.py`: `graph:user:{phone}:*` keys → identity_key
+- `app/memory/episodic.py`: `episodic:{phone}` keys → identity_key; PostgreSQL query adds OR for bsuid
+- `app/memory/user_model.py`: `persona:{phone}` keys → identity_key
+
+**Session/Lock Layer:**
+- `app/core/session.py`, `app/agents/real_estate_agent.py`: `get_user_lock`/`_get_user_lock` uses identity_key
+- `app/api/routes/webhook.py`: `_check_user_rate_limit` uses BSUID as key when available
+
+**Tools/Services Layer:**
+- `app/agents/tools.py`: `reschedule_appointment`, `cancel_appointment`, `get_my_appointments` try BSUID first
+- `app/tools/v2/schedule_visit.py`: guards against `None` whatsapp_phone; uses `bsuid or "Unknown"` fallback
+- `app/services/notification_service.py`: `phone` type hints changed to `Optional[str]`
+- `app/services/calendar_service.py`: `user_phone or "Sin teléfono"` guard
+
+**Cross-session context:**
+- `app/routers/router.py`: passes `canonical_id` (from session_id) to `build_greeting_from_episodes` and `build_personalized_context`
+- `app/memory/consolidation.py`: passes `canonical_id` to save_episode and update_persona
+
+**Startup migration (admin.py `_run_startup_migration`):**
+- Fix 19: `ALTER TABLE users ALTER COLUMN whatsapp_phone DROP NOT NULL`
+- Fix 20: `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_whatsapp_phone_key`
+
+**Remaining gotchas:**
+- Redis key discontinuity: in-flight sessions keyed by phone won't have their past context visible if the user now resolves via BSUID. This is a one-time transition cost.
+- `UserEpisode.bsuid` column added to ORM but PostgreSQL table not auto-migrated — added to `_ensure_user_episodes_table` DDL.
+- No backfill of BSUID from `extra_data` — `_capture_identity()` repopulates per-user on next inbound message.

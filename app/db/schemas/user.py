@@ -15,9 +15,10 @@ from typing import Optional
 
 class UserBase(BaseModel):
     """Schema base para usuario."""
-    whatsapp_phone: str = Field(..., max_length=20, description="Número de WhatsApp")
+    whatsapp_phone: Optional[str] = Field(None, max_length=20, description="Número de WhatsApp (opcional, BSUID-only users)")
     name: Optional[str] = Field(None, max_length=200, description="Nombre del usuario")
     preferred_language: str = Field("es", description="Idioma preferido")
+    bsuid: Optional[str] = Field(None, description="BSUID de Meta (identificador estable)")
 
 
 class UserCreate(UserBase):

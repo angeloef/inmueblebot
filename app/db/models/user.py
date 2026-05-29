@@ -26,12 +26,12 @@ class User(Base):
         comment="Primary key UUID"
     )
 
-    whatsapp_phone: Mapped[str] = mapped_column(
+    whatsapp_phone: Mapped[Optional[str]] = mapped_column(
         String(20),
-        unique=True,
+        unique=False,
         index=True,
-        nullable=False,
-        comment="Número de WhatsApp del usuario"
+        nullable=True,
+        comment="Número de WhatsApp del usuario (opcional para usuarios BSUID-only)"
     )
 
     # Business-Scoped User ID (Meta identity migration) — stable identity that
