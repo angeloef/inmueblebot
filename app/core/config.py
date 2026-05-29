@@ -130,6 +130,12 @@ class Settings(BaseSettings):
         description="Versión de la Graph API para llamadas salientes (v18.0 está sunset). "
                     "Alineada con la versión del webhook 'messages' en el App Dashboard de Meta. Override por env.",
     )
+    WHATSAPP_SEND_BY_BSUID: bool = Field(
+        default=False,
+        description="Si True, los mensajes salientes se envían al BSUID del usuario cuando está "
+                    "presente (fallback al teléfono si no hay BSUID). Default False hasta verificar "
+                    "que el envío por BSUID funciona para este número — prendelo y probá con un mensaje.",
+    )
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(
         default="change-me",
         description="Token para verificar webhook de Meta"

@@ -482,6 +482,12 @@ async def process_messages(messages: List[Dict[str, Any]]):
         
         # Normalizar número para envío (formato Meta Argentina)
         phone_to = format_phone_number(phone)
+        # BSUID-first sending (Meta identity migration): if enabled and a BSUID is
+        # present, address the reply to the BSUID; phone stays as the fallback.
+        # Gated by a flag because sending-by-BSUID is unverified for this number —
+        # flip WHATSAPP_SEND_BY_BSUID on and send a test message to validate.
+        if settings.WHATSAPP_SEND_BY_BSUID and msg.get("_bsuid"):
+            phone_to = msg.get("_bsuid")
         logger.info(f"Processing from {phone} → sending to {phone_to}: {text[:30]}...")
         
         try:
