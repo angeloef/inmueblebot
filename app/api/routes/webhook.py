@@ -312,6 +312,11 @@ async def receive_webhook(request: Request):
                     except Exception as e:
                         logger.error(f"[Webhook] Enqueue failed: {e}")
 
+                    # Phase 0 (Meta BSUID migration): capture the stable identity from the
+                    # webhook and persist it (matched by phone) WITHOUT changing any keying
+                    # or send behavior. Best-effort, never blocks message processing.
+                    asyncio.ensure_future(_capture_identity(value, msg))
+
                 # Inline processing fallback (Render has no worker process)
                 async def _safe_process(msgs):
                     try:
@@ -322,6 +327,46 @@ async def receive_webhook(request: Request):
                 asyncio.ensure_future(_safe_process(messages))
 
     return {"status": "ok"}
+
+
+async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
+    """Phase 0 of the Meta BSUID migration — observe & store, change nothing.
+
+    WhatsApp is rolling out usernames + a stable BSUID (`user_id`, e.g. "AR.xxx")
+    that will eventually replace the phone as the webhook identifier. Today this
+    account's payloads still carry the phone in `from`, so we only *capture* the
+    BSUID here (logged always; persisted into User.extra_data['bsuid'] when present)
+    to build the phone→BSUID mapping ahead of switching identity in a later phase.
+
+    Identity keying and outbound sending remain phone-based for now. Best-effort:
+    any failure is swallowed so it can never affect message handling.
+    """
+    try:
+        phone = msg.get("from", "")
+        bsuid = msg.get("user_id")  # BSUID — only present once Meta enables it
+        contacts = value.get("contacts", []) or []
+        contact = contacts[0] if contacts else {}
+        wa_id = contact.get("wa_id")
+        profile_name = (contact.get("profile") or {}).get("name")
+        logger.info(f"[Identity] phone={phone} bsuid={bsuid} wa_id={wa_id} name={profile_name}")
+
+        if not bsuid or not phone:
+            return  # nothing to persist yet (pre-rollout payloads have no BSUID)
+
+        from app.db.session import async_session_factory
+        from app.db.models import User
+        from app.db.repository import UserRepository
+        async with async_session_factory() as session:
+            repo = UserRepository(User, session)
+            user = await repo.get_by_phone(phone)
+            if user and (dict(user.extra_data or {}).get("bsuid") != bsuid):
+                extra = dict(user.extra_data or {})
+                extra["bsuid"] = bsuid
+                await repo.update(user.id, extra_data=extra)
+                await session.commit()
+                logger.info(f"[Identity] Stored BSUID for {phone}: {bsuid}")
+    except Exception as e:
+        logger.debug(f"[Identity] capture failed (non-fatal): {e}")
 
 
 async def process_messages(messages: List[Dict[str, Any]]):
