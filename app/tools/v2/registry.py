@@ -179,7 +179,8 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                 "description": (
                     "Agenda una visita para ver una propiedad. Usar cuando el usuario quiere coordinar "
                     "una visita, ver un departamento, o preguntar cuándo puede ir a conocer una propiedad. "
-                    "Si faltan datos (nombre, teléfono), la herramienta los va a pedir."
+                    "Si falta el nombre o el día, la herramienta los va a pedir. NO pidas el teléfono: "
+                    "la identidad/contacto sale del WhatsApp del usuario."
                 ),
                 "parameters": {
                     "type": "object",
@@ -194,7 +195,7 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                         },
                         "telefono": {
                             "type": "string",
-                            "description": "Número de teléfono o WhatsApp del interesado.",
+                            "description": "OPCIONAL. Número de contacto alternativo, solo si el usuario lo ofrece. NO lo pidas — el teléfono/identidad ya viene del WhatsApp del usuario.",
                         },
                         "dia": {
                             "type": "string",

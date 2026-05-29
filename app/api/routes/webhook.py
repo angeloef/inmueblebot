@@ -290,7 +290,13 @@ async def receive_webhook(request: Request):
                 # v2.0: Dual-path processing
                 # 1. Enqueue to Redis for durability (worker can pick up if server restarts)
                 # 2. Process inline for immediate response (Render has no worker process)
+                # The BSUID (stable identity) lives in the contacts block; stamp it onto
+                # each message so downstream identity resolution can read it without
+                # needing the full webhook envelope.
+                _contacts = value.get("contacts", []) or []
+                _contact_bsuid = (_contacts[0].get("user_id") if _contacts else None)
                 for msg in messages:
+                    msg["_bsuid"] = _contact_bsuid or msg.get("user_id")
                     try:
                         from app.core.message_queue import enqueue_message
                         phone = msg.get("from", "")
@@ -502,6 +508,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
                     phone=phone,
                     user_message=text,
                     media_url=media_url,
+                    bsuid=msg.get("_bsuid"),
                 )
             else:
                 result = await real_estate_agent.process_turn(

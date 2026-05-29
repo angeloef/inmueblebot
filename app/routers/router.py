@@ -230,13 +230,15 @@ async def _try_pre_llm_shortcut(
         
         # Fast-path: all fields collected and user is confirming
         confirm_kw = ["sí", "si", "dale", "perfecto", "ok", "genial", "me sirve", "confirmo"]
-        if (belief.scheduling_name and belief.scheduling_phone and 
+        # Identity comes from the session (BSUID/phone), so the phone is no longer a
+        # required field — only name + day + time gate the fast-path booking.
+        if (belief.scheduling_name and
             belief.scheduling_day and belief.scheduling_time and
             any(kw in msg_lower for kw in confirm_kw)):
             result_text = await schedule_visit(
                 property_id=belief.selected_property_id or 0,
                 nombre=belief.scheduling_name,
-                telefono=belief.scheduling_phone,
+                telefono=belief.scheduling_phone,  # contact only — not identity
                 dia=belief.scheduling_day,
                 horario=belief.scheduling_time,
             )

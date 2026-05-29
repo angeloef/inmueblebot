@@ -36,13 +36,13 @@ async def schedule_visit(
         consulta: Any additional question or note.
     """
     # ── Validate required fields ────────────────────────────────
+    # NOTE: `telefono` is NOT required — the user's identity (and contact) comes
+    # from the session (WhatsApp/BSUID), not from a number typed into the chat.
     missing = []
     if not property_id:
         missing.append("ID de propiedad")
     if not nombre:
         missing.append("nombre")
-    if not telefono:
-        missing.append("teléfono")
     if not dia:
         missing.append("día")
 
@@ -92,36 +92,70 @@ async def schedule_visit(
             f"horario de atención (9:00 a 18:00 hs). ¿A qué hora preferís?"
         )
 
-    # ── Look up or create user ──────────────────────────────────
+    # ── Resolve the user by SESSION identity (never the typed phone) ────
+    # Identity comes from the webhook — BSUID first (stable, Meta migration), phone
+    # as fallback — so a number the user types can't spawn a phantom/duplicate lead.
+    # The typed `telefono`, if any, is stored only as a contact detail.
+    from app.core.identity import get_current_contact
+    _contact = get_current_contact()
+    session_phone = _contact.get("phone")
+    session_bsuid = _contact.get("bsuid")
+
     async with async_session_factory() as session:
         user_repo = UserRepository(User, session)
-        user = await user_repo.get_by_phone(telefono)
+        user = None
+        if session_bsuid:
+            user = await user_repo.get_by_bsuid(session_bsuid)
+        if not user and session_phone:
+            user = await user_repo.get_by_phone(session_phone)
+        # Last resort (e.g. admin /simulate with no session context): the typed phone.
+        if not user and not session_phone and telefono:
+            user = await user_repo.get_by_phone(telefono)
 
         if not user:
-            # Create minimal user
             try:
                 from uuid import uuid4 as _uuid4
+                identity_phone = session_phone or telefono
+                extra: dict = {}
+                if session_bsuid:
+                    extra["bsuid"] = session_bsuid
+                if telefono and telefono != identity_phone:
+                    extra["contact_phone"] = telefono
                 user = User(
                     id=_uuid4(),
-                    whatsapp_phone=telefono,
-                    name=nombre.strip(),
+                    whatsapp_phone=identity_phone,
+                    name=nombre.strip() if nombre else None,
+                    extra_data=extra or None,
                 )
                 session.add(user)
                 await session.commit()
                 await session.refresh(user)
-                logger.info(f"[schedule_visit] New user created: {user.id} phone={telefono}")
+                logger.info(
+                    f"[schedule_visit] New user created: {user.id} "
+                    f"phone={identity_phone} bsuid={session_bsuid}"
+                )
             except Exception as e:
                 logger.error(f"[schedule_visit] Failed to create user: {e}")
                 return "Tuve un problema al registrarte. ¿Podrías intentar de nuevo?"
-
-        # Update name if missing
-        if not user.name and nombre:
-            try:
-                await user_repo.update(user.id, name=nombre.strip())
-                await session.commit()
-                logger.info(f"[schedule_visit] Name updated for {telefono}: {nombre}")
-            except Exception as e:
-                logger.warning(f"[schedule_visit] Could not update name: {e}")
+        else:
+            # Backfill BSUID / contact phone / name onto the canonical session user.
+            extra = dict(user.extra_data or {})
+            changed = False
+            if session_bsuid and extra.get("bsuid") != session_bsuid:
+                extra["bsuid"] = session_bsuid
+                changed = True
+            if telefono and telefono != user.whatsapp_phone and extra.get("contact_phone") != telefono:
+                extra["contact_phone"] = telefono
+                changed = True
+            update_fields: dict = {"extra_data": extra} if changed else {}
+            if not user.name and nombre:
+                update_fields["name"] = nombre.strip()
+            if update_fields:
+                try:
+                    await user_repo.update(user.id, **update_fields)
+                    await session.commit()
+                except Exception as e:
+                    logger.warning(f"[schedule_visit] Could not backfill user: {e}")
 
     # ── Create appointment ──────────────────────────────────────
     try:
@@ -131,7 +165,7 @@ async def schedule_visit(
             start_time=start_datetime,
             type="visit",
             notes=consulta or None,
-            user_phone=telefono,
+            user_phone=user.whatsapp_phone,
         )
     except Exception as e:
         logger.error(f"[schedule_visit] create_appointment failed: {e}")
@@ -152,7 +186,7 @@ async def schedule_visit(
         try:
             from app.services.notification_service import notification_service
             await notification_service.visit_scheduled(
-                phone=telefono,
+                phone=user.whatsapp_phone,
                 property_title=f"Propiedad #{property_id}",
                 datetime_str=format_datetime_argentina(appointment.start_time)
                 if hasattr(appointment, "start_time") else dia,

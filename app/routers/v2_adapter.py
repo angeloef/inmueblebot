@@ -16,6 +16,7 @@ async def process_turn_v2(
     phone: str,
     user_message: str,
     media_url: Optional[str] = None,
+    bsuid: Optional[str] = None,
 ) -> dict:
     """Process a user turn using the v2 S1+S2 router.
 
@@ -25,10 +26,15 @@ async def process_turn_v2(
         phone: User's WhatsApp number (used as session_id)
         user_message: Text message from the user
         media_url: URL of media attachment (unused by v2 router for now)
+        bsuid: Stable Business-Scoped User ID from the webhook (Meta identity migration)
 
     Returns:
         dict with: response_text, tools_used, rich_content, confidence, router_label, latency_ms
     """
+    # Record the session identity for this turn so persistence tools (schedule_visit)
+    # key the lead by it — never by a phone the user types into the chat.
+    from app.core.identity import set_current_contact
+    set_current_contact(phone, bsuid)
     try:
         response, belief, router_label, latency_ms = await route_message(
             message=user_message,

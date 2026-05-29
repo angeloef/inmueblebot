@@ -95,7 +95,21 @@ class UserRepository(BaseRepository):
             select(self.model).where(self.model.whatsapp_phone == phone)
         )
         return result.scalar_one_or_none()
-    
+
+    async def get_by_bsuid(self, bsuid: str) -> Optional["User"]:
+        """Obtiene un usuario por su BSUID (Meta), almacenado en extra_data['bsuid'].
+
+        El BSUID es el identificador estable de la migración de Meta. Se consulta
+        sobre la columna JSONB extra_data (sin columna dedicada todavía)."""
+        if not bsuid:
+            return None
+        result = await self.session.execute(
+            select(self.model).where(
+                self.model.extra_data["bsuid"].astext == bsuid
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_or_create(self, phone: str) -> "User":
         """Obtiene usuario por phone o crea uno nuevo."""
         from app.db.models import User
