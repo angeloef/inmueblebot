@@ -196,19 +196,32 @@ function fromProperty(d) {
   // building_type → stored in Property.extra_data by admin.py (legacy, kept for compat)
   // operation → maps to Property.type ('venta'/'alquiler') via PropertyCreate.operation
   // city → stored in Property.extra_data['city'] by admin.py
+  // zone → stored in Property.extra_data['zone'] by admin.py
+  const zoneStr = d.neigh || '';
   const cityStr = d.city || d.neigh || '';
   const categoryVal = PROP_LABEL_TO_CATEGORY[d.type] ?? null;
+  const desc = d.desc || d.notes || '';
+  const beds = d.rooms ? parseInt(d.rooms) || 0 : 0;
+
+  // Generate a sensible title from category + beds + zone (not the address)
+  const typeLabel = d.type || 'Propiedad';
+  const shortZone = zoneStr.split(',')[0].trim();
+  const title = beds > 0
+    ? `${typeLabel} ${beds} dormitorios ${shortZone}`
+    : `${typeLabel} en ${shortZone || 'Oberá'}`;
+
   return {
-    title:         d.addr ?? '',
-    description:   (d.desc || d.notes) ?? '',
+    title:         title,
+    description:   desc,
     category:      categoryVal,
     building_type: PROP_LABEL_TO_TYPE[d.type] ?? 'apartment',
     operation:     d.operation === 'rent' ? 'alquiler' : 'venta',
     location:      [d.addr, d.neigh].filter(Boolean).join(', ') || d.addr || '',
     city:          cityStr,
+    zone:          zoneStr,
     price:         Number(d.price) || 0,
     currency:      d.currency || 'ARS',
-    bedrooms:      d.rooms ? parseInt(d.rooms) || null : null,
+    bedrooms:      beds || null,
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
