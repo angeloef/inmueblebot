@@ -756,6 +756,12 @@ def update_property(
         prop.type = op if op in ("venta", "alquiler") else "venta"
     if "location" in updates:
         prop.location = updates.pop("location")
+        # Keep extra_data['street'] in sync — _prop_to_dict() prefers the structured
+        # 'street' field over parsing location, so a stale street would silently
+        # revert the edited address on refetch.
+        extra = dict(prop.extra_data or {})
+        extra["street"] = prop.location.split(",")[0].strip() if prop.location else ""
+        prop.extra_data = extra
     if "area_m2" in updates:
         prop.area_m2 = updates.pop("area_m2")
     if "status" in updates:
