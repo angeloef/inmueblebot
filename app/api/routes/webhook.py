@@ -367,10 +367,8 @@ async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
         async with async_session_factory() as session:
             repo = UserRepository(User, session)
             user = await repo.get_by_phone(phone)
-            if user and (dict(user.extra_data or {}).get("bsuid") != bsuid):
-                extra = dict(user.extra_data or {})
-                extra["bsuid"] = bsuid
-                await repo.update(user.id, extra_data=extra)
+            if user and user.bsuid != bsuid:
+                await repo.update(user.id, bsuid=bsuid)
                 await session.commit()
                 logger.info(f"[Identity] Stored BSUID for {phone}: {bsuid}")
     except Exception as e:

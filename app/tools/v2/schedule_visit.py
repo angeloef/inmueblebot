@@ -117,13 +117,12 @@ async def schedule_visit(
                 from uuid import uuid4 as _uuid4
                 identity_phone = session_phone or telefono
                 extra: dict = {}
-                if session_bsuid:
-                    extra["bsuid"] = session_bsuid
                 if telefono and telefono != identity_phone:
                     extra["contact_phone"] = telefono
                 user = User(
                     id=_uuid4(),
                     whatsapp_phone=identity_phone,
+                    bsuid=session_bsuid or None,
                     name=nombre.strip() if nombre else None,
                     extra_data=extra or None,
                 )
@@ -138,16 +137,15 @@ async def schedule_visit(
                 logger.error(f"[schedule_visit] Failed to create user: {e}")
                 return "Tuve un problema al registrarte. ¿Podrías intentar de nuevo?"
         else:
-            # Backfill BSUID / contact phone / name onto the canonical session user.
-            extra = dict(user.extra_data or {})
-            changed = False
-            if session_bsuid and extra.get("bsuid") != session_bsuid:
-                extra["bsuid"] = session_bsuid
-                changed = True
-            if telefono and telefono != user.whatsapp_phone and extra.get("contact_phone") != telefono:
-                extra["contact_phone"] = telefono
-                changed = True
-            update_fields: dict = {"extra_data": extra} if changed else {}
+            # Backfill BSUID (column) / contact phone / name onto the canonical session user.
+            update_fields: dict = {}
+            if session_bsuid and user.bsuid != session_bsuid:
+                update_fields["bsuid"] = session_bsuid
+            if telefono and telefono != user.whatsapp_phone:
+                extra = dict(user.extra_data or {})
+                if extra.get("contact_phone") != telefono:
+                    extra["contact_phone"] = telefono
+                    update_fields["extra_data"] = extra
             if not user.name and nombre:
                 update_fields["name"] = nombre.strip()
             if update_fields:

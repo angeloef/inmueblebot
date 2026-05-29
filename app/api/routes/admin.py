@@ -51,6 +51,19 @@ def _run_startup_migration(engine):
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS extra_data JSONB"
             ))
+            # ── BSUID (Meta identity migration) ─────────────────────────
+            # Dedicated indexed column for the Business-Scoped User ID; backfill
+            # from values already captured into extra_data['bsuid'] (Phase 0).
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS bsuid VARCHAR(150)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_bsuid ON users (bsuid)"
+            ))
+            conn.execute(text(
+                "UPDATE users SET bsuid = extra_data->>'bsuid' "
+                "WHERE bsuid IS NULL AND extra_data ? 'bsuid'"
+            ))
             conn.execute(text(
                 "ALTER TABLE appointments ALTER COLUMN user_id DROP NOT NULL"
             ))

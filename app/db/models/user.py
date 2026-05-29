@@ -34,6 +34,17 @@ class User(Base):
         comment="Número de WhatsApp del usuario"
     )
 
+    # Business-Scoped User ID (Meta identity migration) — stable identity that
+    # replaces the phone once usernames roll out. Nullable + indexed (non-unique
+    # to keep the startup migration safe against any legacy dupes; identity
+    # resolution treats it as the primary key). See [[meta-bsuid-identity-migration]].
+    bsuid: Mapped[Optional[str]] = mapped_column(
+        String(150),
+        nullable=True,
+        index=True,
+        comment="BSUID de Meta (identificador estable, formato CC.alphanumeric)"
+    )
+
     name: Mapped[Optional[str]] = mapped_column(
         String(200),
         nullable=True,

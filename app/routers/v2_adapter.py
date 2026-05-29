@@ -35,10 +35,18 @@ async def process_turn_v2(
     # key the lead by it — never by a phone the user types into the chat.
     from app.core.identity import set_current_contact
     set_current_contact(phone, bsuid)
+    # Session/state namespace keyed BSUID-first (stable identity), phone as fallback.
+    # This only changes the Redis working-memory / belief / specialist-state namespace
+    # (all pure string-keyed by session_id). User identity and outbound sending are
+    # resolved separately (via the ContextVar / phone), so they're unaffected here.
+    # Caveat: if a message ever arrives without a BSUID, session_id falls back to the
+    # phone for that turn (could split a session) — BSUID arrives on all message
+    # webhooks since 2026-03-31, so this is rare. See AGENTS.md "Sprint 21".
+    canonical_id = bsuid or phone
     try:
         response, belief, router_label, latency_ms = await route_message(
             message=user_message,
-            session_id=phone,
+            session_id=canonical_id,
             phone=phone,
         )
 

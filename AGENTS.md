@@ -382,16 +382,20 @@ usernames roll out. Goal: **BSUID-first everywhere, phone as fallback.**
 - **Phase 0 (capture):** `webhook.py:_capture_identity()` logs `[Identity] phone=… bsuid=… wa_id=… name=…` for every inbound message and persists the BSUID to `User.extra_data['bsuid']` (matched by phone). No behavior change. Confirmed BSUID is arriving.
 - **Phase 1 (identity):** lead/user identity is resolved **BSUID-first → phone fallback → create+backfill**. A per-turn `ContextVar` (`app/core/identity.py`) holds the session identity (`phone`+`bsuid`); set in `process_turn_v2`; read by `schedule_visit` via new `UserRepository.get_by_bsuid()` (JSONB query on `extra_data['bsuid']`). **Fixes the duplicate-lead bug**: `schedule_visit` no longer keys the user by the LLM-typed `telefono` (now stored as contact-only `extra_data['contact_phone']`, never identity). S2 prompt + tool schema + pre-LLM gate no longer ask for / require the phone.
 - **Phase 2 (sending):** outbound is **BSUID-first with automatic phone fallback** — `whatsapp.py:_post_message()` sends to the BSUID and, on Meta rejection (#131009, expected until June 2026), retries once with the session phone (from the ContextVar). Gated by `WHATSAPP_SEND_BY_BSUID` (**default True**).
+- **Phase 3a (schema):** added dedicated indexed `User.bsuid` column (`String(150)`, nullable, non-unique index `ix_users_bsuid`). Startup migration (`admin.py:_run_startup_migration`) adds the column + index and backfills from `extra_data['bsuid']`. `get_by_bsuid` now queries the column (`.first()`); `_capture_identity` and `schedule_visit` write the column. `whatsapp_phone` left `NOT NULL`/`UNIQUE` (untouched — phone always present today).
+- **Phase 3b (session memory):** the Redis working-memory / belief / specialist-state namespace is now keyed **BSUID-first** — `process_turn_v2` passes `session_id = bsuid or phone` to `route_message` (while `phone` stays the phone for episodes/persona/sending). Verified safe: that whole layer (`working:{session_id}` + in-memory `get_belief`/specialist snapshots) is pure string-namespaced — no User/DB/phone conflation. One-time discontinuity: in-flight sessions keyed by phone are orphaned after deploy (start fresh once).
 
 **CONSIDERATIONS / GOTCHAS:**
 - `WHATSAPP_SEND_BY_BSUID=True` is ON by default from now. Until June 2026 every reply does a *failed* BSUID attempt + a phone retry (≈ +0.5–1s and 2× send calls per message). Set it `False` to avoid that waste until June; leaving it True means delivery auto-switches to BSUID the moment Meta enables it, no code change.
 - Outbound BSUID send is NOT verified (gated by Meta until June 2026). The phone fallback guarantees delivery meanwhile.
 - The app is **UNPUBLISHED** in Meta → only admins/devs/testers can message it. Must publish before real customers.
 
-**PENDING (Phase 3):**
-- Memory/Redis session keys (`user:{phone}:messages`) are still phone-keyed. NOT migrated on purpose: no correctness benefit while the phone is present, and `MemoryManager.get_or_create(phone)` treats `session_id` as a phone — passing a BSUID there would create `whatsapp_phone=BSUID` (re-introducing the identity bug). Correct cutover requires separating "session key" (Redis namespace) from "phone" (User/sending), done as a tested change when the phone starts disappearing (watch for `[Identity] phone=None`).
-- Schema: `User.whatsapp_phone` is still `NOT NULL`/`UNIQUE` → make nullable + add a dedicated indexed `bsuid` column (needs a migration; the repo uses `create_all`, no alembic).
-- June 2026: verify/flip BSUID outbound sending once Meta enables it.
+**STILL PENDING:**
+- **Long-term per-person memory still phone-keyed:** episodes/persona (`build_greeting_from_episodes(phone)`, `build_personalized_context(phone)`) and the message-history Redis key (`user:{phone}:messages`, written only by the legacy paths) remain keyed by phone. These are a separate subsystem from the session state migrated in 3b; migrate when the phone starts disappearing.
+- **Admin-initiated turns key by phone:** `/admin/reply`, `/admin/resume`, `/admin/simulate`, `simulate_v2`, `chat` call the router without a BSUID, so those turns use `session_id = phone` (a different namespace than the user's BSUID-keyed WhatsApp session). Edge tooling — acceptable; resolve the user's BSUID by phone there if it ever matters.
+- **`whatsapp_phone` still `NOT NULL`/`UNIQUE`:** make nullable when BSUID-only users (no phone) start arriving (phone-disappears scenario). Needs a startup migration (`ALTER COLUMN ... DROP NOT NULL`).
+- **June 2026:** verify/confirm BSUID outbound sending once Meta enables it (the fallback flips automatically; the failed-attempt+retry overhead disappears).
+- **App still UNPUBLISHED in Meta** → only admins/devs/testers can message it. Publish before real customers.
 
 ### 1. The Webhook Double-Prefix Bug
 The webhook router is mounted at `/webhook` and route paths must NOT include `/webhook/`:
