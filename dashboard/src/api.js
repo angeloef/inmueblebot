@@ -384,13 +384,12 @@ export const useDeleteProperty = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: propertyApi.remove,
-    // Backend soft-deletes (status → 'sold'); mirror that optimistically so the
-    // card moves to the "Vendidas" filter instantly instead of vanishing then reappearing.
+    // Backend hard-deletes; remove the card from the list immediately.
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: keys.properties });
       const prev = qc.getQueryData(keys.properties);
       qc.setQueryData(keys.properties, (old) =>
-        old ? old.map(p => (String(p.id) === String(id) ? { ...p, status: 'sold' } : p)) : old
+        old ? old.filter(p => String(p.id) !== String(id)) : old
       );
       return { prev };
     },

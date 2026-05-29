@@ -801,11 +801,16 @@ def delete_property(
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
-    from app.db.models import Property
+    from app.db.models import Property, Appointment
     prop = db.query(Property).filter(Property.id == prop_id).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    prop.status = "sold"   # soft delete
+    # Hard delete — the dashboard's delete button promises permanent removal.
+    # (A 'sold' status is set separately via the status dropdown / buyer assignment.)
+    # Remove dependent appointments first: the FK is ON DELETE CASCADE in the model,
+    # but delete explicitly so this works even if the live constraint lacks it.
+    db.query(Appointment).filter(Appointment.property_id == prop_id).delete(synchronize_session=False)
+    db.delete(prop)
     db.commit()
     return {"status": "deleted", "property_id": prop_id}
 
