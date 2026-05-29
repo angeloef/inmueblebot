@@ -582,6 +582,34 @@ export const useDeleteEvent = () => {
   });
 };
 
+// "Eliminar evento" = cancel-if-needed + permanent delete, in a single action.
+// Takes the full event object. The card is removed from the UI immediately; the
+// cancel (which notifies the client) and the delete run sequentially on the server
+// — sequenced so we never DELETE a row mid-cancel. Rolls back on failure.
+export const useRemoveEvent = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (event) => {
+      if (event.status !== 'cancelled') {
+        await eventApi.update({ ...event, status: 'cancelled' });
+      }
+      return eventApi.remove(event.id);
+    },
+    onMutate: async (event) => {
+      await qc.cancelQueries({ queryKey: keys.events });
+      const prev = qc.getQueryData(keys.events);
+      qc.setQueryData(keys.events, (old) =>
+        old ? old.filter(e => String(e.id) !== String(event.id)) : old
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.events, ctx.prev);
+    },
+    onSettled: () => qc.refetchQueries({ queryKey: keys.events }),
+  });
+};
+
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
 export const useCalendarStatus = () =>

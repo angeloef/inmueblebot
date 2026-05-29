@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, IconButton, pushToast } from './Primitives';
 import { parseTime, padDate, fmtTime12 } from './data';
-import { useEvents, useEventById, useCreateEvent, useUpdateEvent, useDeleteEvent, useCalendarStatus, useProperties, useClients } from './api';
+import { useEvents, useEventById, useCreateEvent, useUpdateEvent, useRemoveEvent, useCalendarStatus, useProperties, useClients } from './api';
 import { EventPopover, EventEditor } from './EventPopover';
 
 const DOWS = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
@@ -429,7 +429,7 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
   const { data: events = [] }                 = useEvents();
   const createEventMut                        = useCreateEvent();
   const updateEventMut                        = useUpdateEvent();
-  const deleteEventMut                        = useDeleteEvent();
+  const removeEventMut                        = useRemoveEvent();
   const { data: calStatus }                   = useCalendarStatus();
   const { data: properties = [] }             = useProperties();
   const { data: clients = [] }                = useClients();
@@ -521,20 +521,17 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     pushToast({ text: 'Visita cancelada — se notificó al cliente.', kind: 'danger' });
   };
   const handleDelete = (e) => {
-    if (e.status === 'cancelled') {
-      // Second press: permanently delete
-      deleteEventMut.mutate(e.id, {
-        onSuccess: () => pushToast({ text: 'Evento eliminado permanentemente.', kind: 'danger' }),
-        onError:   () => pushToast({ text: 'Error al eliminar el evento.', kind: 'danger' }),
-      });
-    } else {
-      // First press: cancel the visit (marks as cancelled, notifies client)
-      updateEventMut.mutate({ ...e, status: 'cancelled' }, {
-        onSuccess: () => pushToast({ text: 'Visita cancelada — se notificó al cliente.', kind: 'danger' }),
-        onError:   () => pushToast({ text: 'Error al cancelar la visita.', kind: 'danger' }),
-      });
-    }
+    // Single press: cancel the visit (if it wasn't already) and delete it, removing
+    // it from the calendar immediately. No need to press twice.
     setPopover(null);
+    const wasCancelled = e.status === 'cancelled';
+    removeEventMut.mutate(e, {
+      onSuccess: () => pushToast({
+        text: wasCancelled ? 'Evento eliminado.' : 'Visita cancelada y eliminada.',
+        kind: 'danger',
+      }),
+      onError: () => pushToast({ text: 'Error al eliminar el evento. Se restauró en el calendario.', kind: 'danger' }),
+    });
   };
   const handleSave = (form) => {
     const mode    = editor.mode;
