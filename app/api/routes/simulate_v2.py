@@ -5,9 +5,6 @@ from pydantic import BaseModel
 
 from app.agents.schemas import ChatResponse
 from app.routers.router import route_message
-from app.core.tracing import start_span, end_span
-from app.core.metrics import record_request
-import time
 
 router = APIRouter()
 
@@ -24,33 +21,17 @@ async def simulate_chat(request: SimulateRequest):
 
     No WhatsApp webhook needed. Just POST a message and get the response.
     """
-    t0 = time.perf_counter() * 1000
-
-    start_span(request.session_id, "simulate", message=request.message[:50])
-    start_span(request.session_id, "route")
-
     response, belief, router_label, latency_ms = await route_message(
         message=request.message,
         session_id=request.session_id,
         phone=request.phone,
     )
-
-    end_span(request.session_id, "route", router=router_label, latency=latency_ms)
-    end_span(request.session_id, "simulate")
-
-    record_request(
-        router=router_label,
-        latency_ms=latency_ms,
-        tools_called=response.tools_called,
-    )
-
     return response
 
 
 @router.post("/simulate/multi")
 async def simulate_multi(request: SimulateRequest):
     """Simulate with extra metadata — returns belief state + trace."""
-    t0 = time.perf_counter() * 1000
 
     response, belief, router_label, latency_ms = await route_message(
         message=request.message,
