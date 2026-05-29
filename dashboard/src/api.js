@@ -327,16 +327,56 @@ export const useProperties = () =>
 export const useProperty = (id) =>
   useQuery({ queryKey: keys.property(id), queryFn: () => propertyApi.get(id), enabled: !!id });
 
+// Merge a form-shaped edit (the payload passed by Properties.jsx, same shape as
+// toProperty() output) into a cached property so the UI reflects it instantly.
+function applyPropertyEdit(prop, edit) {
+  const merged = { ...prop, ...edit };
+  // Keep number/derived fields in the shape the cards & drawer expect.
+  if (edit.m2 != null) merged.m2 = Number(edit.m2) || 0;
+  if (edit.notes != null) merged.desc = edit.notes;   // toProperty() keeps notes≡desc
+  if (edit.photo) merged.photo = edit.photo;
+  if (Array.isArray(edit.images)) merged.images = edit.images;
+  return merged;
+}
+
 export const useCreateProperty = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: propertyApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }) });
+  return useMutation({
+    mutationFn: propertyApi.create,
+    onMutate: async (data) => {
+      await qc.cancelQueries({ queryKey: keys.properties });
+      const prev = qc.getQueryData(keys.properties);
+      // Temp card rendered immediately; replaced by the real row on refetch.
+      const optimistic = applyPropertyEdit(
+        { id: `temp-${Date.now()}`, _optimistic: true, photo: '', images: [], desc: '', agent: '', baths: 0, parking: 0 },
+        data,
+      );
+      qc.setQueryData(keys.properties, (old) => (old ? [optimistic, ...old] : [optimistic]));
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
+  });
 };
 
 export const useUpdateProperty = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...rest }) => propertyApi.update(id, rest),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+    onMutate: async ({ id, ...rest }) => {
+      await qc.cancelQueries({ queryKey: keys.properties });
+      const prev = qc.getQueryData(keys.properties);
+      qc.setQueryData(keys.properties, (old) =>
+        old ? old.map(p => (String(p.id) === String(id) ? applyPropertyEdit(p, rest) : p)) : old
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
   });
 };
 
@@ -344,7 +384,20 @@ export const useDeleteProperty = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: propertyApi.remove,
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.properties }),
+    // Backend soft-deletes (status → 'sold'); mirror that optimistically so the
+    // card moves to the "Vendidas" filter instantly instead of vanishing then reappearing.
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.properties });
+      const prev = qc.getQueryData(keys.properties);
+      qc.setQueryData(keys.properties, (old) =>
+        old ? old.map(p => (String(p.id) === String(id) ? { ...p, status: 'sold' } : p)) : old
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
   });
 };
 
