@@ -164,40 +164,39 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
 
     # Scheduling progress (action-oriented)
     if "scheduling" in (belief.active_intents or set()) or belief.scheduling_name or belief.scheduling_phone or belief.scheduling_day or belief.scheduling_time:
+        # NOTE (Meta identity migration): el teléfono NO se pide ni se requiere —
+        # la identidad/contacto sale del WhatsApp del usuario. Los bloqueadores son
+        # día + horario (lo necesario para parsear la fecha). El nombre lo toma el
+        # LLM de la conversación y lo valida schedule_visit.
         fields = []
         if belief.scheduling_name:
             fields.append(f"nombre={belief.scheduling_name}")
-        if belief.scheduling_phone:
-            fields.append(f"teléfono={belief.scheduling_phone}")
         if belief.scheduling_day:
             fields.append(f"día={belief.scheduling_day}")
         if belief.scheduling_time:
             fields.append(f"horario={belief.scheduling_time}")
-        
+
         missing_sched = []
-        if not belief.scheduling_name:
-            missing_sched.append("nombre")
-        if not belief.scheduling_phone:
-            missing_sched.append("teléfono")
         if not belief.scheduling_day:
             missing_sched.append("día")
         if not belief.scheduling_time:
             missing_sched.append("horario")
-        
+
         if fields:
             parts.append(f"Agendamiento en curso — datos recolectados: {', '.join(fields)}")
-        
+
         if missing_sched:
-            if len(missing_sched) == 1:
-                parts.append(f"ACCIÓN: Preguntale al usuario su {missing_sched[0]}.")
-            else:
-                parts.append(f"ACCIÓN: Preguntale al usuario: {', '.join(missing_sched)}.")
+            parts.append(
+                f"ACCIÓN: Pedile al usuario: {', '.join(missing_sched)}. "
+                f"NUNCA pidas el teléfono (ya lo tenemos del WhatsApp)."
+            )
         else:
             parts.append(
-                f"ACCIÓN: Ya tenés todos los datos (nombre, teléfono, día, horario). "
-                f"LLAMÁ a schedule_visit AHORA con property_id={belief.selected_property_id or 'el que corresponda'}, "
-                f"nombre='{belief.scheduling_name}', telefono='{belief.scheduling_phone}', "
-                f"dia='{belief.scheduling_day}', horario='{belief.scheduling_time}'."
+                f"ACCIÓN: Ya tenés día y horario. LLAMÁ a schedule_visit AHORA con "
+                f"property_id={belief.selected_property_id or 'el que corresponda'}, "
+                f"nombre='{belief.scheduling_name or 'el nombre que dio el usuario en la conversación'}', "
+                f"dia='{belief.scheduling_day}', horario='{belief.scheduling_time}'. "
+                f"NUNCA pidas el teléfono. NO confirmes la cita en texto sin antes llamar a schedule_visit."
             )
 
     # History summary
