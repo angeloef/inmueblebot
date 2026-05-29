@@ -141,13 +141,13 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
 
     # Cost question override
     if belief.selected_property_id and belief.last_property_data:
-        cost_keywords = ["cuanto", "cuánto", "precio", "cuesta", "sale", "servicios", "incluye", "entrar", "ingresar"]
+        cost_keywords = ["cuanto", "cuánto", "precio", "cuesta", "sale", "entrar", "ingresar"]
         msg_lower = (belief.history[-1] if belief.history else "").lower()
         if any(kw in msg_lower for kw in cost_keywords):
             parts.append(
-                f"⚠️ PREGUNTA DE COSTOS: El usuario preguntó sobre precios/servicios de la propiedad {belief.selected_property_id}. "
-                f"Respondé con los DATOS DE LA PROPIEDAD que ya tenés. NO llames herramientas — YA tenés la información. "
-                f"Si necesitás info adicional que no tenés, usá get_faq_answer."
+                f"⚠️ PREGUNTA DE COSTOS: El usuario preguntó sobre precios de la propiedad {belief.selected_property_id}. "
+                f"Respondé con los DATOS DE LA PROPIEDAD que ya tenés. NO llames a get_property_details ni search_properties. "
+                f"Si necesitás info que no tenés (ej: si los servicios están incluidos), usá get_faq_answer."
             )
 
     # Last action
