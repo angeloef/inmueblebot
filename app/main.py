@@ -450,6 +450,10 @@ async def health_workers():
 from app.api.routes.webhook import router as webhook_router
 app.include_router(webhook_router, prefix="/webhook", tags=["whatsapp"])
 
+# Simulate endpoint (test without WhatsApp)
+from app.api.routes.simulate_v2 import router as simulate_router
+app.include_router(simulate_router, tags=["testing"])
+
 # Admin dashboard API
 from app.api.routes.admin import router as admin_router
 app.include_router(admin_router)
