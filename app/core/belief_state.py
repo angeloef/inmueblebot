@@ -37,6 +37,7 @@ class ConversationBeliefState:
     last_search_count: int = 0
     last_search_ids: list[int] = field(default_factory=list)  # IDs from last search
     last_search_context: str = ""  # "[1] Depto Centro | [2] Casa Schuster" — for LLM ref resolution
+    search_history: list[dict] = field(default_factory=list)  # last 3 searches for cross-turn disambiguation
     last_property_data: str = ""  # Summary of last viewed property for context injection
     last_shown_detail_id: int | None = None  # Last property ID shown via get_property_details
 

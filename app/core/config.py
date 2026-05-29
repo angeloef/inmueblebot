@@ -87,6 +87,13 @@ class Settings(BaseSettings):
         description="URL de conexión a PostgreSQL"
     )
 
+    # === TTL Configuration ===
+    WORKING_MEMORY_TTL: int = Field(default=86400, description="TTL for working memory (Redis)")
+    CONTEXT_TTL: int = Field(default=86400, description="TTL for user context in Redis (24h)")
+    STATE_TTL: int = Field(default=86400, description="TTL for conversation state in Redis (24h)")
+    PERSONA_TTL: int = Field(default=7776000, description="TTL for user persona in Redis (90 days)")
+    EPISODIC_TTL: int = Field(default=7776000, description="TTL for episodic memory in Redis (90 days)")
+
     # === Redis ===
     # Auto-detect: uses redis://redis:6379/0 for Docker, redis://localhost:6379/0 for local
     # Override by setting REDIS_URL explicitly in .env

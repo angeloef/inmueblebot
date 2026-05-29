@@ -261,26 +261,6 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     if ref_match:
         belief.active_intents.add("referencing_property")
 
-    # ── Resolve descriptive references to property IDs ────────────
-    if belief.last_search_context and belief.last_search_ids:
-        # Only resolve if user is NOT asking for something different
-        desc_keywords = ["estudiante", "econ", "balc", "centr", "monoambiente", "dormitorio", "compartida", "c[ée]ntrico"]
-        msg_lower = text.lower()
-        # Skip resolution if user is asking for new/different properties
-        new_search_kw = ["alguno", "algun", "otro", "otra", "diferente", "de 1", "de 2", "buscando"]
-        if any(kw in msg_lower for kw in new_search_kw):
-            pass  # Don't resolve — user wants something different
-        else:
-            matching_ids = []
-            for kw in desc_keywords:
-                if kw in msg_lower:
-                    for pid, summary in zip(belief.last_search_ids, belief.last_search_context.split(" | ")):
-                        if kw in summary.lower():
-                            matching_ids.append(pid)
-            if matching_ids:
-                belief.selected_property_id = matching_ids[0]
-                belief.active_intents.add("resolved_by_description")
-
     # Extract selected property ID from patterns like "el 3", "depto 5", "ID 7"
     id_match = re.search(r"\b(?:id|nro|número|nº|numero|el|la|propiedad)\s*#?\s*(\d+)\b", fuzzy_text)
     if id_match:

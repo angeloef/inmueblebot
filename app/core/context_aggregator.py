@@ -86,6 +86,19 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
             "interpretalo como confirmación y procedé a buscar con estos criterios."
         )
 
+    # Cross-criteria guard
+    if belief.operation or belief.property_type:
+        guard_parts = []
+        if belief.operation:
+            guard_parts.append(f"{belief.operation}")
+        if belief.property_type:
+            guard_parts.append(f"de {belief.property_type}")
+        if guard_parts:
+            parts.append(
+                f"⚠️ El usuario busca {' '.join(guard_parts)}. "
+                "No recomiendes propiedades fuera de estos criterios sin que el usuario los cambie explícitamente."
+            )
+
     # Search criteria accumulated
     if belief.search_criteria:
         criteria_str = ", ".join(
@@ -157,6 +170,27 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
     # Last search context (for resolving descriptive references)
     if belief.last_search_context:
         parts.append(f"Resultados de la última búsqueda (usá estos IDs para resolver referencias como 'el primero', 'el monoambiente'): {belief.last_search_context}")
+
+    # ── Search history (for cross-turn disambiguation) ──────────
+    if belief.search_history:
+        history_parts = ["Búsquedas recientes del usuario:"]
+        for idx, entry in enumerate(belief.search_history):
+            criteria_str = ", ".join(f"{k}: {v}" for k, v in entry.get("criteria", {}).items())
+            history_parts.append(f"[BÚSQUEDA {idx+1}: {criteria_str}]")
+            ctx_lines = entry.get("context", "").split(" | ")
+            for ctx_line in ctx_lines[:3]:  # Show at most 3 per search
+                history_parts.append(f"  {ctx_line.strip()}")
+            history_parts.append(f"  ({entry.get('count', 0)} resultados)")
+
+        # Only show disambiguation hint when no property is selected AND
+        # the current message likely refers to past results
+        if not belief.selected_property_id and "resolved_by_description" not in (belief.active_intents or set()):
+            history_parts.append(
+                "⚠️ El usuario puede estar refiriéndose a propiedades de búsquedas anteriores. "
+                "Si menciona una zona, tipo o característica, buscá en el historial de búsquedas arriba."
+            )
+
+        parts.append("\n".join(history_parts))
 
     # Pending offer (for confirmation follow-through)
     if belief.pending_offer:

@@ -315,6 +315,13 @@ async def route_message(
         await clear_working_memory(session_id)
         # Also clear the specialist persistence state
         clear_saved_state(session_id)
+        # Clear short-term memory and reset state machine
+        from app.core.memory import MemoryManager
+        mm = MemoryManager()
+        await mm.clear_short_term_memory(session_id)
+        from app.core.state_machine import ConversationState
+        sm = ConversationState()
+        await sm.reset_state(session_id)
         # Start fresh
         belief = get_belief(session_id)
 
@@ -571,6 +578,28 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                             summaries.append(summary)
                     if summaries:
                         belief.last_search_context = " | ".join(summaries)
+
+                    # Populate search_history
+                    if belief.last_search_ids:
+                        criteria = {}
+                        if belief.operation:
+                            criteria["operation"] = belief.operation
+                        if belief.property_type:
+                            criteria["tipo"] = belief.property_type
+                        if belief.zone:
+                            criteria["zona"] = belief.zone
+                        if belief.bedrooms_min is not None:
+                            criteria["dormitorios"] = belief.bedrooms_min
+                        if belief.budget_max is not None:
+                            criteria["presupuesto_max"] = belief.budget_max
+                        belief.search_history.append({
+                            "criteria": criteria,
+                            "ids": list(belief.last_search_ids),
+                            "context": belief.last_search_context,
+                            "count": belief.last_search_count,
+                        })
+                        if len(belief.search_history) > 3:
+                            belief.search_history.pop(0)
 
         if "get_property_details" in result.tools_called:
             # Track that we showed details for this property (to avoid redundant re-show)

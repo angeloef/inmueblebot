@@ -84,7 +84,7 @@ async def search_properties(
         if presupuesto_max > 0:
             stmt = stmt.where(Property.price <= presupuesto_max)
         if dormitorios > 0:
-            stmt = stmt.where(Property.bedrooms == dormitorios)
+            stmt = stmt.where(Property.bedrooms >= dormitorios)
 
         result = await session.execute(stmt)
         properties = result.scalars().all()
@@ -121,7 +121,7 @@ async def search_properties(
                     if mapped_tipo:
                         fallback2 = fallback2.where(Property.category == mapped_tipo)
                     if dormitorios > 0:
-                        fallback2 = fallback2.where(Property.bedrooms == dormitorios)
+                        fallback2 = fallback2.where(Property.bedrooms >= dormitorios)
 
                     fb2_result = await session.execute(fallback2)
                     tipo_matches = fb2_result.scalars().all()
@@ -170,6 +170,29 @@ async def search_properties(
                     f"{summary}. ¿Querés que te las muestre?"
                 )
 
+            # ── Fallback 3: drop zona, keep ALL other criteria ──────────────
+            # When the zone filter killed all results but other criteria are valid
+            if zona and (operation or mapped_tipo or presupuesto_max > 0 or dormitorios > 0):
+                fb3 = select(Property)
+                if operation:
+                    fb3 = fb3.where(Property.type == operation.lower())
+                if mapped_tipo:
+                    fb3 = fb3.where(Property.category == mapped_tipo)
+                if presupuesto_max > 0:
+                    fb3 = fb3.where(Property.price <= presupuesto_max)
+                if dormitorios > 0:
+                    fb3 = fb3.where(Property.bedrooms >= dormitorios)
+
+                fb3_result = await session.execute(fb3)
+                no_zone_results = fb3_result.scalars().all()
+
+                if no_zone_results:
+                    return (
+                        f"No se encontraron propiedades en '{zona}'. "
+                        f"Mostrando propiedades similares en otras zonas de Oberá:"
+                        f"\n\n{_format_properties_list(no_zone_results, operation, presupuesto_max)}"
+                    )
+
             # No results at all — keep the original message
             return f"No encontré propiedades{filters_desc}. ¿Querés ajustar algún filtro?"
 
@@ -197,6 +220,23 @@ async def search_properties(
             lines.append(missing_tip)
 
         return "\n".join(lines)
+
+
+def _format_properties_list(properties: list, op: str = "", max_price: float = 0) -> str:
+    """Format a list of properties as text lines."""
+    lines = []
+    for p in properties:
+        price_str = f"${p.price:,.0f}/mes" if p.type == "alquiler" else f"${p.price:,.0f}"
+        tipo_str = p.category.capitalize()
+        zone = _extract_zone(p.location)
+        beds_str = f"{p.bedrooms} dorm" if p.bedrooms and p.bedrooms > 0 else ""
+        area_str = f"{p.area_m2:.0f}m²" if p.area_m2 and p.area_m2 > 0 else ""
+        baths_str = f"{int(p.bathrooms)} baño{'s' if p.bathrooms != 1 else ''}" if p.bathrooms and p.bathrooms > 0 else ""
+        specs = " · ".join(s for s in [beds_str, baths_str, area_str] if s)
+        lines.append(f"  [{p.id}] {tipo_str} en {zone} — {price_str}")
+        if specs:
+            lines.append(f"       {specs}")
+    return "\n".join(lines)
 
 
 def _extract_zone(location: str) -> str:

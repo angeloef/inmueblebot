@@ -40,8 +40,8 @@ class MemoryManager:
     Usa Async Connection Pool para mejor rendimiento.
     """
     
-    CONTEXT_TTL = 86400
-    MESSAGES_TTL = 86400
+    CONTEXT_TTL = get_settings().CONTEXT_TTL if hasattr(get_settings(), 'CONTEXT_TTL') else 86400
+    MESSAGES_TTL = get_settings().CONTEXT_TTL if hasattr(get_settings(), 'CONTEXT_TTL') else 86400
     MAX_MESSAGES = 20
     
     MAX_RETRIES = 3

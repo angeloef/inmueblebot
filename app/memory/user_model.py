@@ -106,7 +106,7 @@ async def update_persona(phone: str, updates: dict) -> None:
     # Persist
     redis = await _get_redis()
     if redis:
-        await redis.set(f"persona:{get_identity_key() or phone}", json.dumps(persona))
+        await redis.set(f"persona:{get_identity_key() or phone}", json.dumps(persona), ex=settings.PERSONA_TTL)
         await redis.aclose()
 
 

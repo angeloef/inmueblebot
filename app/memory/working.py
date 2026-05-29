@@ -6,6 +6,7 @@ Falls back to in-memory dict when Redis is unavailable.
 
 import json
 from typing import Optional
+from loguru import logger
 
 from app.core.belief_state import (
     ConversationBeliefState,
@@ -16,13 +17,13 @@ settings = get_settings()
 
 
 async def save_working_memory(belief: ConversationBeliefState) -> None:
-    """Persist working memory to Redis with 1-hour TTL."""
+    """Persist working memory to Redis with 24-hour TTL."""
     key = f"working:{belief.session_id}"
     data = _serialize_belief(belief)
 
     redis = await _get_redis()
     if redis:
-        await redis.set(key, data, ex=3600)
+        await redis.set(key, data, ex=settings.WORKING_MEMORY_TTL)
         await redis.aclose()
     else:
         # Fallback to in-memory
@@ -44,7 +45,32 @@ async def load_working_memory(session_id: str) -> Optional[ConversationBeliefSta
     # Fallback: in-memory store
     from app.core.belief_state import get_belief
     belief = get_belief(session_id)
-    return belief if belief.turn_count > 0 else None
+    if belief.turn_count == 0:
+        # Context recovery: check MemoryManager for old context (24h TTL)
+        try:
+            from app.core.memory import MemoryManager
+            mm = MemoryManager()
+            context = await mm.get_user_context(session_id)
+            if context and context.get("last_search_criteria"):
+                lsc = context["last_search_criteria"]
+                extracted = lsc.get("extracted_prefs", {})
+                if extracted.get("operation_type") and not belief.operation:
+                    belief.operation = extracted["operation_type"]
+                if extracted.get("location_preferences") and not belief.zone:
+                    belief.zone = extracted["location_preferences"]
+                if extracted.get("property_type") and not belief.property_type:
+                    if isinstance(extracted["property_type"], list):
+                        belief.property_type = extracted["property_type"][0]
+                    else:
+                        belief.property_type = extracted["property_type"]
+                if extracted.get("bedrooms") and belief.bedrooms_min is None:
+                    belief.bedrooms_min = int(extracted["bedrooms"])
+                if belief.operation or belief.zone or belief.property_type:
+                    logger.info(f"[WorkingMemory] Context recovered from MemoryManager for {session_id}")
+        except Exception:
+            pass
+        return None  # Fresh state or recovery failed
+    return belief
 
 
 async def clear_working_memory(session_id: str) -> None:
@@ -72,6 +98,7 @@ def _serialize_belief(belief: ConversationBeliefState) -> str:
         "last_search_count": belief.last_search_count,
         "last_search_ids": belief.last_search_ids,
         "last_search_context": belief.last_search_context,
+        "search_history": belief.search_history[-3:],
         "last_property_data": belief.last_property_data,
         "last_shown_detail_id": belief.last_shown_detail_id,
         "pending_offer": belief.pending_offer,
@@ -104,6 +131,7 @@ def _deserialize_belief(data: str | bytes, session_id: str) -> ConversationBelie
         last_search_count=d.get("last_search_count", 0),
         last_search_ids=d.get("last_search_ids", []),
         last_search_context=d.get("last_search_context", ""),
+        search_history=d.get("search_history", []),
         last_property_data=d.get("last_property_data", ""),
         last_shown_detail_id=d.get("last_shown_detail_id"),
         pending_offer=d.get("pending_offer"),
@@ -119,11 +147,11 @@ def _deserialize_belief(data: str | bytes, session_id: str) -> ConversationBelie
 
 
 async def _get_redis():
-    """Get Redis connection or None if unavailable."""
+    """Get Redis connection via MemoryManager connection pool for efficiency."""
     try:
-        import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.resolve_redis_url(), socket_connect_timeout=1)
-        await r.ping()
+        from app.core.memory import MemoryManager
+        mm = MemoryManager()
+        r = await mm._get_redis_with_retry()
         return r
     except Exception:
         return None

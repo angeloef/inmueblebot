@@ -81,7 +81,7 @@ class ConversationState:
     # Match MemoryManager.CONTEXT_TTL so state and context expire together.
     # 30 min was too short: state reset to 'idle' while last_shown_properties
     # was still alive in context, producing stale property references.
-    STATE_TTL = 86400  # 24 hours
+    STATE_TTL = get_settings().STATE_TTL if hasattr(get_settings(), 'STATE_TTL') else 86400
     
     VALID_TRANSITIONS = {
         ConversationStateEnum.IDLE: [
