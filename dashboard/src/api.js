@@ -534,7 +534,37 @@ export const useEventById = useEvent;
 
 export const useCreateEvent = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: eventApi.create, onSuccess: () => qc.refetchQueries({ queryKey: keys.events }) });
+  return useMutation({
+    mutationFn: eventApi.create,
+    // Insert the event into the calendar immediately (EventEditor's form shape
+    // matches toEvent()); the temp row is replaced by the real one on refetch.
+    onMutate: async (form) => {
+      await qc.cancelQueries({ queryKey: keys.events });
+      const prev = qc.getQueryData(keys.events);
+      const optimistic = {
+        id:        `temp-${Date.now()}`,
+        _optimistic: true,
+        title:     form.title ?? '',
+        kind:      form.kind ?? 'visit',
+        date:      form.date ?? '',
+        start:     form.start ?? '',
+        end:       form.end ?? '',
+        clientId:  form.clientId || null,
+        propId:    form.propId || null,
+        agent:     form.agent ?? '',
+        status:    form.status ?? 'confirmed',
+        notes:     form.notes ?? '',
+        calendarEventId: null,
+        _createdAt: new Date().toISOString(),
+      };
+      qc.setQueryData(keys.events, (old) => (old ? [...old, optimistic] : [optimistic]));
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.events, ctx.prev);
+    },
+    onSettled: () => qc.refetchQueries({ queryKey: keys.events }),
+  });
 };
 
 export const useUpdateEvent = () => {

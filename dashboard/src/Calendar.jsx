@@ -537,10 +537,12 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     const mode    = editor.mode;
     const eventId = editor.event?.id;
     if (mode === 'create') {
-      setEditor(null); // optimistic close for create
+      // Optimistic: close the editor, confirm, and show the event in the calendar
+      // immediately. onMutate inserts it; onError rolls it back out.
+      setEditor(null);
+      pushToast({ text: 'Evento creado.' });
       createEventMut.mutate(form, {
-        onSuccess: () => pushToast({ text: 'Evento creado.' }),
-        onError:   () => pushToast({ text: 'Error al crear el evento.', kind: 'danger' }),
+        onError: () => pushToast({ text: 'Error al crear el evento. Se quitó del calendario.', kind: 'danger' }),
       });
     } else {
       updateEventMut.mutate({ id: eventId, ...form }, {
