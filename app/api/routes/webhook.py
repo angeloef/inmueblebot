@@ -343,9 +343,11 @@ async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
     """
     try:
         phone = msg.get("from", "")
-        bsuid = msg.get("user_id")  # BSUID — only present once Meta enables it
         contacts = value.get("contacts", []) or []
         contact = contacts[0] if contacts else {}
+        # Per Meta docs the BSUID lands in the contacts block (contacts[].user_id) and
+        # also on the message (messages[].user_id). Read both; prefer whichever is set.
+        bsuid = contact.get("user_id") or msg.get("user_id")
         wa_id = contact.get("wa_id")
         profile_name = (contact.get("profile") or {}).get("name")
         logger.info(f"[Identity] phone={phone} bsuid={bsuid} wa_id={wa_id} name={profile_name}")

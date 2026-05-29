@@ -11,7 +11,7 @@ class WhatsAppClient:
     def __init__(self):
         self.token = settings.WHATSAPP_ACCESS_TOKEN or ""
         self.phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID or ""
-        self.base_url = "https://graph.facebook.com/v18.0"
+        self.base_url = f"https://graph.facebook.com/{settings.WHATSAPP_GRAPH_API_VERSION}"
         self._is_configured = bool(self.token and self.phone_number_id)
         logger.info(f"[WhatsApp] phone_number_id={self.phone_number_id or 'NO CONFIGURADO'}")
         logger.info(f"[WhatsApp] token={'OK (' + str(len(self.token)) + ' chars)' if self.token else 'NO CONFIGURADO'}")

@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     # === WhatsApp (Meta) ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = Field(default=None, description="Phone Number ID de Meta")
     WHATSAPP_ACCESS_TOKEN: Optional[str] = Field(default=None, description="Access Token de Meta")
+    WHATSAPP_GRAPH_API_VERSION: str = Field(
+        default="v25.0",
+        description="Versión de la Graph API para llamadas salientes (v18.0 está sunset). "
+                    "Alineada con la versión del webhook 'messages' en el App Dashboard de Meta. Override por env.",
+    )
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(
         default="change-me",
         description="Token para verificar webhook de Meta"
