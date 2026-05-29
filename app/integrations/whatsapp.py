@@ -20,63 +20,85 @@ class WhatsAppClient:
     @property
     def is_configured(self) -> bool:
         return self._is_configured
-    
+
+    async def _post_message(self, payload: dict, label: str) -> dict:
+        """POST a /messages payload with BSUID→phone fallback (Meta identity migration).
+
+        We send BSUID-first (the durable identity), but Meta only enables OUTBOUND
+        sending to a BSUID from ~June 2026 — until then the API rejects it with
+        (#131009) "phone format". So if the primary send fails and the recipient
+        wasn't already the session phone, we retry once with the phone from the
+        current-turn identity ([app/core/identity.py]). This keeps delivery working
+        today and switches to BSUID automatically once Meta enables it — no code change.
+        """
+        url = f"{self.base_url}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers)
+            result = response.json()
+            if response.status_code < 400:
+                msg_id = result.get("messages", [{}])[0].get("id", "?")
+                logger.info(f"[WhatsApp] ✅ {label} OK → {payload.get('to')} | message_id={msg_id}")
+                return result
+
+            # Primary send failed — try the session phone as fallback.
+            to0 = payload.get("to")
+            fallback_phone = None
+            try:
+                from app.core.identity import get_current_contact
+                fallback_phone = (get_current_contact() or {}).get("phone")
+            except Exception:
+                fallback_phone = None
+
+            if fallback_phone and fallback_phone != to0:
+                err = (result.get("error") or {}).get("message", "")
+                logger.warning(
+                    f"[WhatsApp] {label} to {to0} failed ({response.status_code}: {err}); "
+                    f"retrying via phone {fallback_phone}"
+                )
+                payload = {**payload, "to": fallback_phone}
+                response = await client.post(url, json=payload, headers=headers)
+                result = response.json()
+                if response.status_code < 400:
+                    msg_id = result.get("messages", [{}])[0].get("id", "?")
+                    logger.info(f"[WhatsApp] ✅ {label} OK (phone fallback) → {fallback_phone} | message_id={msg_id}")
+                    return result
+
+            logger.error(f"[WhatsApp] ❌ {label} FAILED ({response.status_code}): {result}")
+            return result
+
     async def send_message(self, to: str, message: str) -> dict:
         """Send a text message via WhatsApp."""
         if not self.is_configured:
             logger.warning("WhatsApp not configured - message not sent")
             return {"error": "WhatsApp not configured"}
-        
-        url = f"{self.base_url}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to,
-            "type": "text",
-            "text": {"body": message}
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
-            result = response.json()
-            if response.status_code >= 400:
-                logger.error(f"[WhatsApp] ❌ send_message FAILED ({response.status_code}): {result}")
-            else:
-                msg_id = result.get("messages", [{}])[0].get("id", "?")
-                logger.info(f"[WhatsApp] ✅ send_message OK → {to} | message_id={msg_id}")
-            return result
+        return await self._post_message(
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "text",
+                "text": {"body": message},
+            },
+            "send_message",
+        )
 
     async def send_image(self, to: str, image_url: str, caption: str = "") -> dict:
         """Send a single image via WhatsApp using image message type."""
         if not self.is_configured:
             logger.warning("WhatsApp not configured - image not sent")
             return {"error": "WhatsApp not configured"}
-        
-        url = f"{self.base_url}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to,
-            "type": "image",
-            "image": {
-                "link": image_url,
-                "caption": caption or ""
-            }
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
-            result = response.json()
-            if response.status_code >= 400:
-                logger.error(f"[WhatsApp] ❌ send_image FAILED ({response.status_code}): {result}")
-            else:
-                msg_id = result.get("messages", [{}])[0].get("id", "?")
-                logger.info(f"[WhatsApp] ✅ send_image OK → {to} | message_id={msg_id}")
-            return result
+        return await self._post_message(
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "image",
+                "image": {"link": image_url, "caption": caption or ""},
+            },
+            "send_image",
+        )
 
     async def send_interactive_buttons(self, to: str, body_text: str, buttons: List[dict]) -> dict:
         """Send interactive buttons message."""

@@ -131,10 +131,11 @@ class Settings(BaseSettings):
                     "Alineada con la versión del webhook 'messages' en el App Dashboard de Meta. Override por env.",
     )
     WHATSAPP_SEND_BY_BSUID: bool = Field(
-        default=False,
-        description="Si True, los mensajes salientes se envían al BSUID del usuario cuando está "
-                    "presente (fallback al teléfono si no hay BSUID). Default False hasta verificar "
-                    "que el envío por BSUID funciona para este número — prendelo y probá con un mensaje.",
+        default=True,
+        description="BSUID-first sending: si hay BSUID, el mensaje se direcciona al BSUID; el "
+                    "cliente cae automáticamente al teléfono si Meta rechaza el envío por BSUID "
+                    "(habilitado ~junio 2026). Seguro por el fallback. Poné False para evitar el "
+                    "intento-fallido+reintento extra por mensaje mientras el envío por BSUID no esté activo.",
     )
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(
         default="change-me",

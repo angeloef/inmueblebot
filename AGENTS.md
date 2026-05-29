@@ -365,6 +365,34 @@ User: "compara la 1 y la 3"
 
 Tiers recalculate every 5 minutes from actual property prices. Falls back to $100k/$250k if DB unavailable.
 
+### Sprint 21 — WhatsApp Identity Migration: Meta BSUID (May 29, 2026)
+
+**Context:** WhatsApp Cloud API is replacing the guaranteed phone number with a stable **BSUID**
+(`user_id`, e.g. `AR.1005104535542948`). The phone becomes conditional (returned only within a
+rolling 30-day interaction window or via Meta's Contact Book) and may disappear entirely once
+usernames roll out. Goal: **BSUID-first everywhere, phone as fallback.**
+
+**Official Meta timeline (verified against developers.facebook.com + Microsoft Learn):**
+- **Mar 31, 2026** — BSUID appears in INBOUND `messages` webhooks (in `value.contacts[].user_id`, also `messages[].user_id`).
+- **June 2026** — OUTBOUND sending to a BSUID becomes available. Until then the `to` field only accepts phone numbers (sending to a BSUID returns `400 (#131009) "phone format incorrect"`).
+
+**Graph API version:** outbound bumped from `v18.0` (SUNSET/expired) → **`v25.0`**, now configurable via env `WHATSAPP_GRAPH_API_VERSION` (`app/integrations/whatsapp.py`). The inbound webhook `messages` field is set to `v25.0` in the Meta App Dashboard (that — not the code — controls inbound payload version).
+
+**DONE:**
+- **Phase 0 (capture):** `webhook.py:_capture_identity()` logs `[Identity] phone=… bsuid=… wa_id=… name=…` for every inbound message and persists the BSUID to `User.extra_data['bsuid']` (matched by phone). No behavior change. Confirmed BSUID is arriving.
+- **Phase 1 (identity):** lead/user identity is resolved **BSUID-first → phone fallback → create+backfill**. A per-turn `ContextVar` (`app/core/identity.py`) holds the session identity (`phone`+`bsuid`); set in `process_turn_v2`; read by `schedule_visit` via new `UserRepository.get_by_bsuid()` (JSONB query on `extra_data['bsuid']`). **Fixes the duplicate-lead bug**: `schedule_visit` no longer keys the user by the LLM-typed `telefono` (now stored as contact-only `extra_data['contact_phone']`, never identity). S2 prompt + tool schema + pre-LLM gate no longer ask for / require the phone.
+- **Phase 2 (sending):** outbound is **BSUID-first with automatic phone fallback** — `whatsapp.py:_post_message()` sends to the BSUID and, on Meta rejection (#131009, expected until June 2026), retries once with the session phone (from the ContextVar). Gated by `WHATSAPP_SEND_BY_BSUID` (**default True**).
+
+**CONSIDERATIONS / GOTCHAS:**
+- `WHATSAPP_SEND_BY_BSUID=True` is ON by default from now. Until June 2026 every reply does a *failed* BSUID attempt + a phone retry (≈ +0.5–1s and 2× send calls per message). Set it `False` to avoid that waste until June; leaving it True means delivery auto-switches to BSUID the moment Meta enables it, no code change.
+- Outbound BSUID send is NOT verified (gated by Meta until June 2026). The phone fallback guarantees delivery meanwhile.
+- The app is **UNPUBLISHED** in Meta → only admins/devs/testers can message it. Must publish before real customers.
+
+**PENDING (Phase 3):**
+- Memory/Redis session keys (`user:{phone}:messages`) are still phone-keyed. NOT migrated on purpose: no correctness benefit while the phone is present, and `MemoryManager.get_or_create(phone)` treats `session_id` as a phone — passing a BSUID there would create `whatsapp_phone=BSUID` (re-introducing the identity bug). Correct cutover requires separating "session key" (Redis namespace) from "phone" (User/sending), done as a tested change when the phone starts disappearing (watch for `[Identity] phone=None`).
+- Schema: `User.whatsapp_phone` is still `NOT NULL`/`UNIQUE` → make nullable + add a dedicated indexed `bsuid` column (needs a migration; the repo uses `create_all`, no alembic).
+- June 2026: verify/flip BSUID outbound sending once Meta enables it.
+
 ### 1. The Webhook Double-Prefix Bug
 The webhook router is mounted at `/webhook` and route paths must NOT include `/webhook/`:
 ```python
