@@ -42,6 +42,9 @@ def _run_startup_migration(engine):
       10. Cast properties.extra_data from TEXT to JSONB  (MUST happen before Fix 11)
       11. Migrate properties.city → extra_data['city']  (old flat column → JSONB, needs JSONB extra_data)
       12. Rename appointments.appointment_type → type  (Frankfurt→Oregon column rename fix)
+      14. Add conversations.session_id if missing  (cascade DELETE selects it → UndefinedColumn)
+      15. Conversations 'state' drift: rename status→state (or add)  + ensure context exists
+          (cascade DELETE of a user selects conversations.state → UndefinedColumn → breaks DELETE /admin/leads)
     """
     global _migration_done
     if _migration_done:
@@ -304,6 +307,34 @@ def _run_startup_migration(engine):
                     END IF;
                 END $$;
             """))
+            # ── Fix 15: Conversation 'state' column drift ────────────────
+            # Same class as Fix 14: the cascade DELETE of a user SELECTs
+            # conversations.state, but older DBs have the column named 'status'
+            # → UndefinedColumn error (breaks DELETE /admin/leads/{id}).
+            # Rename status→state (or add state if neither exists). Also ensure
+            # 'context' exists, since the same cascade SELECT reads it.
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'conversations' AND column_name = 'state'
+                    ) THEN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'conversations' AND column_name = 'status'
+                        ) THEN
+                            ALTER TABLE conversations RENAME COLUMN status TO state;
+                        ELSE
+                            ALTER TABLE conversations
+                                ADD COLUMN state VARCHAR(30) NOT NULL DEFAULT 'idle';
+                        END IF;
+                    END IF;
+                END $$;
+            """))
+            conn.execute(text(
+                "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context JSONB"
+            ))
             conn.commit()
         _migration_done = True
     except Exception as exc:
