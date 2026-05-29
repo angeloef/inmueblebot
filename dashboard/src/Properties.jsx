@@ -655,13 +655,13 @@ export default function Properties({ onOpenClient, initialProperty }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const handleDelete = (property) => {
+    // Close immediately — the optimistic update removes the card on the spot and
+    // rolls back (with an error toast) if the request fails.
+    setDeleteTarget(null);
+    setOpen(null);
+    pushToast({ text: `Propiedad eliminada — ${property.addr}.`, kind: 'danger' });
     deleteProperty.mutate(property.id, {
-      onSuccess: () => {
-        setDeleteTarget(null);
-        setOpen(null);
-        pushToast({ text: `Propiedad eliminada — ${property.addr}.`, kind: 'danger' });
-      },
-      onError: () => pushToast({ text: 'Error al eliminar la propiedad.', kind: 'danger' }),
+      onError: () => pushToast({ text: 'Error al eliminar la propiedad. Se restauró en la lista.', kind: 'danger' }),
     });
   };
 
@@ -802,9 +802,8 @@ export default function Properties({ onOpenClient, initialProperty }) {
             <div className="modal-foot">
               <Button kind="ghost" size="sm" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
               <Button kind="danger" size="sm" icon="trash"
-                onClick={() => handleDelete(deleteTarget)}
-                disabled={deleteProperty.isPending}>
-                {deleteProperty.isPending ? 'Eliminando...' : 'Sí, eliminar'}
+                onClick={() => handleDelete(deleteTarget)}>
+                Sí, eliminar
               </Button>
             </div>
           </div>
