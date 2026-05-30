@@ -2032,9 +2032,9 @@ async def admin_reply_to_conversation(
         if not user_phone:
             raise HTTPException(status_code=404, detail="User not found for this conversation")
 
-        # Send WhatsApp message (raw phone — format_phone_number is legacy
-        # and mangles the number; WhatsApp accepts E.164 format directly)
-        phone_to = user_phone
+        # WhatsApp requires E.164 format (e.g. +5493754455340).
+        # DB stores phone without +, so prepend it if missing.
+        phone_to = user_phone if user_phone.startswith('+') else f'+{user_phone}'
         whatsapp_result = None
         whatsapp_error = None
         try:
