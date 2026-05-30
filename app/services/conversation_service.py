@@ -60,6 +60,19 @@ async def _ensure_schema(session: AsyncSession) -> None:
         await session.execute(_text(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID"
         ))
+        # Ensure auto-increment on messages.id (may be missing if column
+        # was added via ALTER TABLE rather than original CREATE TABLE)
+        await session.execute(_text(
+            "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ALTER COLUMN id "
+            "SET DEFAULT nextval('messages_id_seq')"
+        ))
+        await session.execute(_text(
+            "SELECT setval('messages_id_seq', "
+            "COALESCE((SELECT MAX(id) FROM messages), 1))"
+        ))
         # Conversations table
         await session.execute(_text(
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_paused "
