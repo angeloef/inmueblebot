@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.agents.schemas import ChatResponse
 from app.core.identity import set_current_contact
-from app.routers.router import route_message
+from app.routers.router import route_message_with_persistence as route_message
 
 router = APIRouter()
 

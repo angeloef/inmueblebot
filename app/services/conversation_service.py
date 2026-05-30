@@ -132,6 +132,7 @@ async def upsert_conversation(
     session.add(conv)
     await session.flush()
     await session.refresh(conv)
+    await session.commit()
     logger.info("Created conversation %s for user %s session %s", conv.id, user.id, session_id)
     return conv.id
 
