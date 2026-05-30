@@ -20,6 +20,46 @@ from app.db.repository import ConversationRepository, MessageRepository
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════
+# Schema self-healing — ensures required columns exist before first use.
+# The admin.py startup migration only fires on sync admin endpoint calls;
+# the async webhook path reaches this module first.
+# ═══════════════════════════════════════════════════════════════════════
+
+_schema_ensured = False
+
+
+async def _ensure_schema(session: AsyncSession) -> None:
+    """Run IF NOT EXISTS column migrations so persistence doesn't crash."""
+    global _schema_ensured
+    if _schema_ensured:
+        return
+    try:
+        from sqlalchemy import text as _text
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender "
+            "VARCHAR(20) NOT NULL DEFAULT 'user'"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS msg_metadata JSONB"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(500)"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_paused "
+            "BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ"
+        ))
+        await session.commit()
+        _schema_ensured = True
+        logger.info("Conversation schema self-healing complete")
+    except Exception as e:
+        logger.warning("Schema self-healing skipped: %s", e)
+        _schema_ensured = True  # Don't retry on every message
+
+# ═══════════════════════════════════════════════════════════════════════
 # SSE Pub/Sub — in-memory
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -71,6 +111,7 @@ async def upsert_conversation(
     User lookup priority: user_id → phone (User.whatsapp_phone) → create new user.
     Returns conversation.id (UUID).
     """
+    await _ensure_schema(session)
     from app.db.repository import UserRepository
     repo = UserRepository(User, session)
     user = None
@@ -267,6 +308,7 @@ async def list_conversations(
 
     Each item: id, phone, bsuid, last_message_at, state, turn_count, bot_paused.
     """
+    await _ensure_schema(session)
     # Subquery: count messages per conversation
     msg_count = (
         select(
@@ -392,6 +434,7 @@ async def is_bot_paused(
     phone: str,
 ) -> bool:
     """Check if any active conversation for this user has bot_paused=True."""
+    await _ensure_schema(session)
     # Find user by phone
     user_result = await session.execute(
         select(User).where(User.whatsapp_phone == phone)

@@ -390,6 +390,15 @@ def _run_startup_migration(engine):
             except Exception as e:
                 logger.warning(f"Migration Fix 24: {e}")
 
+            # ── Fix 25: Add media_url column to messages table ───────────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(500)"
+                ))
+                logger.info("Migration Fix 25: messages.media_url added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 25: {e}")
+
             conn.commit()
         _migration_done = True
     except Exception as exc:
