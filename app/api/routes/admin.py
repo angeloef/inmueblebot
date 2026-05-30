@@ -2146,6 +2146,35 @@ async def debug_messages_schema(_: bool = Depends(verify_admin_api_key)):
             "has_sequence": seq.scalar() is not None,
         }
 
+# ── Debug: test raw INSERT into messages ────────────────────────────────
+class DebugInsert(BaseModel):
+    conversation_id: str
+
+@router.post("/debug/test-insert")
+async def debug_test_insert(body: DebugInsert, _: bool = Depends(verify_admin_api_key)):
+    """Try a raw INSERT into messages and return result or error."""
+    from app.db.session import async_session_factory
+    from sqlalchemy import text as _text
+    import uuid as _uuid
+    try:
+        async with async_session_factory() as db:
+            mid = str(_uuid.uuid4())
+            cid = body.conversation_id
+            await db.execute(_text(
+                "INSERT INTO messages (id, conversation_id, role, sender, "
+                "content, timestamp) VALUES "
+                "(:id::uuid, :cid::uuid, 'user', 'user', 'DEBUG TEST', NOW())"
+            ), {"id": mid, "cid": cid})
+            await db.commit()
+            # Verify
+            row = await db.execute(_text(
+                "SELECT id, content FROM messages WHERE id = :id::uuid"
+            ), {"id": mid})
+            r = row.fetchone()
+            return {"status": "ok", "id": mid, "content": r[1] if r else None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 CLIENT_TABLES = [
     "appointments",
     "conversations",
