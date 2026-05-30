@@ -27,7 +27,8 @@ tweakear, pushear a Render y re-testear hasta que pasen. Verificar con: `/simula
 ## Scoreboard (V1, escenarios ejecutables)
 | Escenario | Estado | Nota |
 |-----------|--------|------|
-| C1 funnel+rechazo | 🔴 | scheduling no llamaba al tool |
+| C1 agendar (núcleo) | 🟢 | `e907773` → schedule_visit se llama; "lunes 11" → 2026-06-01 11:00 ART verificado en DB (cita user 3397c49f) |
+| C1 rechazo horario | ⬜ pend | falta probar domingo / fuera-de-hora |
 | C5 fallbacks      | ⬜ pend | |
 | C6 cambio tipo    | ⬜ pend | |
 | C8 trampas agendado | ⬜ pend | |

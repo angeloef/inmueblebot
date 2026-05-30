@@ -260,7 +260,12 @@ def _build_scheduling_context(belief) -> str:
     property_text = f"ID #{belief.selected_property_id}" if belief.selected_property_id else "(no especificada aún)"
     if belief.last_property_data:
         property_text += f" — {belief.last_property_data[:150]}"
-    
+
+    # Recent user messages — so the LLM can assemble day + time even when they
+    # arrive across separate turns (e.g. "el lunes" then "a las 3 de la tarde").
+    recent = [m for m in (getattr(belief, "history", None) or [])[-6:] if m]
+    history_text = "\n".join(f"  - {m}" for m in recent) if recent else "  (sin historial)"
+
     return f"""[CONTEXTO DE AGENDAMIENTO]
 
 HOY ES: {today_str}
@@ -271,13 +276,19 @@ TURNOS DISPONIBLES:
 DATOS YA RECOLECTADOS DEL USUARIO:
 {collected_text}
 
+ÚLTIMOS MENSAJES DEL USUARIO (leelos para armar la fecha completa):
+{history_text}
+
 PROPIEDAD A VISITAR: {property_text}
 
 INSTRUCCIONES DE FECHAS:
+- COMBINÁ día y horario aunque el usuario los haya dado en mensajes distintos.
+  Ej: si antes dijo "el lunes" y ahora "a las 3 de la tarde", la cita es lunes 15:00 → llamá schedule_visit con dia="lunes" horario="15:00".
+- "a la mañana"=10:00, "al mediodía"=12:00, "a la tarde"=15:00, "3 de la tarde"=15:00, "5 de la tarde"=17:00.
 - "la semana que viene" / "la próxima semana" → usá PRÓXIMA SEMANA (nunca ESTA SEMANA)
-- "esta semana" → usá ESTA SEMANA
-- "cualquier día" sin especificar → elegí el primer turno disponible (esta o próxima)
+- "dentro de N días" / "en N días" → contá N días desde HOY.
 - PROPONÉ un turno concreto con día y fecha. NO preguntes "¿qué día?".
+- Cuando ya tengas día + horario + nombre + property_id, llamá schedule_visit YA (no vuelvas a confirmar en texto sin llamarlo).
 """
 
 
