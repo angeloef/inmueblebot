@@ -1978,6 +1978,8 @@ class ConversationReply(BaseModel):
 
 def _make_async_session():
     """Create and return an async SQLAlchemy session for admin endpoints."""
+    # Ensure the startup migration runs before any async query touches the DB
+    _get_sync_session()
     from app.db.session import async_session_factory
     return async_session_factory()
 
