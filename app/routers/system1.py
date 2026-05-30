@@ -109,7 +109,9 @@ PATTERNS: list[RoutePattern] = [
     ),
     RoutePattern(
         name="faq_zonas",
-        pattern=r"\b(zonas|barrios|zona|barrio|d[oó]nde (hay|conviene)|ubicaci[oó]n)\b",
+        # Solo preguntas GENÉRICAS sobre zonas — NO frases de búsqueda como
+        # "casas por esa zona" (eso debe ir al search, no al canned de zonas).
+        pattern=r"\b(qu[ée] zonas|qu[ée] barrios|cu[áa]les zonas|en qu[ée] (zona|barrio)|zonas (hay|tienen|trabajan|cubren|disponibles)|barrios trabajan|d[oó]nde (hay|conviene)|qu[ée] ubicaci[oó]n)\b",
         confidence=0.88,
         response=(
             "Trabajamos en 4 zonas de Oberá:\n"

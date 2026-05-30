@@ -276,16 +276,25 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
 
     # Ordinal resolution: "primero", "segundo", "tercero" → resolve from last_search_ids
     ordinal_match = re.search(
-        r"\b(primero|primera|primer|segundo|segunda|tercero|tercera)\b", fuzzy_text
+        r"\b(primero|primera|primer|segundo|segunda|tercero|tercera|cuarto|cuarta|"
+        r"quinto|quinta|[uú]ltimo|[uú]ltima|anteultimo|ante[uú]ltimo)\b", fuzzy_text
     )
     if ordinal_match and belief.last_search_ids:
         ordinal_map = {
             "primero": 0, "primera": 0, "primer": 0,
             "segundo": 1, "segunda": 1,
             "tercero": 2, "tercera": 2,
+            "cuarto": 3, "cuarta": 3,
+            "quinto": 4, "quinta": 4,
         }
-        idx = ordinal_map.get(ordinal_match.group(1), 0)
-        if idx < len(belief.last_search_ids):
+        word = ordinal_match.group(1).lower().replace("ú", "u")
+        if word in ("ultimo", "ultima"):
+            idx = len(belief.last_search_ids) - 1
+        elif word in ("anteultimo",):
+            idx = len(belief.last_search_ids) - 2
+        else:
+            idx = ordinal_map.get(word, 0)
+        if 0 <= idx < len(belief.last_search_ids):
             resolved_id = belief.last_search_ids[idx]
             belief.selected_property_id = resolved_id
             belief.active_intents.add("ordinal_reference")
