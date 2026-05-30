@@ -320,6 +320,7 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
         opacity: loading ? 0.6 : 1,
         background: isOn ? '#25D366' : '#ccc',
         transition: 'background 0.2s',
+        overflow: 'hidden',
         padding: 0,
       }}
     >
@@ -332,7 +333,7 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
           background: '#fff',
           position: 'absolute',
           top: 2,
-          left: isOn ? 20 : 2,
+          left: isOn ? 60 : 2,
           transition: 'left 0.2s',
           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
         }}
@@ -459,7 +460,6 @@ function ChatView({ conversationId }) {
   const toggleBotMut = useToggleBot();
 
   const [messages, setMessages] = useState([]);
-  const [botPaused, setBotPaused] = useState(false);
   const [inputText, setInputText] = useState('');
   const [sseFallback, setSseFallback] = useState(false);
   const msgEndRef = useRef(null);
@@ -469,7 +469,6 @@ function ChatView({ conversationId }) {
   useEffect(() => {
     if (conversation) {
       setMessages(conversation.messages ?? []);
-      setBotPaused(!!conversation.bot_paused);
     }
   }, [conversation]);
 
@@ -498,8 +497,6 @@ function ChatView({ conversationId }) {
               if (prev.some(m => m.id === data.message.id)) return prev;
               return [...prev, data.message];
             });
-          } else if (data.type === 'bot_paused') {
-            setBotPaused(!!data.bot_paused);
           }
         } catch {}
       };
@@ -583,7 +580,7 @@ function ChatView({ conversationId }) {
     <div style={S.chatPanel}>
       <ChatHeader
         conversation={conversation}
-        botPaused={botPaused}
+        botPaused={conversation?.bot_paused ?? false}
         toggling={toggleBotMut.isPending}
         onToggleBot={handleToggleBot}
       />
