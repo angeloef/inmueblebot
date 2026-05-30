@@ -54,6 +54,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Column migration failed: %s", e)
 
+    # ── Ensure messages.id has auto-increment sequence ──────────────────
+    # The Render DB was created from an older schema; messages.id may
+    # lack a DEFAULT nextval().  This runs at startup before any traffic.
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text(
+                "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
+            ))
+            await session.execute(text(
+                "ALTER TABLE messages ALTER COLUMN id "
+                "SET DEFAULT nextval('messages_id_seq')"
+            ))
+            await session.execute(text(
+                "SELECT setval('messages_id_seq', "
+                "COALESCE((SELECT MAX(id) FROM messages), 1))"
+            ))
+            await session.commit()
+            logger.info("messages.id sequence ensured")
+    except Exception as e:
+        logger.warning("messages sequence creation failed: %s", e)
+
     # Seed data (development only)
     try:
         from app.db.seed import seed_properties
