@@ -148,34 +148,40 @@ async def save_turn(
     confidence: float = 0,
 ) -> None:
     """Insert user message + bot response, update conversation.last_message_at."""
+    from sqlalchemy import text as _text
     now = datetime.now(timezone.utc)
 
-    # Insert user message
-    user_msg = Message(
-        conversation_id=conversation_id,
-        role="user",
-        sender="user",
-        content=user_message,
-        timestamp=now,
-    )
-    session.add(user_msg)
+    # Generate explicit IDs — the Render DB's messages table lacks an
+    # auto-increment sequence.  COALESCE(MAX(id),0)+1 is safe at low
+    # concurrency (single web dyno, ~2 msgs/turn).
+    result = await session.execute(_text(
+        "SELECT COALESCE(MAX(id), 0) + 1 FROM messages"
+    ))
+    next_id = result.scalar()
 
-    # Insert bot message with metadata
-    metadata = {
+    # Insert user message via raw SQL to avoid ORM autoflush timing
+    await session.execute(_text(
+        "INSERT INTO messages (id, conversation_id, role, sender, content, "
+        "timestamp) VALUES (:id, :cid, :role, :sender, :content, :ts)"
+    ), {"id": next_id, "cid": conversation_id, "role": "user",
+        "sender": "user", "content": user_message, "ts": now})
+    user_msg_id = next_id
+    next_id += 1
+
+    # Insert bot message
+    metadata_json = json.dumps({
         "tools_called": tools_called or [],
         "router": router or "",
         "latency_ms": latency_ms,
         "confidence": confidence,
-    }
-    bot_msg = Message(
-        conversation_id=conversation_id,
-        role="assistant",
-        sender="bot",
-        content=bot_response,
-        msg_metadata=metadata,
-        timestamp=now,
-    )
-    session.add(bot_msg)
+    })
+    await session.execute(_text(
+        "INSERT INTO messages (id, conversation_id, role, sender, content, "
+        "msg_metadata, timestamp) VALUES "
+        "(:id, :cid, :role, :sender, :content, :meta::jsonb, :ts)"
+    ), {"id": next_id, "cid": conversation_id, "role": "assistant",
+        "sender": "bot", "content": bot_response, "meta": metadata_json,
+        "ts": now})
 
     # Update conversation timestamp
     stmt = (
@@ -190,12 +196,12 @@ async def save_turn(
     await publish(str(conversation_id), {
         "type": "new_message",
         "message": {
-            "id": bot_msg.id,
+            "id": next_id,
             "role": "assistant",
             "sender": "bot",
             "content": bot_response,
             "timestamp": now.isoformat(),
-            "metadata": metadata,
+            "metadata": json.loads(metadata_json),
         },
     })
 
@@ -206,15 +212,19 @@ async def save_user_message_only(
     text: str,
 ) -> None:
     """Insert only a user message (no bot response). Used when bot is paused."""
+    from sqlalchemy import text as _text
     now = datetime.now(timezone.utc)
-    msg = Message(
-        conversation_id=conversation_id,
-        role="user",
-        sender="user",
-        content=text,
-        timestamp=now,
-    )
-    session.add(msg)
+
+    result = await session.execute(_text(
+        "SELECT COALESCE(MAX(id), 0) + 1 FROM messages"
+    ))
+    next_id = result.scalar()
+
+    await session.execute(_text(
+        "INSERT INTO messages (id, conversation_id, role, sender, content, "
+        "timestamp) VALUES (:id, :cid, :role, :sender, :content, :ts)"
+    ), {"id": next_id, "cid": conversation_id, "role": "user",
+        "sender": "user", "content": text, "ts": now})
 
     stmt = (
         update(Conversation)
@@ -227,7 +237,7 @@ async def save_user_message_only(
     await publish(str(conversation_id), {
         "type": "new_message",
         "message": {
-            "id": msg.id,
+            "id": next_id,
             "role": "user",
             "sender": "user",
             "content": text,
