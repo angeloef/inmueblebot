@@ -151,22 +151,16 @@ async def save_turn(
     from sqlalchemy import text as _text
     now = datetime.now(timezone.utc)
 
-    # Generate explicit IDs — the Render DB's messages table lacks an
-    # auto-increment sequence.  COALESCE(MAX(id),0)+1 is safe at low
-    # concurrency (single web dyno, ~2 msgs/turn).
-    result = await session.execute(_text(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM messages"
-    ))
-    next_id = result.scalar()
+    # Generate UUIDs — the Render DB's messages.id is UUID, not Integer
+    uid1, uid2 = str(uuid4()), str(uuid4())
 
-    # Insert user message via raw SQL to avoid ORM autoflush timing
+    # Insert user message
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
-        "timestamp) VALUES (:id, :cid, :role, :sender, :content, :ts)"
-    ), {"id": next_id, "cid": conversation_id, "role": "user",
+        "timestamp) VALUES (:id::uuid, :cid::uuid, :role, :sender, :content, :ts)"
+    ), {"id": uid1, "cid": str(conversation_id), "role": "user",
         "sender": "user", "content": user_message, "ts": now})
-    user_msg_id = next_id
-    next_id += 1
+    user_msg_id = uid1
 
     # Insert bot message
     metadata_json = json.dumps({
@@ -178,8 +172,8 @@ async def save_turn(
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
         "msg_metadata, timestamp) VALUES "
-        "(:id, :cid, :role, :sender, :content, :meta::jsonb, :ts)"
-    ), {"id": next_id, "cid": conversation_id, "role": "assistant",
+        "(:id::uuid, :cid::uuid, :role, :sender, :content, :meta::jsonb, :ts)"
+    ), {"id": uid2, "cid": str(conversation_id), "role": "assistant",
         "sender": "bot", "content": bot_response, "meta": metadata_json,
         "ts": now})
 
@@ -196,7 +190,7 @@ async def save_turn(
     await publish(str(conversation_id), {
         "type": "new_message",
         "message": {
-            "id": next_id,
+            "id": uid2,
             "role": "assistant",
             "sender": "bot",
             "content": bot_response,
@@ -215,15 +209,12 @@ async def save_user_message_only(
     from sqlalchemy import text as _text
     now = datetime.now(timezone.utc)
 
-    result = await session.execute(_text(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM messages"
-    ))
-    next_id = result.scalar()
+    uid = str(uuid4())
 
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
-        "timestamp) VALUES (:id, :cid, :role, :sender, :content, :ts)"
-    ), {"id": next_id, "cid": conversation_id, "role": "user",
+        "timestamp) VALUES (:id::uuid, :cid::uuid, :role, :sender, :content, :ts)"
+    ), {"id": uid, "cid": str(conversation_id), "role": "user",
         "sender": "user", "content": text, "ts": now})
 
     stmt = (
@@ -237,7 +228,7 @@ async def save_user_message_only(
     await publish(str(conversation_id), {
         "type": "new_message",
         "message": {
-            "id": next_id,
+            "id": uid,
             "role": "user",
             "sender": "user",
             "content": text,

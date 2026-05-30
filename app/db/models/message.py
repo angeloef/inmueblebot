@@ -18,12 +18,12 @@ class Message(Base):
     """
     __tablename__ = "messages"
 
-    # BigSerial para alto volumen de mensajes (auto-increment)
-    id: Mapped[int] = mapped_column(
-        Integer,
+    # UUID primary key (matches actual Render DB schema)
+    id: Mapped[uuid4] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        autoincrement=True,
-        comment="Primary key (BigSerial auto-increment)"
+        default=uuid4,
+        comment="Primary key UUID"
     )
 
     # FK a la conversación
