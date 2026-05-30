@@ -8,6 +8,7 @@ const VIEW_TO_PATH = {
   properties: '/dashboard/propiedades',
   clients:    '/dashboard/clientes',
   faqs:       '/dashboard/faqs',
+  chats:      '/dashboard/chats',
   documents:  '/dashboard/documentos',
   settings:   '/dashboard/configuracion',
 };
@@ -27,6 +28,7 @@ import Calendar from './Calendar';
 import Properties from './Properties';
 import Clients from './Clients';
 import FAQs from './FAQs';
+import Chats from './Chats';
 import Config from './Config';
 
 // ── Notification type → destination ─────────────────────────────────────────
@@ -174,6 +176,8 @@ export default function App() {
           )}
 
           {active === 'faqs' && <FAQs />}
+
+          {active === 'chats' && <Chats />}
 
           {active === 'documents' && (
             <div className="page-view">

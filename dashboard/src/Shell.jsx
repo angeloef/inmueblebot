@@ -9,6 +9,7 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
     { id: 'properties', icon: 'building', label: 'Propiedades' },
     { id: 'clients',    icon: 'users',    label: 'Clientes' },
     { id: 'faqs',       icon: 'msg',      label: 'FAQ' },
+    { id: 'chats',      icon: 'whatsapp', label: 'Chats' },
   ];
   const more = [
     { id: 'documents',  icon: 'folder',   label: 'Documentos' },

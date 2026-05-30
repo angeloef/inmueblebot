@@ -1430,11 +1430,13 @@ def list_calendar_events(
 
 # ── Conversations / Handoff ────────────────────────────────────────────────────
 
-@router.get("/conversations/{phone}")
-async def get_conversation(
+@router.get("/conversations/by-phone/{phone}")
+async def get_conversation_by_phone(
     phone: str,
     _: bool = Depends(verify_admin_api_key),
 ):
+    """(Legacy) Look up conversation context by phone number.
+    Prefer /admin/conversations/{id} for inbox integration."""
     from app.core.memory import memory_manager
     try:
         context = await memory_manager.get_user_context(phone)

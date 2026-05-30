@@ -512,6 +512,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 )
                 continue
 
+            # ── v2.0 Router Feature Flag ──────────────────────────────────
+            use_v2 = _resolve_use_v2_router(settings)
+
             # ── Bot-paused check (WhatsApp Inbox) ────────────────────────
             # If the admin has paused the bot for this user, save the message
             # to the conversation but don't process with the bot.
@@ -529,8 +532,6 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 except Exception as _bp_err:
                     logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
 
-            # ── v2.0 Router Feature Flag ──────────────────────────────────
-            use_v2 = _resolve_use_v2_router(settings)
             if use_v2:
                 from app.routers.v2_adapter import process_turn_v2
                 result = await process_turn_v2(

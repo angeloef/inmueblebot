@@ -37,6 +37,8 @@ export const keys = {
   calendarStatus:  ['calendar', 'status'],
   calendarEvents:  ['calendar', 'events'],
   botSettings:     ['bot-settings'],
+  conversations:   ['conversations'],
+  conversation:    (id) => ['conversations', id],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -752,5 +754,99 @@ export const useUpdateBotSettings = () => {
   return useMutation({
     mutationFn: settingsApi.update,
     onSuccess:  () => qc.invalidateQueries({ queryKey: keys.botSettings }),
+  });
+};
+
+// ─── WhatsApp Conversations ─────────────────────────────────────────────────
+
+const conversationApi = {
+  list:   (params = {}) => http.get('/admin/conversations', { params }).then(r => r.data),
+  get:    (id)           => http.get(`/admin/conversations/${id}`).then(r => r.data),
+  reply:  ({ id, text }) => http.post(`/admin/conversations/${id}/reply`, { text }).then(r => r.data),
+  toggleBot: (id)        => http.patch(`/admin/conversations/${id}/toggle-bot`).then(r => r.data),
+};
+
+export const useConversations = () =>
+  useQuery({
+    queryKey: keys.conversations,
+    queryFn:  () => conversationApi.list({ limit: 50, offset: 0 }),
+    refetchInterval: 15_000,
+  });
+
+export const useConversation = (id) =>
+  useQuery({
+    queryKey: keys.conversation(id),
+    queryFn:  () => conversationApi.get(id),
+    enabled:  !!id,
+  });
+
+export const useReplyToConversation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: conversationApi.reply,
+    onMutate: async ({ id, text }) => {
+      await qc.cancelQueries({ queryKey: keys.conversation(id) });
+      const prev = qc.getQueryData(keys.conversation(id));
+      // Optimistically append admin message to conversation cache
+      qc.setQueryData(keys.conversation(id), (old) => {
+        if (!old) return old;
+        const optimistic = {
+          id:            `temp-${Date.now()}`,
+          role:          'admin',
+          sender:        'admin',
+          content:       text,
+          timestamp:     new Date().toISOString(),
+          metadata:      null,
+        };
+        return { ...old, messages: [...(old.messages ?? []), optimistic] };
+      });
+      return { prev };
+    },
+    onError: (_err, vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(keys.conversation(vars.id), ctx.prev);
+    },
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: keys.conversation(vars.id) });
+    },
+  });
+};
+
+export const useToggleBot = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => conversationApi.toggleBot(id),
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: keys.conversation(id) });
+      await qc.cancelQueries({ queryKey: keys.conversations });
+      const prevConv = qc.getQueryData(keys.conversation(id));
+      const prevList = qc.getQueryData(keys.conversations);
+      // Optimistically flip bot_paused in single conversation cache
+      if (prevConv) {
+        qc.setQueryData(keys.conversation(id), (old) =>
+          old ? { ...old, bot_paused: !old.bot_paused } : old
+        );
+      }
+      // Also flip in the conversations list
+      if (prevList) {
+        qc.setQueryData(keys.conversations, (old) => {
+          if (!old?.conversations) return old;
+          return {
+            ...old,
+            conversations: old.conversations.map(c =>
+              String(c.id) === String(id) ? { ...c, bot_paused: !c.bot_paused } : c
+            ),
+          };
+        });
+      }
+      return { prevConv, prevList };
+    },
+    onError: (_err, vars, ctx) => {
+      if (ctx?.prevConv) qc.setQueryData(keys.conversation(vars.id), ctx.prevConv);
+      if (ctx?.prevList) qc.setQueryData(keys.conversations, ctx.prevList);
+    },
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: keys.conversation(vars.id) });
+      qc.invalidateQueries({ queryKey: keys.conversations });
+    },
   });
 };
