@@ -154,10 +154,11 @@ async def save_turn(
     # Generate UUIDs — the Render DB's messages.id is UUID, not Integer
     uid1, uid2 = str(uuid4()), str(uuid4())
 
-    # Insert user message
+    # Insert user message (CAST avoids text() bind-param collision with ::uuid)
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
-        "timestamp) VALUES (:id::uuid, :cid::uuid, :role, :sender, :content, :ts)"
+        "timestamp) VALUES (CAST(:id AS uuid), CAST(:cid AS uuid), "
+        ":role, :sender, :content, :ts)"
     ), {"id": uid1, "cid": str(conversation_id), "role": "user",
         "sender": "user", "content": user_message, "ts": now})
     user_msg_id = uid1
@@ -172,7 +173,8 @@ async def save_turn(
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
         "msg_metadata, timestamp) VALUES "
-        "(:id::uuid, :cid::uuid, :role, :sender, :content, :meta::jsonb, :ts)"
+        "(CAST(:id AS uuid), CAST(:cid AS uuid), :role, :sender, "
+        ":content, CAST(:meta AS jsonb), :ts)"
     ), {"id": uid2, "cid": str(conversation_id), "role": "assistant",
         "sender": "bot", "content": bot_response, "meta": metadata_json,
         "ts": now})
@@ -213,7 +215,8 @@ async def save_user_message_only(
 
     await session.execute(_text(
         "INSERT INTO messages (id, conversation_id, role, sender, content, "
-        "timestamp) VALUES (:id::uuid, :cid::uuid, :role, :sender, :content, :ts)"
+        "timestamp) VALUES (CAST(:id AS uuid), CAST(:cid AS uuid), "
+        ":role, :sender, :content, :ts)"
     ), {"id": uid, "cid": str(conversation_id), "role": "user",
         "sender": "user", "content": text, "ts": now})
 
