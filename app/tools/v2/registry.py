@@ -86,7 +86,16 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                         },
                         "dormitorios": {
                             "type": "integer",
-                            "description": "Cantidad mínima de dormitorios. 0 = sin filtro.",
+                            "description": "Cantidad de dormitorios. 0 = sin filtro. Usar con bedrooms_match para controlar el modo.",
+                        },
+                        "bedrooms_match": {
+                            "type": "string",
+                            "enum": ["exact", "at_least", "range"],
+                            "description": "Como matchear dormitorios: 'exact' si el usuario dice '1 habitacion', 'at_least' si dice 'al menos 2', 'range' si dice '2 a 3 habitaciones'. Default: 'exact'.",
+                        },
+                        "dormitorios_max": {
+                            "type": "integer",
+                            "description": "Cantidad maxima de dormitorios, solo cuando bedrooms_match='range'. 0 = sin limite superior.",
                         },
                     },
                 },
