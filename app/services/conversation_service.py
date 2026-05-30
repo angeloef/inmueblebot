@@ -423,7 +423,7 @@ async def get_user_phone_for_conversation(
     user = await session.get(User, conv.user_id)
     if not user:
         return None
-    return user.bsuid or user.whatsapp_phone
+    return user.whatsapp_phone or user.bsuid
 
 
 async def is_bot_paused(

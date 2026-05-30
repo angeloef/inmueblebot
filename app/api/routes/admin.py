@@ -2033,14 +2033,13 @@ async def admin_reply_to_conversation(
         if not user_phone:
             raise HTTPException(status_code=404, detail="User not found for this conversation")
 
-        # WhatsApp requires E.164 format (e.g. +549****5340).
-        # DB stores phone without +, so prepend it if missing.
-        phone_to = user_phone if user_phone.startswith('+') else f'+{user_phone}'
+        # Normalize phone for Meta API (same as webhook does)
+        from app.api.routes.webhook import format_phone_number
+        phone_to = format_phone_number(user_phone)
 
-        # Replicate the webhook's sending pattern: set identity ContextVar
-        # BEFORE send_message so that _post_message's BSUID→phone fallback
-        # (app/integrations/whatsapp.py) has a phone to retry with.
-        set_current_contact(phone=phone_to, bsuid=None)
+        # Set identity with the RAW phone (with +) so _post_message fallback works
+        raw_phone = user_phone if user_phone.startswith('+') else f'+{user_phone}'
+        set_current_contact(phone=raw_phone, bsuid=None)
 
         whatsapp_result = None
         whatsapp_error = None
