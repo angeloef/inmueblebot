@@ -78,6 +78,19 @@ async def schedule_visit(
 
     start_datetime = parsed_dt
 
+    # ── Roll forward if the parsed datetime is already in the past ──
+    # e.g. "el sábado a las 11" cuando HOY es sábado y esa hora ya pasó → próximo sábado.
+    try:
+        if start_datetime <= now:
+            start_datetime = start_datetime + timedelta(days=7)
+    except TypeError:
+        # tz-aware vs naive mismatch — normalize to compare
+        from app.utils.date_parser import get_argentina_now as _ar_now
+        if start_datetime.tzinfo is None:
+            start_datetime = start_datetime.replace(tzinfo=_ar_now().tzinfo)
+        if start_datetime <= _ar_now():
+            start_datetime = start_datetime + timedelta(days=7)
+
     # ── Business hours check ────────────────────────────────────
     weekday = start_datetime.weekday()
     hour = start_datetime.hour

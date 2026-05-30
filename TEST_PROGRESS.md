@@ -24,22 +24,24 @@ tweakear, pushear a Render y re-testear hasta que pasen. Verificar con: `/simula
 - Domingo / fuera de 9-18 → rechazo + repregunta (no agenda).
 - Nunca "confirmación" de cita sin que `tools_called` incluya `schedule_visit`.
 
-## Scoreboard (V1, escenarios ejecutables)
+## Scoreboard (V1, escenarios ejecutables) — actualizado deploy a813b9f
 | Escenario | Estado | Nota |
 |-----------|--------|------|
-| C1 agendar (núcleo) | 🟢 | `e907773` → schedule_visit se llama; "lunes 11" → 2026-06-01 11:00 ART verificado en DB (cita user 3397c49f) |
-| C1 rechazo horario | ⬜ pend | falta probar domingo / fuera-de-hora |
-| C5 fallbacks      | ⬜ pend | |
-| C6 cambio tipo    | ⬜ pend | |
-| C8 trampas agendado | ⬜ pend | |
-| C10 reprog+agendar | ⬜ pend | |
+| C1 agendar núcleo + rechazo | 🟢 | domingo/21:00 rechaza; "lunes"+"a las 3 de la tarde" (turnos separados) → DB 2026-06-01 15:00 ART ✅ |
+| C5 fallbacks      | 🟢 | degrada con gracia, ofrece alternativas |
+| C8 trampas        | 🟢 | ordinal "segunda" ✅; "dentro de 3 dias a las 5" → DB 2026-06-02 17:00 ART ✅ |
+| C6 cambio tipo    | 🟡 verificando | fix `5afe41d`: faq_zonas ya no captura "casas por esa zona" |
+| C10 ordinal "ultimo" | 🟡 verificando | fix `5afe41d`: ordinal resuelve "el ultimo" (idx=len-1) |
 
-## Bugs encontrados / fixes
-1. **bsuid column missing** (migración con backfill `extra_data ? 'bsuid'` rollbackeaba la tx) → removido backfill. ✅ commit previo.
-2. **context_aggregator exigía teléfono** → blockers = día+horario. ✅ commit previo.
-3. **scheduling specialist (coordinator.py) exigía teléfono** (reglas 8/9) → `schedule_visit` nunca se llamaba. ✅ `e907773` (deploying).
-   - Pendiente verificar: re-test con flujo confirm.
-   - Sospecha latente: **name loop** — el especialista NO recibe el historial de conversación; depende del belief (regex) que no extrae nombres "pelados" ("leandro gomez") → puede re-pedir el nombre. Si el re-test lo muestra, fix = pasar historial al especialista o mejorar extracción.
+## Bugs encontrados / fixes (todos pusheados)
+1. **bsuid column missing** (backfill rollbackeaba la tx) → removido. ✅
+2. **context_aggregator exigía teléfono** → blockers día+horario. ✅
+3. **scheduling specialist (coordinator.py) exigía teléfono** (reglas 8/9) → tool nunca se llamaba. ✅ `e907773`
+4. **scheduling multi-turno** (día y hora en turnos distintos no se combinaban) → **booking determinístico** en persist block usando belief (router.py) + **TIME_PATTERN** rico ("a las 3 de la tarde") + DAY_PATTERN "dentro de N dias". ✅ `a813b9f`
+5. **ordinal "el ultimo"** no resuelto + **faq_zonas** capturaba búsquedas → ✅ `5afe41d` (verificando)
 
-## Próximo paso
-Esperar deploy `e907773` live → re-test scheduling con confirm → verificar cita en `/admin/appointments` (fecha correcta, 1 sola). Luego barrer C1/C5/C6/C8/C10 de V1.
+## Pendiente / próximos pasos
+- Confirmar C6/C10 verde (deploy `5afe41d`).
+- Barrer V2–V15 de los escenarios ejecutables (variation-specific bugs).
+- **Scope B (grande):** wirear 8 tools faltantes en V2 para C2/C3/C4/C7/C9 (reschedule/cancel/get_my_appointments/compare/recommend/refine/preferences/save_lead/handoff). Hoy degradan (no crashean) pero no completan.
+- Limpieza: borrar citas/leads de test; **rotar ADMIN_API_KEY** (es el placeholder) y los secrets pegados en chat.
