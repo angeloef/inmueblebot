@@ -29,64 +29,27 @@ _schema_ensured = False
 
 
 async def _ensure_schema(session: AsyncSession) -> None:
-    """Run IF NOT EXISTS column migrations so persistence doesn't crash."""
+    """Verify schema readiness. Actual migrations run in admin.py startup.
+    If columns are missing, admin.py's _run_startup_migration hasn't fired
+    yet — the caller should gracefully degrade until an admin endpoint
+    triggers the migration."""
     global _schema_ensured
     if _schema_ensured:
         return
+    _schema_ensured = True  # only log once
     try:
         from sqlalchemy import text as _text
-        # Messages table — every column the model expects
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender "
-            "VARCHAR(20) NOT NULL DEFAULT 'user'"
+        result = await session.execute(_text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'messages' AND column_name = 'id'"
         ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS msg_metadata JSONB"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(500)"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS timestamp "
-            "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS role "
-            "VARCHAR(20) NOT NULL DEFAULT 'user'"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID"
-        ))
-        # Ensure auto-increment on messages.id (may be missing if column
-        # was added via ALTER TABLE rather than original CREATE TABLE)
-        await session.execute(_text(
-            "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE messages ALTER COLUMN id "
-            "SET DEFAULT nextval('messages_id_seq')"
-        ))
-        await session.execute(_text(
-            "SELECT setval('messages_id_seq', "
-            "COALESCE((SELECT MAX(id) FROM messages), 1))"
-        ))
-        # Conversations table
-        await session.execute(_text(
-            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_paused "
-            "BOOLEAN NOT NULL DEFAULT FALSE"
-        ))
-        await session.execute(_text(
-            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ"
-        ))
-        await session.commit()
-        _schema_ensured = True
-        logger.info("Conversation schema self-healing complete")
+        if not result.scalar():
+            logger.warning(
+                "messages table not ready — hit any /admin endpoint to "
+                "trigger startup migration, then retry"
+            )
     except Exception as e:
-        logger.warning("Schema self-healing skipped: %s", e)
-        _schema_ensured = True  # Don't retry on every message
+        logger.warning("Schema readiness check skipped: %s", e)
 
 # ═══════════════════════════════════════════════════════════════════════
 # SSE Pub/Sub — in-memory
