@@ -35,6 +35,7 @@ async def _ensure_schema(session: AsyncSession) -> None:
         return
     try:
         from sqlalchemy import text as _text
+        # Messages table — every column the model expects
         await session.execute(_text(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender "
             "VARCHAR(20) NOT NULL DEFAULT 'user'"
@@ -45,6 +46,21 @@ async def _ensure_schema(session: AsyncSession) -> None:
         await session.execute(_text(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(500)"
         ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS timestamp "
+            "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS role "
+            "VARCHAR(20) NOT NULL DEFAULT 'user'"
+        ))
+        await session.execute(_text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID"
+        ))
+        # Conversations table
         await session.execute(_text(
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_paused "
             "BOOLEAN NOT NULL DEFAULT FALSE"

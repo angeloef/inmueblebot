@@ -399,6 +399,27 @@ def _run_startup_migration(engine):
             except Exception as e:
                 logger.warning(f"Migration Fix 25: {e}")
 
+            # ── Fix 26: Ensure all core message columns exist ──────────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
+                    "timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS role "
+                    "VARCHAR(20) NOT NULL DEFAULT 'user'"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
+                    "conversation_id UUID"
+                ))
+                logger.info("Migration Fix 26: messages core columns ensured")
+            except Exception as e:
+                logger.warning(f"Migration Fix 26: {e}")
+
             conn.commit()
         _migration_done = True
     except Exception as exc:
