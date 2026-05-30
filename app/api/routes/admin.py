@@ -2124,6 +2124,28 @@ async def admin_conversation_stream(
 
 # ── Data cleanup ───────────────────────────────────────────────────────
 
+# ── Debug: probe messages table schema ─────────────────────────────────
+@router.get("/debug/messages-schema")
+async def debug_messages_schema(_: bool = Depends(verify_admin_api_key)):
+    """Return messages table column info for debugging."""
+    from app.db.session import async_session_factory
+    from sqlalchemy import text as _text
+    async with async_session_factory() as db:
+        cols = await db.execute(_text(
+            "SELECT column_name, data_type, column_default, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_name = 'messages' ORDER BY ordinal_position"
+        ))
+        seq = await db.execute(_text(
+            "SELECT sequence_name FROM information_schema.sequences "
+            "WHERE sequence_name = 'messages_id_seq'"
+        ))
+        return {
+            "columns": [dict(zip(["name","type","default","nullable"], row)) 
+                       for row in cols.fetchall()],
+            "has_sequence": seq.scalar() is not None,
+        }
+
 CLIENT_TABLES = [
     "appointments",
     "conversations",
