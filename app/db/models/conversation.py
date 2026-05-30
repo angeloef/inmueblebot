@@ -5,7 +5,7 @@ Representa una sesión de chat entre usuario y el bot.
 from datetime import datetime
 from typing import Optional, Dict, List
 from uuid import uuid4
-from sqlalchemy import String, DateTime, ForeignKey, Index, func
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Index, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -48,6 +48,21 @@ class Conversation(Base):
         default="idle",
         server_default="idle",
         comment="Estado: idle, qualifying, searching, viewing, booking, closed"
+    )
+
+    # Bot paused — when True, bot does NOT auto-respond to inbound messages
+    bot_paused: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default='false',
+        comment="Bot paused: when true, bot does not auto-respond"
+    )
+
+    # Last message timestamp — updated on every new message
+    last_message_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp of the last message in this conversation"
     )
 
     # Contexto de la conversación (datos acumulados)

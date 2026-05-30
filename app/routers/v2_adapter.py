@@ -8,7 +8,7 @@ from typing import Optional
 
 from loguru import logger
 
-from app.routers.router import route_message
+from app.routers.router import route_message_with_persistence as route_message
 from app.agents.schemas import ChatResponse
 
 
@@ -77,6 +77,19 @@ async def process_turn_v2(
             "router_label": router_label,
             "latency_ms": latency_ms,
         }
+
+        # ── request_human_assistance auto-pause ─────────────────────────
+        # When the bot calls request_human_assistance, auto-pause the bot
+        # so the admin knows a handoff was requested and can take over.
+        if "request_human_assistance" in (response.tools_called or []):
+            try:
+                from app.db.session import async_session_factory
+                from app.services.conversation_service import upsert_conversation, toggle_bot
+                async with async_session_factory() as _db:
+                    _conv_id = await upsert_conversation(_db, canonical_id, phone=phone)
+                    await toggle_bot(_db, _conv_id)  # Sets bot_paused=True
+            except Exception as _ha_err:
+                logger.warning(f"[V2] Auto-pause on handoff failed: {_ha_err}")
 
         # ── Build response_plan for multi-message image sending ────────────
         if images:

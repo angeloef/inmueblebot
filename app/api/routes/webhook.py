@@ -512,6 +512,23 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 )
                 continue
 
+            # ── Bot-paused check (WhatsApp Inbox) ────────────────────────
+            # If the admin has paused the bot for this user, save the message
+            # to the conversation but don't process with the bot.
+            if use_v2:
+                try:
+                    from app.db.session import async_session_factory
+                    from app.services.conversation_service import is_bot_paused, upsert_conversation, save_user_message_only
+                    async with async_session_factory() as _db:
+                        if await is_bot_paused(_db, phone):
+                            logger.info(f"[Webhook] Bot paused for {phone}, saving message without response")
+                            canonical_id = msg.get("_bsuid") or phone
+                            _conv_id = await upsert_conversation(_db, canonical_id, phone=phone)
+                            await save_user_message_only(_db, _conv_id, text)
+                            continue
+                except Exception as _bp_err:
+                    logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
+
             # ── v2.0 Router Feature Flag ──────────────────────────────────
             use_v2 = _resolve_use_v2_router(settings)
             if use_v2:

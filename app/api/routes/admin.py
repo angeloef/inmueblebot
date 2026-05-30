@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
@@ -352,6 +353,42 @@ def _run_startup_migration(engine):
                 logger.info("Migration Fix 20: whatsapp_phone unique constraint dropped")
             except Exception as e:
                 logger.warning(f"Migration Fix 20 (drop unique): {e}")
+
+            # ── Fix 21: Add sender column to messages table ───────────────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender VARCHAR(20) NOT NULL DEFAULT 'user'"
+                ))
+                logger.info("Migration Fix 21: messages.sender added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 21: {e}")
+
+            # ── Fix 22: Add msg_metadata column to messages table ─────────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS msg_metadata JSONB"
+                ))
+                logger.info("Migration Fix 22: messages.msg_metadata added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 22: {e}")
+
+            # ── Fix 23: Add bot_paused column to conversations table ──────────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_paused BOOLEAN NOT NULL DEFAULT FALSE"
+                ))
+                logger.info("Migration Fix 23: conversations.bot_paused added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 23: {e}")
+
+            # ── Fix 24: Add last_message_at column to conversations table ─────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ"
+                ))
+                logger.info("Migration Fix 24: conversations.last_message_at added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 24: {e}")
 
             conn.commit()
         _migration_done = True
@@ -1882,6 +1919,161 @@ def update_bot_settings(
     except Exception:
         pass
     return {"status": "updated", "keys": list(updates.keys())}
+
+
+# ── WhatsApp Inbox — Conversations (Admin API) ──────────────────────────
+
+import uuid as _uuid
+import asyncio
+import json
+
+
+class ConversationReply(BaseModel):
+    text: str
+
+
+def _make_async_session():
+    """Create and return an async SQLAlchemy session for admin endpoints."""
+    from app.db.session import async_session_factory
+    return async_session_factory()
+
+
+@router.get("/conversations")
+async def admin_list_conversations(
+    limit: int = 50,
+    offset: int = 0,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """List all conversations, sorted by last_message_at DESC."""
+    from app.services.conversation_service import list_conversations as _list
+    async with _make_async_session() as db:
+        conversations = await _list(db, limit=limit, offset=offset)
+    return {"conversations": conversations, "total": len(conversations)}
+
+
+@router.get("/conversations/{conversation_id}")
+async def admin_get_conversation(
+    conversation_id: str,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Get conversation detail with all messages."""
+    from app.services.conversation_service import get_conversation as _get
+    async with _make_async_session() as db:
+        conv = await _get(db, _uuid.UUID(conversation_id))
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conv
+
+
+@router.post("/conversations/{conversation_id}/reply")
+async def admin_reply_to_conversation(
+    conversation_id: str,
+    body: ConversationReply,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Admin replies to a conversation — sends WhatsApp message + persists."""
+    from app.integrations.whatsapp import whatsapp_client
+    from app.api.routes.webhook import format_phone_number
+    from app.services.conversation_service import (
+        get_user_phone_for_conversation,
+        save_admin_message,
+    )
+
+    conv_uuid = _uuid.UUID(conversation_id)
+
+    async with _make_async_session() as db:
+        # Get user phone
+        user_phone = await get_user_phone_for_conversation(db, conv_uuid)
+        if not user_phone:
+            raise HTTPException(status_code=404, detail="User not found for this conversation")
+
+        # Send WhatsApp message
+        phone_to = format_phone_number(user_phone)
+        whatsapp_result = None
+        whatsapp_error = None
+        try:
+            whatsapp_result = await whatsapp_client.send_message(to=phone_to, message=body.text)
+            if isinstance(whatsapp_result, dict) and whatsapp_result.get("error"):
+                whatsapp_error = whatsapp_result.get("error")
+        except Exception as e:
+            whatsapp_error = str(e)
+
+        # Save admin message (even if WhatsApp send fails)
+        saved = await save_admin_message(db, conv_uuid, body.text)
+
+    result = {
+        "message_id": saved["id"],
+        "sent_at": saved["timestamp"],
+    }
+    if whatsapp_result and not whatsapp_error:
+        msg_id = (whatsapp_result.get("messages") or [{}])[0].get("id", "")
+        result["whatsapp_message_id"] = msg_id
+    if whatsapp_error:
+        result["whatsapp_error"] = whatsapp_error
+
+    return result
+
+
+@router.patch("/conversations/{conversation_id}/toggle-bot")
+async def admin_toggle_bot(
+    conversation_id: str,
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Toggle bot_paused on a conversation."""
+    from app.services.conversation_service import toggle_bot as _toggle
+    async with _make_async_session() as db:
+        try:
+            result = await _toggle(db, _uuid.UUID(conversation_id))
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    return result
+
+
+@router.get("/conversations/{conversation_id}/stream")
+async def admin_conversation_stream(
+    conversation_id: str,
+    token: str = "",
+    x_api_key: str = Header(None, alias="x-api-key"),
+):
+    """SSE stream for real-time conversation updates.
+
+    Accepts API key via ?token= query parameter (for EventSource compatibility
+    in the browser) or via x-api-key header.
+    """
+    from app.services.conversation_service import subscribe, unsubscribe
+
+    # Validate API key — accept header OR query param
+    settings = get_settings()
+    api_key = x_api_key or token
+    if not api_key or api_key != settings.ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    q = subscribe(conversation_id)
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    # Wait for event with 30s timeout for keepalive
+                    data = await asyncio.wait_for(q.get(), timeout=30)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive ping
+                    yield ": ping\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            unsubscribe(conversation_id, q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Data cleanup ───────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 from sqlalchemy import String, Text, DateTime, ForeignKey, Index, Integer, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -39,6 +39,21 @@ class Message(Base):
         String(20),
         nullable=False,
         comment="Rol: user, assistant, system"
+    )
+
+    # Sender: who sent the message — user, bot, or admin
+    sender: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default='user',
+        comment="Sender: user, bot, admin"
+    )
+
+    # Metadata JSONB — stores tools_called, router, latency_ms, confidence for bot messages
+    msg_metadata: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Metadata: tools_called, router, latency_ms, confidence"
     )
 
     # Contenido del mensaje

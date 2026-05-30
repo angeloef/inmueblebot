@@ -651,3 +651,44 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                 prop_m = re.search(r"propiedad\s*(?:#|n[úu]mero|nro)?\s*\[?(\d+)\]?", response_text)
                 if prop_m:
                     belief.selected_property_id = int(prop_m.group(1))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# WhatsApp Inbox — Conversation persistence wrapper
+# ═══════════════════════════════════════════════════════════════════════
+# Wraps route_message() to persist the turn to the database after
+# every successful bot response.  v2_adapter.py calls this instead of
+# route_message() directly.
+
+from app.db.session import async_session_factory
+from app.services.conversation_service import upsert_conversation, save_turn
+
+
+async def route_message_with_persistence(
+    message: str, session_id: str, phone: str = ""
+) -> tuple:
+    """Call route_message() and persist the turn to DB on success."""
+    result = await route_message(message, session_id, phone)
+    response, belief, router_label, latency_ms = result
+
+    # Do NOT persist if the response is an error or the message is empty
+    if not response or not response.response:
+        return result
+
+    try:
+        async with async_session_factory() as db:
+            conv_id = await upsert_conversation(db, session_id, phone=phone)
+            await save_turn(
+                db,
+                conv_id,
+                user_message=message,
+                bot_response=response.response,
+                tools_called=response.tools_called or [],
+                router=router_label or "",
+                latency_ms=latency_ms or 0,
+                confidence=response.confidence or 0,
+            )
+    except Exception as e:
+        logger.error(f"[Router] Failed to persist turn: {e}")
+
+    return result
