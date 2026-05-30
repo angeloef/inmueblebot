@@ -378,6 +378,33 @@ async def route_message(
         # Check if user is switching topics away from scheduling
         topic_switch_kw = r"\b(busco|quiero|necesito|buscando|me interesa|mostrame|propiedades|lista|requisitos|garantía|precio|alquilar|comprar)\b"
         if not re.search(topic_switch_kw, message.lower().strip()):
+            # Deterministic booking: if we already have name + day + time + property and
+            # the user confirms, call schedule_visit directly with the belief fields.
+            # The LLM specialist is unreliable assembling a date split across turns.
+            _confirm = re.search(
+                r"\b(si|s[íi]|dale|perfecto|ok|okay|genial|listo|confirmo|de una|joya|b[áa]rbaro|buenisimo|me sirve)\b",
+                message.lower(),
+            )
+            if (_confirm and belief.scheduling_name and belief.scheduling_day
+                    and belief.scheduling_time and belief.selected_property_id):
+                from app.tools.v2.schedule_visit import schedule_visit as _sv
+                _txt = await _sv(
+                    property_id=belief.selected_property_id,
+                    nombre=belief.scheduling_name,
+                    dia=belief.scheduling_day,
+                    horario=belief.scheduling_time,
+                )
+                belief.last_tool_called = "schedule_visit"
+                _failed = any(m in _txt for m in ("⚠️", "No pude", "Los domingos", "El horario de las", "Tuve un problema", "fuera de"))
+                if not _failed:
+                    _clear_scheduling_state(belief)
+                    clear_saved_state(session_id)
+                await save_working_memory(belief)
+                latency = (time.perf_counter() - t0) * 1000
+                return (
+                    ChatResponse(response=_txt, tools_called=["schedule_visit"], confidence=0.95),
+                    belief, "specialist::sched-deterministic", round(latency, 2),
+                )
             from app.agents.coordinator import _build_scheduling_context as _bsc, SPECIALISTS
             sched_context = _bsc(belief)
             full_context = sched_context + "\n" + (context_prompt or "")

@@ -51,12 +51,17 @@ PHONE_PATTERN = re.compile(
 )
 
 DAY_PATTERN = re.compile(
-    r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[nñ]ana|tarde|pasado ma[nñ]ana)\b",
+    r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|pasado ma[nñ]ana|"
+    r"(?:dentro de|en)\s+\d+\s+d[ií]as?|ma[nñ]ana)\b",
     re.IGNORECASE,
 )
 
 TIME_PATTERN = re.compile(
-    r"\b(\d{1,2}[:h]\d{2}|\d{1,2}\s*(?:am|pm)|ma[nñ]ana|tarde|noche|mediod[ií]a)\b",
+    r"((?:a las|las)\s*\d{1,2}(?:[:h]\d{2})?(?:\s*y\s*media)?(?:\s*de la\s*(?:ma[nñ]ana|tarde|noche))?"
+    r"|\d{1,2}[:h]\d{2}"
+    r"|\d{1,2}\s*de la\s*(?:ma[nñ]ana|tarde|noche)"
+    r"|\d{1,2}\s*(?:am|pm|hs)"
+    r"|mediod[ií]a|ma[nñ]ana|tarde|noche)",
     re.IGNORECASE,
 )
 
