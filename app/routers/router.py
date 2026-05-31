@@ -554,9 +554,23 @@ async def route_message(
         sched_context = _bsc_fb(belief)
         full_context = sched_context + "\n" + (context_prompt or "")
         result, specialist_name = await coordinate(message, session_id, full_context)
-        save_specialist_state(session_id, "scheduling")
         if result.tools_called:
             belief.last_tool_called = result.tools_called[-1]
+        # After a successful booking, clear scheduling state so the next turn doesn't
+        # re-enter the scheduling loop (e.g. "me confirmas" should check appointments,
+        # not try to book again). On failure/partial, keep state for the next turn.
+        if "schedule_visit" in (result.tools_called or []):
+            _failed = any(m in result.response for m in (
+                "⚠️", "No pude", "Los domingos", "El horario de las",
+                "Tuve un problema", "fuera de", "está ocupado", "Faltan datos",
+            ))
+            if not _failed:
+                _clear_scheduling_state(belief)
+                clear_saved_state(session_id)
+            else:
+                save_specialist_state(session_id, "scheduling")
+        else:
+            save_specialist_state(session_id, "scheduling")
     else:
         multistep_result = await process_message_multistep(message, session_id, context_prompt)
         result = multistep_result

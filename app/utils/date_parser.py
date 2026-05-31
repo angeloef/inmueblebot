@@ -235,7 +235,17 @@ def _parse_time_advanced(user_text: str) -> Tuple[Optional[int], Optional[int]]:
             hour += 12
         if 0 <= hour <= 23:
             return hour, 0
-    
+
+    # "X de la mañana/tarde/noche" (sin "a las") — ej: "11 de la mañana", "3 de la tarde"
+    match = re.search(r'(\d{1,2})\s+de\s+la\s+(mañana|tarde|noche)', user_text)
+    if match:
+        hour = int(match.group(1))
+        period = match.group(2)
+        if period in ("tarde", "noche") and hour < 12:
+            hour += 12
+        if 0 <= hour <= 23:
+            return hour, 0
+
     # === Time periods ===
     if re.search(r'(?:por|a)\s*la\s*mañana', user_text):
         return 10, 0
@@ -516,10 +526,11 @@ def _extract_time_from_text(user_text: str) -> Optional[Tuple[int]]:
     text = user_text.lower()
     
     patterns = [
-        r'(\d{1,2}):(\d{2})',      # 15:30
-        r'a\s*las?\s*(\d{1,2})(?::(\d{2}))?',  # a las 15, a las 15:30
-        r'(\d{1,2})\s*(am|pm)',     # 3pm, 10am
-        r'(\d{1,2})\s*hs',           # 15hs
+        r'(\d{1,2}):(\d{2})',                               # 15:30
+        r'a\s*las?\s*(\d{1,2})(?::(\d{2}))?',               # a las 15, a las 15:30
+        r'(\d{1,2})\s*(am|pm)',                              # 3pm, 10am
+        r'(\d{1,2})\s*hs',                                   # 15hs
+        r'(\d{1,2})\s+de\s+la\s+(?:mañana|tarde|noche)',    # 11 de la mañana
     ]
     
     for pattern in patterns:
@@ -674,6 +685,16 @@ def _parse_time(user_text: str) -> Optional[Tuple[int, int]]:
     # Debe ir ANTES que los fallbacks genéricos para que "a las 8 de la mañana"
     # retorne 8:00 y no el fallback hardcodeado 10:00.
     match = re.search(r'a\s*las\s*(\d{1,2})\s*de\s*la\s*(mañana|tarde|noche)', user_text)
+    if match:
+        hour = int(match.group(1))
+        period = match.group(2).lower()
+        if period in ("tarde", "noche") and hour < 12:
+            hour += 12
+        if 0 <= hour <= 23:
+            return hour, 0
+
+    # "X de la mañana/tarde/noche" (sin "a las") — ej: "11 de la mañana", "3 de la tarde"
+    match = re.search(r'(\d{1,2})\s+de\s+la\s+(mañana|tarde|noche)', user_text)
     if match:
         hour = int(match.group(1))
         period = match.group(2).lower()

@@ -83,9 +83,16 @@ REGLAS FUNDAMENTALES:
 
 10. Respondé en español argentino, cálido y eficiente. Guiá al usuario naturalmente.
 
-11. Para CONSULTAR citas: usá get_my_appointments (sin parámetros).
-12. Para CANCELAR una cita: usá cancel_appointment(cual="pista del día o propiedad").
-13. Para REPROGRAMAR una cita: usá reschedule_appointment(dia="nuevo día", horario="nueva hora").
+11. Para CONSULTAR/CONFIRMAR citas existentes — frases como "qué día me agendé",
+    "me confirmas la visita", "tengo una cita?", "cuándo es mi visita", "me quedo agendado":
+    → Llamá get_my_appointments (sin parámetros). NUNCA llames schedule_visit en este caso.
+
+12. Para CANCELAR una cita — frases como "cancelala", "no puedo ir", "me surgió algo",
+    "dejalo sin efecto": → Llamá cancel_appointment(cual="pista del día o propiedad").
+
+13. Para REPROGRAMAR — frases como "pasala para el jueves", "movela al viernes",
+    "cambiar al lunes", "mejor el martes": → Llamá reschedule_appointment(dia, horario).
+    NUNCA uses schedule_visit para cambiar una cita existente.
     Si no hay citas para cancelar/reprogramar, informalo y ofrecé agendar una nueva.""",
         tool_names=["schedule_visit", "get_my_appointments", "cancel_appointment", "reschedule_appointment"],
     ),
