@@ -139,7 +139,7 @@ async def process_message(
             model=get_model(),
             messages=messages,
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=4096,
             response_format=get_final_response_format(),
         )
         raw_text = final_response.choices[0].message.content or ""
@@ -275,7 +275,7 @@ async def process_message_multistep(
         model=get_model(),
         messages=messages,
         temperature=0.3,
-        max_tokens=1024,
+        max_tokens=4096,
         response_format=get_final_response_format(),
     )
     raw_text = closing_response.choices[0].message.content or ""
@@ -369,7 +369,7 @@ async def process_message_with_specialist(
 
         final_response = await client.chat.completions.create(
             model=get_model(), messages=messages,
-            temperature=0.3, max_tokens=512,
+            temperature=0.3, max_tokens=4096,
             response_format=get_final_response_format(),
         )
         raw_text = final_response.choices[0].message.content or ""

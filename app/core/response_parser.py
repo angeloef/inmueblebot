@@ -57,9 +57,11 @@ def parse_llm_response(raw_text: str) -> tuple[str, float]:
     """Parse the LLM's response into (text, confidence).
 
     Tries multiple strategies:
-    1. Clean JSON parse (json_schema output)
+    1. Clean JSON parse
+    1b. Normalize unescaped newlines then parse (handles some LLMs)
     2. JSON embedded in markdown code blocks
     3. Regex extraction of JSON object
+    3b. Truncated JSON — extract respuesta content even if JSON is incomplete
     4. Fallback: treat entire text as response, confidence=0.5
     """
     if not raw_text or not raw_text.strip():
@@ -70,6 +72,16 @@ def parse_llm_response(raw_text: str) -> tuple[str, float]:
     # Strategy 1: Direct JSON parse
     try:
         data = json.loads(text)
+        if isinstance(data, dict) and "respuesta" in data:
+            return _safe_extract(data)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 1b: Fix unescaped literal newlines inside JSON strings
+    # Some LLMs (DeepSeek) output JSON with raw newlines inside string values.
+    try:
+        fixed = _fix_json_newlines(text)
+        data = json.loads(fixed)
         if isinstance(data, dict) and "respuesta" in data:
             return _safe_extract(data)
     except (json.JSONDecodeError, ValueError):
@@ -95,6 +107,21 @@ def parse_llm_response(raw_text: str) -> tuple[str, float]:
         except (json.JSONDecodeError, ValueError):
             pass
 
+    # Strategy 3b: Truncated JSON — extract whatever content is in the respuesta field
+    # Handles the case where the JSON was cut off mid-string (token limit exceeded).
+    if '"respuesta"' in text:
+        m = re.search(r'"respuesta"\s*:\s*"([\s\S]+)', text)
+        if m:
+            content = m.group(1)
+            # Unescape JSON string escapes
+            content = content.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+            # Strip trailing incomplete JSON characters (cut-off JSON debris)
+            content = content.rstrip('",\n\\} \t')
+            if content:
+                conf_m = re.search(r'"confianza"\s*:\s*([\d.]+)', text)
+                conf = float(conf_m.group(1)) if conf_m else 0.7
+                return content.strip(), conf
+
     # Strategy 4: Try to find any JSON object
     json_match = re.search(r"\{[^{}]*\}", text)
     if json_match:
@@ -119,3 +146,37 @@ def _safe_extract(data: dict) -> tuple[str, float]:
     except (TypeError, ValueError):
         confianza = 0.5
     return respuesta, max(0.0, min(1.0, confianza))
+
+
+def _fix_json_newlines(text: str) -> str:
+    """Replace literal newlines inside JSON string values with \\n escape sequences.
+
+    Some LLMs return JSON with raw newlines inside strings, making it invalid.
+    This function walks the text character by character and escapes newlines that
+    appear inside JSON string values.
+    """
+    result = []
+    in_string = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == '\\' and in_string:
+            result.append(c)
+            i += 1
+            if i < len(text):
+                result.append(text[i])
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            result.append(c)
+            i += 1
+            continue
+        if c == '\n' and in_string:
+            result.append('\\n')
+        elif c == '\r' and in_string:
+            result.append('\\r')
+        else:
+            result.append(c)
+        i += 1
+    return ''.join(result)
