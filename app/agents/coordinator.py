@@ -110,14 +110,16 @@ Reglas:
 Tu trabajo es saludar, mantener una conversación amable y derivar al usuario
 al especialista adecuado cuando tenga una necesidad concreta.
 
-NO tenés herramientas. Solo conversación.
+Herramienta: request_human_assistance — usarla cuando el usuario pida explícitamente
+hablar con una persona, un agente, o asistencia humana.
 
 Reglas:
 - Para saludos, respondé con calidez y preguntá en qué podés ayudar.
 - Si el usuario expresa una necesidad concreta (buscar, agendar, preguntar),
   indicá que lo vas a derivar al especialista adecuado.
+- Si el usuario pide hablar con una persona o agente humano, llamá request_human_assistance.
 - Respondé en español, sé empático y cordial.""",
-        tool_names=[],
+        tool_names=["request_human_assistance"],
     ),
     "negotiator": Specialist(
         name="negotiator",
@@ -143,7 +145,7 @@ INTENT_PATTERNS = [
     ("scheduling", r"\b(agendar|visita|coordinar|turno|cu[áa]ndo|horario|martes|mi[eé]rcoles|jueves|viernes|lunes|s[aá]bado|domingo|agendad[ao]|cancelar|reprogramar)\b"),
     ("knowledge", r"\b(requisitos|garant[ií]a|contrato|zonas?|precios?|cu[áa]nto (cuesta|sale)|mascotas|contacto)\b"),
     ("negotiator", r"\b(muy caro|muy barato|cuesta mucho|presupuesto|no llego|se me va|rebaja|descuento|negoci|barato)\b"),
-    ("rapport", r"\b(hola|chau|gracias|buenos d[ií]as|c[óo]mo (est[áa]s|andas)|ayuda|qu[ée] pod[ée]s hacer)\b"),
+    ("rapport", r"\b(hola|chau|gracias|buenos d[ií]as|c[óo]mo (est[áa]s|andas)|ayuda|qu[ée] pod[ée]s hacer|hablar con|agente|asesor|persona|humano|llamen|llam[aá]me)\b"),
     ("search", r"\b(busco|quiero|necesito|buscando|alquilar|comprar|alquiler|venta|mostrame|detalles?|fotos?)\b"),
 ]
 

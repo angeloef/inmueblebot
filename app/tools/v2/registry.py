@@ -13,6 +13,7 @@ from app.tools.v2.schedule_visit import schedule_visit
 from app.tools.v2.get_my_appointments import get_my_appointments
 from app.tools.v2.cancel_appointment import cancel_appointment
 from app.tools.v2.reschedule_appointment import reschedule_appointment
+from app.tools.v2.request_human_assistance import request_human_assistance
 
 # Registry: tool name → (function, is_async, schema dict)
 TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
@@ -270,6 +271,28 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                         "dia": {"type": "string", "description": "Nuevo día (ej 'jueves', 'martes 02/06', 'mañana')."},
                         "horario": {"type": "string", "description": "Nuevo horario (ej '15:00', 'a las 3 de la tarde')."},
                         "cual": {"type": "string", "description": "Pista para elegir cuál reprogramar si hay varias."},
+                    },
+                },
+            },
+        },
+    ),
+    "request_human_assistance": (
+        request_human_assistance,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "request_human_assistance",
+                "description": (
+                    "Transfiere la conversación a un agente humano. Usar cuando el usuario pide hablar con una persona, "
+                    "el bot no puede resolver el problema, o la situación requiere atención personalizada. "
+                    "El bot se pausa automáticamente después de llamar esta herramienta."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {"type": "string", "description": "Por qué se necesita un agente humano."},
+                        "message": {"type": "string", "description": "Mensaje personalizado opcional para el usuario."},
                     },
                 },
             },

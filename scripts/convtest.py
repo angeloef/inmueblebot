@@ -57,6 +57,10 @@ SCENARIOS = [
         "me interesa el ultimo de la lista, dame los detalles",      # ordinal "ultimo"
         "lo quiero ver el sabado a las 11 de la mañana, soy ana lopez",  # multi-campo
     ]),
+    ("C7-handoff", [
+        "hola, quiero hablar con un asesor",                          # handoff request_human_assistance
+        "es urgente, necesito hablar con una persona",                # insistencia → confirm handoff
+    ]),
 ]
 
 
