@@ -541,6 +541,11 @@ function ChatView({ conversationId }) {
           // Remove optimistic message on error
           setMessages(prev => prev.filter(m => m.id !== optimistic.id));
         },
+        onSuccess: () => {
+          // Remove optimistic temp messages on success to prevent ghost double messages
+          // (onSettled will refetch and re-sync, but we clean up early to avoid flicker)
+          setMessages(prev => prev.filter(m => !String(m.id).startsWith('temp-')));
+        },
       }
     );
   }, [inputText, replyMut, conversationId]);
