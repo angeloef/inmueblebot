@@ -140,7 +140,7 @@ Reglas:
 # ── Intent classification (regex-first, LLM-fallback) ─────────
 
 INTENT_PATTERNS = [
-    ("scheduling", r"\b(agendar|visita|coordinar|turno|cu[áa]ndo|horario|martes|miércoles|jueves|viernes|lunes|s[áa]bado|domingo)\b"),
+    ("scheduling", r"\b(agendar|visita|coordinar|turno|cu[áa]ndo|horario|martes|mi[eé]rcoles|jueves|viernes|lunes|s[aá]bado|domingo|agendad[ao]|cancelar|reprogramar)\b"),
     ("knowledge", r"\b(requisitos|garant[ií]a|contrato|zonas?|precios?|cu[áa]nto (cuesta|sale)|mascotas|contacto)\b"),
     ("negotiator", r"\b(muy caro|muy barato|cuesta mucho|presupuesto|no llego|se me va|rebaja|descuento|negoci|barato)\b"),
     ("rapport", r"\b(hola|chau|gracias|buenos d[ií]as|c[óo]mo (est[áa]s|andas)|ayuda|qu[ée] pod[ée]s hacer)\b"),

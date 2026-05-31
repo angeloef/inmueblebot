@@ -507,11 +507,32 @@ async def route_message(
                 if result.tools_called:
                     belief.last_tool_called = result.tools_called[-1]
             else:
-                multistep_result = await process_message_multistep(message, session_id, context_prompt)
-                result = multistep_result
-                specialist_name = "search"
-                _update_belief_from_result(belief, result)
-            
+                # Secondary scheduling check: messages like "lo quiero ver el sabado a las 11"
+                # arrive via S1 property-selection path but need the scheduling specialist,
+                # not generic multistep (which has no scheduling context and confuses day names).
+                _visit_kw = re.search(
+                    r"\b(quiero ver|ir a ver|visitarlo|visitarla|coordinar|agendar)\b",
+                    message.lower(),
+                )
+                _day_kw = re.search(
+                    r"\b(hoy|ma[nñ]ana|martes|mi[eé]rcoles|jueves|viernes|lunes|s[aá]bado|domingo)\b",
+                    message.lower(),
+                )
+                if _visit_kw and _day_kw:
+                    from app.agents.coordinator import _build_scheduling_context as _bsc2
+                    sched_context = _bsc2(belief)
+                    full_context = sched_context + "\n" + (context_prompt or "")
+                    result, specialist_name = await coordinate(message, session_id, full_context)
+                    _update_belief_from_result(belief, result)
+                    save_specialist_state(session_id, "scheduling")
+                    if result.tools_called:
+                        belief.last_tool_called = result.tools_called[-1]
+                else:
+                    multistep_result = await process_message_multistep(message, session_id, context_prompt)
+                    result = multistep_result
+                    specialist_name = "search"
+                    _update_belief_from_result(belief, result)
+
             latency = (time.perf_counter() - t0) * 1000
             await save_working_memory(belief)
             return (
