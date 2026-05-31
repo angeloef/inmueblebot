@@ -96,76 +96,72 @@ async def search_properties(
         filters_desc = _describe_filters(operation, tipo, zona, presupuesto_max, dormitorios)
 
         if not properties:
-            # Fallback 1: operation + zona
-            fallback = select(Property)
-            if operation:
-                fallback = fallback.where(Property.type == operation.lower())
-            if zona:
-                fallback = fallback.where(or_(*_build_zone_filters(zona)))
+            tipo_word = tipo if tipo else "propiedades"
+            tipo_plural = tipo_word if tipo_word in ("ph",) else tipo_word + ("s" if tipo_word[-1] != "s" else "")
+            zona_part = f" en {zona}" if zona else ""
+            op_part = f" de {operation}" if operation else ""
 
-            fallback_result = await session.execute(fallback)
-            nearby = fallback_result.scalars().all()
+            # Fallback 1: same zone, same operacion, ANY tipo
+            # Priority: show what IS available in the requested zone before expanding zones.
+            fallback1 = select(Property)
+            if operation:
+                fallback1 = fallback1.where(Property.type == operation.lower())
+            if zona:
+                fallback1 = fallback1.where(or_(*_build_zone_filters(zona)))
+
+            fb1_result = await session.execute(fallback1)
+            nearby = fb1_result.scalars().all()
 
             if nearby:
-                # Fallback 2: drop zona, keep operation + tipo + dormitorios
                 nearby_has_matching_tipo = (
                     not mapped_tipo
                     or any(p.category == mapped_tipo for p in nearby)
                 )
 
-                if not nearby_has_matching_tipo:
-                    fallback2 = select(Property)
-                    if operation:
-                        fallback2 = fallback2.where(Property.type == operation.lower())
-                    if mapped_tipo:
-                        fallback2 = fallback2.where(Property.category == mapped_tipo)
-                    fallback2 = _apply_bedrooms_filter(fallback2, dormitorios, dormitorios_max, bedrooms_match)
-
-                    fb2_result = await session.execute(fallback2)
-                    tipo_matches = fb2_result.scalars().all()
-
-                    if tipo_matches:
-                        tipo_word = tipo if tipo else "propiedades"
-                        dorm_part = (
-                            f" de {dormitorios} dormitorio{'s' if dormitorios != 1 else ''}"
-                            if dormitorios > 0 else ""
-                        )
-                        return (
-                            f"No encontre {tipo_word}s{dorm_part} especificamente en {zona}. "
-                            f"Pero hay {len(tipo_matches)} {tipo_word}s{dorm_part} en otras zonas "
-                            f"de Obera. Queres que te las muestre?"
-                        )
-
-                # Show Fallback 1 results (nearby summary)
-                counts: dict[tuple[str, str], int] = {}
-                for p in nearby:
-                    op_label = "alquiler" if p.type == "alquiler" else "venta"
-                    key = (op_label, p.category)
-                    counts[key] = counts.get(key, 0) + 1
-
-                items = []
-                for (op, cat), count in sorted(counts.items(), key=lambda x: -x[1]):
-                    cat_plural = cat if cat in ("ph",) else cat + ("s" if count != 1 else "")
-                    items.append(f"{count} {cat_plural} en {op}")
-
-                if len(items) == 1:
-                    summary = items[0]
-                elif len(items) == 2:
-                    summary = f"{items[0]} y {items[1]}"
+                if not nearby_has_matching_tipo and mapped_tipo:
+                    # Zone has properties but NOT the requested type — show what's there.
+                    other_tipos = sorted(set(p.category for p in nearby))
+                    alt_plural = " y ".join(
+                        t if t in ("ph",) else t + ("s" if t[-1] != "s" else "")
+                        for t in other_tipos[:2]
+                    )
+                    header = (
+                        f"No tenemos {tipo_plural}{op_part}{zona_part}. "
+                        f"Pero encontré {len(nearby)} {alt_plural}{op_part} en {zona or 'Oberá'}:"
+                    )
                 else:
-                    summary = ", ".join(items[:-1]) + f", y {items[-1]}"
+                    header = (
+                        f"No encontré {tipo_plural}{filters_desc}. "
+                        f"Opciones disponibles{zona_part}:"
+                    )
 
-                tipo_word = tipo if tipo else "propiedades"
-                tipo_plural = tipo_word if tipo_word in ("ph",) else tipo_word + ("s" if tipo_word[-1] != "s" else "")
-                zona_part = f" en {zona}" if zona else ""
+                return header + "\n\n" + _format_properties_list(nearby, operation)
 
-                return (
-                    f"No encontre {tipo_plural} en {operation}{zona_part}. "
-                    f"Pero hay {len(nearby)} propiedades cerca: "
-                    f"{summary}. Queres que te las muestre?"
-                )
+            # Fallback 2: drop zona, keep tipo + operacion (other zones, same tipo)
+            # Only reached when the zone has ZERO properties of any type.
+            if zona and (operation or mapped_tipo):
+                fb2 = select(Property)
+                if operation:
+                    fb2 = fb2.where(Property.type == operation.lower())
+                if mapped_tipo:
+                    fb2 = fb2.where(Property.category == mapped_tipo)
+                fb2 = _apply_bedrooms_filter(fb2, dormitorios, dormitorios_max, bedrooms_match)
 
-            # Fallback 3: drop zona, keep ALL other criteria
+                fb2_result = await session.execute(fb2)
+                tipo_matches = fb2_result.scalars().all()
+
+                if tipo_matches:
+                    dorm_part = (
+                        f" de {dormitorios} dormitorio{'s' if dormitorios != 1 else ''}"
+                        if dormitorios > 0 else ""
+                    )
+                    return (
+                        f"No encontre {tipo_plural}{dorm_part} especificamente en {zona}. "
+                        f"Pero hay {len(tipo_matches)} {tipo_plural}{dorm_part} en otras zonas "
+                        f"de Obera. Queres que te las muestre?"
+                    )
+
+            # Fallback 3: drop zona, show anything matching operacion + tipo
             if zona and (operation or mapped_tipo or presupuesto_max > 0 or dormitorios > 0):
                 fb3 = select(Property)
                 if operation:
