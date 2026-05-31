@@ -24,14 +24,14 @@ tweakear, pushear a Render y re-testear hasta que pasen. Verificar con: `/simula
 - Domingo / fuera de 9-18 → rechazo + repregunta (no agenda).
 - Nunca "confirmación" de cita sin que `tools_called` incluya `schedule_visit`.
 
-## Scoreboard (V1, escenarios ejecutables) — actualizado deploy a813b9f
+## Scoreboard (V1, escenarios ejecutables) — TODOS VERDES (deploy ea3ab6d)
 | Escenario | Estado | Nota |
 |-----------|--------|------|
-| C1 agendar núcleo + rechazo | 🟢 | domingo/21:00 rechaza; "lunes"+"a las 3 de la tarde" (turnos separados) → DB 2026-06-01 15:00 ART ✅ |
-| C5 fallbacks      | 🟢 | degrada con gracia, ofrece alternativas |
+| C1 agendar + rechazo | 🟢 | domingo/21:00 rechaza; "lunes"+"a las 3 de la tarde" → DB 2026-06-01 15:00 ART ✅ |
+| C5 fallbacks      | 🟢 | degrada con gracia |
+| C6 cambio tipo    | 🟢 | type-switch arreglado (busca casas); menor: "primera casa" no filtra por tipo |
 | C8 trampas        | 🟢 | ordinal "segunda" ✅; "dentro de 3 dias a las 5" → DB 2026-06-02 17:00 ART ✅ |
-| C6 cambio tipo    | 🟡 verificando | fix `5afe41d`: faq_zonas ya no captura "casas por esa zona" |
-| C10 ordinal "ultimo" | 🟡 verificando | fix `5afe41d`: ordinal resuelve "el ultimo" (idx=len-1) |
+| C10 ordinal+sábado | 🟢 | "el ultimo"→prop 5 ✅; "el sabado a las 11" → DB 2026-06-06 11:00 ART (roll-forward) ✅ |
 
 ## Bugs encontrados / fixes (todos pusheados)
 1. **bsuid column missing** (backfill rollbackeaba la tx) → removido. ✅

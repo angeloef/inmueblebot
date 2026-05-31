@@ -10,6 +10,9 @@ from app.tools.v2.get_property_details import get_property_details
 from app.tools.v2.get_property_images import get_property_images
 from app.tools.v2.get_faq_answer import get_faq_answer
 from app.tools.v2.schedule_visit import schedule_visit
+from app.tools.v2.get_my_appointments import get_my_appointments
+from app.tools.v2.cancel_appointment import cancel_appointment
+from app.tools.v2.reschedule_appointment import reschedule_appointment
 
 # Registry: tool name → (function, is_async, schema dict)
 TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
@@ -218,6 +221,55 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                             "type": "string",
                             "description": "Cualquier consulta adicional del interesado.",
                         },
+                    },
+                },
+            },
+        },
+    ),
+    "get_my_appointments": (
+        get_my_appointments,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "get_my_appointments",
+                "description": "Lista las visitas YA agendadas del usuario. Usar cuando pregunta 'qué citas/visitas tengo', 'cuándo me agendé', etc.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+    ),
+    "cancel_appointment": (
+        cancel_appointment,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "cancel_appointment",
+                "description": "Cancela una visita agendada del usuario. Si tiene varias, pasá 'cual' con una pista (día o id de propiedad); si no, la herramienta pregunta cuál.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cual": {"type": "string", "description": "Pista para elegir cuál cancelar si hay varias: día (ej 'jueves'), dd/mm, o id de propiedad."},
+                        "motivo": {"type": "string", "description": "Razón opcional de la cancelación."},
+                    },
+                },
+            },
+        },
+    ),
+    "reschedule_appointment": (
+        reschedule_appointment,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "reschedule_appointment",
+                "description": "Reprograma (cambia día/hora) una visita ya agendada del usuario. Usar para 'cambiá mi visita al jueves', 'movela a las 4', etc.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dia": {"type": "string", "description": "Nuevo día (ej 'jueves', 'martes 02/06', 'mañana')."},
+                        "horario": {"type": "string", "description": "Nuevo horario (ej '15:00', 'a las 3 de la tarde')."},
+                        "cual": {"type": "string", "description": "Pista para elegir cuál reprogramar si hay varias."},
                     },
                 },
             },

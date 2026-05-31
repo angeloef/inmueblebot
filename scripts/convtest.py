@@ -9,11 +9,23 @@ Usage:  python scripts/convtest.py [scenario_substr]
 """
 import sys, json, time, urllib.request
 
+try:  # Windows console is cp1252 → bot responses / router '→' break printing
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 BASE = "https://inmueblebot-api.onrender.com"
 AK = "your-secure-admin-key-here"
 
 # Each scenario: (id, [turns]). One fresh session per run.
 SCENARIOS = [
+    ("C2-ciclo-cita", [
+        "hola, me interesa la propiedad 15, quiero coordinar una visita",
+        "soy angelo feier, el miercoles a las 10 de la mañana",  # agenda
+        "me confirmas que dia me quedo agendado?",               # get_my_appointments
+        "che, mejor pasala para el jueves a la misma hora",      # reschedule
+        "pensandolo bien mejor cancelala, me surgio un viaje",   # cancel
+    ]),
     ("C1-rechazo", [
         "quiero visitar la propiedad 15",
         "mi nombre es ana lopez",
