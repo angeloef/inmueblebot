@@ -163,6 +163,19 @@ async def save_turn(
         "sender": "user", "content": user_message, "ts": now})
     user_msg_id = uid1
 
+    # SSE notification for user message
+    await publish(str(conversation_id), {
+        "type": "new_message",
+        "message": {
+            "id": uid1,
+            "role": "user",
+            "sender": "user",
+            "content": user_message,
+            "timestamp": now.isoformat(),
+            "metadata": None,
+        },
+    })
+
     # Insert bot message
     metadata_json = json.dumps({
         "tools_called": tools_called or [],

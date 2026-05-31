@@ -778,6 +778,7 @@ export const useConversation = (id) =>
     queryKey: keys.conversation(id),
     queryFn:  () => conversationApi.get(id),
     enabled:  !!id,
+    refetchInterval: 10_000,
   });
 
 export const useReplyToConversation = () => {
