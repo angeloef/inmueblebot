@@ -38,22 +38,13 @@ async def simulate_chat(request: SimulateRequest):
 @router.post("/simulate/multi")
 async def simulate_multi(request: SimulateRequest):
     """Simulate with extra metadata — returns belief state + trace."""
-    import traceback
-    from loguru import logger
 
     set_current_contact(request.phone, request.bsuid)
-    try:
-        response, belief, router_label, latency_ms = await route_message(
-            message=request.message,
-            session_id=request.bsuid or request.session_id,
-            phone=request.phone,
-        )
-    except Exception as _exc:
-        tb = traceback.format_exc()
-        logger.error(f"[simulate/multi] UNHANDLED: {_exc}\n{tb}")
-        return {"response": f"ERROR: {_exc}", "tools_called": [], "router": "error",
-                "latency_ms": 0, "turn": 0, "criteria_count": 0, "selection": None,
-                "active_intents": [], "traceback": tb[-500:]}
+    response, belief, router_label, latency_ms = await route_message(
+        message=request.message,
+        session_id=request.bsuid or request.session_id,
+        phone=request.phone,
+    )
 
     return {
         "response": response.response,
