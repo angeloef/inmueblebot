@@ -641,6 +641,22 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                     if summaries:
                         belief.last_search_context = " | ".join(summaries)
 
+                    # Zero-result zone fallback: when the zone-filtered search returns nothing,
+                    # clear the zone so the *next* turn searches broadly, and set a pending_offer
+                    # so the context tells the LLM exactly what to do when the user confirms.
+                    if not belief.last_search_ids and belief.zone:
+                        cleared_zone = belief.zone
+                        belief.zone = None
+                        belief.pending_offer = (
+                            f"mostrar {belief.property_type or 'propiedades'} "
+                            + (f"de {belief.operation} " if belief.operation else "")
+                            + f"disponibles en otras zonas (no hay resultados en {cleared_zone})"
+                            + " — llamar search_properties sin parámetro zona"
+                        )
+                    elif belief.last_search_ids:
+                        # Results found — clear any stale zone-fallback offer
+                        belief.pending_offer = None
+
                     # Populate search_history
                     if belief.last_search_ids:
                         criteria = {}

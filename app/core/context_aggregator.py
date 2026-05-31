@@ -194,7 +194,11 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
 
     # Pending offer (for confirmation follow-through)
     if belief.pending_offer:
-        parts.append(f"OFERTA PENDIENTE: La última vez le ofreciste al usuario: {belief.pending_offer}. Si el usuario dice 'si' o confirma, ejecutá esa acción AHORA.")
+        parts.append(
+            f"⚠️ OFERTA PENDIENTE: Le ofreciste al usuario: {belief.pending_offer}. "
+            "Si el usuario dice 'sí', 'dale', 'mostrame', 'si mostrame' o cualquier confirmación, "
+            "ejecutá esa acción AHORA sin preguntar nada más. NO repitas la oferta."
+        )
 
     # Scheduling progress (action-oriented)
     if "scheduling" in (belief.active_intents or set()) or belief.scheduling_name or belief.scheduling_phone or belief.scheduling_day or belief.scheduling_time:
