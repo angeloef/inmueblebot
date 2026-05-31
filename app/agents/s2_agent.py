@@ -2,12 +2,10 @@
 
 import json
 
-from app.agents.cs_llm_client import get_client
+from app.agents.cs_llm_client import get_client, get_model
 from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
 from app.agents.escalation import assess_confidence, build_clarification_message
-from app.core.config import get_settings
-settings = get_settings()
-from app.core.response_parser import FINAL_RESPONSE_SCHEMA, parse_llm_response
+from app.core.response_parser import get_final_response_format, parse_llm_response
 from app.nlp.empathy import get_empathetic_prefix
 from app.nlp.formality import detect_formality, get_formality_guidance
 from app.nlp.coherence import build_coherence_context
@@ -89,12 +87,12 @@ async def process_message(
 
     # Step 1: LLM decides — may return tool calls or direct answer
     response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
         temperature=0.3,
-        max_completion_tokens=1024,
+        max_tokens=1024,
     )
 
     choice = response.choices[0].message
@@ -138,11 +136,11 @@ async def process_message(
 
         # Step 3: Final response with tool results — enforce json_schema
         final_response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+            model=get_model(),
             messages=messages,
             temperature=0.3,
-            max_completion_tokens=1024,
-            response_format=FINAL_RESPONSE_SCHEMA,
+            max_tokens=1024,
+            response_format=get_final_response_format(),
         )
         raw_text = final_response.choices[0].message.content or ""
     else:
@@ -209,12 +207,12 @@ async def process_message_multistep(
 
     # Step 1: LLM decides
     response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
         temperature=0.3,
-        max_completion_tokens=1024,
+        max_tokens=1024,
     )
 
     choice = response.choices[0].message
@@ -274,11 +272,11 @@ async def process_message_multistep(
 
     # Step 3: Final LLM call for closing text
     closing_response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=messages,
         temperature=0.3,
-        max_completion_tokens=1024,
-        response_format=FINAL_RESPONSE_SCHEMA,
+        max_tokens=1024,
+        response_format=get_final_response_format(),
     )
     raw_text = closing_response.choices[0].message.content or ""
 
@@ -336,12 +334,12 @@ async def process_message_with_specialist(
 
     # Step 1: LLM decides with filtered tools
     response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=messages,
         tools=filtered_tools if filtered_tools else None,
         tool_choice="auto" if filtered_tools else None,
         temperature=0.3,
-        max_completion_tokens=512,
+        max_tokens=512,
     )
 
     choice = response.choices[0].message
@@ -370,9 +368,9 @@ async def process_message_with_specialist(
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
 
         final_response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL, messages=messages,
-            temperature=0.3, max_completion_tokens=512,
-            response_format=FINAL_RESPONSE_SCHEMA,
+            model=get_model(), messages=messages,
+            temperature=0.3, max_tokens=512,
+            response_format=get_final_response_format(),
         )
         raw_text = final_response.choices[0].message.content or ""
     else:

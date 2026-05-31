@@ -4,9 +4,7 @@ Uses a lightweight LLM call with reasoning_effort='low' to generate
 an internal monologue that guides planning and action.
 """
 
-from app.agents.cs_llm_client import get_client
-from app.core.config import get_settings
-settings = get_settings()
+from app.agents.cs_llm_client import get_client, get_model
 
 THINKING_PROMPT = """Sos un agente interno de razonamiento. Tu trabajo es analizar el mensaje del usuario
 y generar un plan mental PRIVADO. El usuario NUNCA verá esto.
@@ -47,10 +45,10 @@ async def think(
 
     try:
         response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+            model=get_model(),
             messages=[{"role": "user", "content": full_context}],
             temperature=0.2,
-            max_completion_tokens=256,
+            max_tokens=256,
         )
         return (response.choices[0].message.content or "").strip()
     except Exception:

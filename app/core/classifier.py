@@ -86,15 +86,14 @@ class IntentClassifier:
         settings = get_settings()
         self._redis = None
         self._redis_url = settings.resolve_redis_url()
-        self._api_key = settings.OPENAI_API_KEY
-        self._model = settings.OPENAI_MODEL or "gpt-4o-mini"
-        self._client = None
 
     def _get_client(self):
-        if self._client is None:
-            from openai import AsyncOpenAI
-            self._client = AsyncOpenAI(api_key=self._api_key, timeout=8.0)
-        return self._client
+        from app.agents.cs_llm_client import get_client
+        return get_client()
+
+    def _get_model(self):
+        from app.agents.cs_llm_client import get_model
+        return get_model()
 
     async def _get_redis(self):
         for attempt in range(self.MAX_REDIS_RETRIES):
@@ -148,7 +147,7 @@ class IntentClassifier:
             client = self._get_client()
             response = await asyncio.wait_for(
                 client.chat.completions.create(
-                    model=self._model,
+                    model=self._get_model(),
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": message},

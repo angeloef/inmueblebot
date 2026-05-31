@@ -107,9 +107,29 @@ class Settings(BaseSettings):
         description="Set to True to use localhost instead of Docker redis service"
     )
 
-    # === OpenAI API (único proveedor LLM) ===
+    # === LLM Provider Selection ===
+    LLM_PROVIDER: str = Field(
+        default="openai",
+        description="Proveedor LLM activo: openai | deepseek | openrouter",
+    )
+
+    # === OpenAI ===
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="API key de OpenAI")
     OPENAI_MODEL: str = Field(default="gpt-4o-mini", description="Modelo de OpenAI a usar")
+
+    # === DeepSeek ===
+    DEEPSEEK_API_KEY: Optional[str] = Field(default=None, description="API key de DeepSeek")
+    DEEPSEEK_MODEL: str = Field(
+        default="deepseek-chat",
+        description="Modelo DeepSeek: deepseek-chat (V3) | deepseek-reasoner (R1)",
+    )
+
+    # === OpenRouter ===
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="API key de OpenRouter")
+    OPENROUTER_MODEL: str = Field(
+        default="deepseek/deepseek-chat",
+        description="Modelo a usar vía OpenRouter (ej: deepseek/deepseek-chat, openai/gpt-4o-mini)",
+    )
 
     # === LLM Configuration ===
     LLM_TIMEOUT_SECONDS: int = Field(default=25, description="Timeout para llamadas al LLM")
@@ -280,8 +300,18 @@ def get_settings() -> Settings:
     logger.info(f"Resolved DB: {settings.resolved_database_url[:40]}...")
     logger.info(f"REDIS_URL: {settings.resolve_redis_url()[:30]}... (resolved)")
 
-    _openai = "SET" if settings.OPENAI_API_KEY else "NOT SET"
-    logger.info(f"LLM: OpenAI {settings.OPENAI_MODEL} [{_openai}]")
+    _provider = settings.LLM_PROVIDER.lower()
+    _llm_key = (
+        settings.DEEPSEEK_API_KEY if _provider == "deepseek" else
+        settings.OPENROUTER_API_KEY if _provider == "openrouter" else
+        settings.OPENAI_API_KEY
+    )
+    _llm_model = (
+        settings.DEEPSEEK_MODEL if _provider == "deepseek" else
+        settings.OPENROUTER_MODEL if _provider == "openrouter" else
+        settings.OPENAI_MODEL
+    )
+    logger.info(f"LLM: {_provider} / {_llm_model} [{'SET' if _llm_key else 'NOT SET'}]")
 
     _wa_meta = "SET" if settings.WHATSAPP_PHONE_NUMBER_ID and settings.WHATSAPP_ACCESS_TOKEN else "NOT SET"
     _wa_twilio = "SET" if settings.TWILIO_ACCOUNT_SID else "NOT SET"

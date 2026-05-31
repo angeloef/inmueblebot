@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from app.agents.cs_llm_client import get_client
+from app.agents.cs_llm_client import get_client, get_model
 from app.agents.schemas import CSAgentResponse as AgentResponse
 from app.core.config import get_settings
 settings = get_settings()
@@ -191,10 +191,10 @@ Mensaje del usuario: "{message}"
 Respondé SOLO con una palabra: search, scheduling, knowledge, negotiator, o rapport."""
 
     response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_completion_tokens=10,
+        max_tokens=10,
     )
 
     result = (response.choices[0].message.content or "search").strip().lower()

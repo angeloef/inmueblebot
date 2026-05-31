@@ -8,8 +8,7 @@ import json
 import re
 
 
-# JSON schema the LLM is instructed to follow
-FINAL_RESPONSE_SCHEMA = {
+_STRICT_RESPONSE_SCHEMA = {
     "type": "json_schema",
     "json_schema": {
         "name": "final_response",
@@ -37,6 +36,21 @@ FINAL_RESPONSE_SCHEMA = {
         },
     },
 }
+
+# Kept for backward compatibility — prefer get_final_response_format() for new code
+FINAL_RESPONSE_SCHEMA = _STRICT_RESPONSE_SCHEMA
+
+
+def get_final_response_format() -> dict:
+    """Return the appropriate response_format dict for the active LLM provider.
+
+    OpenAI supports strict json_schema; DeepSeek/OpenRouter only support json_object.
+    The parse_llm_response() fallback chain handles both formats correctly.
+    """
+    from app.agents.cs_llm_client import supports_strict_json_schema
+    if supports_strict_json_schema():
+        return _STRICT_RESPONSE_SCHEMA
+    return {"type": "json_object"}
 
 
 def parse_llm_response(raw_text: str) -> tuple[str, float]:

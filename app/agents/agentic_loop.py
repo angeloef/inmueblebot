@@ -78,10 +78,7 @@ async def run_agentic_loop(
     obs_report = build_observation_report(all_observations)
 
     # ── Generate final response ──────────────────────────────
-    from app.agents.cs_llm_client import get_client
-    from app.core.config import get_settings
-    settings = get_settings()
-    from app.core.response_parser import FINAL_RESPONSE_SCHEMA
+    from app.agents.cs_llm_client import get_client, get_model
 
     client = get_client()
 
@@ -135,11 +132,10 @@ async def run_agentic_loop(
 
     # Final LLM call to synthesize response
     final_response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=get_model(),
         messages=messages,
         temperature=0.3,
-        max_completion_tokens=512,
-        response_format=None,  # Can't use json_schema with tool history
+        max_tokens=512,
     )
 
     raw_text = final_response.choices[0].message.content or ""

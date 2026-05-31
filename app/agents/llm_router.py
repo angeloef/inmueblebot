@@ -58,38 +58,24 @@ class LLMResponse:
 
 
 class LLMRouter:
-    """Cliente LLM unico basado en el SDK oficial de OpenAI."""
+    """Cliente LLM multi-proveedor via interfaz OpenAI-compatible."""
 
     _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
     def __init__(self):
         settings = get_settings()
-        self._api_key = settings.OPENAI_API_KEY
-        self._model = settings.OPENAI_MODEL or "gpt-4o-mini"
         self._timeout = settings.LLM_TIMEOUT_SECONDS
         self._max_retries = settings.LLM_MAX_RETRIES
         self._default_temperature = settings.LLM_TEMPERATURE
         self._default_max_tokens = settings.LLM_MAX_TOKENS
         self._client = None
 
-        logger.info(f"LLMRouter inicializado -> modelo: {self._model}")
-        if not self._api_key:
-            logger.warning(
-                "OPENAI_API_KEY no configurada. "
-                "Agregala en el .env antes de usar el bot."
-            )
+        from app.agents.cs_llm_client import get_model
+        logger.info(f"LLMRouter inicializado -> proveedor: {settings.LLM_PROVIDER} / modelo: {get_model()}")
 
     def _get_client(self):
-        if self._client is None:
-            try:
-                from openai import AsyncOpenAI
-            except ImportError:
-                raise RuntimeError(
-                    "El paquete openai no esta instalado. "
-                    "Corre: pip install openai>=1.30.0"
-                )
-            self._client = AsyncOpenAI(api_key=self._api_key, timeout=self._timeout)
-        return self._client
+        from app.agents.cs_llm_client import get_client
+        return get_client()
 
     async def ainvoke(
         self,
@@ -101,19 +87,18 @@ class LLMRouter:
         response_format=None,
         structured_response: bool = False,  # v2.0: enforce AgentResponse schema
     ):
+        from app.agents.cs_llm_client import get_model, supports_strict_json_schema
+
         temperature = temperature if temperature is not None else self._default_temperature
         max_tokens = max_tokens or self._default_max_tokens
         client = self._get_client()
 
         kwargs = {
-            "model": self._model,
+            "model": get_model(),
             "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
         }
-        if self._model.startswith("gpt-5."):
-            kwargs["max_completion_tokens"] = max_tokens
-        else:
-            kwargs["max_tokens"] = max_tokens
-            kwargs["temperature"] = temperature
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -121,15 +106,16 @@ class LLMRouter:
             kwargs["response_format"] = response_format
 
         # v2.0: Structured output — enforce AgentResponse JSON schema
-        # When tools are present, native tool_calls take precedence.
-        # When no tool_calls, the model's text output is parsed as AgentResponse.
         if structured_response:
-            from app.agents.schemas import AGENT_RESPONSE_JSON_SCHEMA
-            kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": AGENT_RESPONSE_JSON_SCHEMA,
-            }
-            logger.debug("[OpenAI] v2.0 structured output enabled (AgentResponse schema)")
+            if supports_strict_json_schema():
+                from app.agents.schemas import AGENT_RESPONSE_JSON_SCHEMA
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": AGENT_RESPONSE_JSON_SCHEMA,
+                }
+            else:
+                kwargs["response_format"] = {"type": "json_object"}
+            logger.debug(f"[LLM] structured output enabled (provider={get_settings().LLM_PROVIDER})")
 
         last_error = None
 
