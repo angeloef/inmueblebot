@@ -28,6 +28,16 @@ ZONE_PATTERNS = [
     (r"\b(unam|universidad|facultad)\b", "UNAM"),
     (r"\b(schuster|barrio schuster)\b", "Barrio Schuster"),
     (r"\b(ruta 14|ruta catorce)\b", "Ruta 14"),
+    (r"\b(100 viviendas?|cien viviendas?|barrio 100)\b", "Barrio 100 Viviendas"),
+    (r"\b(copisa|barrio copisa)\b", "Barrio Copisa"),
+    (r"\b(docente|barrio docente)\b", "Barrio Docente"),
+    (r"\b(krause|barrio krause)\b", "Barrio Krause"),
+    (r"\b(las palmas|barrio las palmas)\b", "Barrio Las Palmas"),
+    (r"\b(barrio norte)\b", "Barrio Norte"),
+    (r"\b(san miguel|barrio san miguel)\b", "Barrio San Miguel"),
+    (r"\b(samic|hospital samic)\b", "Hospital Samic"),
+    (r"\b(terminal|barrio terminal|zona terminal)\b", "Terminal"),
+    (r"\b(stemberg|villa stemberg)\b", "Villa Stemberg"),
 ]
 
 BUDGET_PATTERN = re.compile(

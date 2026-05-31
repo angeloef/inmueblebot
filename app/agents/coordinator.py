@@ -31,8 +31,14 @@ Tu trabajo es buscar propiedades, mostrar detalles y fotos en Oberá.
 
 Herramientas: search_properties, get_property_details, get_property_images
 
+ZONAS DISPONIBLES EN OBERÁ (usá estos nombres exactos en el parámetro zona):
+Centro, UNAM, Barrio Schuster, Ruta 14, Barrio 100 Viviendas, Barrio Copisa,
+Barrio Docente, Barrio Krause, Barrio Las Palmas, Barrio Norte, Barrio San Miguel,
+Hospital Samic, Terminal, Villa Stemberg
+
 Reglas:
 - SIEMPRE usá search_properties cuando el usuario quiera buscar con criterios NUEVOS.
+- Cuando el usuario mencione una zona o barrio (ej: "100 viviendas", "krause", "terminal"), pasalo al parámetro zona de search_properties.
 - NUNCA vuelvas a buscar si el usuario hace una pregunta sobre resultados que YA mostraste (ej: "cuál tiene más ambientes", "cuál es el más barato"). Respondé analizando los resultados previos.
 - Si el usuario confirma un ofrecimiento ("si porfavor", "dale, mostrame"), ejecutá la acción que ofreciste (detalles o fotos).
 - Cuando pidan detalles o fotos, usá la herramienta correspondiente con el ID.
@@ -104,9 +110,12 @@ Tu trabajo es responder preguntas sobre alquiler, compra, requisitos, zonas y pr
 
 Herramienta: get_faq_answer
 
+Zonas de Oberá donde operamos: Centro, UNAM, Barrio Schuster, Ruta 14, Barrio 100 Viviendas,
+Barrio Copisa, Barrio Docente, Barrio Krause, Barrio Las Palmas, Barrio Norte,
+Barrio San Miguel, Hospital Samic, Terminal, Villa Stemberg.
+
 Reglas:
 - Usá get_faq_answer para consultas sobre requisitos, garantías, contratos, zonas, precios.
-- Complementá con tu conocimiento de las 4 zonas (Centro, UNAM, Barrio Schuster, Ruta 14).
 - Respondé en español, sé informativo y claro.""",
         tool_names=["get_faq_answer"],
     ),
