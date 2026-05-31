@@ -1,6 +1,18 @@
 """Shared helpers for v2 tools."""
 
+import pytz
+
 _WD = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_ARG_TZ = pytz.timezone("America/Argentina/Buenos_Aires")
+
+
+def _to_arg(dt):
+    """Convert a tz-aware (or naive) datetime to Argentina time for display."""
+    if dt is None:
+        return dt
+    if dt.tzinfo is not None:
+        return dt.astimezone(_ARG_TZ)
+    return _ARG_TZ.localize(dt)
 
 
 async def resolve_session_user(session):
@@ -24,9 +36,13 @@ async def resolve_session_user(session):
 
 
 def fmt_appt(a) -> str:
-    """One-line human description of an appointment (weekday dd/mm a las HH:MM · propiedad N)."""
-    wd = _WD[a.start_time.weekday()]
-    return f"{wd} {a.start_time.strftime('%d/%m a las %H:%M')} (propiedad {a.property_id})"
+    """One-line human description of an appointment (weekday dd/mm a las HH:MM · propiedad N).
+
+    Converts UTC timestamps to Argentina time (ART, UTC-3) for display.
+    """
+    dt = _to_arg(a.start_time)
+    wd = _WD[dt.weekday()]
+    return f"{wd} {dt.strftime('%d/%m a las %H:%M')} (propiedad {a.property_id})"
 
 
 def pick_appointment(appts, cual: str):
@@ -40,9 +56,10 @@ def pick_appointment(appts, cual: str):
         return appts[0], None
     cl = (cual or "").lower()
     for a in appts:
-        wd = _WD[a.start_time.weekday()]
-        if cl and (wd in cl or str(a.property_id) in cl or a.start_time.strftime("%d/%m") in cl
-                   or a.start_time.strftime("%d") in cl.split()):
+        dt = _to_arg(a.start_time)
+        wd = _WD[dt.weekday()]
+        if cl and (wd in cl or str(a.property_id) in cl or dt.strftime("%d/%m") in cl
+                   or dt.strftime("%d") in cl.split()):
             return a, None
     lines = "\n".join(f"  {i}. {fmt_appt(a)}" for i, a in enumerate(appts, 1))
     return None, ("Tenés varias visitas agendadas. ¿Cuál?\n" + lines)

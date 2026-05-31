@@ -8,7 +8,11 @@ class DateParser(HybridParser):
     Wraps existing parse_datetime_llm + parse_spanish_datetime."""
 
     def __init__(self):
-        super().__init__(component="DATE", default_strategy="hybrid")
+        # Default to "code" — the regex parser is faster, deterministic, and more
+        # reliable for common Spanish day/time expressions. The LLM parser occasionally
+        # returns wrong weekdays (e.g. sábado → domingo) for near-future day names.
+        # Override with PARSER_DATE=llm or PARSER_DATE=hybrid env var if needed.
+        super().__init__(component="DATE", default_strategy="code")
 
     async def parse_llm(self, raw: str, ctx: dict) -> ParseResult:
         from app.utils.date_parser import get_argentina_now, parse_datetime_llm
