@@ -365,11 +365,28 @@ function ConversationRow({ conv, selected, onClick }) {
   );
 }
 
-function ChatHeader({ conversation, botPaused, toggling, onToggleBot }) {
+function ChatHeader({ conversation, botPaused, toggling, onToggleBot, onBack }) {
   const avatarLetter = (conversation.phone ?? '?').charAt(0).toUpperCase() || '?';
   const stateLabel = conversation.state ?? 'active';
   return (
     <div style={S.chatHeader}>
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            width: 36, height: 36, flexShrink: 0,
+            border: 'none', background: 'transparent',
+            borderRadius: 6, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center',
+            justifyContent: 'center', color: 'var(--fg-secondary)',
+            marginRight: -4,
+          }}
+          aria-label="Abrir lista de contactos"
+        >
+          <Icon name="chevronLeft" size={20} />
+        </button>
+      )}
       <div style={S.avatar}>{avatarLetter}</div>
       <div style={S.headerInfo}>
         <div style={S.headerName}>
@@ -416,7 +433,7 @@ function Message({ msg }) {
   );
 }
 
-function ConversationList({ conversations, selectedId, onSelect, search, onSearchChange }) {
+function ConversationList({ conversations, selectedId, onSelect, search, onSearchChange, panelStyle }) {
   const list = (conversations ?? []).filter(c => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -425,7 +442,7 @@ function ConversationList({ conversations, selectedId, onSelect, search, onSearc
   });
 
   return (
-    <div style={S.panel}>
+    <div style={{ ...S.panel, ...panelStyle }}>
       <div style={S.panelHeader}>
         <div style={S.panelTitle}>Chats</div>
         <input
@@ -454,7 +471,7 @@ function ConversationList({ conversations, selectedId, onSelect, search, onSearc
   );
 }
 
-function ChatView({ conversationId }) {
+function ChatView({ conversationId, onBack }) {
   const { data: conversation, isLoading, isError, error } = useConversation(conversationId);
   const replyMut = useReplyToConversation();
   const toggleBotMut = useToggleBot();
@@ -570,10 +587,14 @@ function ChatView({ conversationId }) {
   }
 
   if (isError) {
+    const friendlyMessage =
+      error?.response?.status === 404
+        ? 'Conversación no encontrada'
+        : 'No se pudo cargar la conversación';
     return (
       <div style={S.chatPanel}>
         <div style={S.loading} style={{ color: 'var(--danger-500)' }}>
-          Error: {error?.message ?? 'No se pudo cargar la conversación'}
+          {friendlyMessage}
         </div>
       </div>
     );
@@ -588,6 +609,7 @@ function ChatView({ conversationId }) {
         botPaused={conversation?.bot_paused ?? false}
         toggling={toggleBotMut.isPending}
         onToggleBot={handleToggleBot}
+        onBack={onBack}
       />
       {sseFallback && (
         <div style={{
@@ -648,27 +670,97 @@ export default function Chats() {
   const { data, isLoading, isError } = useConversations();
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 769 : false
+  );
+
+  // Detect mobile via matchMedia
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = (e) => {
+      setIsMobile(e.matches);
+      if (!e.matches) setSidebarOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    handler(mq);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const conversations = data?.conversations ?? [];
 
-  // Auto-select first conversation when list loads
+  // Auto-select first conversation when list loads, or reset if current selection vanishes
   useEffect(() => {
-    if (!selectedId && conversations.length > 0) {
+    if (conversations.length === 0) {
+      setSelectedId(null);
+    } else if (!selectedId || !conversations.some(c => c.id === selectedId)) {
       setSelectedId(conversations[0].id);
     }
   }, [conversations]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleSelect = (id) => {
+    setSelectedId(id);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  // On mobile without a selected conversation, show the list as full-screen view
+  if (isMobile && !selectedId) {
+    return (
+      <div style={S.container}>
+        <ConversationList
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          search={search}
+          onSearchChange={setSearch}
+        />
+      </div>
+    );
+  }
+
+  // Mobile overlay styles for the left panel
+  const mobilePanelOverlay = isMobile && sidebarOpen;
+
   return (
     <div style={S.container}>
-      <ConversationList
-        conversations={conversations}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        search={search}
-        onSearchChange={setSearch}
-      />
+      {/* Backdrop overlay on mobile when sidebar is open */}
+      {mobilePanelOverlay && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'var(--bg-overlay, rgba(15,17,20,0.45))',
+          }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Left panel — conversation list */}
+      <div style={{
+        ...S.panel,
+        ...(isMobile ? {
+          position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 101,
+          width: 300, minWidth: 300,
+          transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 280ms cubic-bezier(0.2,0.7,0.2,1)',
+          boxShadow: '0 4px 8px rgba(0,0,0,0.06), 0 12px 32px rgba(0,0,0,0.10)',
+        } : {}),
+      }}>
+        <ConversationList
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          search={search}
+          onSearchChange={setSearch}
+        />
+      </div>
+
+      {/* Right panel — chat view or placeholder */}
       {selectedId ? (
-        <ChatView key={selectedId} conversationId={selectedId} />
+        <ChatView
+          key={selectedId}
+          conversationId={selectedId}
+          onBack={isMobile && !sidebarOpen ? () => setSidebarOpen(true) : undefined}
+        />
       ) : (
         <div style={S.chatPanel}>
           <div style={S.placeholder}>
