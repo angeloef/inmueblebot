@@ -589,12 +589,19 @@ input, select, textarea { font-family: inherit; }
   /* ── Propiedades: grids 2 columnas ── */
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
+
+  /* ── Propiedades lista: ocultar Agente en tablet ── */
+  .props-col-agent { display: none !important; }
 }
 
 /* ── Tablet pequeña 769–960 px: dashboard y KPIs a columna única ── */
 @media (min-width: 769px) and (max-width: 960px) {
   .dashboard-grid { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  /* ── Propiedades lista: ocultar Tipo y Operación en tablet pequeña ── */
+  .props-col-tipo { display: none !important; }
+  .props-col-op   { display: none !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -683,6 +690,11 @@ input, select, textarea { font-family: inherit; }
   .prop-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .prop-attrs-grid { grid-template-columns: 1fr 1fr; }
   .dz-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* ── Propiedades lista: ocultar Tipo, Operación y Agente en mobile ── */
+  .props-col-tipo  { display: none !important; }
+  .props-col-op    { display: none !important; }
+  .props-col-agent { display: none !important; }
 
   /* ── Iconos touch-friendly ── */
   .btn-icon { width: 40px; height: 40px; padding: 8px; }

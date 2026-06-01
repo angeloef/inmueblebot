@@ -712,9 +712,15 @@ export default function Properties({ onOpenClient, initialProperty }) {
         </div>
         <div className="tbl-scroll">
           {view === 'list' ? (
-            <table className="tbl">
+            <table className="tbl props-tbl">
               <thead><tr>
-                <th>Propiedad</th><th>Tipo</th><th>Estado</th><th>Operación</th><th style={{textAlign:'right'}}>Precio</th><th>Agente</th><th></th>
+                <th>Propiedad</th>
+                <th className="props-col-tipo">Tipo</th>
+                <th>Estado</th>
+                <th className="props-col-op">Operación</th>
+                <th style={{textAlign:'right'}}>Precio</th>
+                <th className="props-col-agent">Agente</th>
+                <th></th>
               </tr></thead>
               <tbody>
                 {filtered.map(p => (
@@ -730,14 +736,14 @@ export default function Properties({ onOpenClient, initialProperty }) {
                         </div>
                       </div>
                     </td>
-                    <td className="muted">{p.type}</td>
+                    <td className="muted props-col-tipo">{p.type}</td>
                     <td><StatusDropdown kind={p.status} onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} /></td>
-                    <td className="muted">{p.operation === 'rent' ? 'Alquiler' : 'Venta'}</td>
+                    <td className="muted props-col-op">{p.operation === 'rent' ? 'Alquiler' : 'Venta'}</td>
                     <td className="price" style={{textAlign:'right',whiteSpace:'nowrap'}}>
                       {fmtCurrency(p.price, p.currency)}
                       {p.operation === 'rent' && p.status !== 'sale' && <span className="muted" style={{fontWeight:400}}> /mes</span>}
                     </td>
-                    <td className="muted">{p.agent}</td>
+                    <td className="muted props-col-agent">{p.agent}</td>
                     <td><div className="row-actions" onClick={e => e.stopPropagation()}>
                       <IconButton name="edit" onClick={() => setEditing(p)} />
                       <IconButton name="trash" onClick={() => setDeleteTarget(p)} />
