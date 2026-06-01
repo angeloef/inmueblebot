@@ -7,6 +7,7 @@ that accumulates criteria across turns.
 import re
 import time
 from app.core.belief_state import ConversationBeliefState
+from app.core.config import get_settings
 
 
 # ── Entity extractors ────────────────────────────────────────
@@ -194,8 +195,9 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     fuzzy_text = _fuzzy_normalize(text)  # Typo-tolerant version for entity extraction
     belief.turn_count += 1
     belief.history.append(message)
-    if len(belief.history) > 10:
-        belief.history = belief.history[-10:]
+    window = get_settings().HISTORY_WINDOW
+    if len(belief.history) > window:
+        belief.history = belief.history[-window:]
 
     # Extract operation (only if not already set)
     if belief.operation is None:

@@ -2,6 +2,10 @@
 
 Injects accumulated criteria, active intents, and conversation history
 into the LLM context for multi-turn awareness.
+
+Two engines:
+- Directive engine (USE_DIRECTIVE_ENGINE=True, default): state-facts + single-directive.
+- Legacy engine (USE_DIRECTIVE_ENGINE=False): original imperative-stacking approach.
 """
 
 from app.core.belief_state import ConversationBeliefState
@@ -19,7 +23,7 @@ def detect_clarification_loop(belief: ConversationBeliefState) -> str | None:
         types = {'departamento', 'depto', 'depa', 'casa', 'ph', 'terreno', 'monoambiente'}
         clarifying = {'alquilar o comprar', 'alquiler o venta', 'departamento o casa', 'alquilar o compra',
                       'alquilo o compro', 'buscas para alquilar', 'alquilar o comprar?'}
-        
+
         # Pattern 1: Oscillation (op → type → op → type ...)
         is_oscillating = len(recent) >= 3
         for i, msg in enumerate(recent):
@@ -31,13 +35,13 @@ def detect_clarification_loop(belief: ConversationBeliefState) -> str | None:
                 if not any(t in msg for t in types):
                     is_oscillating = False
                     break
-        
+
         # Pattern 2: Repetition — user keeps sending single-word clarifications
         is_repeating = all(len(msg.split()) <= 2 for msg in recent) and len(set(recent)) <= 2
-        
+
         # Pattern 3: Repeated clarification questions in the last prompt
         is_clarify_loop = any(kw in (''.join(recent[-2:]) if len(recent) >= 2 else '') for kw in clarifying)
-        
+
         if is_oscillating or is_repeating or is_clarify_loop:
             # Build what we know
             parts = []
@@ -49,7 +53,7 @@ def detect_clarification_loop(belief: ConversationBeliefState) -> str | None:
                 parts.append(f"zona={belief.zone}")
             if belief.budget_max:
                 parts.append(f"presupuesto=${belief.budget_max:,.0f}")
-            
+
             return (
                 "⚠️ ALERTA DE BUCLE: Ya le preguntaste al usuario lo mismo 3+ veces y no avanza. "
                 f"Ya sabés: {', '.join(parts)}. "
@@ -59,11 +63,122 @@ def detect_clarification_loop(belief: ConversationBeliefState) -> str | None:
     return None
 
 
-def build_context_prompt(belief: ConversationBeliefState) -> str:
-    """Build an additional context block to prepend to the LLM system prompt.
+def _user_confirmed(belief: ConversationBeliefState) -> bool:
+    """Heuristic: did the last user message look like a confirmation?"""
+    if not belief.history:
+        return False
+    last = belief.history[-1].lower()
+    confirm_words = ["sí", "si", "dale", "ok", "perfecto", "genial", "me sirve",
+                     "mostrame", "confirmo", "bueno", "listo", "adelante", "joya"]
+    return any(w in last for w in confirm_words)
 
-    Gives the LLM awareness of what's been discussed across turns.
-    """
+
+def _next_action_directive(belief: ConversationBeliefState) -> str:
+    """Return a single directive for this turn. First match wins."""
+
+    # Priority 1: pending confirmation to execute
+    if belief.pending_offer and _user_confirmed(belief):
+        return f"ACCIÓN: El usuario confirmó. Ejecutá la acción pendiente: {belief.pending_offer}"
+
+    # Priority 2: property resolved by description, need details
+    if (hasattr(belief, 'resolved_by_description') and
+            'resolved_by_description' in (belief.active_intents or set()) and
+            belief.selected_property_id):
+        return f"ACCIÓN: Llamá get_property_details con id={belief.selected_property_id}"
+
+    # Priority 3: scheduling — all data present, book now
+    if 'scheduling' in (belief.active_intents or set()):
+        if belief.scheduling_day and belief.scheduling_time and belief.scheduling_name:
+            return "ACCIÓN: Tenés día, hora y nombre. Llamá schedule_visit ahora."
+        elif belief.scheduling_day and not belief.scheduling_time:
+            return "ACCIÓN: Falta la hora. Preguntá solo por la hora (no preguntes más nada)."
+        elif belief.scheduling_time and not belief.scheduling_day:
+            return "ACCIÓN: Falta el día. Preguntá solo por el día."
+        elif not belief.scheduling_name:
+            return "ACCIÓN: Falta el nombre para la cita. Preguntá solo por el nombre."
+
+    # Priority 4: criteria sufficient to search
+    if belief.operation and belief.property_type:
+        return "ACCIÓN: Tenés operación y tipo. Buscá propiedades ahora con los filtros conocidos."
+
+    # Priority 5: need first criterion
+    if not belief.operation:
+        return "ACCIÓN: Preguntá si busca alquilar o comprar (una sola pregunta)."
+    if not belief.property_type:
+        return "ACCIÓN: Preguntá qué tipo de propiedad busca (una sola pregunta)."
+
+    return ""
+
+
+def build_context_prompt(belief: ConversationBeliefState) -> str:
+    """Build an additional context block to prepend to the LLM system prompt."""
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    # Feature flag: fall back to legacy engine if directive engine is disabled
+    if not getattr(settings, 'USE_DIRECTIVE_ENGINE', True):
+        return _legacy_build_context_prompt(belief)
+
+    if belief.is_first_turn:
+        return ""
+
+    # ── State facts block ─────────────────────────────────────
+    lines = ["[ESTADO ACTUAL]"]
+    lines.append(f"- Operación: {belief.operation or 'no definida'}")
+    lines.append(f"- Tipo: {belief.property_type or 'no definido'}")
+    lines.append(f"- Zona: {belief.zone or 'no definida'}")
+    lines.append(f"- Presupuesto: {'${:,.0f}'.format(belief.budget_max) if belief.budget_max else 'no definido'}")
+    lines.append(f"- Dormitorios mín: {belief.bedrooms_min if belief.bedrooms_min is not None else 'no definido'}")
+    lines.append(f"- Propiedad seleccionada: {belief.selected_property_id or 'ninguna'}")
+    lines.append(f"- Última herramienta: {belief.last_tool_called or 'ninguna'}")
+    lines.append(f"- Turno: {belief.turn_count}")
+
+    # ── Recent history ─────────────────────────────────────────
+    if len(belief.history) > 1:
+        lines.append("")
+        lines.append("[HISTORIAL RECIENTE]")
+        recent = belief.history[-settings.HISTORY_WINDOW:]
+        for msg in recent:
+            lines.append(f"Usuario: {msg[:120]}")
+
+    # ── Search history ─────────────────────────────────────────
+    if belief.search_history:
+        lines.append("")
+        lines.append("[BÚSQUEDAS PREVIAS]")
+        for idx, entry in enumerate(belief.search_history):
+            criteria_parts = []
+            c = entry.get("criteria", {})
+            if c.get("operation"):
+                criteria_parts.append(f"op={c['operation']}")
+            if c.get("tipo"):
+                criteria_parts.append(f"tipo={c['tipo']}")
+            if c.get("zona"):
+                criteria_parts.append(f"zona={c['zona']}")
+            criteria_str = " ".join(criteria_parts) if criteria_parts else "sin filtros"
+            lines.append(f"Búsqueda {idx + 1}: {criteria_str} → {entry.get('count', 0)} resultados")
+
+    # Last search context (for resolving descriptive references)
+    if belief.last_search_context:
+        lines.append(f"Resultados último listado (usá estos IDs): {belief.last_search_context}")
+
+    # ── Directive block ────────────────────────────────────────
+    directive = _next_action_directive(belief)
+
+    # Append loop alert to directive if detected
+    loop_alert = detect_clarification_loop(belief)
+    if loop_alert:
+        directive = (directive + "\n" if directive else "") + "ALERTA: El usuario preguntó lo mismo varias veces. Buscá con lo que tenés, no pidas más datos."
+
+    if directive:
+        lines.append("")
+        lines.append("[DIRECTIVA PARA ESTE TURNO]")
+        lines.append(directive)
+
+    return "\n".join(lines) + "\n"
+
+
+def _legacy_build_context_prompt(belief: ConversationBeliefState) -> str:
+    """Legacy imperative-stacking context builder (USE_DIRECTIVE_ENGINE=False)."""
     if belief.is_first_turn:
         return ""
 

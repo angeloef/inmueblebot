@@ -306,6 +306,26 @@ def get_tools_schema() -> list[dict[str, Any]]:
     return [schema for _, _, schema in TOOL_REGISTRY.values()]
 
 
+# Alias used by s2_agent and other callers that import get_tools_openai_schema
+get_tools_openai_schema = get_tools_schema
+
+
+def validate_tool_args(name: str, args: dict) -> tuple[bool, str]:
+    """Returns (is_valid, error_message). Checks required args are present."""
+    tool_entry = TOOL_REGISTRY.get(name)
+    if not tool_entry:
+        return False, f"Tool '{name}' not found in registry"
+
+    # Get the schema from the tool's OpenAI definition (third element of tuple)
+    _, _, tool_schema = tool_entry
+    required = tool_schema.get("function", {}).get("parameters", {}).get("required", [])
+    missing = [r for r in required if r not in args or args[r] is None]
+
+    if missing:
+        return False, f"Missing required args for {name}: {missing}"
+    return True, ""
+
+
 async def execute_tool(tool_call: CSStructuredToolCall) -> str:
     """Execute a tool by name and return its string result.
 

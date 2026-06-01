@@ -2,7 +2,7 @@
 
 import json
 
-from app.agents.cs_llm_client import get_client, get_model
+from app.agents.cs_llm_client import get_client, get_model, LLMRole
 from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
 from app.agents.escalation import assess_confidence, build_clarification_message
 from app.core.response_parser import get_final_response_format, parse_llm_response
@@ -49,10 +49,22 @@ Reglas:
    EXCEPCIÓN: Si el usuario solo dice "alquiler" o "venta" después de que YA mostraste resultados de búsqueda,
    NO vuelvas a buscar — los resultados que mostraste ya incluyen esa operación. Preguntale si quiere filtrar por algo más.
 13. ZONA: Siempre que el usuario mencione un barrio o zona (ej: "100 viviendas", "krause", "terminal", "norte"), pasalo SIEMPRE al parámetro zona de search_properties. Nunca ignores la zona pedida.
-13. CRÍTICO: Cuando search_properties devuelve resultados, SIEMPRE mostrá la lista completa al usuario tal cual la devuelve la herramienta. Usá el texto EXACTO — NO reformatees, no resumas, no cambies el formato, no elimines campos. La herramienta ya formatea los resultados correctamente. Solamente si NO hay resultados, preguntá por más criterios.
-14. Cuando el usuario pregunte por costos, precio mensual o servicios de una propiedad que YA mostraste, usá los datos que ya tenés. NO vuelvas a buscar. Si no tenés los datos, usá get_faq_answer.
-15. NUNCA entres en un bucle de preguntas. Si ya sabés la operación (alquiler/venta) y el tipo (departamento/casa), buscá propiedades INMEDIATAMENTE aunque falten zona o presupuesto. Es mejor mostrar resultados amplios que seguir preguntando.
-16. REGLA DE AGENDAMIENTO: Cuando el usuario quiera coordinar una visita, usá ÚNICAMENTE schedule_visit. NO uses get_time — esa herramienta es para preguntas sobre la hora actual, no para agendar. Recolectá property_id, nombre, día y horario. NUNCA pidas el teléfono (ya lo tenemos del WhatsApp del usuario). Si faltan datos, pedilos de a uno. NO vuelvas a buscar propiedades.
+14. CRÍTICO: Cuando search_properties devuelve resultados, SIEMPRE mostrá la lista completa al usuario tal cual la devuelve la herramienta. Usá el texto EXACTO — NO reformatees, no resumas, no cambies el formato, no elimines campos. La herramienta ya formatea los resultados correctamente. Solamente si NO hay resultados, preguntá por más criterios.
+15. Cuando el usuario pregunte por costos, precio mensual o servicios de una propiedad que YA mostraste, usá los datos que ya tenés. NO vuelvas a buscar. Si no tenés los datos, usá get_faq_answer.
+16. NUNCA entres en un bucle de preguntas. Si ya sabés la operación (alquiler/venta) y el tipo (departamento/casa), buscá propiedades INMEDIATAMENTE aunque falten zona o presupuesto. Es mejor mostrar resultados amplios que seguir preguntando.
+17. REGLA DE AGENDAMIENTO: Cuando el usuario quiera coordinar una visita, usá ÚNICAMENTE schedule_visit. NO uses get_time — esa herramienta es para preguntas sobre la hora actual, no para agendar. Recolectá property_id, nombre, día y horario. NUNCA pidas el teléfono (ya lo tenemos del WhatsApp del usuario). Si faltan datos, pedilos de a uno. NO vuelvas a buscar propiedades.
+
+EJEMPLOS DE COMPORTAMIENTO CORRECTO:
+
+Ejemplo 1 — Intent mixto (búsqueda + agendamiento en un mismo mensaje):
+Usuario: "el viernes quiero ver el departamento de la terminal"
+Razonamiento: el usuario mencionó una zona (terminal) y un día (viernes). Si no hay resultados previos de búsqueda en contexto, primero llamá search_properties con zona="Terminal" para obtener el ID, luego usá schedule_visit con el ID y dia="viernes".
+Respuesta correcta: llamar search_properties → obtener IDs → llamar schedule_visit.
+
+Ejemplo 2 — Confirmación de oferta pendiente:
+Contexto: [ESTADO ACTUAL] muestra pending_offer="mostrar fotos del departamento ID 7" y el usuario dijo "sí, confirmá"
+Razonamiento: el usuario confirmó la oferta pendiente. Llamá get_property_images con property_id=7 inmediatamente.
+Respuesta correcta: llamar get_property_images(property_id=7) sin preguntar nada más.
 
 FORMATO DE RESPUESTA FINAL:
 Cuando ya tengas la respuesta definitiva (después de usar herramientas o si no las necesitaste), respondé SIEMPRE con este JSON exacto:
@@ -86,9 +98,9 @@ async def process_message(
         {"role": "user", "content": message},
     ]
 
-    # Step 1: LLM decides — may return tool calls or direct answer
+    # Step 1: LLM decides — may return tool calls or direct answer (REASONING role)
     response = await client.chat.completions.create(
-        model=get_model(),
+        model=get_model(LLMRole.REASONING),
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
@@ -102,6 +114,9 @@ async def process_message(
 
     # Step 2: Execute tool calls if any
     if choice.tool_calls:
+        from app.tools.v2.registry import validate_tool_args
+        _retry_used = False
+
         for tc in choice.tool_calls:
             parsed = CSStructuredToolCall(
                 id=tc.id,
@@ -112,6 +127,25 @@ async def process_message(
                 parsed.arguments = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
                 parsed.arguments = {}
+
+            # Validate required args before execution
+            is_valid, error_msg = validate_tool_args(parsed.name, parsed.arguments)
+            if not is_valid:
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }],
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": f"Error: {error_msg}. Por favor intentá de nuevo con los parámetros correctos.",
+                })
+                continue
 
             tools_called.append(parsed.name)
             result = await execute_tool(parsed)
@@ -135,9 +169,44 @@ async def process_message(
                 "content": str(result),
             })
 
-        # Step 3: Final response with tool results — enforce json_schema
+            # Observe-retry: if result signals failure/empty, do ONE extra LLM call
+            result_str = str(result)
+            _failure_signals = ["0 resultados", "error", "no encontr", "[]"]
+            if (not _retry_used and
+                    any(sig in result_str.lower() for sig in _failure_signals)):
+                _retry_used = True
+                retry_resp = await client.chat.completions.create(
+                    model=get_model(LLMRole.REASONING),
+                    messages=messages,
+                    tools=tools if tools else None,
+                    tool_choice="auto" if tools else None,
+                    temperature=0.3,
+                    max_tokens=512,
+                )
+                retry_choice = retry_resp.choices[0].message
+                if retry_choice.tool_calls:
+                    for rtc in retry_choice.tool_calls:
+                        rparsed = CSStructuredToolCall(id=rtc.id, name=rtc.function.name, arguments={})
+                        try:
+                            rparsed.arguments = json.loads(rtc.function.arguments)
+                        except json.JSONDecodeError:
+                            rparsed.arguments = {}
+                        r_valid, r_err = validate_tool_args(rparsed.name, rparsed.arguments)
+                        if not r_valid:
+                            continue
+                        tools_called.append(rparsed.name)
+                        rresult = await execute_tool(rparsed)
+                        tool_results.append({"name": rparsed.name, "result": rresult, "arguments": rparsed.arguments})
+                        messages.append({
+                            "role": "assistant", "content": None,
+                            "tool_calls": [{"id": rtc.id, "type": "function",
+                                "function": {"name": rtc.function.name, "arguments": rtc.function.arguments}}],
+                        })
+                        messages.append({"role": "tool", "tool_call_id": rtc.id, "content": str(rresult)})
+
+        # Step 3: Final response with tool results — enforce json_schema (SYNTH role)
         final_response = await client.chat.completions.create(
-            model=get_model(),
+            model=get_model(LLMRole.SYNTH),
             messages=messages,
             temperature=0.3,
             max_tokens=4096,
@@ -206,9 +275,9 @@ async def process_message_multistep(
         {"role": "user", "content": message},
     ]
 
-    # Step 1: LLM decides
+    # Step 1: LLM decides (REASONING role)
     response = await client.chat.completions.create(
-        model=get_model(),
+        model=get_model(LLMRole.REASONING),
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
@@ -271,9 +340,9 @@ async def process_message_multistep(
             "content": str(result),
         })
 
-    # Step 3: Final LLM call for closing text
+    # Step 3: Final LLM call for closing text (SYNTH role)
     closing_response = await client.chat.completions.create(
-        model=get_model(),
+        model=get_model(LLMRole.SYNTH),
         messages=messages,
         temperature=0.3,
         max_tokens=4096,
@@ -333,9 +402,9 @@ async def process_message_with_specialist(
         {"role": "user", "content": message},
     ]
 
-    # Step 1: LLM decides with filtered tools
+    # Step 1: LLM decides with filtered tools (REASONING role)
     response = await client.chat.completions.create(
-        model=get_model(),
+        model=get_model(LLMRole.REASONING),
         messages=messages,
         tools=filtered_tools if filtered_tools else None,
         tool_choice="auto" if filtered_tools else None,
@@ -350,12 +419,30 @@ async def process_message_with_specialist(
     # Step 2: Execute tool calls
     import json as _json
     if choice.tool_calls:
+        from app.tools.v2.registry import validate_tool_args as _vta
+        _retry_used = False
+
         for tc in choice.tool_calls:
             parsed = CSStructuredToolCall(id=tc.id, name=tc.function.name, arguments={})
             try:
                 parsed.arguments = _json.loads(tc.function.arguments)
             except _json.JSONDecodeError:
                 parsed.arguments = {}
+
+            # Validate required args before execution
+            is_valid, error_msg = _vta(parsed.name, parsed.arguments)
+            if not is_valid:
+                messages.append({
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{"id": tc.id, "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}}],
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": f"Error: {error_msg}. Por favor intentá de nuevo con los parámetros correctos.",
+                })
+                continue
 
             tools_called.append(parsed.name)
             result = await execute_tool(parsed)
@@ -368,8 +455,44 @@ async def process_message_with_specialist(
             })
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
 
+            # Observe-retry: if result signals failure/empty, do ONE extra LLM call
+            result_str = str(result)
+            _failure_signals = ["0 resultados", "error", "no encontr", "[]"]
+            if (not _retry_used and
+                    any(sig in result_str.lower() for sig in _failure_signals)):
+                _retry_used = True
+                retry_resp = await client.chat.completions.create(
+                    model=get_model(LLMRole.REASONING),
+                    messages=messages,
+                    tools=filtered_tools if filtered_tools else None,
+                    tool_choice="auto" if filtered_tools else None,
+                    temperature=0.3,
+                    max_tokens=512,
+                )
+                retry_choice = retry_resp.choices[0].message
+                if retry_choice.tool_calls:
+                    for rtc in retry_choice.tool_calls:
+                        rparsed = CSStructuredToolCall(id=rtc.id, name=rtc.function.name, arguments={})
+                        try:
+                            rparsed.arguments = _json.loads(rtc.function.arguments)
+                        except _json.JSONDecodeError:
+                            rparsed.arguments = {}
+                        r_valid, r_err = _vta(rparsed.name, rparsed.arguments)
+                        if not r_valid:
+                            continue
+                        tools_called.append(rparsed.name)
+                        rresult = await execute_tool(rparsed)
+                        tool_results.append({"name": rparsed.name, "result": rresult, "arguments": rparsed.arguments})
+                        messages.append({
+                            "role": "assistant", "content": None,
+                            "tool_calls": [{"id": rtc.id, "type": "function",
+                                "function": {"name": rtc.function.name, "arguments": rtc.function.arguments}}],
+                        })
+                        messages.append({"role": "tool", "tool_call_id": rtc.id, "content": str(rresult)})
+
+        # Final response (SYNTH role)
         final_response = await client.chat.completions.create(
-            model=get_model(), messages=messages,
+            model=get_model(LLMRole.SYNTH), messages=messages,
             temperature=0.3, max_tokens=4096,
             response_format=get_final_response_format(),
         )

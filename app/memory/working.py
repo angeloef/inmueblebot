@@ -108,7 +108,7 @@ def _serialize_belief(belief: ConversationBeliefState) -> str:
         "scheduling_time": belief.scheduling_time,
         "scheduling_loop_count": belief.scheduling_loop_count,
         "turn_count": belief.turn_count,
-        "history": belief.history[-5:],  # last 5 messages
+        "history": belief.history[-settings.HISTORY_WINDOW:],  # last N messages (default 8)
         "last_updated_at": belief.last_updated_at,
     })
 

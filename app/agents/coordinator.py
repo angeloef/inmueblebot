@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from app.agents.cs_llm_client import get_client, get_model
+from app.agents.cs_llm_client import get_client, get_model, LLMRole
 from app.agents.schemas import CSAgentResponse as AgentResponse
 from app.core.config import get_settings
 settings = get_settings()
@@ -167,24 +167,83 @@ INTENT_PATTERNS = [
 
 
 def classify_intent(message: str) -> str:
-    """Classify user intent using regex-first approach.
+    """Classify user intent using regex-first approach with ambiguity detection.
 
     Returns the specialist name to delegate to.
+    If multiple categories match or mixed signals are detected, falls back to
+    the synchronous default — callers that support async should call
+    classify_intent_async() instead.
     """
     msg = message.lower().strip()
 
-    # Check each pattern category
+    # Collect all matching categories instead of returning on first match
+    matches: list[str] = []
     for intent, pattern in INTENT_PATTERNS:
         if re.search(pattern, msg):
-            return intent
+            matches.append(intent)
 
-    # Default: search (most common action)
-    return "search"
+    if len(matches) == 0:
+        return "search"
+
+    if len(matches) > 1:
+        # Ambiguous — caller should use LLM classification; return first match as default
+        return matches[0]
+
+    # Single match — check for mixed scheduling + search signals
+    has_scheduling_signal = bool(re.search(
+        r'\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[nñ]ana|hoy|\d+hs|\d+:\d+)\b',
+        msg, re.IGNORECASE,
+    ))
+    has_search_signal = bool(re.search(
+        r'\b(buscar|busco|quiero|necesito|ver|mostrar|departamento|casa|local)\b',
+        msg, re.IGNORECASE,
+    ))
+
+    ambiguous = (
+        (matches[0] == 'scheduling' and has_search_signal) or
+        (matches[0] == 'search' and has_scheduling_signal)
+    )
+    if ambiguous:
+        # Ambiguous — caller should use LLM; return the detected intent as fallback
+        return matches[0]
+
+    return matches[0]
+
+
+def _is_ambiguous_intent(message: str) -> bool:
+    """Return True if the message has mixed/ambiguous signals that need LLM classification."""
+    msg = message.lower().strip()
+    matches: list[str] = []
+    for intent, pattern in INTENT_PATTERNS:
+        if re.search(pattern, msg):
+            matches.append(intent)
+
+    if len(matches) > 1:
+        return True
+
+    if len(matches) == 1:
+        has_scheduling_signal = bool(re.search(
+            r'\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[nñ]ana|hoy|\d+hs|\d+:\d+)\b',
+            msg, re.IGNORECASE,
+        ))
+        has_search_signal = bool(re.search(
+            r'\b(buscar|busco|quiero|necesito|ver|mostrar|departamento|casa|local)\b',
+            msg, re.IGNORECASE,
+        ))
+        return (
+            (matches[0] == 'scheduling' and has_search_signal) or
+            (matches[0] == 'search' and has_scheduling_signal)
+        )
+
+    return False
 
 
 async def classify_intent_llm(message: str, context_prompt: str = "") -> str:
-    """Use LLM for finer-grained intent classification (fallback)."""
-    client = get_client()
+    """Use LLM for finer-grained intent classification (fallback).
+
+    Uses the CLASSIFY role (fast model) for low-latency classification.
+    """
+    client = get_client(LLMRole.CLASSIFY)
 
     prompt = f"""Clasificá la intención del usuario en UNA de estas categorías:
 - search: buscar propiedades, ver detalles o fotos
@@ -200,7 +259,7 @@ Mensaje del usuario: "{message}"
 Respondé SOLO con una palabra: search, scheduling, knowledge, negotiator, o rapport."""
 
     response = await client.chat.completions.create(
-        model=get_model(),
+        model=get_model(LLMRole.CLASSIFY),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         max_tokens=10,
@@ -286,7 +345,7 @@ def _build_scheduling_context(belief) -> str:
 
     # Recent user messages — so the LLM can assemble day + time even when they
     # arrive across separate turns (e.g. "el lunes" then "a las 3 de la tarde").
-    recent = [m for m in (getattr(belief, "history", None) or [])[-6:] if m]
+    recent = [m for m in (getattr(belief, "history", None) or [])[-8:] if m]
     history_text = "\n".join(f"  - {m}" for m in recent) if recent else "  (sin historial)"
 
     return f"""[CONTEXTO DE AGENDAMIENTO]
@@ -331,8 +390,8 @@ async def coordinate(
     # Fast classification
     intent = classify_intent(message)
 
-    # For ambiguous cases, use LLM
-    if intent in ("search",) and not _has_clear_signal(message):
+    # For ambiguous cases (mixed signals or no clear signal), use LLM
+    if _is_ambiguous_intent(message) or (intent in ("search",) and not _has_clear_signal(message)):
         try:
             llm_intent = await classify_intent_llm(message, context_prompt)
             if llm_intent in SPECIALISTS:

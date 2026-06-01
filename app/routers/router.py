@@ -1,5 +1,6 @@
 """Dual router — S1 + Coordinator (multi-agent Phase 8)."""
 
+import asyncio
 import re
 import time
 
@@ -11,6 +12,7 @@ from app.core.belief_state import (
     get_belief,
     is_session_stale,
     SESSION_INACTIVITY_TIMEOUT,
+    soft_reset,
 )
 from app.core.context_aggregator import build_context_prompt
 from app.core.state_transitioner import update_belief
@@ -25,6 +27,15 @@ from app.agents.conversation_manager import (
     get_saved_state,
     clear_saved_state,
 )
+
+# ── Per-session async locks to prevent concurrent message races ───────────────
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_session_lock(session_id: str) -> asyncio.Lock:
+    if session_id not in _session_locks:
+        _session_locks[session_id] = asyncio.Lock()
+    return _session_locks[session_id]
 
 S1_CONFIDENCE_THRESHOLD = 0.70
 
@@ -206,13 +217,13 @@ async def _try_pre_llm_shortcut(
         )
         if other_topics:
             _clear_scheduling_state(belief)
-            clear_saved_state(session_id)
+            await clear_saved_state(session_id)
             return None  # Let normal routing handle the new request
         
         # Loop escape hatch: too many turns without completing
         if belief.scheduling_loop_count >= 5:
             _clear_scheduling_state(belief)
-            clear_saved_state(session_id)
+            await clear_saved_state(session_id)
             return (
                 ChatResponse(
                     response=(
@@ -244,7 +255,7 @@ async def _try_pre_llm_shortcut(
             )
             belief.last_tool_called = "schedule_visit"
             _clear_scheduling_state(belief)
-            clear_saved_state(session_id)
+            await clear_saved_state(session_id)
             return (
                 ChatResponse(
                     response=result_text,
@@ -292,6 +303,14 @@ async def route_message(
     message: str, session_id: str, phone: str = ""
 ) -> tuple[ChatResponse, ConversationBeliefState, str, float]:
     """Route message through S1 → Coordinator with memory integration."""
+    async with _get_session_lock(session_id):
+        return await _route_message_inner(message, session_id, phone)
+
+
+async def _route_message_inner(
+    message: str, session_id: str, phone: str = ""
+) -> tuple[ChatResponse, ConversationBeliefState, str, float]:
+    """Inner route_message implementation (runs under session lock)."""
     t0 = time.perf_counter()
 
     # ── Load belief state ─────────────────────────────────────
@@ -299,38 +318,33 @@ async def route_message(
     if belief is None:
         belief = get_belief(session_id)
 
-    # ── Session staleness check: auto-reset if inactive too long ──
-    # V1 had this reset; V2 was missing it. When a user comes back
-    # after more than SESSION_INACTIVITY_TIMEOUT (30 min), the old
-    # belief state (turn_count, zone, operation) is wiped so the next
-    # message starts fresh. This mirrors the v1 real_estate_agent.py
-    # behavior of resetting the state machine on stale sessions.
+    # ── Session staleness check: soft-reset volatile fields if inactive too long ──
+    # When a user comes back after more than SESSION_INACTIVITY_TIMEOUT (12h),
+    # volatile fields (active_intents, pending_offer, scheduling state) are cleared
+    # while durable criteria (operation, type, zone, budget) are preserved.
     if is_session_stale(belief):
         logger.info(
-            f"[Router] ⏱️ Stale session detected for {session_id} — "
+            f"[Router] Stale session detected for {session_id} — "
             f"turn_count={belief.turn_count}, last_updated={belief.last_updated_at:.0f}, "
-            f"timeout={SESSION_INACTIVITY_TIMEOUT}s. Resetting to fresh state."
+            f"timeout={SESSION_INACTIVITY_TIMEOUT}s. Applying soft reset."
         )
-        # Clear Redis so the old state isn't loaded on the next message
-        await clear_working_memory(session_id)
-        # Also clear the specialist persistence state
-        clear_saved_state(session_id)
-        # Clear short-term memory and reset state machine
-        from app.core.memory import MemoryManager
-        mm = MemoryManager()
-        await mm.clear_short_term_memory(session_id)
-        from app.core.state_machine import ConversationState
-        sm = ConversationState()
-        await sm.reset_state(session_id)
-        # Start fresh
-        belief = get_belief(session_id)
+        belief = soft_reset(belief)
+        # Clear the specialist persistence state (volatile)
+        await clear_saved_state(session_id)
+        # Clear short-term memory
+        try:
+            from app.core.memory import MemoryManager
+            mm = MemoryManager()
+            await mm.clear_short_term_memory(session_id)
+        except Exception:
+            pass
 
     # ── /ResetMemory command ──────────────────────────────────
     # If user sends exactly "/ResetMemory", clear all session state and restart fresh.
     if message.strip().lower() == "/resetmemory":
-        logger.info(f"[Router] 🧹 /ResetMemory triggered for {session_id}")
+        logger.info(f"[Router] /ResetMemory triggered for {session_id}")
         await clear_working_memory(session_id)
-        clear_saved_state(session_id)
+        await clear_saved_state(session_id)
         return (
             ChatResponse(
                 response="✅ Memoria reiniciada. ¿En qué puedo ayudarte?",
@@ -373,7 +387,7 @@ async def route_message(
 
     # ── Cross-turn specialist persistence ─────────────────────
     # If the scheduling specialist was active last turn, keep it active
-    saved = get_saved_state(session_id)
+    saved = await get_saved_state(session_id)
     if saved and saved.active_specialist == "scheduling":
         # Check if user is switching topics away from scheduling
         topic_switch_kw = r"\b(busco|quiero|necesito|buscando|me interesa|mostrame|propiedades|lista|requisitos|garantía|precio|alquilar|comprar)\b"
@@ -398,7 +412,7 @@ async def route_message(
                 _failed = any(m in _txt for m in ("⚠️", "No pude", "Los domingos", "El horario de las", "Tuve un problema", "fuera de"))
                 if not _failed:
                     _clear_scheduling_state(belief)
-                    clear_saved_state(session_id)
+                    await clear_saved_state(session_id)
                 await save_working_memory(belief)
                 latency = (time.perf_counter() - t0) * 1000
                 return (
@@ -418,10 +432,10 @@ async def route_message(
                 belief.scheduling_loop_count = 0
                 # Booking complete — clear scheduling mode entirely
                 _clear_scheduling_state(belief)
-                clear_saved_state(session_id)
+                await clear_saved_state(session_id)
             else:
                 belief.scheduling_loop_count += 1
-            
+
             await save_working_memory(belief)
             return (
                 ChatResponse(
@@ -435,7 +449,7 @@ async def route_message(
         else:
             # Topic switch detected — exit scheduling mode
             _clear_scheduling_state(belief)
-            clear_saved_state(session_id)
+            await clear_saved_state(session_id)
 
     # ── Pre-LLM interception: when system deterministically knows what to do ──
     shortcut = await _try_pre_llm_shortcut(belief, message, session_id, phone)
@@ -503,7 +517,7 @@ async def route_message(
                 full_context = sched_context + "\n" + (context_prompt or "")
                 result, specialist_name = await coordinate(message, session_id, full_context)
                 _update_belief_from_result(belief, result)
-                save_specialist_state(session_id, "scheduling")
+                await save_specialist_state(session_id, "scheduling")
                 if result.tools_called:
                     belief.last_tool_called = result.tools_called[-1]
             else:
@@ -524,7 +538,7 @@ async def route_message(
                     full_context = sched_context + "\n" + (context_prompt or "")
                     result, specialist_name = await coordinate(message, session_id, full_context)
                     _update_belief_from_result(belief, result)
-                    save_specialist_state(session_id, "scheduling")
+                    await save_specialist_state(session_id, "scheduling")
                     if result.tools_called:
                         belief.last_tool_called = result.tools_called[-1]
                 else:
@@ -566,11 +580,11 @@ async def route_message(
             ))
             if not _failed:
                 _clear_scheduling_state(belief)
-                clear_saved_state(session_id)
+                await clear_saved_state(session_id)
             else:
-                save_specialist_state(session_id, "scheduling")
+                await save_specialist_state(session_id, "scheduling")
         else:
-            save_specialist_state(session_id, "scheduling")
+            await save_specialist_state(session_id, "scheduling")
     else:
         multistep_result = await process_message_multistep(message, session_id, context_prompt)
         result = multistep_result

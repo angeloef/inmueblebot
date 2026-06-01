@@ -137,6 +137,25 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = Field(default=0.5, description="Temperatura por defecto para LLM")
     LLM_MAX_TOKENS: int = Field(default=1000, description="Máximo de tokens en respuesta")
 
+    # === Session config ===
+    SESSION_INACTIVITY_TIMEOUT: int = Field(default=43200, description="Session inactivity timeout in seconds (12 hours)")
+
+    # === History window ===
+    HISTORY_WINDOW: int = Field(default=8, description="Number of recent messages to keep in history")
+
+    # === LLM Tiering ===
+    LLM_TIERING_ENABLED: bool = Field(default=False, description="Enable role-based model tiering (strong/fast)")
+    LLM_MODEL_REASONING: Optional[str] = Field(default=None, description="Strong model for tool decisions (overrides OPENAI_MODEL_REASONING when set)")
+    LLM_MODEL_CLASSIFY: Optional[str] = Field(default=None, description="Fast model for intent classification (overrides OPENAI_MODEL_FAST when set)")
+    LLM_MODEL_SYNTH: Optional[str] = Field(default=None, description="Fast model for final text synthesis (overrides OPENAI_MODEL_FAST when set)")
+
+    # === Default tiered models (OpenAI only) ===
+    OPENAI_MODEL_REASONING: str = Field(default="gpt-5.5", description="Strong model for reasoning/tool decisions")
+    OPENAI_MODEL_FAST: str = Field(default="gpt-5.4-mini", description="Fast model for classification and synthesis")
+
+    # === Directive engine ===
+    USE_DIRECTIVE_ENGINE: bool = Field(default=True, description="Use directive-based context engine instead of legacy imperative stacking")
+
     # === Modular Prompts (Feature Flag) ===
     USE_MODULAR_PROMPTS: bool = Field(
         default=True,

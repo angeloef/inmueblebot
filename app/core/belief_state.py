@@ -9,8 +9,10 @@ from typing import Optional
 
 
 # ⏱️ Inactivity threshold: if more than this many seconds have passed since
-# the last turn, the session is considered stale and gets auto-reset.
-SESSION_INACTIVITY_TIMEOUT = 30 * 60  # 30 minutes
+# the last turn, the session is considered stale.
+# Kept as module-level constant for backward compatibility with router imports.
+# Actual value now comes from get_settings().SESSION_INACTIVITY_TIMEOUT (12 hours).
+SESSION_INACTIVITY_TIMEOUT = 43200  # 12 hours — kept for import compatibility
 
 
 @dataclass
@@ -57,6 +59,9 @@ class ConversationBeliefState:
     # ⏱️ Timestamp (epoch seconds) of the most recent user message.
     # Used to detect stale sessions and auto-reset.
     last_updated_at: float = 0.0
+
+    # Schema version — bump when belief structure changes to aid migration.
+    schema_version: int = 2
 
     # ── Computed ───────────────────────────────────────────────
 
@@ -171,21 +176,45 @@ def clear_session(session_id: str) -> None:
     _session_store.pop(session_id, None)
 
 
+def soft_reset(belief: ConversationBeliefState) -> ConversationBeliefState:
+    """Reset volatile fields while preserving durable search context.
+
+    Volatile (cleared): active_intents, pending_offer, scheduling_name/phone/day/time,
+    scheduling_loop_count, last_tool_called.
+
+    Durable (kept): operation, property_type, zone, budget_max, bedrooms_min,
+    selected_property_id, search_history, history, turn_count.
+    """
+    belief.active_intents = set()
+    belief.pending_offer = None
+    belief.scheduling_name = ""
+    belief.scheduling_phone = ""
+    belief.scheduling_day = ""
+    belief.scheduling_time = ""
+    belief.scheduling_loop_count = 0
+    belief.last_tool_called = None
+    return belief
+
+
 def is_session_stale(belief: ConversationBeliefState) -> bool:
     """Return True if the session has been inactive longer than the timeout.
 
     A session is stale when:
     1. It has accumulated data (turn_count > 0), AND
-    2. More than SESSION_INACTIVITY_TIMEOUT seconds have passed since the last message,
-       OR last_updated_at was never set (migration from pre-timestamp belief states).
+    2. last_updated_at > 0 (timestamp was set), AND
+    3. More than SESSION_INACTIVITY_TIMEOUT seconds have passed since the last message.
+
+    NOTE: last_updated_at == 0.0 means the timestamp was never set (new session or
+    pre-timestamp migration). This is treated as NOT stale — only expire sessions where
+    we actually know when they were last active.
     """
     if belief.turn_count == 0:
         return False
-    # Migration: if last_updated_at is 0.0 (legacy entry that predates the timestamp
-    # field), treat it as stale so the next message starts fresh. This prevents
-    # old zone/operation/turn_count from persisting across conversations.
+    # Treat 0.0 as unknown timestamp — do not treat as stale
     if belief.last_updated_at <= 0:
-        return True
+        return False
     import time
+    from app.core.config import get_settings
+    timeout = get_settings().SESSION_INACTIVITY_TIMEOUT
     elapsed = time.time() - belief.last_updated_at
-    return elapsed >= SESSION_INACTIVITY_TIMEOUT
+    return elapsed >= timeout

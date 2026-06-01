@@ -1,61 +1,76 @@
-"""LLM client factory — provider-agnostic, OpenAI-compatible interface.
+"""LLM client factory with role-aware model selection. OpenAI only.
 
-Supported providers (all expose the same OpenAI chat/completions API):
-  - openai      (default) — api.openai.com
-  - deepseek    — api.deepseek.com  (DeepSeek-V3 = deepseek-chat, R1 = deepseek-reasoner)
-  - openrouter  — openrouter.ai/api/v1  (any model via single key)
+Supported roles:
+  - REASONING  — gpt-5.5 — tool decisions, agent loop
+  - CLASSIFY   — gpt-5.4-mini — intent classification
+  - SYNTH      — gpt-5.4-mini — final text synthesis
+  - DEFAULT    — fallback, uses OPENAI_MODEL
 
-Select via LLM_PROVIDER env var. Model name via OPENAI_MODEL / DEEPSEEK_MODEL / OPENROUTER_MODEL.
+Model tiering is enabled via LLM_TIERING_ENABLED=true in config.
+When disabled (default), all roles use OPENAI_MODEL.
 """
 
+from enum import Enum
+from typing import Optional
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
 
-_PROVIDER_BASE_URLS = {
-    "deepseek": "https://api.deepseek.com",
-    "openrouter": "https://openrouter.ai/api/v1",
-}
 
-_clients: dict[str, AsyncOpenAI] = {}
+class LLMRole(str, Enum):
+    REASONING = "reasoning"  # gpt-5.5 — tool decisions, agent loop
+    CLASSIFY = "classify"    # gpt-5.4-mini — intent classification
+    SYNTH = "synth"          # gpt-5.4-mini — final text synthesis
+    DEFAULT = "default"      # fallback, uses OPENAI_MODEL
 
 
-def get_client() -> AsyncOpenAI:
-    """Return the configured LLM client (OpenAI-compatible interface)."""
+_client: Optional[AsyncOpenAI] = None
+
+
+def get_client(role: LLMRole = LLMRole.DEFAULT) -> AsyncOpenAI:
+    """Returns an AsyncOpenAI client. All roles use the same OpenAI endpoint."""
+    global _client
     settings = get_settings()
-    provider = settings.LLM_PROVIDER.lower()
-
-    if provider not in _clients:
-        if provider == "deepseek":
-            _clients[provider] = AsyncOpenAI(
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=_PROVIDER_BASE_URLS["deepseek"],
-            )
-        elif provider == "openrouter":
-            _clients[provider] = AsyncOpenAI(
-                api_key=settings.OPENROUTER_API_KEY,
-                base_url=_PROVIDER_BASE_URLS["openrouter"],
-            )
-        else:
-            _clients[provider] = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-    return _clients[provider]
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+        )
+    return _client
 
 
-def get_model() -> str:
-    """Return the model ID for the configured provider."""
-    settings = get_settings()
-    provider = settings.LLM_PROVIDER.lower()
-    if provider == "deepseek":
-        return settings.DEEPSEEK_MODEL
-    if provider == "openrouter":
-        return settings.OPENROUTER_MODEL
-    return settings.OPENAI_MODEL
+def get_model(role: LLMRole = LLMRole.DEFAULT) -> str:
+    """Returns the correct model ID for the given role.
 
+    When LLM_TIERING_ENABLED is False (default), always returns OPENAI_MODEL
+    regardless of role — preserving existing behavior.
 
-def supports_strict_json_schema() -> bool:
-    """Whether the provider supports OpenAI-style strict JSON schema response_format.
-
-    DeepSeek and OpenRouter support json_object but not json_schema with strict=True.
+    When tiering is enabled:
+    - REASONING → LLM_MODEL_REASONING or OPENAI_MODEL_REASONING (gpt-5.5)
+    - CLASSIFY/SYNTH → LLM_MODEL_CLASSIFY or OPENAI_MODEL_FAST (gpt-5.4-mini)
+    - DEFAULT → OPENAI_MODEL
     """
-    return get_settings().LLM_PROVIDER.lower() == "openai"
+    settings = get_settings()
+
+    # If tiering is disabled, always return the default model
+    if not getattr(settings, "LLM_TIERING_ENABLED", False):
+        return getattr(settings, "OPENAI_MODEL", "gpt-5.4-mini")
+
+    # Role-specific model selection
+    if role == LLMRole.REASONING:
+        return (
+            getattr(settings, "LLM_MODEL_REASONING", None)
+            or getattr(settings, "OPENAI_MODEL_REASONING", "gpt-5.5")
+        )
+    elif role in (LLMRole.CLASSIFY, LLMRole.SYNTH):
+        return (
+            getattr(settings, "LLM_MODEL_CLASSIFY", None)
+            or getattr(settings, "OPENAI_MODEL_FAST", "gpt-5.4-mini")
+        )
+    else:
+        return getattr(settings, "OPENAI_MODEL", "gpt-5.4-mini")
+
+
+def supports_strict_json_schema(role: LLMRole = LLMRole.DEFAULT) -> bool:
+    """OpenAI always supports strict JSON schema."""
+    return True
