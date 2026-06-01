@@ -134,22 +134,6 @@ function FaqRow({ faq, onEdit, onDelete, onMoveUp, onMoveDown, isFirst, isLast, 
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          {reorderEnabled && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <button
-                className="faq-order-btn"
-                title="Subir"
-                onClick={onMoveUp}
-                disabled={isFirst}
-              >▲</button>
-              <button
-                className="faq-order-btn"
-                title="Bajar"
-                onClick={onMoveDown}
-                disabled={isLast}
-              >▼</button>
-            </div>
-          )}
           <IconButton name="edit" onClick={() => onEdit(faq)} title="Editar" />
           <IconButton name="trash" onClick={handleDelete} title="Eliminar" />
         </div>
