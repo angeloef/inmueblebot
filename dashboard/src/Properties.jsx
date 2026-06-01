@@ -1,4 +1,4 @@
-import React, { useState, Fragment } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
 import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty } from './api';
@@ -648,11 +648,19 @@ export default function Properties({ onOpenClient, initialProperty }) {
   const [filter, setFilter] = useState('all');
   const [op, setOp] = useState('all');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState('grid');
+  const [view, setView] = useState(() => {
+    const stored = localStorage.getItem('propView');
+    return stored === 'list' || stored === 'grid' ? stored : 'grid';
+  });
   const [open, setOpen] = useState(initialProperty || null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  // Persistir la vista elegida para recordarla al volver a la pestaña
+  useEffect(() => {
+    localStorage.setItem('propView', view);
+  }, [view]);
 
   const handleDelete = (property) => {
     // Close immediately — the optimistic update removes the card on the spot and

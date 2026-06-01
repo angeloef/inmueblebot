@@ -440,6 +440,8 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
   const tabletQuery = window.matchMedia('(min-width: 769px) and (max-width: 1280px)');
 
   const [view, setView] = useState(() => {
+    const stored = localStorage.getItem('calView');
+    if (stored === 'month' || stored === 'week' || stored === 'day') return stored;
     if (mobileQuery.matches) return 'day';
     if (tabletQuery.matches) return 'week';
     return 'month';
@@ -459,15 +461,23 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     mobileQuery.addEventListener('change', handleMobile);
     tabletQuery.addEventListener('change', handleTablet);
 
-    // Forzar en mount por si matchMedia tardó en evaluarse
-    if (mobileQuery.matches) setView('day');
-    else if (tabletQuery.matches) setView(v => v === 'month' ? 'week' : v);
+    // Forzar en mount por si matchMedia tardó en evaluarse.
+    // Si el usuario tenía una vista guardada, respetarla.
+    if (!localStorage.getItem('calView')) {
+      if (mobileQuery.matches) setView('day');
+      else if (tabletQuery.matches) setView(v => v === 'month' ? 'week' : v);
+    }
 
     return () => {
       mobileQuery.removeEventListener('change', handleMobile);
       tabletQuery.removeEventListener('change', handleTablet);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persistir la vista elegida para recordarla al volver a la pestaña
+  React.useEffect(() => {
+    localStorage.setItem('calView', view);
+  }, [view]);
 
   const [popover, setPopover] = useState(null);
   const [editor, setEditor] = useState(null);
