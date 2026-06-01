@@ -734,17 +734,26 @@ export default function Chats() {
         />
       )}
 
-      {/* Left panel — conversation list */}
-      <div style={{
-        ...S.panel,
-        ...(isMobile ? {
+      {/* Left panel — conversation list (wrapped only on mobile for slide-out) */}
+      {isMobile ? (
+        <div style={{
+          ...S.panel,
           position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 101,
           width: 300, minWidth: 300,
+          borderRight: 'none',
           transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 280ms cubic-bezier(0.2,0.7,0.2,1)',
           boxShadow: '0 4px 8px rgba(0,0,0,0.06), 0 12px 32px rgba(0,0,0,0.10)',
-        } : {}),
-      }}>
+        }}>
+          <ConversationList
+            conversations={conversations}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            search={search}
+            onSearchChange={setSearch}
+          />
+        </div>
+      ) : (
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
@@ -752,7 +761,7 @@ export default function Chats() {
           search={search}
           onSearchChange={setSearch}
         />
-      </div>
+      )}
 
       {/* Right panel — chat view or placeholder */}
       {selectedId ? (
