@@ -2,7 +2,6 @@
 
 Examples:
 - search_properties → get_property_details (view result)
-- search_properties → compare_properties (compare 2+)
 - get_property_details → schedule_visit (view then schedule)
 """
 
@@ -14,17 +13,12 @@ SKILL_CHAINS: dict[str, list[str]] = {
     "search_properties": [
         "get_property_details",
         "get_property_images",
-        "compare_properties",
     ],
     "get_property_details": [
         "get_property_images",
         "schedule_visit",
     ],
     "get_property_images": [
-        "get_property_details",
-        "schedule_visit",
-    ],
-    "compare_properties": [
         "get_property_details",
         "schedule_visit",
     ],
@@ -73,8 +67,6 @@ def find_similar_skills(query: str) -> list[str]:
         "visita": "schedule_visit",
         "coordinar": "schedule_visit",
         "turno": "schedule_visit",
-        "comparar": "compare_properties",
-        "comparativa": "compare_properties",
     }
 
     query_lower = query.lower()

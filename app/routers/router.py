@@ -119,6 +119,21 @@ _EMERGENCY = re.compile(
     re.IGNORECASE,
 )
 
+# Explicit request to talk to a real person → human handoff, top priority.
+# Must outrank negotiator/search keyword routing (e.g. "todo caro, quiero hablar
+# con una persona real" should escalate, not route to the price specialist).
+_HUMAN_REQUEST = re.compile(
+    r"\b(hablar con (?:una |un )?(?:persona|humano|agente|asesor|operador|representante|alguien|encargad[oa]|due[ñn][oa])"
+    r"|(?:una |un )?persona real|alguien real|gente real|ser humano"
+    r"|atend[ae] (?:una |un )?(?:persona|humano)"
+    r"|p[aá]same? con (?:una |un |algún )?(?:persona|humano|agente|asesor|operador|representante|alguien)"
+    r"|comunic[aá](?:r|me|rme)? con (?:una |un |algún )?(?:persona|humano|agente|asesor|operador|representante|alguien)"
+    r"|quiero (?:un |una )?(?:agente|asesor|humano|operador|representante)"
+    r"|necesito (?:un |una )?(?:agente|asesor|humano|operador|representante)"
+    r"|atenci[oó]n humana|asistencia humana)\b",
+    re.IGNORECASE,
+)
+
 # Hard topic switches that should EXIT an awaiting flow.
 _HARD_TOPIC_SWITCH = re.compile(
     r"\b(busco|buscar|quiero ver|mostrame|otra propiedad|otra cosa|"
@@ -154,8 +169,69 @@ def _is_emergency(message: str) -> bool:
     return bool(_EMERGENCY.search(message or ""))
 
 
+def _is_human_request(message: str) -> bool:
+    """True if the user explicitly asks to talk to a real person/agent."""
+    return bool(_HUMAN_REQUEST.search(message or ""))
+
+
 def _is_hard_topic_switch(message: str) -> bool:
     return bool(_HARD_TOPIC_SWITCH.search(message or ""))
+
+
+# Photo / detail intents — a refinement must not hijack these.
+_PHOTO_DETAIL_INTENT = re.compile(
+    r"\b(fotos?|im[aá]gen(?:es)?|detalles?|informaci[oó]n|caracter[ií]sticas)\b",
+    re.IGNORECASE,
+)
+# Scheduling verbs that indicate the user wants to book, not refine a search.
+_SCHEDULING_VERB = re.compile(
+    r"\b(agendar|agend[aá]|visita|visitar|coordinar|coordin[aá]|turno|cita|reservar)\b",
+    re.IGNORECASE,
+)
+
+
+# A bare money amount ("tengo 35 millones", "200 mil") — budget without a prefix.
+_BARE_AMOUNT = re.compile(r"\b\d[\d.,]*\s*(?:mil|millones|mill[oó]n|lucas|palos|k)\b", re.IGNORECASE)
+
+
+def _message_has_search_criteria(message: str) -> bool:
+    """True if the message carries at least one property search criterion
+    (budget, bedrooms, zone, type, or operation)."""
+    from app.core.state_transitioner import (
+        BUDGET_PATTERN, BEDROOMS_PATTERN, ZONE_PATTERNS, TYPE_PATTERNS, OPERATION_PATTERNS,
+    )
+    low = (message or "").lower()
+    if BUDGET_PATTERN.search(low) or BEDROOMS_PATTERN.search(low) or _BARE_AMOUNT.search(low):
+        return True
+    for pattern, _ in (ZONE_PATTERNS + TYPE_PATTERNS + OPERATION_PATTERNS):
+        if re.search(pattern, low):
+            return True
+    return False
+
+
+def _is_search_refinement(belief, message: str) -> bool:
+    """True if the message refines an existing search (new criteria, no scheduling).
+
+    Guards against the spurious-scheduling bug: after a search, messages like
+    "2 ambientes, zona centro" or "tengo 35 millones" must re-run the search,
+    not get swallowed into the scheduling flow.
+    """
+    # Need a prior search to refine.
+    if not getattr(belief, "last_search_ids", None):
+        return False
+    # Must carry NEW search criteria.
+    if not _message_has_search_criteria(message):
+        return False
+    # Must NOT be a scheduling message (day/time/name/booking verb).
+    from app.core.state_transitioner import DAY_PATTERN, TIME_PATTERN, NAME_PATTERN
+    if _SCHEDULING_VERB.search(message):
+        return False
+    if DAY_PATTERN.search(message) or NAME_PATTERN.search(message):
+        return False
+    # Don't hijack photo/detail asks — those route normally.
+    if _PHOTO_DETAIL_INTENT.search(message):
+        return False
+    return True
 
 
 def _is_confirmation(message: str) -> bool:
@@ -184,6 +260,21 @@ def _detect_awaiting(response: str, belief) -> "str | None":
             return "show_photos"
     is_question = "?" in response or "¿" in response
     if not is_question:
+        return None
+    # Guard against spurious scheduling entry: only infer a scheduling_* slot when
+    # scheduling is actually plausible — i.e. a property is selected, scheduling is
+    # already in progress, or the scheduling intent is active. Otherwise a generic
+    # "¿cuándo...?" or "...nombre..." in a non-scheduling reply must NOT trap the
+    # user in the booking flow.
+    _sched_active = (
+        getattr(belief, "selected_property_id", None) is not None
+        or "scheduling" in (getattr(belief, "active_intents", None) or set())
+        or str(getattr(belief, "awaiting", "") or "").startswith("scheduling")
+        or bool(getattr(belief, "scheduling_name", ""))
+        or bool(getattr(belief, "scheduling_day", ""))
+        or bool(getattr(belief, "scheduling_time", ""))
+    )
+    if not _sched_active:
         return None
     if ("confirm" in low and "visita" in low) or "respondé sí" in low or "responde sí" in low:
         return "scheduling_confirm"
@@ -617,6 +708,28 @@ async def _route_message_inner(
             belief, "emergency-handoff", 0,
         )
 
+    # ── Explicit human-handoff request (schema v4) ────────────
+    # Top priority: if the user asks for a real person, escalate immediately —
+    # even mid-scheduling or alongside complaints ("todo caro, quiero una persona").
+    # This must run BEFORE specialist routing so keyword-based routing (e.g.
+    # "caro" → negotiator) can't swallow the escalation.
+    if _is_human_request(message):
+        logger.info(f"[Router] Human handoff requested for {session_id}: {message[:80]}")
+        try:
+            from app.tools.v2.request_human_assistance import request_human_assistance as _rha
+            handoff = await _rha(reason="user_requested", message=message)
+        except Exception:
+            handoff = "Te comunico con un asesor para que te atienda personalmente."
+        belief.consecutive_failures = 0
+        belief.awaiting = None
+        belief.last_bot_message = handoff
+        await clear_saved_state(session_id)
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=handoff, tools_called=["request_human_assistance"], confidence=1.0),
+            belief, "human-handoff", 0,
+        )
+
     # ── Out-of-scope guard ────────────────────────────────────
     # Detect clearly non-real-estate requests and redirect politely.
     # This runs BEFORE any S1 patterns so the bot never engages with
@@ -772,25 +885,64 @@ async def _route_message_inner(
                 belief, "awaiting::confirm-reask", 0,
             )
 
-        # B3. Mid-flow interruption: user asks a question (not a topic switch).
+        # B3. Mid-flow interruption: user asks something else (not a topic switch).
+        # "Atender y mantener pendiente" — answer the new ask with the RIGHT
+        # specialist/tool, keep the scheduling flow pending, and offer to resume.
         elif "?" in message or "¿" in message:
-            from app.agents.s2_agent import process_message_with_specialist
-            from app.agents.coordinator import SPECIALISTS
-            answer = await process_message_with_specialist(
-                message=message,
-                session_id=session_id,
-                context_prompt=context_prompt,
-                specialist=SPECIALISTS.get("knowledge"),
-                recent_messages=recent_messages,
-            )
-            resp = answer.response + "\n\n¿Querés continuar con el agendamiento de la visita?"
-            # Keep belief.awaiting unchanged.
+            _low = message.lower()
+            _pid = getattr(belief, "selected_property_id", None)
+            _tools: list = []
+            _answer_text = ""
+
+            # (a) Photo request on the active property → answer directly.
+            if _pid and re.search(r"\b(fotos?|im[aá]gen(?:es)?)\b", _low):
+                from app.tools.v2.get_property_images import get_property_images
+                import json as _json
+                _raw = await get_property_images(property_id=_pid)
+                try:
+                    _answer_text = _json.loads(_raw).get("display_text", _raw)
+                except Exception:
+                    _answer_text = _raw
+                belief.last_tool_called = "get_property_images"
+                _tools = ["get_property_images"]
+
+            # (b) Detail / feature question on the active property → answer directly.
+            elif _pid and re.search(
+                r"\b(detalles?|caracter[ií]sticas|garaje|cochera|patio|quincho|"
+                r"metros|m2|m²|superficie|ambientes?|dormitorios?|ba[ñn]os?|"
+                r"tiene|cu[aá]ntos?)\b", _low,
+            ):
+                from app.tools.v2.get_property_details import get_property_details
+                _answer_text = await get_property_details(property_id=_pid)
+                belief.last_tool_called = "get_property_details"
+                _tools = ["get_property_details"]
+
+            # (c) New search vs FAQ → delegate to the matching specialist.
+            else:
+                from app.agents.s2_agent import process_message_with_specialist
+                from app.agents.coordinator import SPECIALISTS
+                _is_new_search = _message_has_search_criteria(message) or re.search(
+                    r"\b(terrenos?|lotes?|casas?|departamentos?|deptos?|monoambientes?|"
+                    r"ph|otra propiedad|otra opci[oó]n|otras opciones)\b", _low,
+                )
+                _spec = SPECIALISTS["search"] if _is_new_search else SPECIALISTS["knowledge"]
+                answer = await process_message_with_specialist(
+                    message=message,
+                    session_id=session_id,
+                    context_prompt=context_prompt,
+                    specialist=_spec,
+                    recent_messages=recent_messages,
+                )
+                _answer_text = answer.response
+                _tools = getattr(answer, "tools_called", [])
+
+            resp = _answer_text + "\n\n¿Seguimos con el agendamiento de la visita?"
+            # Keep belief.awaiting unchanged — scheduling stays pending.
             belief.last_bot_message = resp
             belief.consecutive_failures = 0
             await save_working_memory(belief)
             return (
-                ChatResponse(response=resp, tools_called=getattr(answer, "tools_called", []),
-                             confidence=getattr(answer, "confidence", 0.8)),
+                ChatResponse(response=resp, tools_called=_tools, confidence=0.9),
                 belief, "awaiting::midflow-answer", 0,
             )
 
@@ -846,6 +998,86 @@ async def _route_message_inner(
                              confidence=getattr(result, "confidence", 0.9)),
                 belief, label, 0,
             )
+
+    # ── Multi-intent: photos + scheduling in one message (FIX 6) ──
+    # "quiero ver las fotos y también agendar una visita" → show photos FIRST,
+    # then kick off the scheduling flow in the same turn. Without this the bot
+    # would pick one intent (scheduling) and silently drop the photo request.
+    _mi_pid = getattr(belief, "selected_property_id", None)
+    if (_mi_pid
+            and not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_"))
+            and re.search(r"\b(fotos?|im[aá]gen(?:es)?)\b", message.lower())
+            and re.search(r"\b(agendar|agend[aá]|agendarme|visita|visitar|coordinar|coordin[aá]|turno|cita)\b", message.lower())):
+        logger.info(f"[Router] 🎯 Multi-intent photos+scheduling for {session_id}: {message[:80]}")
+        from app.tools.v2.get_property_images import get_property_images
+        import json as _json
+        _raw = await get_property_images(property_id=_mi_pid)
+        try:
+            _photos_text = _json.loads(_raw).get("display_text", _raw)
+        except Exception:
+            _photos_text = _raw
+        belief.last_tool_called = "get_property_images"
+        # Kick off scheduling: capture any day/time bundled in this message.
+        _capture_day_time(belief, message)
+        belief.active_intents.add("scheduling")
+        await save_specialist_state(session_id, "scheduling")
+        # Advance to the next scheduling slot we still need.
+        belief.awaiting = _next_scheduling_slot(belief) or "scheduling_day"
+        if belief.awaiting == "scheduling_day":
+            _kick = "Y para la visita, ¿qué día te quedaría bien?"
+        elif belief.awaiting == "scheduling_time":
+            _kick = "Y para la visita, ¿en qué horario te queda mejor?"
+        elif belief.awaiting == "scheduling_name":
+            _kick = "Y para coordinar la visita, ¿a nombre de quién la dejo?"
+        else:
+            _kick = "Y avanzamos con la visita: ¿qué día te quedaría bien?"
+        resp = f"{_photos_text}\n\n{_kick}"
+        belief.last_bot_message = resp
+        belief.consecutive_failures = 0
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=resp, tools_called=["get_property_images"], confidence=0.95),
+            belief, "multi-intent::photos+scheduling", 0,
+        )
+
+    # ── Search refinement fast-path (FIX 4/5) ─────────────────
+    # After a search, a message with new criteria and no scheduling signal is a
+    # refinement — re-run the search. This preempts the spurious-scheduling bug
+    # where "2 ambientes, zona centro" or "tengo 35 millones" got routed to the
+    # scheduling flow ("¿qué día querés coordinar la visita?").
+    if not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_")) \
+            and _is_search_refinement(belief, message):
+        logger.info(f"[Router] 🔁 Search refinement for {session_id}: {message[:80]}")
+        # A refinement is a topic switch away from any stale scheduling persistence.
+        _clear_scheduling_state(belief)
+        await clear_saved_state(session_id)
+        from app.agents.s2_agent import process_message_with_specialist
+        from app.agents.coordinator import SPECIALISTS
+        result = await process_message_with_specialist(
+            message=message,
+            session_id=session_id,
+            context_prompt=context_prompt,
+            specialist=SPECIALISTS["search"],
+            recent_messages=recent_messages,
+        )
+        _update_belief_from_result(belief, result)
+        _handoff = await _finalize_and_check_handoff(
+            belief, session_id, result.response, getattr(result, "tools_called", []),
+        )
+        if _handoff is not None:
+            _resp_text, _resp_tools = _handoff
+        else:
+            _resp_text, _resp_tools = result.response, getattr(result, "tools_called", [])
+        await save_working_memory(belief)
+        return (
+            ChatResponse(
+                response=_resp_text,
+                tools_called=_resp_tools,
+                confidence=getattr(result, "confidence", 0.9),
+                messages=getattr(result, "messages", []),
+            ),
+            belief, "search-refinement", 0,
+        )
 
     # ── Inmobiliaria-office visit: share location + hours, never book ──
     if is_inmobiliaria_visit(message):

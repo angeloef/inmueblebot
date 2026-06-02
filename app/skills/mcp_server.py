@@ -103,7 +103,6 @@ def _execute_skill_tool(tool_name: str, arguments: dict) -> str:
         "get_property_images": _run_images,
         "get_faq_answer": _run_faq,
         "schedule_visit": _run_schedule,
-        "compare_properties": _run_compare,
     }
 
     handler = handlers.get(tool_name)
@@ -166,26 +165,3 @@ def _run_schedule(args: dict) -> str:
     )
 
 
-def _run_compare(args: dict) -> str:
-    import asyncio
-    from app.tools.v2.get_property_details import get_property_details
-
-    ids = args.get("property_ids", args.get("ids", []))
-    if isinstance(ids, str):
-        ids = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
-
-    if not ids:
-        return "Necesito al menos un ID para comparar."
-
-    ids = ids[:3]
-
-    async def _compare():
-        results = []
-        for pid in ids:
-            detail = await get_property_details(property_id=pid)
-            results.append(detail)
-        return results
-
-    results = asyncio.run(_compare())
-    header = f"Comparativa de {len(ids)} propiedades:\n\n"
-    return header + "\n---\n".join(results)

@@ -152,7 +152,6 @@ INTENT_PATTERNS = [
     (r"\b(agendar|visita|visitar|coordinar|turno|recorrer)\b", "scheduling"),
     (r"\b(fotos?|im[aá]genes?|ver fotos?|mostr[aá] fotos?)\b", "photos"),
     (r"\b(detalles?|info|informaci[oó]n|mostrame m[aá]s|ver m[aá]s)\b", "detalles"),
-    (r"\b(comparar|comparativa|diferencia entre|cu[aá]l es mejor)\b", "comparing"),
 ]
 
 
