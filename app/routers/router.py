@@ -1102,7 +1102,7 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                     result_lines = result_text.split("\n")
                     summaries = []
                     for i, line in enumerate(result_lines):
-                        m = re.match(r"\s*\[(\d+)\]\s+(.+?)\s+—\s+(.+?)$", line)
+                        m = re.match(r"\s*\[(\d+)\]\s+(.+?)\s+(?:—|--)\s+(.+?)$", line)
                         if m:
                             pid = m.group(1)
                             type_zone = m.group(2).strip()  # "Departamento en Centro"
@@ -1123,6 +1123,11 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                             summaries.append(summary)
                     if summaries:
                         belief.last_search_context = " | ".join(summaries)
+                    elif belief.last_search_ids and result_text:
+                        # Fallback: store raw result so _property_type_from_context
+                        # can still scan "[ID] TypeName" even when the summary
+                        # regex didn't match (e.g. tool uses "--" instead of "—").
+                        belief.last_search_context = result_text[:3000]
 
                     # Zero-result zone fallback: when the zone-filtered search returns nothing,
                     # clear the zone so the *next* turn searches broadly, and set a pending_offer
