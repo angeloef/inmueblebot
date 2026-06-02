@@ -49,7 +49,7 @@ class PropertyReferenceParser(HybridParser):
             message=raw,
             system_prompt=prompt,
             temperature=0,
-            max_tokens=10,
+            max_completion_tokens=10,
             return_usage=True,
         )
         result = (result or "").strip()

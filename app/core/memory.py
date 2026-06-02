@@ -828,7 +828,7 @@ class MemoryManager:
             response = await llm_router.chat(
                 message=summary_prompt,
                 system_prompt="Eres un asistente que resume conversaciones.",
-                max_tokens=200,
+                max_completion_tokens=200,
                 temperature=0.3,
             )
 

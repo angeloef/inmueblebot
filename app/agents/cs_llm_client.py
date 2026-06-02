@@ -74,3 +74,15 @@ def get_model(role: LLMRole = LLMRole.DEFAULT) -> str:
 def supports_strict_json_schema(role: LLMRole = LLMRole.DEFAULT) -> bool:
     """OpenAI always supports strict JSON schema."""
     return True
+
+
+def max_tokens_kwarg(n: int, role: LLMRole = LLMRole.DEFAULT) -> dict:
+    """Returns the correct token-limit kwarg for the model.
+
+    GPT-5 and o-series models require max_completion_tokens.
+    Older models (gpt-4*, gpt-3.5*) use max_tokens.
+    """
+    model = get_model(role)
+    if model.startswith("gpt-5") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4"):
+        return {"max_completion_tokens": n}
+    return {"max_tokens": n}

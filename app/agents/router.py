@@ -77,7 +77,7 @@ async def llm_classify(message: str, current_state: str, context: dict) -> str:
             messages=msgs,
             tools=None,
             temperature=0,
-            max_tokens=15,
+            max_completion_tokens=15,
         )
         result = (resp.content or "").strip().lower()
         logger.info("[Router] LLM classify: message=%r -> %s", message[:60], result)
@@ -169,7 +169,7 @@ async def is_legitimate_real_estate(message: str) -> bool:
             messages=msgs,
             tools=None,
             temperature=0,
-            max_tokens=5,
+            max_completion_tokens=5,
         )
         result = (resp.content or "").strip().upper()
         return "SI" in result

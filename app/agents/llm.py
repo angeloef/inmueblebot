@@ -72,7 +72,7 @@ class AsyncMiniMaxClient:
         messages: list[dict],
         tools: list[dict] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2000,
+        max_completion_tokens: int = 2000,
         tool_choice: str = "auto"
     ) -> LLMResponse:
         """
@@ -82,7 +82,7 @@ class AsyncMiniMaxClient:
             messages: Lista de mensajes [{"role": "system|user|assistant|tool", "content": "..."}]
             tools: Lista de definiciones de herramientas en formato OpenAI
             temperature: Temperatura de generación (0.0 - 1.0)
-            max_tokens: Máximo de tokens en respuesta
+            max_completion_tokens: Máximo de tokens en respuesta
             tool_choice: "auto", "none", o {"type": "function", "function": {"name": "..."}}
         
         Returns:
@@ -100,7 +100,7 @@ class AsyncMiniMaxClient:
             "model": self._model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_completion_tokens,
         }
         
         if tools:
@@ -170,7 +170,7 @@ class AsyncMiniMaxClient:
         message: str,
         system_prompt: str = None,
         temperature: float = 0.7,
-        max_tokens: int = 1000
+        max_completion_tokens: int = 1000
     ) -> str:
         """
         Chat simple sin tool calling.
@@ -179,7 +179,7 @@ class AsyncMiniMaxClient:
             message: Mensaje del usuario
             system_prompt: Prompt del sistema
             temperature: Temperatura
-            max_tokens: Máximo de tokens
+            max_completion_tokens: Máximo de tokens
         
         Returns:
             Respuesta como string
@@ -194,7 +194,7 @@ class AsyncMiniMaxClient:
         response = await self.ainvoke(
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_completion_tokens=max_completion_tokens
         )
         
         return response.content

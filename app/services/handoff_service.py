@@ -86,7 +86,7 @@ Sé conciso pero útil. Máximo 200 palabras."""
                 message=prompt,
                 system_prompt="Eres un asistente que genera resúmenes de conversaciones para agentes de bienes raíces. Sé conciso y profesional.",
                 temperature=0.5,
-                max_tokens=500
+                max_completion_tokens=500
             )
             
             logger.info(f"Resumen generado para {phone}")

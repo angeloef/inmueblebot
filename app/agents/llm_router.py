@@ -67,7 +67,7 @@ class LLMRouter:
         self._timeout = settings.LLM_TIMEOUT_SECONDS
         self._max_retries = settings.LLM_MAX_RETRIES
         self._default_temperature = settings.LLM_TEMPERATURE
-        self._default_max_tokens = settings.LLM_MAX_TOKENS
+        self._default_max_completion_tokens = settings.LLM_MAX_TOKENS
         self._client = None
 
         from app.agents.cs_llm_client import get_model
@@ -82,7 +82,7 @@ class LLMRouter:
         messages,
         tools=None,
         temperature=None,
-        max_tokens=None,
+        max_completion_tokens=None,
         forced_provider=None,
         response_format=None,
         structured_response: bool = False,  # v2.0: enforce AgentResponse schema
@@ -90,13 +90,13 @@ class LLMRouter:
         from app.agents.cs_llm_client import get_model, supports_strict_json_schema
 
         temperature = temperature if temperature is not None else self._default_temperature
-        max_tokens = max_tokens or self._default_max_tokens
+        max_completion_tokens = max_completion_tokens or self._default_max_completion_tokens
         client = self._get_client()
 
         kwargs = {
             "model": get_model(),
             "messages": messages,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_completion_tokens,
             "temperature": temperature,
         }
         if tools:
@@ -215,7 +215,7 @@ class LLMRouter:
             provider="openai",
         )
 
-    async def chat(self, message, system_prompt=None, temperature=None, max_tokens=None, response_format=None, return_usage=False):
+    async def chat(self, message, system_prompt=None, temperature=None, max_completion_tokens=None, response_format=None, return_usage=False):
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -223,7 +223,7 @@ class LLMRouter:
         response = await self.ainvoke(
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
             response_format=response_format,
         )
         if return_usage:
@@ -235,7 +235,7 @@ class LLMRouter:
 
     async def check_health(self):
         try:
-            r = await self.ainvoke(messages=[{"role": "user", "content": "ping"}], max_tokens=5)
+            r = await self.ainvoke(messages=[{"role": "user", "content": "ping"}], max_completion_tokens=5)
             if r.error:
                 return {"status": "unhealthy", "error": r.error}
             return {"status": "healthy", "model": self._model}

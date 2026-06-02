@@ -780,7 +780,7 @@ async def parse_datetime_llm(
             message=user_message,
             system_prompt=system_prompt,
             temperature=0,
-            max_tokens=20,
+            max_completion_tokens=20,
         )
 
         result = (result or "").strip()

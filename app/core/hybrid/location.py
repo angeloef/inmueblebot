@@ -100,7 +100,7 @@ class LocationParser(HybridParser):
             message=raw,
             system_prompt=_LOCATION_SYSTEM_PROMPT,
             temperature=0,
-            max_tokens=20,
+            max_completion_tokens=20,
             return_usage=True,
         )
         result = (result or "").strip()

@@ -62,7 +62,7 @@ class NameExtractor(HybridParser):
             message=raw,
             system_prompt=_NAME_SYSTEM_PROMPT,
             temperature=0,
-            max_tokens=15,
+            max_completion_tokens=15,
             return_usage=True,
         )
         result = (result or "").strip().strip('"').strip("'")

@@ -38,7 +38,7 @@ class BudgetTierParser(HybridParser):
                 city=city, median_price=median, term=raw,
             ),
             temperature=0,
-            max_tokens=50,
+            max_completion_tokens=50,
             response_format={"type": "json_object"},
             return_usage=True,
         )

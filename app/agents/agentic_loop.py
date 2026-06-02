@@ -135,7 +135,7 @@ async def run_agentic_loop(
         model=get_model(),
         messages=messages,
         temperature=0.3,
-        max_tokens=512,
+        max_completion_tokens=512,
     )
 
     raw_text = final_response.choices[0].message.content or ""

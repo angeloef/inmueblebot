@@ -48,7 +48,7 @@ async def think(
             model=get_model(),
             messages=[{"role": "user", "content": full_context}],
             temperature=0.2,
-            max_tokens=256,
+            max_completion_tokens=256,
         )
         return (response.choices[0].message.content or "").strip()
     except Exception:

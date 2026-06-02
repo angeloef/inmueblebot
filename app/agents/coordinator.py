@@ -262,7 +262,7 @@ Respondé SOLO con una palabra: search, scheduling, knowledge, negotiator, o rap
         model=get_model(LLMRole.CLASSIFY),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=10,
+        max_completion_tokens=10,
     )
 
     result = (response.choices[0].message.content or "search").strip().lower()
