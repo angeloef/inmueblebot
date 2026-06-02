@@ -61,13 +61,13 @@ PATTERNS: list[RoutePattern] = [
     ),
     RoutePattern(
         name="confirm_no",
-        pattern=r"^(no|nop|nope|no gracias|ninguno|ninguna|para nada)\b(?!\s*s[eé])",
+        pattern=r"^(no|nop|nope|no gracias|ninguno|ninguna|para nada)\s*[.!]?\s*$",
         confidence=0.95,
         response="Entendido. ¿Querés que busquemos algo diferente?",
     ),
     RoutePattern(
         name="gratitude",
-        pattern=r"\b(gracias|muchas gracias|te agradezco|mil gracias)\b",
+        pattern=r"^(?:muchas gracias|mil gracias|te agradezco|gracias)\s*[.!\s]*$",
         confidence=0.99,
         response="¡De nada! Cualquier otra cosa, avisame. 😊",
     ),
@@ -263,12 +263,52 @@ PATTERNS: list[RoutePattern] = [
 ]
 
 
+# ── Compound-intent detection ─────────────────────────────────────────
+# If any signal fires, static (needs_llm=False) patterns are suppressed
+# and the message is delegated to S2.
+
+_PROPERTY_ID = re.compile(
+    r"(\[\s*\d+\s*\]|propiedad\s+\d+|\b(?:el|la|depto|departamento|casa|propiedad)\s+\d+\b)",
+    re.IGNORECASE,
+)
+_SCHEDULING = re.compile(
+    r"\b(verlo|verla|en persona|visita|visitar|visitarl[oa]|agendar|coordinar|"
+    r"recorrer|cu[áa]ndo\s+(?:puedo|podemos|ir)|ir a ver|conocer la propiedad|"
+    r"turno|horario para)\b",
+    re.IGNORECASE,
+)
+_SEARCH = re.compile(
+    r"\b(busco|buscando|estoy buscando|quiero\s+(?:alquilar|comprar|ver|un|una|algo)|"
+    r"necesito\s+(?:alquilar|comprar|un|una|algo)|tienen algo|hay algo|"
+    r"me interesa\s+(?:alquilar|comprar|un|una))\b",
+    re.IGNORECASE,
+)
+_SPECIFIC_PRICE = re.compile(
+    r"\bcu[áa]nto\s+(?:cuesta|sale|vale|est[áa])\s+(?:el|la|ese|esa|este|esta)\b",
+    re.IGNORECASE,
+)
+_HANDOFF = re.compile(
+    r"\b(hablar con\s+(?:una persona|alguien|un humano|un asesor|un agente)|"
+    r"quiero hablar con|atienda una persona|un humano|persona real)\b",
+    re.IGNORECASE,
+)
+
+_COMPOUND_SIGNALS = (_PROPERTY_ID, _SCHEDULING, _SEARCH, _SPECIFIC_PRICE, _HANDOFF)
+
+
+def _has_compound_intent(msg: str) -> bool:
+    """Return True if message carries actionable intent S1 cannot satisfy statically."""
+    return any(sig.search(msg) for sig in _COMPOUND_SIGNALS)
+
+
 def match_pattern(message: str) -> Optional[RoutePattern]:
     """Find the best-matching S1 pattern for a message.
 
-    Returns the highest-confidence matching pattern, or None.
-    Patterns are checked in order; first match at a given confidence
-    tier wins.
+    Patterns are checked in list order; the first match wins. A static
+    (needs_llm=False) pattern is SKIPPED when the message also carries
+    compound actionable intent (property ref, scheduling, search, specific
+    price, human handoff) — those messages are delegated to S2.
+    needs_llm=True patterns are never suppressed.
 
     Args:
         message: The user's normalized message (lowercased, trimmed).
@@ -277,9 +317,13 @@ def match_pattern(message: str) -> Optional[RoutePattern]:
         The matched RoutePattern, or None if no pattern matches.
     """
     msg = message.lower().strip()
+    compound = _has_compound_intent(msg)
 
     for rp in PATTERNS:
         if re.search(rp.pattern, msg, re.IGNORECASE):
+            # Static canned responses must not swallow compound-intent messages.
+            if not rp.needs_llm and compound:
+                continue
             return rp
 
     return None
