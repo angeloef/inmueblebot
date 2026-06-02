@@ -432,90 +432,10 @@ def _run_startup_migration(engine):
             except Exception as e:
                 logger.warning(f"Migration Fix 26: {e}")
 
-            # ── Fix 27: Cobranzas tables (contratos, cobros, gastos, índices) ──
-            try:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS contracts (
-                        id UUID PRIMARY KEY,
-                        property_id INTEGER REFERENCES properties(id) ON DELETE SET NULL,
-                        tenant_id UUID REFERENCES users(id) ON DELETE SET NULL,
-                        owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
-                        start_date DATE NOT NULL,
-                        end_date DATE,
-                        base_rent INTEGER NOT NULL DEFAULT 0,
-                        currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
-                        payment_due_day INTEGER NOT NULL DEFAULT 10,
-                        grace_days INTEGER NOT NULL DEFAULT 0,
-                        adjustment_index VARCHAR(20) NOT NULL DEFAULT 'IPC',
-                        adjustment_frequency_months INTEGER NOT NULL DEFAULT 3,
-                        adjustment_fixed_pct DOUBLE PRECISION,
-                        punitorio_daily_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
-                        commission_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
-                        status VARCHAR(20) NOT NULL DEFAULT 'active',
-                        public_token VARCHAR(64) UNIQUE,
-                        notes VARCHAR(2000),
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ
-                    )
-                """))
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS charges (
-                        id UUID PRIMARY KEY,
-                        contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
-                        period DATE NOT NULL,
-                        due_date DATE,
-                        base_amount INTEGER NOT NULL DEFAULT 0,
-                        adjustment_amount INTEGER NOT NULL DEFAULT 0,
-                        expenses_amount INTEGER NOT NULL DEFAULT 0,
-                        punitorio_amount INTEGER NOT NULL DEFAULT 0,
-                        total_amount INTEGER NOT NULL DEFAULT 0,
-                        amount_paid INTEGER NOT NULL DEFAULT 0,
-                        paid_at TIMESTAMPTZ,
-                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                        payment_method VARCHAR(40),
-                        reminder_sent_at TIMESTAMPTZ,
-                        notes VARCHAR(1000),
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ,
-                        UNIQUE (contract_id, period)
-                    )
-                """))
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS contract_expenses (
-                        id UUID PRIMARY KEY,
-                        contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
-                        charge_id UUID REFERENCES charges(id) ON DELETE SET NULL,
-                        description VARCHAR(300) NOT NULL DEFAULT '',
-                        amount INTEGER NOT NULL DEFAULT 0,
-                        category VARCHAR(40) NOT NULL DEFAULT 'otro',
-                        period DATE,
-                        recurring BOOLEAN NOT NULL DEFAULT FALSE,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                """))
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS economic_indices (
-                        id SERIAL PRIMARY KEY,
-                        code VARCHAR(20) NOT NULL DEFAULT 'IPC',
-                        period DATE NOT NULL,
-                        index_level DOUBLE PRECISION,
-                        monthly_pct DOUBLE PRECISION,
-                        source VARCHAR(20) NOT NULL DEFAULT 'manual',
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        UNIQUE (code, period)
-                    )
-                """))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contracts_status ON contracts(status)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contracts_property_id ON contracts(property_id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contracts_tenant_id ON contracts(tenant_id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_charges_contract_id ON charges(contract_id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_charges_status ON charges(status)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_charges_period ON charges(period)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contract_expenses_contract_id ON contract_expenses(contract_id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_economic_indices_code ON economic_indices(code)"))
-                logger.info("Migration Fix 27: cobranzas tables ensured")
-            except Exception as e:
-                logger.warning(f"Migration Fix 27 (cobranzas tables): {e}")
+            # NOTE: Las tablas de Cobranzas se crean en una transacción AISLADA en
+            # app/api/routes/cobranzas.py (ensure_cobranzas_schema), no acá: esta
+            # migración corre como UNA sola transacción y, si una sentencia previa
+            # aborta, el commit final haría rollback de todo (incl. esas tablas).
 
             conn.commit()
         _migration_done = True

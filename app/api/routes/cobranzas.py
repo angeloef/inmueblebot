@@ -20,10 +20,129 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text as _text
 
 from app.api.routes.admin import get_db, verify_admin_api_key, _get_sync_session
+import app.api.routes.admin as _admin
 from app.db.models import User, Property, Contract, Charge, ContractExpense, EconomicIndex
 from app.services import billing_service as bs
 
-router = APIRouter(prefix="/admin", tags=["cobranzas"])
+import logging
+logger = logging.getLogger(__name__)
+
+
+# ─── Creación de esquema (transacción aislada) ────────────────────────────────
+# Las tablas se crean acá, en su propia transacción, en lugar de en la migración
+# monolítica de admin.py: esa corre como UNA transacción y, si una sentencia
+# previa aborta, el commit final hace rollback de todo. Idempotente (IF NOT EXISTS).
+
+_COBRANZAS_DDL = [
+    """
+    CREATE TABLE IF NOT EXISTS contracts (
+        id UUID PRIMARY KEY,
+        property_id INTEGER REFERENCES properties(id) ON DELETE SET NULL,
+        tenant_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        start_date DATE NOT NULL,
+        end_date DATE,
+        base_rent INTEGER NOT NULL DEFAULT 0,
+        currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+        payment_due_day INTEGER NOT NULL DEFAULT 10,
+        grace_days INTEGER NOT NULL DEFAULT 0,
+        adjustment_index VARCHAR(20) NOT NULL DEFAULT 'IPC',
+        adjustment_frequency_months INTEGER NOT NULL DEFAULT 3,
+        adjustment_fixed_pct DOUBLE PRECISION,
+        punitorio_daily_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+        commission_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        public_token VARCHAR(64) UNIQUE,
+        notes VARCHAR(2000),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS charges (
+        id UUID PRIMARY KEY,
+        contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+        period DATE NOT NULL,
+        due_date DATE,
+        base_amount INTEGER NOT NULL DEFAULT 0,
+        adjustment_amount INTEGER NOT NULL DEFAULT 0,
+        expenses_amount INTEGER NOT NULL DEFAULT 0,
+        punitorio_amount INTEGER NOT NULL DEFAULT 0,
+        total_amount INTEGER NOT NULL DEFAULT 0,
+        amount_paid INTEGER NOT NULL DEFAULT 0,
+        paid_at TIMESTAMPTZ,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        payment_method VARCHAR(40),
+        reminder_sent_at TIMESTAMPTZ,
+        notes VARCHAR(1000),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ,
+        UNIQUE (contract_id, period)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contract_expenses (
+        id UUID PRIMARY KEY,
+        contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+        charge_id UUID REFERENCES charges(id) ON DELETE SET NULL,
+        description VARCHAR(300) NOT NULL DEFAULT '',
+        amount INTEGER NOT NULL DEFAULT 0,
+        category VARCHAR(40) NOT NULL DEFAULT 'otro',
+        period DATE,
+        recurring BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS economic_indices (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(20) NOT NULL DEFAULT 'IPC',
+        period DATE NOT NULL,
+        index_level DOUBLE PRECISION,
+        monthly_pct DOUBLE PRECISION,
+        source VARCHAR(20) NOT NULL DEFAULT 'manual',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (code, period)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_contracts_status ON contracts(status)",
+    "CREATE INDEX IF NOT EXISTS ix_contracts_property_id ON contracts(property_id)",
+    "CREATE INDEX IF NOT EXISTS ix_contracts_tenant_id ON contracts(tenant_id)",
+    "CREATE INDEX IF NOT EXISTS ix_charges_contract_id ON charges(contract_id)",
+    "CREATE INDEX IF NOT EXISTS ix_charges_status ON charges(status)",
+    "CREATE INDEX IF NOT EXISTS ix_charges_period ON charges(period)",
+    "CREATE INDEX IF NOT EXISTS ix_contract_expenses_contract_id ON contract_expenses(contract_id)",
+    "CREATE INDEX IF NOT EXISTS ix_economic_indices_code ON economic_indices(code)",
+]
+
+_schema_ready = False
+
+
+def ensure_cobranzas_schema() -> None:
+    """Crea las tablas de cobranzas en una transacción propia (idempotente).
+
+    Se ejecuta como dependencia del router en el primer request. Cachea el éxito
+    en un flag de módulo para no reintentar en cada llamada.
+    """
+    global _schema_ready
+    if _schema_ready:
+        return
+    # Inicializa el engine sync (y corre la migración base de admin) si hace falta.
+    _get_sync_session().close()
+    engine = _admin._engine
+    if engine is None:
+        return
+    with engine.begin() as conn:   # transacción dedicada: commit atómico al salir
+        for stmt in _COBRANZAS_DDL:
+            conn.execute(_text(stmt))
+    _schema_ready = True
+    logger.info("Cobranzas schema ensured (isolated transaction)")
+
+
+router = APIRouter(
+    prefix="/admin", tags=["cobranzas"],
+    dependencies=[Depends(ensure_cobranzas_schema)],
+)
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
