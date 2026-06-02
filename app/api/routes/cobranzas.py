@@ -10,6 +10,7 @@ vive en app/services/billing_service.py — scheduler-ready.
 from __future__ import annotations
 
 import secrets
+import threading
 import uuid as _uuid
 from datetime import date, datetime
 from typing import Optional, List
@@ -116,27 +117,50 @@ _COBRANZAS_DDL = [
 ]
 
 _schema_ready = False
+_schema_lock = threading.Lock()
 
 
 def ensure_cobranzas_schema() -> None:
-    """Crea las tablas de cobranzas en una transacción propia (idempotente).
+    """Garantiza que existan las tablas de cobranzas (idempotente y seguro ante concurrencia).
 
-    Se ejecuta como dependencia del router en el primer request. Cachea el éxito
-    en un flag de módulo para no reintentar en cada llamada.
+    Dependencia del router. Diseño:
+      1. Flag de proceso → sin costo una vez listo.
+      2. Lock de proceso → un solo hilo corre el DDL (evita carreras intra-worker).
+      3. Fast-path: chequea existencia con to_regclass (lectura, SIN locks). Si ya
+         existe, marca listo y NO toca DDL — el caso normal en producción.
+      4. Solo si falta, crea en transacción propia con lock_timeout corto, para
+         fallar rápido en vez de deadlockear contra el tráfico del bot (users/
+         properties). Un fallo transitorio NO rompe el request: se reintenta en
+         la próxima llamada (para entonces, lo más probable, la tabla ya existe).
     """
     global _schema_ready
     if _schema_ready:
         return
-    # Inicializa el engine sync (y corre la migración base de admin) si hace falta.
-    _get_sync_session().close()
-    engine = _admin._engine
-    if engine is None:
-        return
-    with engine.begin() as conn:   # transacción dedicada: commit atómico al salir
-        for stmt in _COBRANZAS_DDL:
-            conn.execute(_text(stmt))
-    _schema_ready = True
-    logger.info("Cobranzas schema ensured (isolated transaction)")
+    with _schema_lock:
+        if _schema_ready:
+            return
+        # Inicializa el engine sync (y corre la migración base de admin) si hace falta.
+        _get_sync_session().close()
+        engine = _admin._engine
+        if engine is None:
+            return
+        try:
+            with engine.connect() as conn:
+                exists = conn.execute(
+                    _text("SELECT to_regclass('public.contracts')")
+                ).scalar()
+            if exists:
+                _schema_ready = True
+                return
+            with engine.begin() as conn:   # transacción dedicada
+                conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
+                for stmt in _COBRANZAS_DDL:
+                    conn.execute(_text(stmt))
+            _schema_ready = True
+            logger.info("Cobranzas schema ensured (isolated transaction)")
+        except Exception as e:
+            # No propagar: si otro worker/hilo la creó, el próximo request lo verá.
+            logger.warning("ensure_cobranzas_schema deferred: %s", e)
 
 
 router = APIRouter(
