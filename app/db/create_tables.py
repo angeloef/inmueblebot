@@ -6,7 +6,10 @@ import asyncio
 from loguru import logger
 from sqlalchemy.ext.asyncio import create_async_engine
 from app.db.base import Base
-from app.db.models import User, Property, Conversation, Message, Appointment, FAQ
+from app.db.models import (
+    User, Property, Conversation, Message, Appointment, FAQ,
+    Contract, Charge, ContractExpense, EconomicIndex,
+)
 from app.core.config import get_settings
 
 

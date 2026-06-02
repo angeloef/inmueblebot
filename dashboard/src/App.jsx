@@ -7,6 +7,7 @@ const VIEW_TO_PATH = {
   calendar:   '/dashboard/calendario',
   properties: '/dashboard/propiedades',
   clients:    '/dashboard/clientes',
+  cobranzas:  '/dashboard/cobranzas',
   faqs:       '/dashboard/faqs',
   chats:      '/dashboard/chats',
   documents:  '/dashboard/documentos',
@@ -27,6 +28,7 @@ import Dashboard from './Dashboard';
 import Calendar from './Calendar';
 import Properties from './Properties';
 import Clients from './Clients';
+import Cobranzas from './Cobranzas';
 import FAQs from './FAQs';
 import Chats from './Chats';
 import Config from './Config';
@@ -174,6 +176,8 @@ export default function App() {
               onOpenEvent={openEvent}
             />
           )}
+
+          {active === 'cobranzas' && <Cobranzas />}
 
           {active === 'faqs' && <FAQs />}
 

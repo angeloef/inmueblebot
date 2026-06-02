@@ -8,6 +8,7 @@ from app.db.models.conversation import Conversation
 from app.db.models.message import Message
 from app.db.models.appointment import Appointment
 from app.db.models.faq import FAQ
+from app.db.models.cobranzas import Contract, Charge, ContractExpense, EconomicIndex
 
 __all__ = [
     "User",
@@ -16,4 +17,8 @@ __all__ = [
     "Message",
     "Appointment",
     "FAQ",
+    "Contract",
+    "Charge",
+    "ContractExpense",
+    "EconomicIndex",
 ]
