@@ -202,18 +202,30 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
     if belief.last_search_context:
         lines.append(f"Resultados último listado (usá estos IDs): {belief.last_search_context}")
 
-    # ── Directive block ────────────────────────────────────────
-    directive = _next_action_directive(belief)
+    # ── Signals block (DESCRIPTIVE FACTS, never imperative commands) ──
+    # Architectural note: we deliberately do NOT inject a "[DIRECTIVA] ACCIÓN: hacé X"
+    # here. A single deterministic directive computed from regex-extracted state used
+    # to OVERRIDE the user's actual message (e.g. a greeting "buenas tardes" set
+    # scheduling_time and forced the bot to ask "¿qué día?" on a fresh search).
+    # The LLM specialist is a native tool-caller — give it FACTS and the real message,
+    # and let it decide the response and tool calls. Only surface state the model
+    # cannot infer from the conversation history on its own.
 
-    # Append loop alert to directive if detected
+    # Pending offer: a real piece of state the model should know about (it may have
+    # been made several turns ago, outside the history window). Stated as a fact —
+    # the model decides whether the user's message confirms it.
+    if getattr(belief, "pending_offer", None):
+        lines.append("")
+        lines.append(f"[OFERTA PENDIENTE SIN RESOLVER] {belief.pending_offer}")
+
+    # Loop signal: descriptive nudge, not a command. Only fires on detected oscillation.
     loop_alert = detect_clarification_loop(belief)
     if loop_alert:
-        directive = (directive + "\n" if directive else "") + "ALERTA: El usuario preguntó lo mismo varias veces. Buscá con lo que tenés, no pidas más datos."
-
-    if directive:
         lines.append("")
-        lines.append("[DIRECTIVA PARA ESTE TURNO]")
-        lines.append(directive)
+        lines.append(
+            "[NOTA] El usuario repitió los mismos criterios varias veces sin avanzar. "
+            "Ya tenés suficiente información para actuar."
+        )
 
     # ── Awaiting / last-question block (schema v4) ─────────────
     if getattr(belief, "awaiting", None):

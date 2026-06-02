@@ -141,7 +141,12 @@ TIME_PATTERN = re.compile(
     r"|\d{1,2}[:h]\d{2}"
     r"|\d{1,2}\s*de la\s*(?:ma[nñ]ana|tarde|noche)"
     r"|\d{1,2}\s*(?:am|pm|hs)"
-    r"|mediod[ií]a|ma[nñ]ana|tarde|noche)",
+    # Time-of-day words require a preposition ("a la tarde", "por la mañana").
+    # Bare "mañana/tarde/noche" is NOT matched here — it collided with greetings
+    # ("buenas tardes") and idioms ("se hace tarde", "más tarde"), seeding a false
+    # scheduling_time. "mediodía" stays (unambiguous).
+    r"|mediod[ií]a"
+    r"|(?:a|de|por|en)\s+la\s+(?:ma[nñ]ana|tarde|noche))",
     re.IGNORECASE,
 )
 
@@ -319,26 +324,38 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         if re.search(pattern, text):
             belief.active_intents.add(intent)
 
-    # ── Extract scheduling data (and trigger scheduling intent) ────
-    name_match = NAME_PATTERN.search(message)
-    if name_match:
-        belief.scheduling_name = name_match.group(1).strip().title()
-        belief.active_intents.add("scheduling")
+    # ── Extract scheduling data ONLY inside an active scheduling context ──
+    # A bare temporal token must NEVER *create* the scheduling intent. Otherwise a
+    # greeting ("buenas tardes") or a fresh search ("busco depto a la tarde") would
+    # set scheduling_time and flip on the scheduling flow, which then hijacks the
+    # next turn ("¿qué día querés coordinar?") instead of searching.
+    #
+    # The scheduling intent is established BEFORE this block by:
+    #   - INTENT_PATTERNS above (agendar / visita / coordinar / "quiero ir a ver"), or
+    #   - an active `awaiting=scheduling_*` slot (the booking flow already in progress).
+    # When neither holds, we do not touch scheduling state — the LLM specialist drives
+    # the conversation from the real message instead of a regex-seeded slot.
+    _awaiting = str(getattr(belief, "awaiting", "") or "")
+    _scheduling_active = (
+        "scheduling" in belief.active_intents
+        or _awaiting.startswith("scheduling")
+    )
+    if _scheduling_active:
+        name_match = NAME_PATTERN.search(message)
+        if name_match:
+            belief.scheduling_name = name_match.group(1).strip().title()
 
-    phone_match = PHONE_PATTERN.search(message)
-    if phone_match:
-        belief.scheduling_phone = phone_match.group(1).strip()
-        belief.active_intents.add("scheduling")
+        phone_match = PHONE_PATTERN.search(message)
+        if phone_match:
+            belief.scheduling_phone = phone_match.group(1).strip()
 
-    day_match = DAY_PATTERN.search(message)
-    if day_match:
-        belief.scheduling_day = day_match.group(1).strip()
-        belief.active_intents.add("scheduling")
+        day_match = DAY_PATTERN.search(message)
+        if day_match:
+            belief.scheduling_day = day_match.group(1).strip()
 
-    time_match = TIME_PATTERN.search(message)
-    if time_match:
-        belief.scheduling_time = time_match.group(1).strip()
-        belief.active_intents.add("scheduling")
+        time_match = TIME_PATTERN.search(message)
+        if time_match:
+            belief.scheduling_time = time_match.group(1).strip()
 
     # Detect property reference by description (not ID)
     ref_match = re.search(
