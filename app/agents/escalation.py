@@ -80,6 +80,7 @@ def build_clarification_message(level: EscalationLevel, original_response: str, 
 
 
 _AWAITING_REANCHOR = {
+    "scheduling_property": "Disculpá, ¿qué propiedad te gustaría visitar? Decime el número o el tipo.",
     "scheduling_name": "Disculpá, ¿me decís el nombre completo de la persona que va a la visita?",
     "scheduling_day": "Disculpá, ¿qué día te queda bien para la visita?",
     "scheduling_time": "Disculpá, ¿a qué horario preferís la visita?",

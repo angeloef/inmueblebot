@@ -178,6 +178,10 @@ def _is_failed_response(response: str) -> bool:
 def _detect_awaiting(response: str, belief) -> "str | None":
     """Infer which slot the bot is now waiting for, from its own response text."""
     low = (response or "").lower()
+    # Photo offer ("te paso las fotos de la propiedad…") — may not be phrased as a question.
+    if "fotos" in low and ("propiedad" in low or "te paso" in low or "te mando" in low or "querés" in low or "queres" in low):
+        if getattr(belief, "selected_property_id", None):
+            return "show_photos"
     is_question = "?" in response or "¿" in response
     if not is_question:
         return None
@@ -188,6 +192,22 @@ def _detect_awaiting(response: str, belief) -> "str | None":
     if "qué día" in low or "que dia" in low or "qué fecha" in low or "cuándo" in low:
         return "scheduling_day"
     if "horario" in low or "a qué hora" in low or "a que hora" in low or "qué hora" in low:
+        return "scheduling_time"
+    return None
+
+
+def _next_scheduling_slot(belief) -> "str | None":
+    """Return the next scheduling slot that needs collecting, or None if all present.
+
+    Authoritative, belief-state-driven slot advancement for the awaiting fast-path.
+    """
+    if not getattr(belief, "selected_property_id", None):
+        return "scheduling_property"
+    if not getattr(belief, "scheduling_name", None):
+        return "scheduling_name"
+    if not getattr(belief, "scheduling_day", None):
+        return "scheduling_day"
+    if not getattr(belief, "scheduling_time", None):
         return "scheduling_time"
     return None
 
@@ -619,6 +639,42 @@ async def _route_message_inner(
         logger.debug(f"[Router] could not load recent_messages: {_e}")
         recent_messages = []
 
+    # ── AWAITING: photo offer ──────────────────────────────────
+    if getattr(belief, "awaiting", None) == "show_photos":
+        if _is_hard_topic_switch(message):
+            belief.awaiting = None
+            # Fall through to normal routing below.
+        elif _is_negative(message):
+            belief.awaiting = None
+            resp = "Entendido, ¿hay algo más en lo que te pueda ayudar?"
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                belief, "awaiting::photos-decline", 0,
+            )
+        elif _is_confirmation(message) and getattr(belief, "selected_property_id", None):
+            from app.tools.v2.get_property_images import get_property_images
+            import json as _json
+            result_text = await get_property_images(property_id=belief.selected_property_id)
+            try:
+                display_text = _json.loads(result_text).get("display_text", result_text)
+            except Exception:
+                display_text = result_text
+            belief.last_tool_called = "get_property_images"
+            belief.awaiting = None
+            belief.last_bot_message = display_text
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=display_text, tools_called=["get_property_images"], confidence=0.99),
+                belief, "awaiting::photos", 0,
+            )
+        else:
+            # Neither confirm nor negative nor topic switch → clear and route normally.
+            belief.awaiting = None
+
     # ── AWAITING FAST-PATH (schema v4) ────────────────────────
     if getattr(belief, "awaiting", None) and belief.awaiting.startswith("scheduling_"):
 
@@ -739,6 +795,9 @@ async def _route_message_inner(
             _update_belief_from_result(belief, result)
             await _finalize_turn(belief, session_id, result.response)
             resp_text, label = await _maybe_confirm_or_pass(belief, result, session_id)
+            # Authoritative slot advancement — don't rely on text detection.
+            if belief.awaiting != "scheduling_confirm":
+                belief.awaiting = _next_scheduling_slot(belief)
             await save_working_memory(belief)
             return (
                 ChatResponse(response=resp_text, tools_called=getattr(result, "tools_called", []),
@@ -746,7 +805,7 @@ async def _route_message_inner(
                 belief, label, 0,
             )
 
-        # B5. Any other scheduling_* slot (day / time).
+        # B5. Any other scheduling_* slot (day / time / property).
         else:
             sched_context = _build_scheduling_context(belief) + "\n" + (context_prompt or "")
             result, _ = await coordinate(message, session_id, sched_context, recent_messages=recent_messages)
@@ -754,6 +813,9 @@ async def _route_message_inner(
             _update_belief_from_result(belief, result)
             await _finalize_turn(belief, session_id, result.response)
             resp_text, label = await _maybe_confirm_or_pass(belief, result, session_id)
+            # Authoritative slot advancement — don't rely on text detection.
+            if belief.awaiting != "scheduling_confirm":
+                belief.awaiting = _next_scheduling_slot(belief)
             await save_working_memory(belief)
             return (
                 ChatResponse(response=resp_text, tools_called=getattr(result, "tools_called", []),

@@ -71,7 +71,8 @@ class LLMRouter:
         self._client = None
 
         from app.agents.cs_llm_client import get_model
-        logger.info(f"LLMRouter inicializado -> proveedor: {settings.LLM_PROVIDER} / modelo: {get_model()}")
+        self._model = get_model()
+        logger.info(f"LLMRouter inicializado -> proveedor: {settings.LLM_PROVIDER} / modelo: {self._model}")
 
     def _get_client(self):
         from app.agents.cs_llm_client import get_client

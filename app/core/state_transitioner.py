@@ -52,6 +52,47 @@ def _property_type_from_context(context: str, prop_id: int) -> str | None:
     return _CONTEXT_TYPE_TOKENS.get(token)
 
 
+# Maps a referenced word from "la casa" / "el depto" to a canonical type.
+_REF_TYPE_SYNONYMS = {
+    "monoambiente": "departamento",
+    "departamento": "departamento",
+    "depto": "departamento",
+    "depa": "departamento",
+    "casa": "casa",
+    "ph": "ph",
+    "terreno": "terreno",
+    "lote": "terreno",
+}
+
+
+def _resolve_property_by_type(belief, ref_word: str) -> "int | None":
+    """Resolve a type-based reference ("la casa") to a property ID.
+
+    Returns the ID only when resolution is unambiguous (exactly one match).
+    """
+    ids = belief.last_search_ids or []
+    if len(ids) == 1:
+        return ids[0]
+
+    target_type = _REF_TYPE_SYNONYMS.get((ref_word or "").strip().lower())
+    if not target_type:
+        return None
+
+    context = belief.last_search_context or ""
+    if not context:
+        return None
+
+    matches: list = []
+    for pid in ids:
+        ctx_type = _property_type_from_context(context, pid)
+        if ctx_type == target_type:
+            matches.append(pid)
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 ZONE_PATTERNS = [
     (r"\b(centro)\b", "Centro"),
     (r"\b(unam|universidad|facultad)\b", "UNAM"),
@@ -307,6 +348,12 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     )
     if ref_match:
         belief.active_intents.add("referencing_property")
+        # Resolve a type-based reference ("la casa", "el depto") to a concrete ID.
+        if belief.selected_property_id is None:
+            resolved = _resolve_property_by_type(belief, ref_match.group(2))
+            if resolved is not None:
+                belief.selected_property_id = resolved
+                belief.active_intents.add("resolved_by_description")
 
     # Extract selected property ID from patterns like "el 3", "depto 5", "ID 7"
     id_match = re.search(r"\b(?:id|nro|número|nº|numero|el|la|propiedad)\s*#?\s*(\d+)\b", fuzzy_text)
