@@ -97,6 +97,20 @@ def _next_action_directive(belief: ConversationBeliefState) -> str:
         elif not belief.scheduling_name:
             return "ACCIÓN: Falta el nombre para la cita. Preguntá solo por el nombre."
 
+    # Priority 3.5: user already selected a specific property from results
+    if (belief.selected_property_id
+            and 'scheduling' not in (belief.active_intents or set())):
+        intents = belief.active_intents or set()
+        if 'photos' in intents:
+            return (
+                f"ACCIÓN: Llamá get_property_images con property_id={belief.selected_property_id}. "
+                "El usuario ya eligió esta propiedad, ejecutá directamente."
+            )
+        return (
+            f"ACCIÓN: Llamá get_property_details con property_id={belief.selected_property_id}. "
+            "El usuario ya eligió esta propiedad, ejecutá directamente."
+        )
+
     # Priority 4: criteria sufficient to search
     if belief.operation and belief.property_type:
         return "ACCIÓN: Tenés operación y tipo. Buscá propiedades ahora con los filtros conocidos."

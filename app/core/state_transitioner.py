@@ -24,6 +24,34 @@ TYPE_PATTERNS = [
     (r"\b(terreno|lote|terrenos|lotes)\b", "terreno"),
 ]
 
+# Maps type tokens found in last_search_context to canonical property_type values
+_CONTEXT_TYPE_TOKENS = {
+    "departamento": "departamento",
+    "depto": "departamento",
+    "casa": "casa",
+    "ph": "ph",
+    "terreno": "terreno",
+    "lote": "terreno",
+    "monoambiente": "departamento",
+}
+
+
+def _property_type_from_context(context: str, prop_id: int) -> str | None:
+    """Parse the property type for a given ID out of last_search_context.
+
+    last_search_context entries look like:
+      "[44] Casa en UNAM (Alquiler $143,515) — Casa 5 amb"
+    Returns the canonical type string, or None if not parseable.
+    """
+    if not context:
+        return None
+    m = re.search(rf"\[{prop_id}\]\s+([A-Za-zÀ-ɏ]+)", context)
+    if not m:
+        return None
+    token = m.group(1).strip().lower()
+    return _CONTEXT_TYPE_TOKENS.get(token)
+
+
 ZONE_PATTERNS = [
     (r"\b(centro)\b", "Centro"),
     (r"\b(unam|universidad|facultad)\b", "UNAM"),
@@ -206,10 +234,12 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
                 belief.operation = value
                 break
     else:
-        # User is repeating/confirming an already-set operation → reinforce search intent
+        # User is repeating/confirming an already-set operation.
+        # Only trigger a new search if no specific property is already selected.
         for pattern, _ in OPERATION_PATTERNS:
             if re.search(pattern, fuzzy_text):
-                belief.active_intents.add("searching")
+                if belief.selected_property_id is None:
+                    belief.active_intents.add("searching")
                 break
 
     # Extract property type
@@ -310,6 +340,23 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
             resolved_id = belief.last_search_ids[idx]
             belief.selected_property_id = resolved_id
             belief.active_intents.add("ordinal_reference")
+
+    # ── Reconcile property_type when user selects a property from search results ──
+    # If the user picks a property by ID that came from the last search,
+    # property_type may be stale (e.g. searched "departamento", got casas, picked [44]).
+    # Align property_type to the actual property so the directive engine doesn't re-search.
+    if (belief.selected_property_id is not None
+            and belief.selected_property_id in (belief.last_search_ids or [])):
+        actual_type = _property_type_from_context(
+            belief.last_search_context or "", belief.selected_property_id
+        )
+        if actual_type is not None:
+            belief.property_type = actual_type
+        else:
+            # Type unparseable → clear to prevent stale-type re-search
+            belief.property_type = None
+        # Selecting a concrete property is NOT a new-search signal
+        belief.active_intents.discard("searching")
 
     # ⏱️ Update timestamp for session staleness detection
     belief.last_updated_at = time.time()
