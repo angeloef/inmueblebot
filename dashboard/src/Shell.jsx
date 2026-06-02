@@ -8,6 +8,7 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
     { id: 'calendar',   icon: 'calendar', label: 'Calendario' },
     { id: 'properties', icon: 'building', label: 'Propiedades' },
     { id: 'clients',    icon: 'users',    label: 'Clientes' },
+    { id: 'cobranzas',  icon: 'money',    label: 'Cobranzas' },
     { id: 'faqs',       icon: 'msg',      label: 'FAQ' },
     { id: 'chats',      icon: 'whatsapp', label: 'Chats' },
   ];

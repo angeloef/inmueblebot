@@ -39,6 +39,10 @@ export const keys = {
   botSettings:     ['bot-settings'],
   conversations:   ['conversations'],
   conversation:    (id) => ['conversations', id],
+  contracts:       ['contracts'],
+  contract:        (id) => ['contracts', id],
+  cobranzasSummary:['cobranzas', 'summary'],
+  indices:         (code) => ['indices', code],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -848,6 +852,105 @@ export const useToggleBot = () => {
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: keys.conversation(vars.id) });
       qc.invalidateQueries({ queryKey: keys.conversations });
+    },
+  });
+};
+
+// ─── Cobranzas (contratos, cobros, gastos, índices) ──────────────────────────
+
+const cobranzasApi = {
+  contracts:        ()             => http.get('/admin/contracts').then(r => r.data.contracts ?? []),
+  contract:         (id)           => http.get(`/admin/contracts/${id}`).then(r => r.data),
+  createContract:   (data)         => http.post('/admin/contracts', data).then(r => r.data),
+  updateContract:   ({ id, ...d }) => http.patch(`/admin/contracts/${id}`, d).then(r => r.data),
+  deleteContract:   (id)           => http.delete(`/admin/contracts/${id}`).then(r => r.data),
+  generateCharges:  (id)           => http.post(`/admin/contracts/${id}/charges/generate`).then(r => r.data),
+  updateCharge:     ({ id, ...d }) => http.patch(`/admin/charges/${id}`, d).then(r => r.data),
+  payCharge:        ({ id, ...d }) => http.post(`/admin/charges/${id}/pay`, d).then(r => r.data),
+  remindCharge:     (id)           => http.post(`/admin/charges/${id}/remind`).then(r => r.data),
+  createExpense:    ({ contractId, ...d }) => http.post(`/admin/contracts/${contractId}/expenses`, d).then(r => r.data),
+  deleteExpense:    (id)           => http.delete(`/admin/expenses/${id}`).then(r => r.data),
+  liquidacion:      ({ id, period }) => http.get(`/admin/contracts/${id}/liquidacion`, { params: { period } }).then(r => r.data),
+  summary:          ()             => http.get('/admin/cobranzas/summary').then(r => r.data),
+  indices:          (code = 'IPC') => http.get('/admin/indices', { params: { code } }).then(r => r.data.indices ?? []),
+  upsertIndex:      (data)         => http.post('/admin/indices', data).then(r => r.data),
+};
+
+export const useContracts = () =>
+  useQuery({ queryKey: keys.contracts, queryFn: cobranzasApi.contracts });
+
+export const useContract = (id) =>
+  useQuery({ queryKey: keys.contract(id), queryFn: () => cobranzasApi.contract(id), enabled: !!id });
+
+export const useCobranzasSummary = () =>
+  useQuery({ queryKey: keys.cobranzasSummary, queryFn: cobranzasApi.summary, staleTime: 30_000 });
+
+export const useIndices = (code = 'IPC') =>
+  useQuery({ queryKey: keys.indices(code), queryFn: () => cobranzasApi.indices(code) });
+
+// Invalidate the whole cobranzas surface after any mutation that changes money.
+function invalidateCobranzas(qc, contractId) {
+  qc.invalidateQueries({ queryKey: keys.contracts });
+  qc.invalidateQueries({ queryKey: keys.cobranzasSummary });
+  if (contractId) qc.invalidateQueries({ queryKey: keys.contract(contractId) });
+}
+
+export const useCreateContract = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.createContract, onSuccess: () => invalidateCobranzas(qc) });
+};
+
+export const useUpdateContract = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: cobranzasApi.updateContract,
+    onSuccess: (_d, vars) => invalidateCobranzas(qc, vars.id),
+  });
+};
+
+export const useDeleteContract = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.deleteContract, onSuccess: () => invalidateCobranzas(qc) });
+};
+
+export const useGenerateCharges = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.generateCharges, onSuccess: (_d, id) => invalidateCobranzas(qc, id) });
+};
+
+export const useUpdateCharge = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.updateCharge, onSuccess: () => invalidateCobranzas(qc, contractId) });
+};
+
+export const usePayCharge = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.payCharge, onSuccess: () => invalidateCobranzas(qc, contractId) });
+};
+
+export const useRemindCharge = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.remindCharge, onSuccess: () => invalidateCobranzas(qc, contractId) });
+};
+
+export const useCreateExpense = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.createExpense, onSuccess: () => invalidateCobranzas(qc, contractId) });
+};
+
+export const useDeleteExpense = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: cobranzasApi.deleteExpense, onSuccess: () => invalidateCobranzas(qc, contractId) });
+};
+
+export const useUpsertIndex = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: cobranzasApi.upsertIndex,
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: keys.indices(d?.code ?? 'IPC') });
+      qc.invalidateQueries({ queryKey: keys.contracts });
+      qc.invalidateQueries({ queryKey: keys.cobranzasSummary });
     },
   });
 };

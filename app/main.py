@@ -479,6 +479,10 @@ app.include_router(simulate_router, tags=["testing"])
 from app.api.routes.admin import router as admin_router
 app.include_router(admin_router)
 
+# Cobranzas (gestión de alquileres) — comparte prefix /admin
+from app.api.routes.cobranzas import router as cobranzas_router
+app.include_router(cobranzas_router)
+
 # Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
 # on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
 # FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
@@ -486,6 +490,7 @@ app.include_router(admin_router)
 from fastapi import APIRouter as _APIRouter
 _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
+_api_compat.include_router(cobranzas_router)
 app.include_router(_api_compat)
 
 # Serve dashboard SPA index.html for root and /dashboard/*
