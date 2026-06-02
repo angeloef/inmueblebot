@@ -110,6 +110,7 @@ def _serialize_belief(belief: ConversationBeliefState) -> str:
         "turn_count": belief.turn_count,
         "history": belief.history[-settings.HISTORY_WINDOW:],  # last N messages (default 8)
         "last_updated_at": belief.last_updated_at,
+        "tool_call_log": belief.tool_call_log[-settings.TOOL_LOG_MAX_ENTRIES:],
     })
 
 
@@ -143,6 +144,7 @@ def _deserialize_belief(data: str | bytes, session_id: str) -> ConversationBelie
         turn_count=d.get("turn_count", 0),
         history=d.get("history", []),
         last_updated_at=d.get("last_updated_at", 0.0),
+        tool_call_log=d.get("tool_call_log", []),
     )
 
 

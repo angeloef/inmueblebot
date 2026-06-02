@@ -139,6 +139,7 @@ class Settings(BaseSettings):
 
     # === Session config ===
     SESSION_INACTIVITY_TIMEOUT: int = Field(default=43200, description="Session inactivity timeout in seconds (12 hours)")
+    TOOL_LOG_MAX_ENTRIES: int = Field(default=5, description="Max tool call log entries to persist per session")
 
     # === History window ===
     HISTORY_WINDOW: int = Field(default=8, description="Number of recent messages to keep in history")

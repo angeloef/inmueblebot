@@ -147,6 +147,33 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
     lines.append(f"- Última herramienta: {belief.last_tool_called or 'ninguna'}")
     lines.append(f"- Turno: {belief.turn_count}")
 
+    # ── Tool call history block ────────────────────────────────
+    if belief.tool_call_log:
+        history_lines = []
+        for entry in belief.tool_call_log:
+            turn = entry.get("turn", "?")
+            tool = entry.get("tool", "?")
+            args = entry.get("args", "")
+            result = entry.get("result", "")
+            args_part = f"({args})" if args else "()"
+            history_lines.append(f"  Turno {turn}: {tool}{args_part} → {result}")
+        lines.append("")
+        lines.append("[HISTORIAL DE ACCIONES]")
+        lines.extend(history_lines)
+
+    # ── Missing variables block ────────────────────────────────
+    missing = []
+    if not belief.operation:
+        missing.append("Operación (alquilar/venta): no definida")
+    if not belief.property_type:
+        missing.append("Tipo de propiedad: no definido")
+    if not belief.zone:
+        missing.append("Zona: no definida")
+    if missing:
+        lines.append("")
+        lines.append("[VARIABLES PENDIENTES]")
+        lines.extend(f"- {m}" for m in missing)
+
     # ── Recent history ─────────────────────────────────────────
     if len(belief.history) > 1:
         lines.append("")

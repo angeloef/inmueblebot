@@ -41,6 +41,7 @@ class ConversationBeliefState:
     last_search_context: str = ""  # "[1] Depto Centro | [2] Casa Schuster" — for LLM ref resolution
     search_history: list[dict] = field(default_factory=list)  # last 3 searches for cross-turn disambiguation
     last_property_data: str = ""  # Summary of last viewed property for context injection
+    tool_call_log: list[dict] = field(default_factory=list)  # rolling log of tool calls this session
     last_shown_detail_id: int | None = None  # Last property ID shown via get_property_details
 
     # ── Confirmation tracking ──────────────────────────────────
@@ -61,7 +62,7 @@ class ConversationBeliefState:
     last_updated_at: float = 0.0
 
     # Schema version — bump when belief structure changes to aid migration.
-    schema_version: int = 2
+    schema_version: int = 3
 
     # ── Computed ───────────────────────────────────────────────
 

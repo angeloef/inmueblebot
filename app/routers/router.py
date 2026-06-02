@@ -121,6 +121,36 @@ def _extract_property_data(belief, result_text: str) -> None:
         belief.last_property_data = " | ".join(key_lines)[:300]
 
 
+def _summarize_tool_result(tool_name: str, args: dict, result: str) -> str:
+    """Produce a compact one-line summary of a tool call result for the action log."""
+    if tool_name == "search_properties":
+        ids_match = re.findall(r"\[(\d+)\]", result)
+        count = len(ids_match)
+        ids_str = ", ".join(ids_match[:6])  # cap at 6 IDs
+        tipo = args.get("tipo") or args.get("property_type") or ""
+        zona = args.get("zona") or args.get("zone") or ""
+        filters = ", ".join(x for x in [tipo, zona] if x)
+        if count == 0:
+            return f"0 resultados ({filters})"
+        return f"{count} props ({filters}) → [{ids_str}]"
+    elif tool_name in ("get_property_details", "get_property_images"):
+        pid = args.get("property_id") or args.get("id") or "?"
+        action = "detalles" if tool_name == "get_property_details" else "fotos"
+        return f"{action} de prop #{pid} enviados"
+    elif tool_name == "schedule_visit":
+        pid = args.get("property_id") or "?"
+        dia = args.get("dia") or args.get("day") or "?"
+        return f"visita agendada prop #{pid} día={dia}"
+    elif tool_name in ("cancel_appointment", "reschedule_appointment"):
+        return result[:80] if result else tool_name
+    elif tool_name == "get_faq_answer":
+        return "FAQ respondida"
+    elif tool_name == "request_human_assistance":
+        return "derivado a humano"
+    else:
+        return result[:60] if result else tool_name
+
+
 async def _try_pre_llm_shortcut(
     belief: ConversationBeliefState, message: str, session_id: str, phone: str = ""
 ) -> tuple | None:
@@ -716,6 +746,37 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                 prop_m = re.search(r"propiedad\s*(?:#|n[úu]mero|nro)?\s*\[?(\d+)\]?", response_text)
                 if prop_m:
                     belief.selected_property_id = int(prop_m.group(1))
+
+    # ── Append to tool call log ──
+    from app.core.config import get_settings
+    _settings = get_settings()
+    for tr in (result.raw_tool_results or []):
+        tool_name = tr.get("name", "")
+        tool_args = tr.get("arguments", {})
+        tool_result_str = str(tr.get("result", ""))
+
+        # Compact args representation (only key fields)
+        key_arg_fields = ["property_id", "tipo", "zona", "operation", "operacion",
+                          "dia", "horario", "nombre", "query"]
+        args_compact = ", ".join(
+            f"{k}={v}" for k, v in tool_args.items()
+            if k in key_arg_fields and v is not None
+        )
+
+        summary = _summarize_tool_result(tool_name, tool_args, tool_result_str)
+
+        entry = {
+            "turn": belief.turn_count,
+            "tool": tool_name,
+            "args": args_compact,
+            "result": summary,
+        }
+        belief.tool_call_log.append(entry)
+
+    # Trim to max entries
+    max_entries = getattr(_settings, "TOOL_LOG_MAX_ENTRIES", 5)
+    if len(belief.tool_call_log) > max_entries:
+        belief.tool_call_log = belief.tool_call_log[-max_entries:]
 
 
 # ═══════════════════════════════════════════════════════════════════════
