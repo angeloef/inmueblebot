@@ -99,7 +99,6 @@ class LocationParser(HybridParser):
         result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_LOCATION_SYSTEM_PROMPT,
-            temperature=0,
             max_completion_tokens=20,
             return_usage=True,
         )

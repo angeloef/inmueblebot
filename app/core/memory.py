@@ -829,7 +829,6 @@ class MemoryManager:
                 message=summary_prompt,
                 system_prompt="Eres un asistente que resume conversaciones.",
                 max_completion_tokens=200,
-                temperature=0.3,
             )
 
             if response and len(response.strip()) > 10:

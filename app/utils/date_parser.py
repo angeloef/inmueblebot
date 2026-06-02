@@ -779,7 +779,6 @@ async def parse_datetime_llm(
         result = await llm_router.chat(
             message=user_message,
             system_prompt=system_prompt,
-            temperature=0,
             max_completion_tokens=20,
         )
 

@@ -152,7 +152,6 @@ class IntentClassifier:
                         {"role": "system", "content": system},
                         {"role": "user", "content": message},
                     ],
-                    temperature=0.0,
                     max_completion_tokens=300,
                     response_format={"type": "json_object"},
                 ),

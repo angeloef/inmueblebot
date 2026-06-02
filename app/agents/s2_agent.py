@@ -104,7 +104,6 @@ async def process_message(
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
-        temperature=0.3,
         max_completion_tokens=1024,
     )
 
@@ -180,7 +179,6 @@ async def process_message(
                     messages=messages,
                     tools=tools if tools else None,
                     tool_choice="auto" if tools else None,
-                    temperature=0.3,
                     max_completion_tokens=512,
                 )
                 retry_choice = retry_resp.choices[0].message
@@ -208,7 +206,6 @@ async def process_message(
         final_response = await client.chat.completions.create(
             model=get_model(LLMRole.SYNTH),
             messages=messages,
-            temperature=0.3,
             max_completion_tokens=4096,
             response_format=get_final_response_format(),
         )
@@ -281,7 +278,6 @@ async def process_message_multistep(
         messages=messages,
         tools=tools if tools else None,
         tool_choice="auto" if tools else None,
-        temperature=0.3,
         max_completion_tokens=1024,
     )
 
@@ -344,7 +340,6 @@ async def process_message_multistep(
     closing_response = await client.chat.completions.create(
         model=get_model(LLMRole.SYNTH),
         messages=messages,
-        temperature=0.3,
         max_completion_tokens=4096,
         response_format=get_final_response_format(),
     )
@@ -408,7 +403,6 @@ async def process_message_with_specialist(
         messages=messages,
         tools=filtered_tools if filtered_tools else None,
         tool_choice="auto" if filtered_tools else None,
-        temperature=0.3,
         max_completion_tokens=512,
     )
 
@@ -466,7 +460,6 @@ async def process_message_with_specialist(
                     messages=messages,
                     tools=filtered_tools if filtered_tools else None,
                     tool_choice="auto" if filtered_tools else None,
-                    temperature=0.3,
                     max_completion_tokens=512,
                 )
                 retry_choice = retry_resp.choices[0].message
@@ -493,7 +486,7 @@ async def process_message_with_specialist(
         # Final response (SYNTH role)
         final_response = await client.chat.completions.create(
             model=get_model(LLMRole.SYNTH), messages=messages,
-            temperature=0.3, max_completion_tokens=4096,
+            max_completion_tokens=4096,
             response_format=get_final_response_format(),
         )
         raw_text = final_response.choices[0].message.content or ""

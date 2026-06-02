@@ -61,7 +61,6 @@ class NameExtractor(HybridParser):
         result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_NAME_SYSTEM_PROMPT,
-            temperature=0,
             max_completion_tokens=15,
             return_usage=True,
         )

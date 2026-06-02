@@ -76,7 +76,6 @@ async def llm_classify(message: str, current_state: str, context: dict) -> str:
         resp = await llm_router.ainvoke(
             messages=msgs,
             tools=None,
-            temperature=0,
             max_completion_tokens=15,
         )
         result = (resp.content or "").strip().lower()
@@ -168,7 +167,6 @@ async def is_legitimate_real_estate(message: str) -> bool:
         resp = await llm_router.ainvoke(
             messages=msgs,
             tools=None,
-            temperature=0,
             max_completion_tokens=5,
         )
         result = (resp.content or "").strip().upper()

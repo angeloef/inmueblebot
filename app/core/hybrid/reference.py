@@ -48,7 +48,6 @@ class PropertyReferenceParser(HybridParser):
         result, usage = await llm_router.chat(
             message=raw,
             system_prompt=prompt,
-            temperature=0,
             max_completion_tokens=10,
             return_usage=True,
         )

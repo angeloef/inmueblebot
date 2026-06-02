@@ -134,7 +134,6 @@ async def run_agentic_loop(
     final_response = await client.chat.completions.create(
         model=get_model(),
         messages=messages,
-        temperature=0.3,
         max_completion_tokens=512,
     )
 

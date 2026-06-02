@@ -47,7 +47,6 @@ async def think(
         response = await client.chat.completions.create(
             model=get_model(),
             messages=[{"role": "user", "content": full_context}],
-            temperature=0.2,
             max_completion_tokens=256,
         )
         return (response.choices[0].message.content or "").strip()

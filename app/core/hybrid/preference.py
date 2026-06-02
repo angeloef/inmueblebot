@@ -41,7 +41,6 @@ class PreferenceExtractor(HybridParser):
         result, usage = await llm_router.chat(
             message=raw,
             system_prompt=_PREFERENCE_SYSTEM_PROMPT,
-            temperature=0,
             max_completion_tokens=120,
             response_format={"type": "json_object"},
             return_usage=True,

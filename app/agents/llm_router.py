@@ -97,8 +97,7 @@ class LLMRouter:
             "model": get_model(),
             "messages": messages,
             "max_completion_tokens": max_completion_tokens,
-            "temperature": temperature,
-        }
+                    }
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -222,7 +221,6 @@ class LLMRouter:
         messages.append({"role": "user", "content": message})
         response = await self.ainvoke(
             messages=messages,
-            temperature=temperature,
             max_completion_tokens=max_completion_tokens,
             response_format=response_format,
         )

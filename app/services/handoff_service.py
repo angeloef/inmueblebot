@@ -85,7 +85,6 @@ Sé conciso pero útil. Máximo 200 palabras."""
             summary = await llm_router.chat(
                 message=prompt,
                 system_prompt="Eres un asistente que genera resúmenes de conversaciones para agentes de bienes raíces. Sé conciso y profesional.",
-                temperature=0.5,
                 max_completion_tokens=500
             )
             

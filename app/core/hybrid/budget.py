@@ -37,7 +37,6 @@ class BudgetTierParser(HybridParser):
             system_prompt=_BUDGET_SYSTEM_PROMPT.format(
                 city=city, median_price=median, term=raw,
             ),
-            temperature=0,
             max_completion_tokens=50,
             response_format={"type": "json_object"},
             return_usage=True,

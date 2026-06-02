@@ -99,8 +99,7 @@ class AsyncMiniMaxClient:
         payload = {
             "model": self._model,
             "messages": messages,
-            "temperature": temperature,
-            "max_completion_tokens": max_completion_tokens,
+                        "max_completion_tokens": max_completion_tokens,
         }
         
         if tools:
@@ -193,7 +192,6 @@ class AsyncMiniMaxClient:
         
         response = await self.ainvoke(
             messages=messages,
-            temperature=temperature,
             max_completion_tokens=max_completion_tokens
         )
         
@@ -229,7 +227,6 @@ class AsyncMiniMaxClient:
             response = await self.ainvoke(
                 messages=all_messages,
                 tools=tools,
-                temperature=temperature
             )
             
             if not response.has_tool_calls:
@@ -298,7 +295,6 @@ class AsyncMiniMaxClient:
         
         response = await self.ainvoke(
             messages=all_messages,
-            temperature=temperature
         )
         
         return response.content
