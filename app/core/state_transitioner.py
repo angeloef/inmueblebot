@@ -464,3 +464,50 @@ async def extract_scheduling_name_llm(
         return stripped.title()
 
     return None
+
+
+# ── Day / time slot extractors ─────────────────────────────────────────────────
+_DAY_PHRASE = re.compile(
+    r"\b("
+    r"(?:lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)"
+    r"(?:\s+que\s+viene|\s+pr[óo]ximo)?"
+    r"|pasado\s+ma[ñn]ana"
+    r"|ma[ñn]ana"
+    r"|hoy"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def extract_scheduling_day(message: str) -> "str | None":
+    """Extract a concrete day phrase from the user's message.
+
+    Returns the day phrase (e.g. 'viernes', 'viernes que viene', 'mañana')
+    to be stored as belief.scheduling_day, or None if no concrete day found.
+    """
+    if not message:
+        return None
+    m = _DAY_PHRASE.search(message)
+    if not m:
+        return None
+    return m.group(1).strip().lower()
+
+
+def extract_scheduling_time(message: str) -> "str | None":
+    """Extract a concrete clock time from the user's message.
+
+    Returns a 'HH:MM' string (e.g. '10:00', '15:00') to be stored as
+    belief.scheduling_time, or None if no concrete time found.
+    """
+    if not message:
+        return None
+    try:
+        from app.utils.date_parser import _extract_time_from_text
+        parsed = _extract_time_from_text(message)
+    except Exception:
+        return None
+    if not parsed or parsed[0] is None:
+        return None
+    hour = parsed[0]
+    minute = parsed[1] if len(parsed) > 1 else 0
+    return f"{int(hour):02d}:{int(minute or 0):02d}"

@@ -29,6 +29,8 @@ from app.agents.coordinator import (
 )
 from app.core.state_transitioner import (
     extract_scheduling_name_llm,
+    extract_scheduling_day,
+    extract_scheduling_time,
     NAME_REASK_SIGNAL,
 )
 from app.agents.conversation_manager import (
@@ -289,6 +291,26 @@ async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str,
         belief.last_bot_message = confirm
         return confirm, "scheduling::confirm-request"
     return result.response, "scheduling::collecting"
+
+
+def _capture_day_time(belief, message: str) -> None:
+    """Persist scheduling day/time from the user's message into belief state.
+
+    Only writes a field if the extractor finds something AND the field is not
+    already set. Safe to call on any turn; extractors return None when no
+    concrete value is present.
+    """
+    try:
+        if not getattr(belief, "scheduling_day", ""):
+            day = extract_scheduling_day(message)
+            if day:
+                belief.scheduling_day = day
+        if not getattr(belief, "scheduling_time", ""):
+            t = extract_scheduling_time(message)
+            if t:
+                belief.scheduling_time = t
+    except Exception:
+        pass
 
 
 def _clear_scheduling_state(belief: ConversationBeliefState) -> None:
@@ -786,6 +808,8 @@ async def _route_message_inner(
                 )
             if extracted:
                 belief.scheduling_name = extracted
+            # Also capture day/time if the user bundled them with their name.
+            _capture_day_time(belief, message)
             # Fall through to scheduling specialist for next slot.
             sched_context = _build_scheduling_context(belief) + "\n" + (context_prompt or "")
             result, _ = await coordinate(message, session_id, sched_context, recent_messages=recent_messages)
@@ -805,6 +829,8 @@ async def _route_message_inner(
 
         # B5. Any other scheduling_* slot (day / time / property).
         else:
+            # PRIMARY FIX: persist day/time from user's message BEFORE building context
+            _capture_day_time(belief, message)
             sched_context = _build_scheduling_context(belief) + "\n" + (context_prompt or "")
             result, _ = await coordinate(message, session_id, sched_context, recent_messages=recent_messages)
             await save_specialist_state(session_id, "scheduling")
@@ -840,6 +866,8 @@ async def _route_message_inner(
         # Check if user is switching topics away from scheduling
         topic_switch_kw = r"\b(busco|quiero|necesito|buscando|me interesa|mostrame|propiedades|lista|requisitos|garantía|precio|alquilar|comprar)\b"
         if not re.search(topic_switch_kw, message.lower().strip()):
+            # Capture any day/time the user gave in this turn.
+            _capture_day_time(belief, message)
             # Deterministic booking: if we already have name + day + time + property and
             # the user confirms, call schedule_visit directly with the belief fields.
             # The LLM specialist is unreliable assembling a date split across turns.
@@ -913,6 +941,11 @@ async def _route_message_inner(
     # Add scheduling context when scheduling is active so the specialist has slot info.
     from app.agents.coordinator import _build_scheduling_context as _bsc_fb, SPECIALISTS
     full_context = context_prompt or ""
+    # Capture day/time from scheduling messages that bundle them ("el viernes a las 10").
+    if getattr(belief, "awaiting", None) and str(belief.awaiting or "").startswith("scheduling_"):
+        _capture_day_time(belief, message)
+    elif "scheduling" in (getattr(belief, "active_intents", None) or set()):
+        _capture_day_time(belief, message)
     _has_scheduling_state = any([
         getattr(belief, "scheduling_name", None),
         getattr(belief, "scheduling_day", None),
