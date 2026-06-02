@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.core.config import get_settings
-settings = get_settings()
 
 
 @dataclass
@@ -32,19 +31,19 @@ PATTERNS: list[RoutePattern] = [
         name="greeting_hola",
         pattern=r"^(hola|holis+|hola+|buen[ao]s+)\b.*$",
         confidence=0.99,
-        response=f"¡Hola! Te comunicaste con {settings.INMOBILIARIA_NAME}. ¿En qué puedo ayudarte?",
+        response="¡Hola! Te comunicaste con {company_name}. ¿En qué puedo ayudarte?",
     ),
     RoutePattern(
         name="greeting_formal",
         pattern=r"^(buenos días|buenas tardes|buenas noches)\b",
         confidence=0.99,
-        response=f"¡{{0}}! Te comunicaste con {settings.INMOBILIARIA_NAME}. ¿En qué puedo ayudarte?",
+        response="¡{0}! Te comunicaste con {company_name}. ¿En qué puedo ayudarte?",
     ),
     RoutePattern(
         name="greeting_como_estas",
         pattern=r"^(cómo|como) (estás|estas|andas|andás|va|vamos)\b",
         confidence=0.98,
-        response=f"¡Muy bien, gracias! Soy el asistente de {settings.INMOBILIARIA_NAME}. ¿En qué puedo ayudarte con propiedades en Oberá?",
+        response="¡Muy bien, gracias! Soy el asistente de {company_name}. ¿En qué puedo ayudarte?",
     ),
     # ── CONFIRMATIONS (static S1) ─────────────────────────────────
     RoutePattern(
@@ -329,10 +328,23 @@ def match_pattern(message: str) -> Optional[RoutePattern]:
     return None
 
 
+def _get_company_name() -> str:
+    """Resolve company name: bot_settings DB (5-min cache) → env var fallback."""
+    try:
+        from app.agents.prompts import _get_cached_bot_settings
+        db_name = (_get_cached_bot_settings() or {}).get("company_name", "")
+        if db_name:
+            return db_name
+    except Exception:
+        pass
+    return get_settings().INMOBILIARIA_NAME
+
+
 def format_response(pattern: RoutePattern, message: str) -> str:
     """Format the pattern's response template.
 
-    Handles {0}, {1} substitutions from regex groups.
+    Handles {0}, {1} substitutions from regex groups and {company_name}
+    which is resolved dynamically from bot_settings DB (5-min cache).
     For needs_llm=True patterns, returns empty string.
     """
     if pattern.needs_llm:
@@ -341,9 +353,14 @@ def format_response(pattern: RoutePattern, message: str) -> str:
     msg = message.lower().strip()
     m = re.search(pattern.pattern, msg, re.IGNORECASE)
 
+    response = pattern.response
+    # Resolve {company_name} from bot_settings DB before positional subs
+    if "{company_name}" in response:
+        response = response.replace("{company_name}", _get_company_name())
+
     if m and m.groups():
         try:
-            return pattern.response.format(*m.groups())
+            return response.format(*m.groups())
         except (IndexError, KeyError):
-            return pattern.response
-    return pattern.response
+            return response
+    return response
