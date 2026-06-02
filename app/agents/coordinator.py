@@ -450,17 +450,13 @@ async def coordinate(
         use_agentic: If True, use the full Plan→Act→Observe→Evaluate loop.
         recent_messages: Optional conversation history for LLM anaphora resolution.
     """
-    # Fast classification
-    intent = classify_intent(message)
-
-    # For ambiguous cases (mixed signals or no clear signal), use LLM
-    if _is_ambiguous_intent(message) or (intent in ("search",) and not _has_clear_signal(message)):
-        try:
-            llm_intent = await classify_intent_llm(message, context_prompt)
-            if llm_intent in SPECIALISTS:
-                intent = llm_intent
-        except Exception:
-            pass
+    # Pure LLM classification — no regex heuristics
+    ctx = ""
+    if recent_messages:
+        ctx = "Historial reciente:\n" + "\n".join(
+            f"{m.get('role')}: {m.get('content', '')[:160]}" for m in (recent_messages or [])
+        )
+    intent = await classify_intent_llm(message, ctx)
 
     specialist = SPECIALISTS.get(intent, SPECIALISTS["search"])
 
@@ -516,21 +512,15 @@ async def classify_intent_with_context(
         if owner:
             return owner
 
-    # 2. Regex first.
-    intent = classify_intent(message)
-
-    # 3. LLM fallback only when regex was unsure.
-    if intent == "search" and not _has_clear_signal(message):
-        try:
-            ctx = ""
-            if recent_messages:
-                ctx = "Historial reciente:\n" + "\n".join(
-                    f"{m.get('role')}: {m.get('content', '')[:160]}" for m in recent_messages
-                )
-            llm_intent = await classify_intent_llm(message, ctx)
-            if llm_intent in SPECIALISTS:
-                intent = llm_intent
-        except Exception:
-            pass
+    # Pure LLM classification
+    ctx = ""
+    if recent_messages:
+        ctx = "Historial reciente:\n" + "\n".join(
+            f"{m.get('role')}: {m.get('content', '')[:160]}" for m in (recent_messages or [])
+        )
+    try:
+        intent = await classify_intent_llm(message, ctx)
+    except Exception:
+        intent = "search"
 
     return intent

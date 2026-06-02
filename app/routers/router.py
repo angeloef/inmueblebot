@@ -19,7 +19,6 @@ from app.core.state_transitioner import update_belief
 from app.memory.working import save_working_memory, load_working_memory, clear_working_memory
 from app.memory.episodic import build_greeting_from_episodes
 from app.memory.user_model import build_personalized_context
-from app.routers.system1 import format_response, match_pattern
 from app.agents.s2_agent import process_message, process_message_multistep
 from app.agents.coordinator import (
     coordinate,
@@ -47,7 +46,6 @@ def _get_session_lock(session_id: str) -> asyncio.Lock:
         _session_locks[session_id] = asyncio.Lock()
     return _session_locks[session_id]
 
-S1_CONFIDENCE_THRESHOLD = 0.70
 
 _OUT_OF_SCOPE_RESPONSE = (
     "Soy un asistente inmobiliario especializado en propiedades en Oberá, Misiones. "
@@ -910,150 +908,35 @@ async def _route_message_inner(
         await save_working_memory(belief)
         return (resp, belief, router_label, round(latency, 2))
 
-    # ── System 1: regex match ─────────────────────────────────
-    pattern = match_pattern(message, belief)
-
-    if pattern and pattern.confidence >= S1_CONFIDENCE_THRESHOLD:
-        belief.last_tool_called = pattern.name
-
-        if not pattern.needs_llm:
-            # If greeting matched but message contains search keywords, delegate to S2
-            if pattern.name.startswith("greeting"):
-                search_kw = r"\b(busco|quiero|necesito|buscando|estoy buscando|me interesa|alquilar|alquiler|venta|comprar|departamento|depto|casa|ph|terreno)\b"
-                msg_lower = message.lower().strip()
-                if re.search(search_kw, msg_lower):
-                    # Override context: tell LLM to process the full request, not just greet
-                    override_context = (
-                        "⚠️ El usuario combinó un saludo con una consulta de propiedades. "
-                        "Ya lo saludaste — AHORA respondé a su consulta de búsqueda. "
-                        "Si el usuario no especificó alquiler o venta, mostrale TODAS las propiedades "
-                        "disponibles (tanto en alquiler como en venta). NO preguntes alquiler/compra "
-                        "a menos que sea ambiguo — si dice 'departamento disponible', buscá todo.\n\n"
-                    )
-                    full_context = override_context + (context_prompt or "")
-                    multistep_result = await process_message_multistep(message, session_id, full_context, recent_messages=recent_messages)
-                    s2_result = multistep_result
-                    latency = (time.perf_counter() - t0) * 1000
-                    _update_belief_from_result(belief, s2_result)
-                    _resp_text = s2_result.response
-                    _resp_tools = s2_result.tools_called
-                    _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
-                    if _handoff:
-                        _resp_text, _resp_tools = _handoff
-                    await save_working_memory(belief)
-                    return (
-                        ChatResponse(
-                            response=_resp_text,
-                            tools_called=_resp_tools,
-                            confidence=max(pattern.confidence, s2_result.confidence),
-                            messages=s2_result.messages,
-                        ),
-                        belief, "s1→search", round(latency, 2),
-                    )
-            response_text = format_response(pattern, message)
-            latency = (time.perf_counter() - t0) * 1000
-
-            if pattern.name.startswith("greeting") and cross_session_context:
-                parts = cross_session_context.split(".")
-                greeting_part = parts[0].strip() + "."
-                response_text = greeting_part + "\n\n" + response_text
-
-            # Static S1 (greetings/FAQ): track last_bot_message but don't count as failure.
-            await _finalize_turn(belief, session_id, response_text)
-            belief.consecutive_failures = 0  # static canned replies are never failures
-            await save_working_memory(belief)
-            return (
-                ChatResponse(response=response_text, tools_called=[], confidence=pattern.confidence),
-                belief, "s1", round(latency, 2),
-            )
-        else:
-            # S1 identified intent → route through coordinator (supports scheduling specialist)
-            # Check if this is a scheduling-related pattern
-            scheduling_s1 = pattern.name.startswith("scheduling")
-            if scheduling_s1:
-                from app.agents.coordinator import _build_scheduling_context as _bsc
-                sched_context = _bsc(belief)
-                full_context = sched_context + "\n" + (context_prompt or "")
-                result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
-                _update_belief_from_result(belief, result)
-                await save_specialist_state(session_id, "scheduling")
-                if result.tools_called:
-                    belief.last_tool_called = result.tools_called[-1]
-            else:
-                # Secondary scheduling check: messages like "lo quiero ver el sabado a las 11"
-                # arrive via S1 property-selection path but need the scheduling specialist,
-                # not generic multistep (which has no scheduling context and confuses day names).
-                _visit_kw = re.search(
-                    r"\b(quiero ver|ir a ver|visitarlo|visitarla|coordinar|agendar)\b",
-                    message.lower(),
-                )
-                _day_kw = re.search(
-                    r"\b(hoy|ma[nñ]ana|martes|mi[eé]rcoles|jueves|viernes|lunes|s[aá]bado|domingo)\b",
-                    message.lower(),
-                )
-                if _visit_kw and _day_kw:
-                    from app.agents.coordinator import _build_scheduling_context as _bsc2
-                    sched_context = _bsc2(belief)
-                    full_context = sched_context + "\n" + (context_prompt or "")
-                    result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
-                    _update_belief_from_result(belief, result)
-                    await save_specialist_state(session_id, "scheduling")
-                    if result.tools_called:
-                        belief.last_tool_called = result.tools_called[-1]
-                else:
-                    multistep_result = await process_message_multistep(message, session_id, context_prompt, recent_messages=recent_messages)
-                    result = multistep_result
-                    specialist_name = "search"
-                    _update_belief_from_result(belief, result)
-
-            latency = (time.perf_counter() - t0) * 1000
-            _resp_text = result.response
-            _resp_tools = result.tools_called
-            _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
-            if _handoff:
-                _resp_text, _resp_tools = _handoff
-            await save_working_memory(belief)
-            return (
-                ChatResponse(
-                    response=_resp_text,
-                    tools_called=_resp_tools,
-                    confidence=max(pattern.confidence, result.confidence),
-                    messages=result.messages,
-                ),
-                belief, f"s1→{specialist_name}", round(latency, 2),
-            )
-
-    # ── Coordinator: route through intent classification → specialist
-    # Check if message implies scheduling intent
+    # ── Coordinator: pure LLM routing ──────────────────────────────────
+    # Always delegate to the coordinator — the LLM picks the right specialist.
+    # Add scheduling context when scheduling is active so the specialist has slot info.
     from app.agents.coordinator import _build_scheduling_context as _bsc_fb, SPECIALISTS
-    intent = await classify_intent_with_context(message, belief, recent_messages)
+    full_context = context_prompt or ""
+    _has_scheduling_state = any([
+        getattr(belief, "scheduling_name", None),
+        getattr(belief, "scheduling_day", None),
+        getattr(belief, "scheduling_time", None),
+        getattr(belief, "awaiting", None) and belief.awaiting.startswith("scheduling_"),
+    ])
+    if _has_scheduling_state:
+        full_context = _bsc_fb(belief) + "\n" + full_context
 
-    if intent == "scheduling":
-        sched_context = _bsc_fb(belief)
-        full_context = sched_context + "\n" + (context_prompt or "")
-        result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
-        if result.tools_called:
-            belief.last_tool_called = result.tools_called[-1]
-        # After a successful booking, clear scheduling state so the next turn doesn't
-        # re-enter the scheduling loop (e.g. "me confirmas" should check appointments,
-        # not try to book again). On failure/partial, keep state for the next turn.
-        if "schedule_visit" in (result.tools_called or []):
-            _failed = any(m in result.response for m in (
-                "⚠️", "No pude", "Los domingos", "El horario de las",
-                "Tuve un problema", "fuera de", "está ocupado", "Faltan datos",
-            ))
-            if not _failed:
-                _clear_scheduling_state(belief)
-                await clear_saved_state(session_id)
-            else:
-                await save_specialist_state(session_id, "scheduling")
+    result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
+
+    if result.tools_called and "schedule_visit" in result.tools_called:
+        _failed = any(m in result.response for m in (
+            "⚠️", "No pude", "Los domingos", "El horario de las",
+            "Tuve un problema", "fuera de", "está ocupado", "Faltan datos",
+        ))
+        if not _failed:
+            _clear_scheduling_state(belief)
+            await clear_saved_state(session_id)
         else:
             await save_specialist_state(session_id, "scheduling")
-    else:
-        multistep_result = await process_message_multistep(message, session_id, context_prompt, recent_messages=recent_messages)
-        result = multistep_result
-        specialist_name = "search"
-    
+    elif _has_scheduling_state:
+        await save_specialist_state(session_id, "scheduling")
+
     latency = (time.perf_counter() - t0) * 1000
     _update_belief_from_result(belief, result)
     _resp_text = result.response
