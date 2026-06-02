@@ -215,6 +215,13 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
         lines.append("[DIRECTIVA PARA ESTE TURNO]")
         lines.append(directive)
 
+    # ── Awaiting / last-question block (schema v4) ─────────────
+    if getattr(belief, "awaiting", None):
+        lines.append("")
+        lines.append(f"[ESPERANDO RESPUESTA] {belief.awaiting}")
+        if belief.last_bot_message:
+            lines.append(f"[ÚLTIMA PREGUNTA] {belief.last_bot_message[:300]}")
+
     return "\n".join(lines) + "\n"
 
 

@@ -21,7 +21,17 @@ from app.memory.episodic import build_greeting_from_episodes
 from app.memory.user_model import build_personalized_context
 from app.routers.system1 import format_response, match_pattern
 from app.agents.s2_agent import process_message, process_message_multistep
-from app.agents.coordinator import coordinate, _build_scheduling_context
+from app.agents.coordinator import (
+    coordinate,
+    _build_scheduling_context,
+    classify_intent_with_context,
+    is_inmobiliaria_visit,
+    get_inmobiliaria_location,
+)
+from app.core.state_transitioner import (
+    extract_scheduling_name_llm,
+    NAME_REASK_SIGNAL,
+)
 from app.agents.conversation_manager import (
     save_specialist_state,
     get_saved_state,
@@ -96,6 +106,171 @@ def _is_out_of_scope(message: str) -> bool:
             return True
 
     return False
+
+
+# ── Schema v4 helpers ──────────────────────────────────────────────
+
+# Off-domain emergencies → immediate human handoff regardless of state.
+_EMERGENCY = re.compile(
+    r"\b(luz cortada|sin luz|corte de luz|ascensor|atrapad[oa]|inundaci[oó]n|"
+    r"se inund|p[ée]rdida de agua|fuga de gas|olor a gas|escape de gas|robo|"
+    r"me robaron|emergencia|accidente|ayuda urgente|incendio|fuego|"
+    r"se prende fuego|me electrocut)\b",
+    re.IGNORECASE,
+)
+
+# Hard topic switches that should EXIT an awaiting flow.
+_HARD_TOPIC_SWITCH = re.compile(
+    r"\b(busco|buscar|quiero ver|mostrame|otra propiedad|otra cosa|"
+    r"chau|adi[oó]s|hasta luego|gracias adi[oó]s|cancelar|dejalo|olvidalo|"
+    r"nada|mejor no|otra zona|comprar|alquilar otra)\b",
+    re.IGNORECASE,
+)
+
+# Confirmation keywords.
+_CONFIRM_KW = re.compile(
+    r"\b(s[íi]|si|dale|perfecto|ok|okey|genial|listo|confirmo|confirm[aá]|"
+    r"de una|joya|b[áa]rbaro|buen[ií]simo|me sirve|de acuerdo|correcto)\b",
+    re.IGNORECASE,
+)
+_NEGATIVE_KW = re.compile(
+    r"\b(no|nop|nope|para nada|cancel[aá]|mejor no|olvidalo|dejalo|no gracias)\b",
+    re.IGNORECASE,
+)
+
+# Markers that indicate the bot failed / escalated / did not help.
+_FAILURE_MARKERS = (
+    "no estoy seguro de entenderte",
+    "no me quedó del todo claro",
+    "no pude entender",
+    "no pude completar",
+    "disculpá, ¿me",
+    "quiero ayudarte bien",
+    "te estoy conectando",
+)
+
+
+def _is_emergency(message: str) -> bool:
+    return bool(_EMERGENCY.search(message or ""))
+
+
+def _is_hard_topic_switch(message: str) -> bool:
+    return bool(_HARD_TOPIC_SWITCH.search(message or ""))
+
+
+def _is_confirmation(message: str) -> bool:
+    msg = (message or "").lower().strip()
+    if _NEGATIVE_KW.search(msg):
+        return False
+    return bool(_CONFIRM_KW.search(msg))
+
+
+def _is_negative(message: str) -> bool:
+    return bool(_NEGATIVE_KW.search((message or "").lower().strip()))
+
+
+def _is_failed_response(response: str) -> bool:
+    """True if the bot response looks like a non-help / escalation."""
+    low = (response or "").lower()
+    return any(m in low for m in _FAILURE_MARKERS)
+
+
+def _detect_awaiting(response: str, belief) -> "str | None":
+    """Infer which slot the bot is now waiting for, from its own response text."""
+    low = (response or "").lower()
+    is_question = "?" in response or "¿" in response
+    if not is_question:
+        return None
+    if ("confirm" in low and "visita" in low) or "respondé sí" in low or "responde sí" in low:
+        return "scheduling_confirm"
+    if "nombre" in low:
+        return "scheduling_name"
+    if "qué día" in low or "que dia" in low or "qué fecha" in low or "cuándo" in low:
+        return "scheduling_day"
+    if "horario" in low or "a qué hora" in low or "a que hora" in low or "qué hora" in low:
+        return "scheduling_time"
+    return None
+
+
+def _strip_messages(raw: list) -> list:
+    """Reduce MemoryManager message dicts to {role, content} for the LLM API."""
+    out = []
+    for m in (raw or []):
+        role = m.get("role")
+        content = m.get("content")
+        if role in ("user", "assistant") and content:
+            out.append({"role": role, "content": content})
+    return out
+
+
+async def _finalize_turn(belief, session_id: str, response_text: str) -> None:
+    """Set last_bot_message, detect awaiting from response, update consecutive_failures."""
+    belief.last_bot_message = response_text
+    detected = _detect_awaiting(response_text, belief)
+    if detected is not None:
+        belief.awaiting = detected
+    if _is_failed_response(response_text):
+        belief.consecutive_failures += 1
+    else:
+        belief.consecutive_failures = 0
+
+
+async def _finalize_and_check_handoff(
+    belief, session_id: str, response_text: str, tools_called: list
+) -> "tuple[str, list] | None":
+    """Run _finalize_turn, then escalate to human after 3 consecutive failures.
+    Returns (new_response, new_tools) if handoff replaces the response, else None.
+    """
+    await _finalize_turn(belief, session_id, response_text)
+    if belief.consecutive_failures >= 3:
+        try:
+            from app.tools.v2.request_human_assistance import request_human_assistance as _rha
+            handoff = await _rha(reason="3_failed_turns", message="")
+        except Exception:
+            handoff = "Te comunico con un asesor para ayudarte mejor."
+        belief.consecutive_failures = 0
+        belief.awaiting = None
+        belief.last_bot_message = handoff
+        return handoff, ["request_human_assistance"]
+    return None
+
+
+async def check_active_appointment(session_id: str) -> "str | None":
+    """Return a description of the user's existing upcoming visit, or None."""
+    try:
+        from app.services.appointment_service import appointment_service
+        from app.db.session import async_session_factory
+        async with async_session_factory() as db:
+            appts = await appointment_service.get_user_appointments_by_session(session_id, upcoming=True, db=db)
+        if not appts:
+            return None
+        appts = sorted(appts, key=lambda a: a.start_time)
+        a = appts[0]
+        return f"{a.start_time.strftime('%A %d/%m a las %H:%M')}"
+    except Exception:
+        return None
+
+
+async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str, str]":
+    """If all scheduling fields present and not yet confirming, inject confirm step."""
+    if result.tools_called and "schedule_visit" in result.tools_called:
+        return result.response, "scheduling::booked"
+    have_all = bool(
+        getattr(belief, "scheduling_name", None)
+        and getattr(belief, "scheduling_day", None)
+        and getattr(belief, "scheduling_time", None)
+        and getattr(belief, "selected_property_id", None)
+    )
+    if have_all and getattr(belief, "awaiting", None) != "scheduling_confirm":
+        belief.awaiting = "scheduling_confirm"
+        confirm = (
+            f"¿Confirmo la visita para el {belief.scheduling_day} a las "
+            f"{belief.scheduling_time} a nombre de {belief.scheduling_name}? "
+            "Respondé Sí para confirmar."
+        )
+        belief.last_bot_message = confirm
+        return confirm, "scheduling::confirm-request"
+    return result.response, "scheduling::collecting"
 
 
 def _clear_scheduling_state(belief: ConversationBeliefState) -> None:
@@ -251,29 +426,30 @@ async def _try_pre_llm_shortcut(
             return None  # Let normal routing handle the new request
         
         # Loop escape hatch: too many turns without completing
-        if belief.scheduling_loop_count >= 5:
+        if getattr(belief, "scheduling_loop_count", 0) >= 5:
             _clear_scheduling_state(belief)
+            belief.awaiting = None
             await clear_saved_state(session_id)
+            try:
+                from app.tools.v2.request_human_assistance import request_human_assistance as _rha
+                handoff = await _rha(reason="scheduling_loop", message="")
+            except Exception:
+                handoff = "Te comunico con un asesor para ayudarte a coordinar la visita."
+            belief.last_bot_message = handoff
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
             return (
-                ChatResponse(
-                    response=(
-                        "Disculpá, no pude completar el agendamiento. "
-                        "Si querés, escribime con todos los datos juntos: "
-                        "nombre, día, horario y el número de propiedad. "
-                        "También podés llamarnos al +54 9 3755 123456. "
-                        "¿Necesitás algo más mientras tanto?"
-                    ),
-                    tools_called=["schedule_visit"],
-                    confidence=0.5,
-                ),
-                ["schedule_visit"], 0.5, "pre-llm::scheduling-escape",
+                ChatResponse(response=handoff, tools_called=["request_human_assistance"], confidence=0.6),
+                belief, "pre-llm::scheduling-escape-handoff", 0,
             )
         
         # Fast-path: all fields collected and user is confirming
         confirm_kw = ["sí", "si", "dale", "perfecto", "ok", "genial", "me sirve", "confirmo"]
         # Identity comes from the session (BSUID/phone), so the phone is no longer a
         # required field — only name + day + time gate the fast-path booking.
-        if (belief.scheduling_name and
+        # Schema v4: also require awaiting == "scheduling_confirm" so we don't skip the confirmation gate.
+        if (getattr(belief, "awaiting", None) == "scheduling_confirm"
+            and belief.scheduling_name and
             belief.scheduling_day and belief.scheduling_time and
             any(kw in msg_lower for kw in confirm_kw)):
             result_text = await schedule_visit(
@@ -384,6 +560,23 @@ async def _route_message_inner(
             get_belief(session_id), "reset-memory", 0,
         )
 
+    # ── Off-domain emergency detection (schema v4) ────────────
+    if _is_emergency(message):
+        logger.info(f"[Router] Emergency handoff for {session_id}: {message[:80]}")
+        try:
+            from app.tools.v2.request_human_assistance import request_human_assistance as _rha
+            handoff = await _rha(reason="emergencia", message=message)
+        except Exception:
+            handoff = "Te comunico con un asesor de inmediato."
+        belief.consecutive_failures = 0
+        belief.awaiting = None
+        belief.last_bot_message = handoff
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=handoff, tools_called=["request_human_assistance"], confidence=1.0),
+            belief, "emergency-handoff", 0,
+        )
+
     # ── Out-of-scope guard ────────────────────────────────────
     # Detect clearly non-real-estate requests and redirect politely.
     # This runs BEFORE any S1 patterns so the bot never engages with
@@ -415,6 +608,171 @@ async def _route_message_inner(
     if cross_session_context:
         context_prompt = cross_session_context + "\n\n" + context_prompt
 
+    # ── Load recent conversation history for LLM anaphora resolution (schema v4) ──
+    recent_messages: list = []
+    try:
+        from app.core.memory import MemoryManager
+        _mm = MemoryManager()
+        _raw = await _mm.get_recent_messages(session_id, limit=6)
+        recent_messages = _strip_messages(_raw)
+    except Exception as _e:
+        logger.debug(f"[Router] could not load recent_messages: {_e}")
+        recent_messages = []
+
+    # ── AWAITING FAST-PATH (schema v4) ────────────────────────
+    if getattr(belief, "awaiting", None) and belief.awaiting.startswith("scheduling_"):
+
+        # B1. Hard topic switch → exit scheduling flow, fall through.
+        if _is_hard_topic_switch(message):
+            belief.awaiting = None
+            _clear_scheduling_state(belief)
+            await clear_saved_state(session_id)
+            # Do NOT return — fall through to normal routing.
+
+        # B2. Confirmation step.
+        elif belief.awaiting == "scheduling_confirm":
+            if _is_negative(message):
+                _clear_scheduling_state(belief)
+                belief.awaiting = None
+                await clear_saved_state(session_id)
+                resp = "Entendido, cancelé el agendamiento. ¿Hay algo más en lo que te pueda ayudar?"
+                belief.last_bot_message = resp
+                belief.consecutive_failures = 0
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                    belief, "awaiting::confirm-cancel", 0,
+                )
+            if _is_confirmation(message):
+                existing = await check_active_appointment(session_id)
+                if existing:
+                    resp = (
+                        f"Ya tenés una visita agendada: {existing}. "
+                        "¿Querés cancelarla primero antes de agendar otra?"
+                    )
+                    belief.awaiting = None
+                    belief.last_bot_message = resp
+                    belief.consecutive_failures = 0
+                    await save_working_memory(belief)
+                    return (
+                        ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                        belief, "awaiting::has-active-appt", 0,
+                    )
+                from app.tools.v2.schedule_visit import schedule_visit
+                result_text = await schedule_visit(
+                    property_id=getattr(belief, "selected_property_id", 0) or 0,
+                    nombre=getattr(belief, "scheduling_name", ""),
+                    telefono=getattr(belief, "scheduling_phone", ""),
+                    dia=getattr(belief, "scheduling_day", ""),
+                    horario=getattr(belief, "scheduling_time", ""),
+                )
+                belief.last_tool_called = "schedule_visit"
+                _failed = any(m in result_text for m in (
+                    "⚠️", "No pude", "Los domingos", "El horario de las",
+                    "Tuve un problema", "fuera de", "está ocupado", "Faltan datos",
+                ))
+                if not _failed:
+                    _clear_scheduling_state(belief)
+                    belief.awaiting = None
+                    belief.consecutive_failures = 0
+                    await clear_saved_state(session_id)
+                belief.last_bot_message = result_text
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=result_text, tools_called=["schedule_visit"], confidence=0.99),
+                    belief, "awaiting::booked", 0,
+                )
+            # Neither confirm nor deny → re-anchor.
+            resp = (
+                f"¿Confirmo la visita para el {getattr(belief, 'scheduling_day', '?')} a las "
+                f"{getattr(belief, 'scheduling_time', '?')} a nombre de "
+                f"{getattr(belief, 'scheduling_name', '?')}? "
+                "Respondé Sí para confirmar o No para cambiar algo."
+            )
+            belief.last_bot_message = resp
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.9),
+                belief, "awaiting::confirm-reask", 0,
+            )
+
+        # B3. Mid-flow interruption: user asks a question (not a topic switch).
+        elif "?" in message or "¿" in message:
+            from app.agents.s2_agent import process_message_with_specialist
+            from app.agents.coordinator import SPECIALISTS
+            answer = await process_message_with_specialist(
+                message=message,
+                session_id=session_id,
+                context_prompt=context_prompt,
+                specialist=SPECIALISTS.get("knowledge"),
+                recent_messages=recent_messages,
+            )
+            resp = answer.response + "\n\n¿Querés continuar con el agendamiento de la visita?"
+            # Keep belief.awaiting unchanged.
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=getattr(answer, "tools_called", []),
+                             confidence=getattr(answer, "confidence", 0.8)),
+                belief, "awaiting::midflow-answer", 0,
+            )
+
+        # B4. scheduling_name slot with LLM/anaphora extraction.
+        elif belief.awaiting == "scheduling_name":
+            extracted = await extract_scheduling_name_llm(belief, message)
+            if extracted == NAME_REASK_SIGNAL:
+                resp = "Perfecto. ¿Me decís tu nombre completo para registrar la visita?"
+                belief.awaiting = "scheduling_name"
+                belief.last_bot_message = resp
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=resp, tools_called=[], confidence=0.9),
+                    belief, "awaiting::name-reask", 0,
+                )
+            if extracted:
+                belief.scheduling_name = extracted
+            # Fall through to scheduling specialist for next slot.
+            sched_context = _build_scheduling_context(belief) + "\n" + (context_prompt or "")
+            result, _ = await coordinate(message, session_id, sched_context, recent_messages=recent_messages)
+            await save_specialist_state(session_id, "scheduling")
+            _update_belief_from_result(belief, result)
+            await _finalize_turn(belief, session_id, result.response)
+            resp_text, label = await _maybe_confirm_or_pass(belief, result, session_id)
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp_text, tools_called=getattr(result, "tools_called", []),
+                             confidence=getattr(result, "confidence", 0.9)),
+                belief, label, 0,
+            )
+
+        # B5. Any other scheduling_* slot (day / time).
+        else:
+            sched_context = _build_scheduling_context(belief) + "\n" + (context_prompt or "")
+            result, _ = await coordinate(message, session_id, sched_context, recent_messages=recent_messages)
+            await save_specialist_state(session_id, "scheduling")
+            _update_belief_from_result(belief, result)
+            await _finalize_turn(belief, session_id, result.response)
+            resp_text, label = await _maybe_confirm_or_pass(belief, result, session_id)
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp_text, tools_called=getattr(result, "tools_called", []),
+                             confidence=getattr(result, "confidence", 0.9)),
+                belief, label, 0,
+            )
+
+    # ── Inmobiliaria-office visit: share location + hours, never book ──
+    if is_inmobiliaria_visit(message):
+        loc = await get_inmobiliaria_location()
+        belief.awaiting = None
+        belief.last_bot_message = loc
+        belief.consecutive_failures = 0
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=loc, tools_called=["get_faq_answer"], confidence=0.95),
+            belief, "inmobiliaria-visit", 0,
+        )
+
     # ── Cross-turn specialist persistence ─────────────────────
     # If the scheduling specialist was active last turn, keep it active
     saved = await get_saved_state(session_id)
@@ -429,7 +787,8 @@ async def _route_message_inner(
                 r"\b(si|s[íi]|dale|perfecto|ok|okay|genial|listo|confirmo|de una|joya|b[áa]rbaro|buenisimo|me sirve)\b",
                 message.lower(),
             )
-            if (_confirm and belief.scheduling_name and belief.scheduling_day
+            if (_confirm and getattr(belief, "awaiting", None) == "scheduling_confirm"
+                    and belief.scheduling_name and belief.scheduling_day
                     and belief.scheduling_time and belief.selected_property_id):
                 from app.tools.v2.schedule_visit import schedule_visit as _sv
                 _txt = await _sv(
@@ -453,7 +812,7 @@ async def _route_message_inner(
             sched_context = _bsc(belief)
             full_context = sched_context + "\n" + (context_prompt or "")
             specialist = SPECIALISTS["scheduling"]
-            result, _ = await coordinate(message, session_id, full_context)
+            result, _ = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
             _update_belief_from_result(belief, result)
             latency = (time.perf_counter() - t0) * 1000
             
@@ -490,7 +849,7 @@ async def _route_message_inner(
         return (resp, belief, router_label, round(latency, 2))
 
     # ── System 1: regex match ─────────────────────────────────
-    pattern = match_pattern(message)
+    pattern = match_pattern(message, belief)
 
     if pattern and pattern.confidence >= S1_CONFIDENCE_THRESHOLD:
         belief.last_tool_called = pattern.name
@@ -510,15 +869,20 @@ async def _route_message_inner(
                         "a menos que sea ambiguo — si dice 'departamento disponible', buscá todo.\n\n"
                     )
                     full_context = override_context + (context_prompt or "")
-                    multistep_result = await process_message_multistep(message, session_id, full_context)
+                    multistep_result = await process_message_multistep(message, session_id, full_context, recent_messages=recent_messages)
                     s2_result = multistep_result
                     latency = (time.perf_counter() - t0) * 1000
                     _update_belief_from_result(belief, s2_result)
+                    _resp_text = s2_result.response
+                    _resp_tools = s2_result.tools_called
+                    _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
+                    if _handoff:
+                        _resp_text, _resp_tools = _handoff
                     await save_working_memory(belief)
                     return (
                         ChatResponse(
-                            response=s2_result.response,
-                            tools_called=s2_result.tools_called,
+                            response=_resp_text,
+                            tools_called=_resp_tools,
                             confidence=max(pattern.confidence, s2_result.confidence),
                             messages=s2_result.messages,
                         ),
@@ -532,6 +896,9 @@ async def _route_message_inner(
                 greeting_part = parts[0].strip() + "."
                 response_text = greeting_part + "\n\n" + response_text
 
+            # Static S1 (greetings/FAQ): track last_bot_message but don't count as failure.
+            await _finalize_turn(belief, session_id, response_text)
+            belief.consecutive_failures = 0  # static canned replies are never failures
             await save_working_memory(belief)
             return (
                 ChatResponse(response=response_text, tools_called=[], confidence=pattern.confidence),
@@ -545,7 +912,7 @@ async def _route_message_inner(
                 from app.agents.coordinator import _build_scheduling_context as _bsc
                 sched_context = _bsc(belief)
                 full_context = sched_context + "\n" + (context_prompt or "")
-                result, specialist_name = await coordinate(message, session_id, full_context)
+                result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
                 _update_belief_from_result(belief, result)
                 await save_specialist_state(session_id, "scheduling")
                 if result.tools_called:
@@ -566,23 +933,28 @@ async def _route_message_inner(
                     from app.agents.coordinator import _build_scheduling_context as _bsc2
                     sched_context = _bsc2(belief)
                     full_context = sched_context + "\n" + (context_prompt or "")
-                    result, specialist_name = await coordinate(message, session_id, full_context)
+                    result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
                     _update_belief_from_result(belief, result)
                     await save_specialist_state(session_id, "scheduling")
                     if result.tools_called:
                         belief.last_tool_called = result.tools_called[-1]
                 else:
-                    multistep_result = await process_message_multistep(message, session_id, context_prompt)
+                    multistep_result = await process_message_multistep(message, session_id, context_prompt, recent_messages=recent_messages)
                     result = multistep_result
                     specialist_name = "search"
                     _update_belief_from_result(belief, result)
 
             latency = (time.perf_counter() - t0) * 1000
+            _resp_text = result.response
+            _resp_tools = result.tools_called
+            _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
+            if _handoff:
+                _resp_text, _resp_tools = _handoff
             await save_working_memory(belief)
             return (
                 ChatResponse(
-                    response=result.response,
-                    tools_called=result.tools_called,
+                    response=_resp_text,
+                    tools_called=_resp_tools,
                     confidence=max(pattern.confidence, result.confidence),
                     messages=result.messages,
                 ),
@@ -591,13 +963,13 @@ async def _route_message_inner(
 
     # ── Coordinator: route through intent classification → specialist
     # Check if message implies scheduling intent
-    from app.agents.coordinator import _build_scheduling_context as _bsc_fb, SPECIALISTS, classify_intent
-    intent = classify_intent(message)
-    
+    from app.agents.coordinator import _build_scheduling_context as _bsc_fb, SPECIALISTS
+    intent = await classify_intent_with_context(message, belief, recent_messages)
+
     if intent == "scheduling":
         sched_context = _bsc_fb(belief)
         full_context = sched_context + "\n" + (context_prompt or "")
-        result, specialist_name = await coordinate(message, session_id, full_context)
+        result, specialist_name = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
         if result.tools_called:
             belief.last_tool_called = result.tools_called[-1]
         # After a successful booking, clear scheduling state so the next turn doesn't
@@ -616,18 +988,23 @@ async def _route_message_inner(
         else:
             await save_specialist_state(session_id, "scheduling")
     else:
-        multistep_result = await process_message_multistep(message, session_id, context_prompt)
+        multistep_result = await process_message_multistep(message, session_id, context_prompt, recent_messages=recent_messages)
         result = multistep_result
         specialist_name = "search"
     
     latency = (time.perf_counter() - t0) * 1000
     _update_belief_from_result(belief, result)
+    _resp_text = result.response
+    _resp_tools = result.tools_called
+    _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
+    if _handoff:
+        _resp_text, _resp_tools = _handoff
     await save_working_memory(belief)
 
     return (
         ChatResponse(
-            response=result.response,
-            tools_called=result.tools_called,
+            response=_resp_text,
+            tools_called=_resp_tools,
             confidence=result.confidence,
             messages=result.messages,
         ),

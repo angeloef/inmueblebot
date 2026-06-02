@@ -362,3 +362,58 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     belief.last_updated_at = time.time()
 
     return belief
+
+
+# ── LLM fallback for the scheduling_name slot (schema v4) ──────────
+# Anaphoric replies like "al mío" must NOT be silently turned into the
+# WhatsApp display name. Return a signal so the bot re-asks the name.
+
+_NAME_ANAPHORA = re.compile(
+    r"\b(al?\s+m[ií]o|a\s+mi\s+nombre|el\s+m[ií]o|con\s+mi\s+nombre|mi\s+nombre|para\s+m[ií])\b",
+    re.IGNORECASE,
+)
+
+# Returned by extract_scheduling_name_llm to signal: re-ask the name concretely.
+NAME_REASK_SIGNAL = "__REASK_NAME__"
+
+
+async def extract_scheduling_name_llm(
+    belief, message: str
+) -> "str | None":
+    """Extract a full name when the bot is awaiting scheduling_name.
+
+    Returns:
+      - a name string       → caller sets belief.scheduling_name
+      - NAME_REASK_SIGNAL   → user gave anaphora ("al mío") with no name; re-ask
+      - None                → nothing extractable; caller keeps awaiting and re-anchors
+    """
+    # 1. Anaphora guard FIRST — "al mío" must never become a real name.
+    if _NAME_ANAPHORA.search(message) and not NAME_PATTERN.search(message):
+        return NAME_REASK_SIGNAL
+
+    # 2. Regex marker form ("me llamo X", "soy X") — recheck here.
+    m = NAME_PATTERN.search(message)
+    if m:
+        return m.group(1).strip().title()
+
+    # 3. LLM extractor (reuse the hybrid name extractor).
+    try:
+        from app.core.hybrid.name import name_extractor
+        ctx = {
+            "awaiting": "scheduling_name",
+            "last_bot_message": getattr(belief, "last_bot_message", ""),
+        }
+        result = await name_extractor.parse(message, ctx)
+        if result.value:
+            return str(result.value).strip().title()
+    except Exception:
+        pass
+
+    # 4. Bare token(s) that look like a name → accept as-is.
+    stripped = message.strip()
+    if (1 <= len(stripped.split()) <= 4
+            and re.fullmatch(r"[A-Za-záéíóúüñÁÉÍÓÚÜÑ\s]+", stripped)
+            and not _NAME_ANAPHORA.search(stripped)):
+        return stripped.title()
+
+    return None

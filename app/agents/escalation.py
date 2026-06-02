@@ -40,7 +40,7 @@ def assess_confidence(raw_confidence: float) -> tuple[EscalationLevel, float]:
         return EscalationLevel.HANDOFF, clamped
 
 
-def build_clarification_message(level: EscalationLevel, original_response: str) -> str:
+def build_clarification_message(level: EscalationLevel, original_response: str, belief=None) -> str:
     """Modify or replace the response based on the escalation level.
 
     - EXECUTE: pass through unchanged
@@ -60,19 +60,38 @@ def build_clarification_message(level: EscalationLevel, original_response: str) 
     if level == EscalationLevel.CLARIFY:
         # Don't replace the LLM's response — append a gentle nudge
         if len(original_response) < 15:
+            anchored = _reanchor(belief)
+            if anchored:
+                return anchored
             return (
-                "No me quedó del todo claro. ¿Podrías darme más detalles?\n\n"
-                "Por ejemplo: ¿buscás alquilar o comprar? ¿En qué zona? "
-                "¿Cuál es tu presupuesto aproximado?"
+                "Contame un poco más así te ayudo mejor. "
+                "¿Buscás alquilar o comprar, y en qué zona de Oberá?"
             )
         return original_response
 
     # HANDOFF
+    anchored = _reanchor(belief)
+    if anchored:
+        return anchored
     return (
-        "Disculpá, no estoy seguro de entenderte bien. 😕\n\n"
-        "¿Podrías explicarlo de otra forma? También podés consultarme sobre:\n"
-        "• Buscar propiedades (alquiler o venta)\n"
-        "• Requisitos para alquilar\n"
-        "• Zonas y precios en Oberá\n"
-        "• Agendar una visita"
+        "Quiero ayudarte bien. ¿Te interesa que busquemos una propiedad "
+        "para alquilar o comprar en Oberá, o preferís coordinar una visita?"
     )
+
+
+_AWAITING_REANCHOR = {
+    "scheduling_name": "Disculpá, ¿me decís el nombre completo de la persona que va a la visita?",
+    "scheduling_day": "Disculpá, ¿qué día te queda bien para la visita?",
+    "scheduling_time": "Disculpá, ¿a qué horario preferís la visita?",
+    "scheduling_confirm": "¿Confirmamos la visita? Respondé Sí para agendarla o No para cambiar algo.",
+}
+
+
+def _reanchor(belief) -> "str | None":
+    """Re-ask the pending question instead of dead-ending. Returns None if nothing pending."""
+    awaiting = getattr(belief, "awaiting", None) if belief is not None else None
+    if awaiting and awaiting in _AWAITING_REANCHOR:
+        return _AWAITING_REANCHOR[awaiting]
+    if awaiting:
+        return f"Disculpá, ¿me confirmás {awaiting.replace('scheduling_', '').replace('_', ' ')}?"
+    return None

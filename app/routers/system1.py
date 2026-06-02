@@ -300,7 +300,7 @@ def _has_compound_intent(msg: str) -> bool:
     return any(sig.search(msg) for sig in _COMPOUND_SIGNALS)
 
 
-def match_pattern(message: str) -> Optional[RoutePattern]:
+def match_pattern(message: str, belief=None) -> Optional[RoutePattern]:
     """Find the best-matching S1 pattern for a message.
 
     Patterns are checked in list order; the first match wins. A static
@@ -311,12 +311,18 @@ def match_pattern(message: str) -> Optional[RoutePattern]:
 
     Args:
         message: The user's normalized message (lowercased, trimmed).
+        belief: Optional belief state; if awaiting a slot, static patterns are suppressed.
 
     Returns:
         The matched RoutePattern, or None if no pattern matches.
     """
     msg = message.lower().strip()
     compound = _has_compound_intent(msg)
+
+    # Schema v4: while awaiting a slot answer, treat as compound so only
+    # needs_llm patterns match (static canned replies must not swallow the answer).
+    if belief is not None and getattr(belief, "awaiting", None):
+        compound = True
 
     for rp in PATTERNS:
         if re.search(rp.pattern, msg, re.IGNORECASE):

@@ -22,6 +22,16 @@ class Specialist:
     system_prompt: str
     tool_names: list[str]  # subset of available tools
 
+# ─────────────────────────────────────────────────────────────────────
+# EXTENSION POINT: add new specialists here.
+# Each entry is a Specialist(name, description, system_prompt, tool_names).
+#   - name:        unique key, also the value returned by classify_intent
+#   - description: one-line summary (used by the LLM classifier prompt)
+#   - system_prompt: full instructions for the specialist LLM
+#   - tool_names:  subset of registered v2 tool names this specialist may call
+# To add a flow with its own `awaiting` namespace (e.g. "financing_*"),
+# register the specialist here and add its prefix to _AWAITING_SPECIALIST below.
+# ─────────────────────────────────────────────────────────────────────
 SPECIALISTS: dict[str, Specialist] = {
     "search": Specialist(
         name="search",
@@ -153,6 +163,42 @@ Reglas:
         tool_names=["search_properties"],
     ),
 }
+
+
+# Maps an `awaiting` namespace prefix → specialist that owns that flow.
+# Flow-agnostic: belief.awaiting.split("_")[0] is looked up here.
+_AWAITING_SPECIALIST: dict[str, str] = {
+    "scheduling": "scheduling",
+}
+
+# Detect when the user wants to visit the agency office itself (NOT a property).
+_INMOBILIARIA_VISIT = re.compile(
+    r"\b(la inmobiliaria|las? oficinas?|la agencia|sus oficinas|"
+    r"ir a la inmobiliaria|pasar por la (oficina|inmobiliaria)|"
+    r"d[oó]nde (est[aá]n|queda|los? encuentro)|la sucursal)\b",
+    re.IGNORECASE,
+)
+
+
+def is_inmobiliaria_visit(message: str) -> bool:
+    """True if the user is asking to visit the agency office (share location, not book)."""
+    return bool(_INMOBILIARIA_VISIT.search(message or ""))
+
+
+async def get_inmobiliaria_location() -> str:
+    """Return the agency's location + business hours from the FAQ DB."""
+    try:
+        from app.tools.v2.get_faq_answer import get_faq_answer
+        ans = await get_faq_answer("dirección y horario de la oficina")
+        return (
+            "Para visitar nuestra oficina no hace falta agendar, te esperamos en el horario de atención:\n\n"
+            + ans
+        )
+    except Exception:
+        return (
+            "Para consultar el horario y la dirección de nuestra oficina, "
+            "escribinos o llamanos directamente y te damos los detalles."
+        )
 
 
 # ── Intent classification (regex-first, LLM-fallback) ─────────
@@ -347,7 +393,22 @@ def _build_scheduling_context(belief) -> str:
     recent = [m for m in (getattr(belief, "history", None) or [])[-8:] if m]
     history_text = "\n".join(f"  - {m}" for m in recent) if recent else "  (sin historial)"
 
-    return f"""[CONTEXTO DE AGENDAMIENTO]
+    awaiting_text = ""
+    _awaiting = getattr(belief, "awaiting", None)
+    if _awaiting:
+        _slot_labels = {
+            "scheduling_name": "el NOMBRE del interesado",
+            "scheduling_day": "el DÍA de la visita",
+            "scheduling_time": "el HORARIO de la visita",
+            "scheduling_confirm": "la CONFIRMACIÓN final (sí/no) de la visita",
+        }
+        awaiting_text = (
+            f"\nESTÁS ESPERANDO QUE EL USUARIO TE DÉ: "
+            f"{_slot_labels.get(_awaiting, _awaiting)}.\n"
+            f"Interpretá su mensaje como respuesta a esa pregunta.\n"
+        )
+
+    return f"""[CONTEXTO DE AGENDAMIENTO]{awaiting_text}
 
 HOY ES: {today_str}
 
@@ -380,11 +441,13 @@ async def coordinate(
     session_id: str,
     context_prompt: str = "",
     use_agentic: bool = False,
+    recent_messages: list = None,
 ) -> tuple[AgentResponse, str]:
     """Classify intent and delegate to the appropriate specialist.
 
     Args:
         use_agentic: If True, use the full Plan→Act→Observe→Evaluate loop.
+        recent_messages: Optional conversation history for LLM anaphora resolution.
     """
     # Fast classification
     intent = classify_intent(message)
@@ -416,6 +479,7 @@ async def coordinate(
             session_id=session_id,
             context_prompt=context_prompt,
             specialist=specialist,
+            recent_messages=recent_messages,
         )
 
     return result, specialist.name
@@ -429,3 +493,43 @@ def _has_clear_signal(message: str) -> bool:
         "mostrame", "detalles", "fotos", "agendar", "visita",
         "requisitos", "garantía", "hola", "chau",
     ])
+
+
+async def classify_intent_with_context(
+    message: str,
+    belief,
+    recent_messages: "list[dict] | None" = None,
+) -> str:
+    """Context-aware intent classification (schema v4).
+
+    Order:
+      1. If bot is awaiting a slot, route to the specialist that owns that flow.
+      2. Regex classify_intent().
+      3. LLM fallback when regex defaulted to search with no clear signal.
+    """
+    # 1. Awaiting-flow routing (flow-agnostic).
+    awaiting = getattr(belief, "awaiting", None)
+    if awaiting:
+        prefix = awaiting.split("_")[0]
+        owner = _AWAITING_SPECIALIST.get(prefix)
+        if owner:
+            return owner
+
+    # 2. Regex first.
+    intent = classify_intent(message)
+
+    # 3. LLM fallback only when regex was unsure.
+    if intent == "search" and not _has_clear_signal(message):
+        try:
+            ctx = ""
+            if recent_messages:
+                ctx = "Historial reciente:\n" + "\n".join(
+                    f"{m.get('role')}: {m.get('content', '')[:160]}" for m in recent_messages
+                )
+            llm_intent = await classify_intent_llm(message, ctx)
+            if llm_intent in SPECIALISTS:
+                intent = llm_intent
+        except Exception:
+            pass
+
+    return intent

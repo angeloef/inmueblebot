@@ -54,6 +54,11 @@ class ConversationBeliefState:
     scheduling_time: str = ""
     scheduling_loop_count: int = 0  # Track repeated asks of same missing field
 
+    # ── Conversation-flow tracking (schema v4) ─────────────────
+    awaiting: Optional[str] = None  # slot bot is waiting for: "scheduling_name" | "scheduling_day" | "scheduling_time" | "scheduling_confirm"
+    last_bot_message: str = ""  # full text of the last bot response (for re-anchoring + LLM context)
+    consecutive_failures: int = 0  # consecutive turns where the bot could not help
+
     turn_count: int = 0
     history: list[str] = field(default_factory=list)  # last N user messages
 
@@ -62,7 +67,7 @@ class ConversationBeliefState:
     last_updated_at: float = 0.0
 
     # Schema version — bump when belief structure changes to aid migration.
-    schema_version: int = 3
+    schema_version: int = 4
 
     # ── Computed ───────────────────────────────────────────────
 
@@ -194,6 +199,9 @@ def soft_reset(belief: ConversationBeliefState) -> ConversationBeliefState:
     belief.scheduling_time = ""
     belief.scheduling_loop_count = 0
     belief.last_tool_called = None
+    belief.awaiting = None
+    belief.last_bot_message = ""
+    belief.consecutive_failures = 0
     return belief
 
 

@@ -80,7 +80,7 @@ NUNCA respondas con texto plano. SIEMPRE usá el formato JSON con "respuesta" y 
 
 
 async def process_message(
-    message: str, session_id: str, context_prompt: str = ""
+    message: str, session_id: str, context_prompt: str = "", recent_messages: list[dict] = None
 ) -> AgentResponse:
     """Message in → LLM decides → tools execute → structured final response → escalation.
 
@@ -93,10 +93,10 @@ async def process_message(
     if context_prompt:
         system_content = context_prompt + "\n\n" + SYSTEM_PROMPT
 
-    messages = [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": message},
-    ]
+    messages = [{"role": "system", "content": system_content}]
+    if recent_messages:
+        messages.extend(recent_messages)
+    messages.append({"role": "user", "content": message})
 
     # Step 1: LLM decides — may return tool calls or direct answer (REASONING role)
     response = await client.chat.completions.create(
@@ -253,7 +253,7 @@ def _format_tool_result_for_user(tool_name: str, result: str, previous_tool: str
 
 
 async def process_message_multistep(
-    message: str, session_id: str, context_prompt: str = ""
+    message: str, session_id: str, context_prompt: str = "", recent_messages: list[dict] = None
 ) -> AgentResponse:
     """Process a message that may require multiple tool calls, emitting each result as a separate chunk.
 
@@ -267,10 +267,10 @@ async def process_message_multistep(
     if context_prompt:
         system_content = context_prompt + "\n\n" + SYSTEM_PROMPT
 
-    messages = [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": message},
-    ]
+    messages = [{"role": "system", "content": system_content}]
+    if recent_messages:
+        messages.extend(recent_messages)
+    messages.append({"role": "user", "content": message})
 
     # Step 1: LLM decides (REASONING role)
     response = await client.chat.completions.create(
@@ -285,7 +285,7 @@ async def process_message_multistep(
 
     # Fallback: 0 or 1 tool calls → existing single-loop processing
     if not choice.tool_calls or len(choice.tool_calls) <= 1:
-        return await process_message(message, session_id, context_prompt)
+        return await process_message(message, session_id, context_prompt, recent_messages)
 
     # Multistep path: 2+ tool calls
     chunks: list[MessageChunk] = []
@@ -369,6 +369,7 @@ async def process_message_with_specialist(
     session_id: str,
     context_prompt: str = "",
     specialist=None,
+    recent_messages: list[dict] = None,
 ) -> AgentResponse:
     """Process a message through a specialist agent with filtered tools.
 
@@ -392,10 +393,10 @@ async def process_message_with_specialist(
     if context_prompt:
         system_content = context_prompt + "\n\n" + system_content
 
-    messages = [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": message},
-    ]
+    messages = [{"role": "system", "content": system_content}]
+    if recent_messages:
+        messages.extend(recent_messages)
+    messages.append({"role": "user", "content": message})
 
     # Step 1: LLM decides with filtered tools (REASONING role)
     response = await client.chat.completions.create(
