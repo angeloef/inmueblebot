@@ -131,8 +131,6 @@ class ConversationBeliefState:
                 return "viewing_detail"
             if self.last_tool_called == "get_property_images":
                 return "viewing_photos"
-            if self.last_tool_called == "compare_properties":
-                return "viewing_compare"
             return "viewing_property"
         if self.search_criteria_count >= 1 or self.last_search_count > 0:
             return "searching"

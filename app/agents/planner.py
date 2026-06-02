@@ -34,7 +34,6 @@ def build_plan(
     Uses rule-based heuristics to determine tool dependencies:
     - search_properties → get_property_details → get_property_images
     - get_property_details → schedule_visit
-    - search_properties → compare_properties
 
     Args:
         thinking: Hidden CoT output from the thinking phase.
@@ -94,7 +93,6 @@ def _detect_tool_sequence(thinking: str, available: list[str]) -> list[str]:
         "search_properties",
         "get_property_details",
         "get_property_images",
-        "compare_properties",
         "get_faq_answer",
         "schedule_visit",
     ]
@@ -114,7 +112,6 @@ def _tool_mentioned(thinking: str, tool_name: str) -> bool:
         "get_property_images": ["foto", "imagen", "photo", "image", "ver"],
         "get_faq_answer": ["faq", "requisito", "garantía", "pregunta", "frecuente"],
         "schedule_visit": ["agendar", "visita", "schedule", "coordinar"],
-        "compare_properties": ["compar", "comparar", "diferencia", "lado a lado"],
     }
 
     name_lower = tool_name.lower()

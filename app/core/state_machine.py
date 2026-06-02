@@ -48,7 +48,6 @@ class ConversationStateEnum(str, Enum):
     # ── Viewing substates (v3.0) — one tool each, same pattern as scheduling ──
     VIEWING_DETAIL = "viewing_detail"    # user asked for more info → get_property_details
     VIEWING_PHOTOS = "viewing_photos"    # user asked for photos → get_property_images
-    VIEWING_COMPARE = "viewing_compare"  # user asked to compare → compare_properties
     # ── Scheduling substates (v2.0) ──
     SCHEDULING_ASK_DATE = "scheduling_ask_date"
     SCHEDULING_ASK_TIME = "scheduling_ask_time"
@@ -117,7 +116,6 @@ class ConversationState:
             ConversationStateEnum.VIEWING_PROPERTY,
             ConversationStateEnum.VIEWING_DETAIL,
             ConversationStateEnum.VIEWING_PHOTOS,
-            ConversationStateEnum.VIEWING_COMPARE,
             ConversationStateEnum.SCHEDULING_ASK_DATE,
             ConversationStateEnum.SEARCHING,
             ConversationStateEnum.FAQ,
@@ -139,15 +137,6 @@ class ConversationState:
             ConversationStateEnum.VIEWING_PROPERTY,
             ConversationStateEnum.VIEWING_DETAIL,
             ConversationStateEnum.SCHEDULING_ASK_DATE,
-            ConversationStateEnum.SEARCHING,
-            ConversationStateEnum.IDLE,
-            ConversationStateEnum.HANDOFF,
-            ConversationStateEnum.HUMAN_ASSISTANCE,
-        ],
-        ConversationStateEnum.VIEWING_COMPARE: [
-            ConversationStateEnum.VIEWING_PROPERTY,
-            ConversationStateEnum.VIEWING_DETAIL,
-            ConversationStateEnum.VIEWING_PHOTOS,
             ConversationStateEnum.SEARCHING,
             ConversationStateEnum.IDLE,
             ConversationStateEnum.HANDOFF,
@@ -243,7 +232,6 @@ class ConversationState:
         ConversationStateEnum.VIEWING_PROPERTY: [
             "get_property_details",
             "get_property_images",
-            "compare_properties",
             "update_user_preferences",
             "get_faq_answer",
         ],
@@ -254,11 +242,6 @@ class ConversationState:
         ],
         ConversationStateEnum.VIEWING_PHOTOS: [
             "get_property_images",
-            "get_property_details",
-            "update_user_preferences",
-        ],
-        ConversationStateEnum.VIEWING_COMPARE: [
-            "compare_properties",
             "get_property_details",
             "update_user_preferences",
         ],

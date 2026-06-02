@@ -410,24 +410,6 @@ TOOL_DEFINITIONS = [
                 "required": ["question"]
             }
         }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_properties",
-            "description": "Compare 2-3 properties side by side (price, size, location, bedrooms, bathrooms).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "property_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "IDs de propiedades a comparar (2-3 máximo)"
-                    }
-                },
-                "required": ["property_ids"]
-            }
-        }
     }
 ]
 
@@ -598,8 +580,8 @@ _STATE_PROMPTS = {
         "- Siempre incluyo property_type si el usuario menciono un tipo concreto\n\n"
     ),
         "viewing_property": _sp(
-        "El usuario esta viendo una propiedad. El router ya detecto si quiere detalles, fotos o comparar.\n"
-        "Herramientas: get_property_details, get_property_images, compare_properties.\n\n"
+        "El usuario esta viendo una propiedad. El router ya detecto si quiere detalles o fotos.\n"
+        "Herramientas: get_property_details, get_property_images.\n\n"
         "REGLAS:\n"
         "- Si el usuario pide agendar -> pregunta el dia\n"
         '- Si el usuario dice \"esa\", \"fotos\", \"agendar\" -> usa la propiedad activa\n\n'
@@ -619,13 +601,6 @@ _STATE_PROMPTS = {
         "LLAMA get_property_images AHORA con el ID de la propiedad activa.\n"
         "NO preguntes si quiere ver las fotos — el usuario ya confirmo que SI.\n"
         "Despues de mostrar las fotos, preguntale si quiere mas detalles o agendar visita.\n\n"
-    ),
-    "viewing_compare": _sp(
-        "El usuario quiere comparar propiedades.\n"
-        "Herramienta principal: compare_properties.\n"
-        "Tambien disponible: get_property_details.\n\n"
-        "LLAMA compare_properties con los IDs de las propiedades a comparar.\n"
-        "Despues de comparar, preguntale cual le interesa mas.\n\n"
     ),
 "scheduling_ask_date": _sp(
         "El usuario quiere agendar una visita. Tengo que preguntar el dia.\n"

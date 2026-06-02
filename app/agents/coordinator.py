@@ -22,6 +22,28 @@ class Specialist:
     system_prompt: str
     tool_names: list[str]  # subset of available tools
 
+# Shared scope guard — appended to every specialist prompt that talks to the
+# user with a free-form LLM. The keyword blocklist in router.py catches obvious
+# off-topic messages cheaply; this is the LLM-level safety net for novel cases
+# that "sound" real-estate-adjacent (price math, drafting emails, legal advice).
+_SCOPE_GUARD = """
+
+# ALCANCE — Qué NO hago
+Solo ayudo con el negocio inmobiliario: buscar propiedades, precios de las propiedades
+listadas, fotos, detalles, requisitos, zonas y agendar visitas en Oberá.
+Si el usuario pide algo FUERA de eso, NO lo hago y NO doy la respuesta "igual".
+Redirijo amablemente al negocio. Casos típicos a RECHAZAR:
+- Cálculos matemáticos generales (ej: "cuánto es 15% de 2 millones", conversiones, intereses).
+  Excepción: puedo informar el precio de una propiedad que YA está en los resultados.
+- Redactar mails, cartas, mensajes o textos para terceros (dueños, inquilinos, etc.).
+- Traducciones, tareas escolares, código, recetas, chistes.
+- Consejos legales, fiscales, contables, médicos o financieros.
+- Conocimiento general no inmobiliario.
+Respuesta de redirección (variá las palabras, no la copies literal):
+"Eso se escapa de lo que puedo hacer. Soy la asistente de la inmobiliaria y te puedo
+ayudar con propiedades, alquileres, visitas o consultas sobre Oberá. ¿Querés que veamos algo de eso?"
+"""
+
 # ─────────────────────────────────────────────────────────────────────
 # EXTENSION POINT: add new specialists here.
 # Each entry is a Specialist(name, description, system_prompt, tool_names).
@@ -53,7 +75,7 @@ Reglas:
 - Si el usuario confirma un ofrecimiento ("si porfavor", "dale, mostrame"), ejecutá la acción que ofreciste (detalles o fotos).
 - Cuando pidan detalles o fotos, usá la herramienta correspondiente con el ID.
 - Si no hay resultados, sugerí ajustar filtros.
-- Respondé en español, sé conciso y profesional.""",
+- Respondé en español, sé conciso y profesional.""" + _SCOPE_GUARD,
         tool_names=["search_properties", "get_property_details", "get_property_images"],
     ),
     "scheduling": Specialist(
@@ -132,7 +154,7 @@ Barrio San Miguel, Hospital Samic, Terminal, Villa Stemberg.
 
 Reglas:
 - Usá get_faq_answer para consultas sobre requisitos, garantías, contratos, zonas, precios.
-- Respondé en español, sé informativo y claro.""",
+- Respondé en español, sé informativo y claro.""" + _SCOPE_GUARD,
         tool_names=["get_faq_answer"],
     ),
     "rapport": Specialist(
@@ -165,7 +187,7 @@ Reglas:
 - Si el usuario dice que algo es caro, ofrecé alternativas más económicas.
 - Consultá precios de referencia con search_properties.
 - Sugerí ajustar criterios (zona más económica, menos dormitorios, etc.).
-- Respondé en español, sé comprensivo y orientado a soluciones.""",
+- Respondé en español, sé comprensivo y orientado a soluciones.""" + _SCOPE_GUARD,
         tool_names=["search_properties"],
     ),
 }

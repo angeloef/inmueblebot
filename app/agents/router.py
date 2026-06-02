@@ -215,7 +215,7 @@ def is_out_of_scope(message: str) -> bool:
 
 _VALID_STATES = {
     "idle", "qualifying", "searching", "viewing_property",
-    "viewing_detail", "viewing_photos", "viewing_compare",
+    "viewing_detail", "viewing_photos",
     "scheduling_ask_date", "scheduling_ask_time", "scheduling_ask_name",
     "scheduling_confirm", "booking",
     "completed", "appointment_management", "faq",
@@ -243,7 +243,6 @@ def _normalize_state(state: str) -> Optional[str]:
         "viewingproperty": "viewing_property",
         "viewing_detail": "viewing_detail",
         "viewing_photos": "viewing_photos",
-        "viewing_compare": "viewing_compare",
         "photos": "viewing_photos",
         "schedule": "scheduling_ask_date",
         "scheduling": "scheduling_ask_date",

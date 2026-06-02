@@ -463,7 +463,7 @@ class RealEstateAgent:
                     )
                     messages.append({"role": "system", "content": _closing_rule})
                     logger.info("[Agent] Closing rule injected for state=%s", _next_state)
-                elif _next_state in ("viewing_property", "viewing_detail", "viewing_photos", "viewing_compare"):
+                elif _next_state in ("viewing_property", "viewing_detail", "viewing_photos"):
                     _closing_rule = (
                         "REGLAS DE CIERRE: El usuario ya esta viendo los detalles de una propiedad. "
                         "NO preguntes '¿Queres que te muestre los detalles?' porque ya los tiene. "
@@ -919,15 +919,6 @@ class RealEstateAgent:
                                 "content": (
                                     "Acabas de recibir los DATOS REALES de la propiedad en el tool result (structured JSON). "
                                     f"Usa EXACTAMENTE esos datos. {_follow_up}"
-                                )
-                            })
-                        elif tool_name == "compare_properties":
-                            messages.append({
-                                "role": "system",
-                                "content": (
-                                    "Mostraste una comparación de propiedades. "
-                                    "Preguntale al usuario cuál le interesa más "
-                                    "para pasarle los detalles."
                                 )
                             })
                         elif tool_name == "get_faq_answer":
