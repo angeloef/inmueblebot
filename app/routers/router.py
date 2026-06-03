@@ -1749,8 +1749,55 @@ async def _route_message_inner(
             specialist = SPECIALISTS["scheduling"]
             result, _ = await coordinate(message, session_id, full_context, recent_messages=recent_messages)
             _update_belief_from_result(belief, result)
+
+            # ── Anti-fabrication guard ──────────────────────────────────
+            # The LLM specialist sometimes CLAIMS it booked ("Te confirmo la visita
+            # para #10…") without actually calling schedule_visit. Never surface that:
+            #  • if we have all slots → book deterministically for real;
+            #  • otherwise → replace the fake claim with an honest ask for the next slot.
+            _llm_booked = bool(result.tools_called and "schedule_visit" in result.tools_called)
+            if not _llm_booked and _FAKE_BOOKING.search(result.response or ""):
+                if (belief.scheduling_name and belief.scheduling_day
+                        and belief.scheduling_time and belief.selected_property_id):
+                    from app.tools.v2.schedule_visit import schedule_visit as _sv2
+                    _btxt = await _sv2(
+                        property_id=belief.selected_property_id,
+                        nombre=belief.scheduling_name,
+                        dia=belief.scheduling_day,
+                        horario=belief.scheduling_time,
+                    )
+                    _bad = any(m in _btxt for m in (
+                        "⚠️", "No pude", "Los domingos", "El horario de las",
+                        "Tuve un problema", "fuera de", "está ocupado", "Faltan datos", "me falta",
+                    ))
+                    belief.last_tool_called = "schedule_visit"
+                    if not _bad:
+                        _clear_scheduling_state(belief)
+                        await clear_saved_state(session_id)
+                    await save_working_memory(belief)
+                    return (
+                        ChatResponse(response=_btxt, tools_called=["schedule_visit"], confidence=0.95),
+                        belief, "specialist::anti-fake-booked", round((time.perf_counter() - t0) * 1000, 2),
+                    )
+                # Missing a slot → honest ask instead of a fake confirmation.
+                _slot = _next_scheduling_slot(belief) or "scheduling_day"
+                belief.awaiting = _slot
+                _q = {
+                    "scheduling_property": "¿Sobre cuál de las propiedades querés coordinar la visita?",
+                    "scheduling_name": "Genial 👍 ¿A nombre de quién registro la visita?",
+                    "scheduling_day": "¿Qué día te quedaría bien para la visita?",
+                    "scheduling_time": "¿En qué horario te viene mejor?",
+                }.get(_slot, "¿Qué día y horario te quedan bien para la visita?")
+                belief.scheduling_loop_count += 1  # feed the cross-turn escape hatch
+                belief.last_bot_message = _q
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=_q, tools_called=[], confidence=0.9),
+                    belief, "specialist::anti-fake-reask", round((time.perf_counter() - t0) * 1000, 2),
+                )
+
             latency = (time.perf_counter() - t0) * 1000
-            
+
             # Track loop count for escape hatch
             if result.tools_called and "schedule_visit" in result.tools_called:
                 belief.scheduling_loop_count = 0
