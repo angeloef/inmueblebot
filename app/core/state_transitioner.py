@@ -310,6 +310,10 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         if belief.property_type is not None and _new_type != belief.property_type:
             belief.property_type = _new_type
             belief.zone = None  # type switch → drop the (now-irrelevant) zone
+            # Type switch is NOT an explicit "any zone" preference — clear criteria_any
+            # so the narrowing loop can ask for zone again for the new property type.
+            if hasattr(belief, "criteria_any"):
+                belief.criteria_any.discard("zone")
             belief.active_intents.add("searching")
         elif belief.property_type is None:
             belief.property_type = _new_type
@@ -319,12 +323,19 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     # ── Zone: explicit broadening clears it; an explicit mention OVERRIDES ──
     if _ZONE_BROADEN.search(text):
         belief.zone = None
+        # Mark zone as "user doesn't care" so narrowing won't re-ask for it.
+        # Cleared again if the user later provides an explicit zone.
+        if hasattr(belief, "criteria_any"):
+            belief.criteria_any.add("zone")
         if belief.selected_property_id is None:
             belief.active_intents.add("searching")
     else:
         for pattern, value in ZONE_PATTERNS:
             if re.search(pattern, fuzzy_text):
                 belief.zone = value  # override (was first-mention-only)
+                # User provided a specific zone → remove from "don't care" set
+                if hasattr(belief, "criteria_any"):
+                    belief.criteria_any.discard("zone")
                 break
 
     # Extract budget (overwrite if higher precision)

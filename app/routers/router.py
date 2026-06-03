@@ -299,9 +299,12 @@ def _maybe_narrow_search(belief) -> "tuple[str, str] | None":
         return None
 
     # Collect the next 1–2 still-missing criteria (in priority order).
+    # Skip criteria the user explicitly said they don't care about (criteria_any),
+    # e.g. zone after "cualquier zona mientras sea en Oberá".
+    _criteria_any = getattr(belief, "criteria_any", None) or set()
     missing: list[tuple[str, str]] = []
     for field, question in _NARROW_CRITERIA:
-        if getattr(belief, field, None) is None:
+        if getattr(belief, field, None) is None and field not in _criteria_any:
             missing.append((field, question))
         if len(missing) >= 2:
             break

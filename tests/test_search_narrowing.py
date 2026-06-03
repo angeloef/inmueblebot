@@ -166,6 +166,81 @@ class TestCaptureNarrowField:
         assert b.bedrooms_min is None   # user didn't specify, stays missing
 
 
+class TestCriteriaAny:
+    """When user explicitly says 'don't care about X', narrowing must skip that criterion."""
+
+    def test_zone_any_skipped_in_narrowing(self):
+        """After 'cualquier zona', zone must not appear in the narrowing question."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        # Simulate "cualquier zona"
+        st.update_belief(b, "puede ser cualquier zona mientras sea en obera")
+        assert "zone" in b.criteria_any, "criteria_any must contain 'zone' after broadening"
+        assert b.zone is None
+
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        text, fields_key = out
+        # Zone must NOT be asked
+        assert "zone" not in fields_key.split(","), f"zone should be skipped, got {fields_key}"
+        # Bedrooms should be next
+        assert fields_key.split(",")[0] == "bedrooms_min"
+
+    def test_explicit_zone_clears_criteria_any(self):
+        """After user says 'cualquier zona' and then provides a specific zone,
+        criteria_any is cleared and zone is used in filtering."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        st.update_belief(b, "puede ser cualquier zona")
+        assert "zone" in b.criteria_any
+        # Now user provides a specific zone
+        st.update_belief(b, "mejor en el centro")
+        assert b.zone == "Centro"
+        assert "zone" not in b.criteria_any, "criteria_any must clear when explicit zone given"
+
+    def test_type_switch_does_not_add_zone_to_criteria_any(self):
+        """A type switch resets zone but does NOT add it to criteria_any
+        (user may still want to specify a zone for the new type)."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento",
+                         zone="Centro")
+        st.update_belief(b, "y alguna casa?")
+        assert b.zone is None             # zone reset by type switch
+        assert "zone" not in b.criteria_any  # NOT marked as explicit any
+
+        # So narrowing WILL ask for zone again
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        fields_key = out[1]
+        assert "zone" in fields_key.split(","), "zone should be asked after type switch"
+
+    def test_chat_log_scenario(self):
+        """Reproduce the exact failing scenario from the chat log:
+        'para alquilar, cualquier zona' → narrowing should ask dormitorios, NOT zona."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 22))  # 21 results, nothing set
+        st.update_belief(b, "busco un departamento en obera")
+        # Simulate first narrowing: 21 results → bot asks op + type/zone hint
+        # (awaiting = search_narrow:operation,property_type — handled elsewhere)
+        # Simulate user answering both op and "cualquier zona":
+        st.update_belief(b, "para alquilar, puede ser cualquier zona mientras sea en obera")
+        assert b.operation == "alquiler"
+        assert "zone" in b.criteria_any
+        assert b.zone is None
+
+        # After re-search: 14 results, zone in criteria_any → only ask dormitorios
+        b.last_search_ids = list(range(1, 15))  # 14 results
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        text, fields_key = out
+        primary = fields_key.split(",")[0]
+        assert primary == "bedrooms_min", (
+            f"Expected 'bedrooms_min' as first question, got '{primary}'. "
+            "Bot should NOT ask for zone again after user said 'cualquier zona'."
+        )
+        assert "zona" not in text.lower() or "dormitorio" in text.lower()
+
+
 class TestShowAllEscape:
     def test_show_all_patterns(self):
         for msg in ["mostrame todos igual", "no importa, mostrame todo", "me da igual", "ver todas"]:

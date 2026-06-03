@@ -140,7 +140,14 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
     lines = ["[ESTADO ACTUAL]"]
     lines.append(f"- Operación: {belief.operation or 'no definida'}")
     lines.append(f"- Tipo: {belief.property_type or 'no definido'}")
-    lines.append(f"- Zona: {belief.zone or 'no definida'}")
+    _criteria_any = getattr(belief, "criteria_any", None) or set()
+    if belief.zone:
+        _zone_display = belief.zone
+    elif "zone" in _criteria_any:
+        _zone_display = "cualquier zona en Oberá (usuario indicó que no importa)"
+    else:
+        _zone_display = "no definida"
+    lines.append(f"- Zona: {_zone_display}")
     lines.append(f"- Presupuesto: {'${:,.0f}'.format(belief.budget_max) if belief.budget_max else 'no definido'}")
     lines.append(f"- Dormitorios mín: {belief.bedrooms_min if belief.bedrooms_min is not None else 'no definido'}")
     lines.append(f"- Propiedad seleccionada: {belief.selected_property_id or 'ninguna'}")

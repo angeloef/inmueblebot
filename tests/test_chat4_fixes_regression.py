@@ -44,6 +44,8 @@ class TestGroupA_CriteriaOverride:
         st.update_belief(b, "me podes pasar en cualquier otra zona, todos los de 1 dormitorio?")
         assert b.zone is None
         assert b.property_type == "departamento"
+        # "cualquier zona" must mark zone as explicitly-any so narrowing won't re-ask
+        assert "zone" in b.criteria_any
 
     def test_operation_switch_overrides(self):
         b = _fresh("a-op")

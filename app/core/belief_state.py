@@ -45,6 +45,8 @@ class ConversationBeliefState:
     last_shown_detail_id: int | None = None  # Last property ID shown via get_property_details
     viewed_properties: list[dict] = field(default_factory=list)  # [{id, tipo, titulo}] seen via get_property_details
     disambiguation_candidates: list[int] = field(default_factory=list)  # candidate IDs for "¿cuál?" disambiguation
+    criteria_any: set[str] = field(default_factory=set)  # criteria the user explicitly said "don't care about"
+    # e.g. {"zone"} when user says "cualquier zona", {"bedrooms_min"} when "no importa los dormitorios"
 
     # ── Confirmation tracking ──────────────────────────────────
     pending_offer: Optional[str] = None  # e.g., "te paso la dirección del monoambiente"
