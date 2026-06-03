@@ -612,10 +612,38 @@ async def check_active_appointment(session_id: str) -> "str | None":
         return None
 
 
+# LLM "the visit is booked" claims emitted WITHOUT actually calling schedule_visit.
+# These must never reach the user as-is — they are fake confirmations.
+_FAKE_BOOKING = re.compile(
+    r"(dejo\s+(?:la\s+)?(?:visita\s+)?solicitad|qued[oó]\s+(?:agendad|coordinad|reservad)|"
+    r"visita\s+(?:agendad|confirmad|coordinad|reservad)|ya\s+(?:te\s+la\s+|la\s+)?agend|"
+    r"reserv[ée]\s+(?:la\s+)?visita|coordin[ée]\s+(?:la\s+)?visita)",
+    re.IGNORECASE,
+)
+# Markers that mean schedule_visit was called but did NOT succeed.
+_SCHED_FAILED_MARKERS = (
+    "⚠️", "no pude", "faltan datos", "me falta", "los domingos",
+    "el horario de las", "tuve un problema", "fuera de", "está ocupado",
+)
+
+
 async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str, str]":
-    """If all scheduling fields present and not yet confirming, inject confirm step."""
-    if result.tools_called and "schedule_visit" in result.tools_called:
-        return result.response, "scheduling::booked"
+    """If all scheduling fields present and not yet confirming, inject confirm step.
+
+    Hardened against two scheduling bugs:
+      • P10 — schedule_visit was called but FAILED (e.g. empty day → "me falta día");
+        the failure text must not be surfaced as a successful booking.
+      • P1  — the LLM emits a fake "dejo la visita solicitada" without calling
+        schedule_visit; that fake confirmation must never reach the user.
+    In both cases we fall back to the deterministic confirm gate (if all slots are
+    present) or ask for the next genuinely-missing slot.
+    """
+    _resp = result.response or ""
+    _booked = bool(result.tools_called and "schedule_visit" in result.tools_called)
+    _failed = any(m in _resp.lower() for m in _SCHED_FAILED_MARKERS)
+    # Genuine success: tool called AND no failure markers.
+    if _booked and not _failed:
+        return _resp, "scheduling::booked"
     have_all = bool(
         getattr(belief, "scheduling_name", None)
         and getattr(belief, "scheduling_day", None)
@@ -631,7 +659,51 @@ async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str,
         )
         belief.last_bot_message = confirm
         return confirm, "scheduling::confirm-request"
-    return result.response, "scheduling::collecting"
+    # Fake confirmation (P1) or a failed schedule_visit (P10) with slots still missing:
+    # never surface it — ask for the next missing slot deterministically.
+    if (not _booked and _FAKE_BOOKING.search(_resp)) or (_booked and _failed):
+        _slot = _next_scheduling_slot(belief) or "scheduling_day"
+        belief.awaiting = _slot
+        _q = {
+            "scheduling_property": "¿Sobre cuál de las propiedades querés coordinar la visita?",
+            "scheduling_name": "Genial 👍 ¿A nombre de quién registro la visita?",
+            "scheduling_day": "¿Qué día te quedaría bien para la visita?",
+            "scheduling_time": "¿En qué horario te viene mejor?",
+        }.get(_slot, "¿Qué día y horario te quedan bien para la visita?")
+        belief.last_bot_message = _q
+        return _q, "scheduling::missing-slot-reask"
+    return _resp, "scheduling::collecting"
+
+
+_SCHED_NAME_CUE = re.compile(
+    r"\b(?:soy|me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de)\s+"
+    r"([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b",
+    re.IGNORECASE,
+)
+_NAME_STOPWORDS = {
+    "el", "la", "yo", "un", "una", "de", "para", "mañana", "manana", "tarde",
+    "noche", "hoy", "lunes", "martes", "miercoles", "miércoles", "jueves",
+    "viernes", "sabado", "sábado", "domingo", "que", "y", "las", "los",
+}
+
+
+def _capture_name(belief, message: str) -> None:
+    """Capture the visitor's name from an explicit cue ("soy X", "me llamo X",
+    "a nombre de X") into belief.scheduling_name, when not already set.
+
+    Deterministic complement to the LLM name extractor (B4): lets a name bundled in
+    a dense scheduling message ("agendá para mañana 10, soy carla gomez") populate
+    the slot so the booking doesn't re-ask for it.
+    """
+    if getattr(belief, "scheduling_name", None):
+        return
+    m = _SCHED_NAME_CUE.search(message or "")
+    if not m:
+        return
+    cand = m.group(1).strip()
+    if not cand or cand.split()[0].lower() in _NAME_STOPWORDS:
+        return
+    belief.scheduling_name = cand.title()
 
 
 def _capture_day_time(belief, message: str) -> None:
@@ -1602,6 +1674,7 @@ async def _route_message_inner(
         logger.info(f"[Router] 🗓️ Visit intent → scheduling for {session_id}: {message[:80]}")
         belief.active_intents.add("scheduling")
         _capture_day_time(belief, message)  # capture any day/time bundled in this message
+        _capture_name(belief, message)      # capture name bundled in this message ("soy X")
         await save_specialist_state(session_id, "scheduling")
         from app.agents.s2_agent import process_message_with_specialist
         from app.agents.coordinator import SPECIALISTS, _build_scheduling_context as _bsc_vi
@@ -1634,8 +1707,9 @@ async def _route_message_inner(
         # Check if user is switching topics away from scheduling
         topic_switch_kw = r"\b(busco|quiero|necesito|buscando|me interesa|mostrame|propiedades|lista|requisitos|garantía|precio|alquilar|comprar)\b"
         if not re.search(topic_switch_kw, message.lower().strip()):
-            # Capture any day/time the user gave in this turn.
+            # Capture any day/time + name the user gave in this turn.
             _capture_day_time(belief, message)
+            _capture_name(belief, message)
             # Deterministic booking: if we already have name + day + time + property and
             # the user confirms, call schedule_visit directly with the belief fields.
             # The LLM specialist is unreliable assembling a date split across turns.
