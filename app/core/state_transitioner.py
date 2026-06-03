@@ -110,12 +110,59 @@ ZONE_PATTERNS = [
     (r"\b(stemberg|villa stemberg)\b", "Villa Stemberg"),
 ]
 
-# Explicit "broaden the zone" / "any zone" signals — clears any set zone.
+# ── "Don't care about X" broadening patterns ─────────────────
+# Each pattern detects that the user explicitly doesn't want to filter by a
+# criterion. Matching adds the criterion name to belief.criteria_any so the
+# narrowing loop skips it. Reversed when the user later provides a concrete value.
+
+# Zone: "cualquier zona", "no importa el barrio", "donde sea", etc.
 _ZONE_BROADEN = re.compile(
     r"\b(cualquier(?:a)?\s+(?:otra\s+)?(?:zona|barrio|lado|lugar|parte)|"
     r"otra\s+zona|otras?\s+zonas?|todas?\s+las\s+zonas?|"
     r"no\s+importa\s+(?:la\s+)?(?:zona|el\s+barrio)|sin\s+importar\s+(?:la\s+)?zona|"
     r"en\s+cualquier\s+(?:lado|lugar|parte)|donde\s+sea)\b",
+    re.IGNORECASE,
+)
+
+# Bedrooms: "no importa cuántos dormitorios", "cualquier cantidad", etc.
+_BEDROOMS_BROADEN = re.compile(
+    r"\b(no\s+importa\s+(?:cu[aá]ntos?|los?|la\s+cantidad\s+de)?\s*"
+    r"(?:dormitorios?|habitaciones?|ambientes?|cuartos?)|"
+    r"cualquier(?:a)?\s+(?:cantidad|n[uú]mero)\s+de\s+"
+    r"(?:dormitorios?|habitaciones?|ambientes?)|"
+    r"sin\s+importar\s+(?:l[ao]s?\s+)?(?:dormitorios?|habitaciones?)|"
+    r"(?:dormitorios?|habitaciones?|ambientes?)\s+(?:da|me\s+da)\s+(?:lo\s+)?igual|"
+    r"(?:da|me\s+da)\s+(?:lo\s+)?igual\s+(?:los?\s+)?(?:dormitorios?|habitaciones?))\b",
+    re.IGNORECASE,
+)
+
+# Budget: "sin límite de presupuesto", "no importa el precio", etc.
+_BUDGET_BROADEN = re.compile(
+    r"\b(sin\s+l[ií]mite\s+(?:de\s+)?(?:presupuesto|precio|plata)|"
+    r"no\s+(?:tengo\s+)?l[ií]mite\s+(?:de\s+)?(?:presupuesto|plata)|"
+    r"no\s+importa\s+(?:el\s+)?(?:precio|presupuesto|valor|costo)|"
+    r"(?:el\s+)?precio\s+no\s+(?:me\s+)?importa|"
+    r"cualquier(?:a)?\s+(?:precio|presupuesto|valor)|"
+    r"presupuesto\s+abierto|"
+    r"(?:precio|presupuesto)\s+(?:da|me\s+da)\s+(?:lo\s+)?igual)\b",
+    re.IGNORECASE,
+)
+
+# Property type: "cualquier tipo de propiedad", "da lo mismo el tipo", etc.
+_TYPE_BROADEN = re.compile(
+    r"\b(cualquier(?:a)?\s+(?:tipo|clase)\s+(?:de\s+)?(?:propiedad|inmueble)|"
+    r"no\s+importa\s+(?:el\s+)?(?:tipo|clase)\s+(?:de\s+)?(?:propiedad|inmueble)|"
+    r"(?:tipo|clase)\s+(?:da|me\s+da)\s+(?:lo\s+)?igual|"
+    r"cualquier\s+(?:propiedad|inmueble))\b",
+    re.IGNORECASE,
+)
+
+# Operation: "me da igual alquilar o comprar", "no importa si es alquiler o venta", etc.
+_OPERATION_BROADEN = re.compile(
+    r"\b((?:me\s+)?da\s+(?:lo\s+)?igual\s+(?:si\s+)?(?:alquil|compr)|"
+    r"no\s+importa\s+si\s+(?:es\s+)?(?:alquiler|venta|alquilar|comprar)|"
+    r"(?:alquil|compr)(?:ar|er|o)\s+o\s+(?:compr|alquil)(?:ar|er|o)\s+"
+    r"(?:me\s+)?da\s+(?:lo\s+)?igual)\b",
     re.IGNORECASE,
 )
 
@@ -281,73 +328,96 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     if len(belief.history) > window:
         belief.history = belief.history[-window:]
 
-    # ── Operation: an explicit mention OVERRIDES (not just first-mention-wins) ──
-    # A user switching "alquilar" → "comprar" must update, not be ignored.
-    _new_op = None
-    for pattern, value in OPERATION_PATTERNS:
-        if re.search(pattern, fuzzy_text):
-            _new_op = value
-            break
-    if _new_op is not None:
-        if belief.operation is not None and _new_op != belief.operation:
-            belief.operation = _new_op  # explicit switch
-            if belief.selected_property_id is None:
+    # ── Operation: broadening check FIRST, then explicit override ──
+    _ca = getattr(belief, "criteria_any", None)  # shorthand; may be None on old sessions
+    if _OPERATION_BROADEN.search(text):
+        belief.operation = None
+        if _ca is not None:
+            _ca.add("operation")
+    else:
+        _new_op = None
+        for pattern, value in OPERATION_PATTERNS:
+            if re.search(pattern, fuzzy_text):
+                _new_op = value
+                break
+        if _new_op is not None:
+            if _ca is not None:
+                _ca.discard("operation")
+            if belief.operation is not None and _new_op != belief.operation:
+                belief.operation = _new_op  # explicit switch
+                if belief.selected_property_id is None:
+                    belief.active_intents.add("searching")
+            elif belief.operation is None:
+                belief.operation = _new_op
+            elif belief.selected_property_id is None:
+                belief.active_intents.add("searching")  # repeat/confirm
+
+    # ── Property type: broadening check FIRST, then explicit override ──
+    if _TYPE_BROADEN.search(text):
+        belief.property_type = None
+        if _ca is not None:
+            _ca.add("property_type")
+    else:
+        _new_type = None
+        for pattern, value in TYPE_PATTERNS:
+            if re.search(pattern, fuzzy_text):
+                _new_type = value
+                break
+        if _new_type is not None:
+            if _ca is not None:
+                _ca.discard("property_type")
+            if belief.property_type is not None and _new_type != belief.property_type:
+                belief.property_type = _new_type
+                belief.zone = None  # type switch → drop the (now-irrelevant) zone
+                # Type switch is NOT an explicit "any zone" preference — clear criteria_any
+                # so the narrowing loop can ask for zone again for the new property type.
+                if _ca is not None:
+                    _ca.discard("zone")
                 belief.active_intents.add("searching")
-        elif belief.operation is None:
-            belief.operation = _new_op
-        elif belief.selected_property_id is None:
-            belief.active_intents.add("searching")  # repeat/confirm
+            elif belief.property_type is None:
+                belief.property_type = _new_type
+            else:
+                belief.active_intents.add("searching")  # repeat/confirm
 
-    # ── Property type: an explicit mention OVERRIDES; a real switch resets zone ──
-    # Decision: on a type change keep operation/bedrooms/budget, reset zone (it usually
-    # no longer applies). Fixes "departamento → casa" being silently ignored.
-    _new_type = None
-    for pattern, value in TYPE_PATTERNS:
-        if re.search(pattern, fuzzy_text):
-            _new_type = value
-            break
-    if _new_type is not None:
-        if belief.property_type is not None and _new_type != belief.property_type:
-            belief.property_type = _new_type
-            belief.zone = None  # type switch → drop the (now-irrelevant) zone
-            # Type switch is NOT an explicit "any zone" preference — clear criteria_any
-            # so the narrowing loop can ask for zone again for the new property type.
-            if hasattr(belief, "criteria_any"):
-                belief.criteria_any.discard("zone")
-            belief.active_intents.add("searching")
-        elif belief.property_type is None:
-            belief.property_type = _new_type
-        else:
-            belief.active_intents.add("searching")  # repeat/confirm
-
-    # ── Zone: explicit broadening clears it; an explicit mention OVERRIDES ──
+    # ── Zone: broadening clears it; explicit mention OVERRIDES ──
     if _ZONE_BROADEN.search(text):
         belief.zone = None
-        # Mark zone as "user doesn't care" so narrowing won't re-ask for it.
-        # Cleared again if the user later provides an explicit zone.
-        if hasattr(belief, "criteria_any"):
-            belief.criteria_any.add("zone")
+        if _ca is not None:
+            _ca.add("zone")
         if belief.selected_property_id is None:
             belief.active_intents.add("searching")
     else:
         for pattern, value in ZONE_PATTERNS:
             if re.search(pattern, fuzzy_text):
-                belief.zone = value  # override (was first-mention-only)
-                # User provided a specific zone → remove from "don't care" set
-                if hasattr(belief, "criteria_any"):
-                    belief.criteria_any.discard("zone")
+                belief.zone = value  # override
+                if _ca is not None:
+                    _ca.discard("zone")
                 break
 
-    # Extract budget (overwrite if higher precision)
-    budget = _parse_budget(fuzzy_text)
-    if budget is not None:
-        if belief.budget_max is None or budget > 0:
-            belief.budget_max = budget
+    # ── Budget: broadening check FIRST, then explicit value ──
+    if _BUDGET_BROADEN.search(text):
+        belief.budget_max = None
+        if _ca is not None:
+            _ca.add("budget_max")
+    else:
+        budget = _parse_budget(fuzzy_text)
+        if budget is not None:
+            if _ca is not None:
+                _ca.discard("budget_max")
+            if belief.budget_max is None or budget > 0:
+                belief.budget_max = budget
 
-    # Extract bedrooms — explicit mention OVERRIDES (so "ahora de 2 dormitorios" updates).
-    bedrooms = _parse_bedrooms(fuzzy_text)
-    if bedrooms is not None and bedrooms > 0:
-        belief.bedrooms_min = bedrooms
+    # ── Bedrooms: broadening check FIRST, then explicit value ──
+    if _BEDROOMS_BROADEN.search(text):
+        belief.bedrooms_min = None
+        if _ca is not None:
+            _ca.add("bedrooms_min")
+    else:
+        bedrooms = _parse_bedrooms(fuzzy_text)
+        if bedrooms is not None and bedrooms > 0:
+            if _ca is not None:
+                _ca.discard("bedrooms_min")
+            belief.bedrooms_min = bedrooms
 
     # Extract intents (use original text to avoid false positives)
     for pattern, intent in INTENT_PATTERNS:

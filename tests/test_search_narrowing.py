@@ -6,6 +6,8 @@ showing the list. The user can answer one or both at once.
 
 Run: pytest tests/test_search_narrowing.py -v
 """
+import pytest
+
 from app.core.belief_state import get_belief
 from app.routers.router import (
     _maybe_narrow_search,
@@ -14,6 +16,13 @@ from app.routers.router import (
     _SHOW_ALL_ANYWAY,
     _NARROW_RESULT_THRESHOLD,
     _NARROW_FIELD_HINT,
+)
+from app.core.state_transitioner import (
+    _ZONE_BROADEN,
+    _BEDROOMS_BROADEN,
+    _BUDGET_BROADEN,
+    _TYPE_BROADEN,
+    _OPERATION_BROADEN,
 )
 
 
@@ -26,6 +35,7 @@ def _belief_with(ids, **criteria):
     b.zone = None
     b.bedrooms_min = None
     b.budget_max = None
+    b.criteria_any = set()   # always start clean
     for k, v in criteria.items():
         setattr(b, k, v)
     return b
@@ -166,6 +176,58 @@ class TestCaptureNarrowField:
         assert b.bedrooms_min is None   # user didn't specify, stays missing
 
 
+class TestBroadeningPatterns:
+    """Each broadening regex catches the right phrases."""
+
+    @pytest.mark.parametrize("msg", [
+        "puede ser cualquier zona",
+        "no importa la zona",
+        "en cualquier lado",
+        "donde sea",
+        "me podes pasar en cualquier otra zona",
+    ])
+    def test_zone_broaden_matches(self, msg):
+        assert _ZONE_BROADEN.search(msg.lower()) is not None, f"Should match: {msg!r}"
+
+    @pytest.mark.parametrize("msg", [
+        "no importa cuántos dormitorios",
+        "no importa la cantidad de dormitorios",
+        "cualquier cantidad de dormitorios",
+        "no importa los dormitorios",
+        "sin importar las habitaciones",
+        "dormitorios da igual",
+        "me da igual los dormitorios",
+    ])
+    def test_bedrooms_broaden_matches(self, msg):
+        assert _BEDROOMS_BROADEN.search(msg.lower()) is not None, f"Should match: {msg!r}"
+
+    @pytest.mark.parametrize("msg", [
+        "sin límite de presupuesto",
+        "no importa el precio",
+        "el precio no importa",
+        "cualquier presupuesto",
+        "presupuesto abierto",
+        "presupuesto da igual",
+        "no tengo límite de presupuesto",
+    ])
+    def test_budget_broaden_matches(self, msg):
+        assert _BUDGET_BROADEN.search(msg.lower()) is not None, f"Should match: {msg!r}"
+
+    @pytest.mark.parametrize("msg", [
+        "cualquier tipo de propiedad",
+        "no importa el tipo de propiedad",
+        "tipo da igual",
+    ])
+    def test_type_broaden_matches(self, msg):
+        assert _TYPE_BROADEN.search(msg.lower()) is not None, f"Should match: {msg!r}"
+
+    def test_normal_messages_do_not_trigger_broaden(self):
+        """Regular answers must not accidentally trigger broadening."""
+        for msg in ["2 dormitorios", "en el centro", "para alquilar", "hasta 90 mil"]:
+            assert _BEDROOMS_BROADEN.search(msg.lower()) is None, f"False positive: {msg!r}"
+            assert _BUDGET_BROADEN.search(msg.lower()) is None, f"False positive: {msg!r}"
+
+
 class TestCriteriaAny:
     """When user explicitly says 'don't care about X', narrowing must skip that criterion."""
 
@@ -213,6 +275,76 @@ class TestCriteriaAny:
         assert out is not None
         fields_key = out[1]
         assert "zone" in fields_key.split(","), "zone should be asked after type switch"
+
+    def test_bedrooms_any_skipped_in_narrowing(self):
+        """After 'no importa cuántos dormitorios', bedrooms must not appear in question."""
+        import app.core.state_transitioner as st
+        b = _belief_with(
+            range(1, 15),
+            operation="alquiler", property_type="departamento", zone="Centro",
+        )
+        st.update_belief(b, "no importa la cantidad de dormitorios")
+        assert "bedrooms_min" in b.criteria_any
+        assert b.bedrooms_min is None
+
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        text, fields_key = out
+        assert "bedrooms_min" not in fields_key.split(","), "bedrooms should be skipped"
+        assert fields_key.split(",")[0] == "budget_max"
+
+    def test_budget_any_skipped_in_narrowing(self):
+        """After 'sin límite de presupuesto', budget must not appear in question."""
+        import app.core.state_transitioner as st
+        b = _belief_with(
+            range(1, 15),
+            operation="alquiler", property_type="departamento",
+            zone="Centro", bedrooms_min=2,
+        )
+        st.update_belief(b, "sin límite de presupuesto")
+        assert "budget_max" in b.criteria_any
+
+        out = _maybe_narrow_search(b)
+        # All criteria are either set or in criteria_any → no more questions, show list
+        assert out is None, "All criteria accounted for, should show list"
+
+    def test_explicit_value_clears_criteria_any_bedrooms(self):
+        """After 'no importa dormitorios', then '2 dormitorios' removes it from criteria_any."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        st.update_belief(b, "no importa cuántos dormitorios")
+        assert "bedrooms_min" in b.criteria_any
+        st.update_belief(b, "2 dormitorios")
+        assert b.bedrooms_min == 2
+        assert "bedrooms_min" not in b.criteria_any
+
+    def test_explicit_value_clears_criteria_any_budget(self):
+        """After 'no importa el precio', then 'hasta 80 mil' removes it from criteria_any."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        st.update_belief(b, "sin límite de presupuesto")
+        assert "budget_max" in b.criteria_any
+        st.update_belief(b, "hasta 80 mil")
+        assert b.budget_max == 80_000
+        assert "budget_max" not in b.criteria_any
+
+    def test_multiple_criteria_any(self):
+        """User can dismiss multiple criteria at once."""
+        import app.core.state_transitioner as st
+        b = _belief_with(
+            range(1, 15),
+            operation="alquiler", property_type="departamento",
+        )
+        st.update_belief(b, "puede ser cualquier zona, no importa la cantidad de dormitorios")
+        assert "zone" in b.criteria_any
+        assert "bedrooms_min" in b.criteria_any
+
+        out = _maybe_narrow_search(b)
+        # With op+type set and zone+bedrooms in criteria_any, only budget remains
+        assert out is not None
+        assert "budget_max" in out[1]
+        assert "zone" not in out[1]
+        assert "bedrooms_min" not in out[1]
 
     def test_chat_log_scenario(self):
         """Reproduce the exact failing scenario from the chat log:
