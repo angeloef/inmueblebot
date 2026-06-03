@@ -533,12 +533,43 @@ def _extract_time_from_text(user_text: str) -> Optional[Tuple[int]]:
         r'(\d{1,2})\s+de\s+la\s+(?:mañana|tarde|noche)',    # 11 de la mañana
     ]
     
+    # Afternoon/evening context: "por la tarde / de la tarde / a la noche" makes an
+    # ambiguous bare hour (1–11) a PM time. The per-pattern parse below only sees the
+    # matched fragment ("a las 5"), losing this context — so detect it on the full text.
+    # Require the prepositional form to avoid idioms ("se hace tarde", "más tarde").
+    _pm_context = bool(re.search(r'\b(?:a|de|por|en)\s+la\s+(?:tarde|noche)\b', text))
+
     for pattern in patterns:
         match = re.search(pattern, text)
-        if match:
-            result = _parse_time_advanced(match.group(0))
-            if result:
-                return result
+        if not match:
+            continue
+        frag = match.group(0)
+        result = _parse_time_advanced(frag)
+        if result and result[0] is not None:
+            hour = result[0]
+            minute = result[1] if len(result) > 1 else 0
+        else:
+            # _parse_time_advanced can't parse a bare hour ("a las 5", "a las 9") —
+            # fall back to the digits the pattern itself captured.
+            try:
+                hour = int(match.group(1))
+            except (ValueError, IndexError, TypeError):
+                continue
+            try:
+                _m2 = match.group(2)
+                minute = int(_m2) if (_m2 and _m2.isdigit()) else 0
+            except (IndexError, TypeError):
+                minute = 0
+        if hour is None or not (0 <= hour <= 23):
+            continue
+        minute = minute or 0
+        # Lift an ambiguous bare hour into PM when the message carries afternoon/evening
+        # context. Explicit am/pm or "de la mañana" already yield the right hour, so skip
+        # those (am stays am; PM hours are already ≥ 12, outside the 1–11 lift window).
+        if (1 <= hour <= 11 and _pm_context
+                and not re.search(r'\bam\b|ma[nñ]ana', frag)):
+            hour += 12
+        return hour, minute
     
     # Check for time periods — only fire when there is NO digit in the text.
     # If there IS a digit (e.g. "a las 9 de la mañana"), the regex loop above already

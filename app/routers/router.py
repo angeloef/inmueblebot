@@ -303,6 +303,62 @@ def _is_faq_question(message: str) -> bool:
     return False
 
 
+def _looks_like_scheduling_answer(message: str) -> bool:
+    """True if a message (even one phrased as a question) is ANSWERING a scheduling
+    slot — i.e. it carries a day or a time. Used so that slot answers like
+    "a las 5 podría ser?" or "podría ser el martes que viene?" are captured by the
+    slot fast-path instead of being mistaken for a mid-flow interruption (which would
+    re-route to the knowledge specialist and append "¿Seguimos…?" without persisting
+    the slot). FAQ/photo/detail interruptions are excluded."""
+    low = (message or "").lower()
+    # Genuine off-topic interruptions are NOT slot answers.
+    if _is_faq_question(message):
+        return False
+    if re.search(r"\b(fotos?|im[aá]gen(?:es)?|detalles?)\b", low):
+        return False
+    from app.core.state_transitioner import DAY_PATTERN, TIME_PATTERN
+    if DAY_PATTERN.search(low) or TIME_PATTERN.search(low):
+        return True
+    # Time-of-day phrase answering a time slot ("por la tarde", "a la mañana").
+    if re.search(r"\b(?:a|de|por|en)\s+la\s+(?:ma[nñ]ana|tarde|noche)\b", low):
+        return True
+    return False
+
+
+# ── Pure list-selection detection ("me interesa el 8") ────────────────────────
+# Detects a message whose sole intent is to PICK one property from the last search
+# list (by ID or ordinal). Used to auto-show that property's details instead of a
+# generic teaser. Bundled intents (scheduling / photos / comparison / FAQ) are
+# excluded so they keep their dedicated handling.
+_SELECTION_RE = re.compile(
+    r"(?:^|\b)(?:me\s+(?:interesa|gusta|quedo\s+con|inclino\s+por)|me\s+quedo\s+con|"
+    r"quiero|dame|ver[ée]?|mostrame|elijo|prefiero|el|la|ese|esa|opci[oó]n|"
+    r"n[uú]mero|nro|propiedad)\s+"
+    r"(?:el|la|los|las|opci[oó]n|n[uú]mero|nro|propiedad|#)?\s*"
+    r"(?:\d+|primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|[uú]ltim[oa])\b",
+    re.IGNORECASE,
+)
+_SELECTION_EXCLUDE = re.compile(
+    r"\b(agendar|agend[aá]|agendame|visita|visitar|coordinar|coordin[aá]|cita|turno|"
+    r"fotos?|im[aá]gen(?:es)?|comparar|compar[aá]|versus|\bvs\b|"
+    r"busco|buscando|buscar|otra\s+opci[oó]n|otras\s+opciones)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_pure_selection(message: str) -> bool:
+    """True if the message just picks one listed property (no bundled scheduling,
+    photos, comparison, FAQ or new search)."""
+    low = (message or "").lower()
+    if not _SELECTION_RE.search(low):
+        return False
+    if _SELECTION_EXCLUDE.search(low):
+        return False
+    if _is_faq_question(message):
+        return False
+    return True
+
+
 # ── Too-broad search narrowing ────────────────────────────────────────────────
 # When a search returns MORE than this many results, ask the user for ONE more
 # missing criterion (zone, dorms, budget, …) before dumping the list, so the
@@ -881,6 +937,31 @@ async def _try_pre_llm_shortcut(
             "pre-llm::resolved",
         )
     
+    # Case 1c: Pure selection of a LISTED property by ID/ordinal → show details now.
+    # After a search list, "me interesa el 8" / "el segundo" / "quiero el 4" picks one
+    # option — show its full details automatically instead of a generic teaser. Gated
+    # on (a) the selection happening THIS turn (selection phrasing present) and (b) the
+    # chosen ID belonging to the last search list, so it never fires on a stale id or a
+    # bundled scheduling/photo/compare request.
+    if (belief.selected_property_id
+            and belief.selected_property_id in (getattr(belief, "last_search_ids", None) or [])
+            and _is_pure_selection(message)):
+        pid = belief.selected_property_id
+        result_text = await get_property_details(property_id=pid)
+        belief.last_tool_called = "get_property_details"
+        _extract_property_data(belief, result_text)
+        cta = "\n\n¿Querés ver las fotos o coordinar una visita para conocerla en persona?"
+        return (
+            ChatResponse(
+                response=result_text + cta,
+                tools_called=["get_property_details"],
+                confidence=0.99,
+            ),
+            ["get_property_details"],
+            0.99,
+            "pre-llm::list-selection",
+        )
+
     # Case 1b: Photo request for currently selected property
     if belief.selected_property_id:
         photo_kw = ["fotos", "foto", "imagenes", "imágenes", "imagen", "mostrame fotos", "ver fotos"]
@@ -1337,7 +1418,10 @@ async def _route_message_inner(
         # B3. Mid-flow interruption: user asks something else (not a topic switch).
         # "Atender y mantener pendiente" — answer the new ask with the RIGHT
         # specialist/tool, keep the scheduling flow pending, and offer to resume.
-        elif "?" in message or "¿" in message:
+        # GUARD: a slot answer phrased as a question ("a las 5 podría ser?",
+        # "el martes que viene?") is NOT an interruption — let it fall through to the
+        # slot-capture path (B5) so the day/time persists and we don't spam "¿Seguimos…?".
+        elif ("?" in message or "¿" in message) and not _looks_like_scheduling_answer(message):
             _low = message.lower()
             _pid = getattr(belief, "selected_property_id", None)
             _tools: list = []

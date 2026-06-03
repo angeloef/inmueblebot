@@ -482,9 +482,18 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         if day_match:
             belief.scheduling_day = day_match.group(1).strip()
 
-        time_match = TIME_PATTERN.search(message)
-        if time_match:
-            belief.scheduling_time = time_match.group(1).strip()
+        # Store a CONCRETE, context-aware time (HH:MM) — not the raw phrase. The
+        # normalizing extractor reads the whole message, so "por la tarde, a las 5"
+        # resolves to 17:00 instead of persisting "a las 5" (which later parsed to
+        # 05:00 / fell back to a default). Falls back to the raw match only if the
+        # extractor can't normalize it.
+        _norm_time = extract_scheduling_time(message)
+        if _norm_time:
+            belief.scheduling_time = _norm_time
+        else:
+            time_match = TIME_PATTERN.search(message)
+            if time_match:
+                belief.scheduling_time = time_match.group(1).strip()
 
     # ── Ordinal reference → concrete ID from the last search list ──
     # "me interesa el primero", "dame el segundo" map a list POSITION to the actual
