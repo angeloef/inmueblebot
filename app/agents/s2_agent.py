@@ -5,7 +5,7 @@ import json
 from app.agents.cs_llm_client import get_client, get_model, LLMRole
 from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
 from app.agents.escalation import assess_confidence, build_clarification_message
-from app.core.response_parser import get_final_response_format, parse_llm_response
+from app.core.response_parser import get_final_response_format, parse_llm_response, parse_corrections
 from app.nlp.empathy import get_empathetic_prefix
 from app.nlp.formality import detect_formality, get_formality_guidance
 from app.nlp.coherence import build_coherence_context
@@ -66,9 +66,22 @@ Contexto: [ESTADO ACTUAL] muestra pending_offer="mostrar fotos del departamento 
 Razonamiento: el usuario confirmó la oferta pendiente. Llamá get_property_images con property_id=7 inmediatamente.
 Respuesta correcta: llamar get_property_images(property_id=7) sin preguntar nada más.
 
+AUTO-CORRECCIÓN DEL ESTADO (importante):
+El bloque [ESTADO ACTUAL] / [CONTEXTO] se arma con extractores automáticos que a veces se
+equivocan o no captan typos, slang o referencias. VOS ves el mensaje REAL del usuario.
+Si detectás que un dato del estado está MAL o FALTA respecto a lo que el usuario dijo,
+corregilo en el campo "correcciones" (cadena JSON), interpretando con el contexto:
+- "agendame para el vienes" con el estado mostrando día vacío → {"scheduling_day": "viernes"} (typo)
+- "tengo 50 palos" para compra con presupuesto no definido → {"budget_max": 50000000} (slang: palos=millones, lucas/mil=miles)
+- el estado dice operación=alquiler pero el usuario pidió "comprar" → {"operation": "venta"}
+- "soy Carla Gómez" con nombre vacío → {"scheduling_name": "Carla Gómez"}
+Solo corregí lo que estás SEGURO por el mensaje del usuario. Si todo está bien, usá null.
+NUNCA inventes datos que el usuario no dijo.
+
 FORMATO DE RESPUESTA FINAL:
 Cuando ya tengas la respuesta definitiva (después de usar herramientas o si no las necesitaste), respondé SIEMPRE con este JSON exacto:
-{"respuesta": "tu respuesta completa al usuario", "confianza": 0.XX}
+{"respuesta": "tu respuesta completa al usuario", "confianza": 0.XX, "correcciones": null}
+(o "correcciones": "{\"campo\": valor, ...}" si hay algo que corregir)
 
 Donde "confianza" refleja qué tan seguro estás:
 - 0.95-1.0: certeza total (saludos, datos factuales de herramientas, preguntas claras)
@@ -76,7 +89,7 @@ Donde "confianza" refleja qué tan seguro estás:
 - 0.50-0.69: entendiste parcialmente, falta información clave
 - 0.00-0.49: no entendiste bien el mensaje
 
-NUNCA respondas con texto plano. SIEMPRE usá el formato JSON con "respuesta" y "confianza"."""
+NUNCA respondas con texto plano. SIEMPRE usá el formato JSON con "respuesta", "confianza" y "correcciones"."""
 
 
 async def process_message(
@@ -232,6 +245,7 @@ async def process_message(
         tools_called=tools_called,
         raw_tool_results=tool_results,
         confidence=confidence,
+        belief_corrections=parse_corrections(raw_text),
     )
 
 
@@ -361,6 +375,7 @@ async def process_message_multistep(
         raw_tool_results=tool_results,
         messages=chunks,
         confidence=confidence,
+        belief_corrections=parse_corrections(raw_text),
     )
 
 
@@ -518,4 +533,5 @@ async def process_message_with_specialist(
         tools_called=tools_called,
         raw_tool_results=tool_results,
         confidence=confidence,
+        belief_corrections=parse_corrections(raw_text),
     )

@@ -100,6 +100,49 @@ Estos requieren debug local con logging por request, no thrashing en prod — fu
 - 3 commits a prod. 2 sub-bugs de agendado (mensaje denso con ordinal, typo de día) + slang D3 documentados para refactor dedicado.
 - Total acumulado (iter1+iter2): **5 bugs resueltos+verificados, 0 regresiones, 8 commits.**
 
+---
+
+## Iteración 3 (2026-06-03) — fixes de raíz + auto-corrección del LLM
+
+Implementación de las 3 soluciones pendientes + un cambio estructural para que el LLM
+corrija el estado cuando los extractores regex se equivocan.
+
+### Bug 1 — Ordinal denso → ID (determinístico)
+`update_belief` ahora resuelve ordinales en palabra ("el primero/segundo/tercero…") a un ID
+concreto usando `belief.last_search_ids` (lookup posicional, 0 tokens). No agrega el intent
+`resolved_by_description` a propósito, para no disparar el shortcut de detalles y perder un
+pedido de agendado en el mismo mensaje. Archivo: `app/core/state_transitioner.py`.
+
+### Bugs 2 y 3 + estructural — Auto-corrección del LLM (sin ampliar regex)
+En vez de ampliar regex (imposible cubrir todo el lenguaje natural), se le da al LLM la
+capacidad de **corregir el estado** cuando detecta que el `[ESTADO ACTUAL]` contradice lo que
+el usuario dijo (typos como "vienes"→viernes, slang como "50 palos"→50.000.000, operación mal
+inferida, nombre/día faltante). Pipeline:
+- `response_parser.py`: el JSON final del LLM ahora incluye un campo `correcciones`
+  (cadena JSON o null) + `parse_corrections()` robusto (strict-schema, json_object y markdown).
+- `schemas.py`: `CSAgentResponse.belief_corrections`.
+- `s2_agent.py` + `coordinator.py`: instrucción `_SELF_CORRECTION` en SYSTEM_PROMPT y en los 3
+  especialistas (search/scheduling/knowledge); las 3 funciones del agente propagan `belief_corrections`.
+- `router.py`: `_apply_belief_corrections()` — whitelist de campos
+  (operation, property_type, zone, budget_max, bedrooms_min, scheduling_day/time/name), coerción
+  + bounds-check, descarta lo inválido. Se aplica dentro de `_update_belief_from_result` (todas las
+  rutas) DESPUÉS del regex → la corrección del LLM **gana** sobre el regex, en el mismo turno.
+  `selected_property_id` queda FUERA de la whitelist (para que el LLM no alucine IDs; el ordinal
+  ya lo resuelve determinísticamente).
+
+### Por qué esto responde "¿y si el regex capta un dato erróneo?"
+El pipeline regex→belief era unidireccional (el LLM era read-only sobre el belief). Ahora el LLM
+puede escribir correcciones de vuelta: es el doble-check que faltaba para errores de extracción,
+no solo para campos vacíos. Aplicado antes de `_maybe_confirm_or_pass`/booking en las rutas de
+scheduling, así la corrección tiene efecto en el mismo turno.
+
+### Validación local (lógica pura, sin tests de conversación)
+- Ordinal: primero→10, segundo→18, tercero→22, fuera-de-rango→None.
+- `parse_corrections`: strict-string, objeto anidado, markdown, null, ausente → todos OK.
+- `_apply_belief_corrections`: normaliza "comprar"→"venta", coerciona tipos, descarta inválidos
+  (op basura, presupuesto negativo, 99 dorms), ignora `selected_property_id` y campos no-whitelist.
+- Los 6 módulos importan sin errores. **Tests de conversación los corre el usuario manualmente.**
+
 ### Cierre iter1
 - Duración real: ~31 min de las 40 (parado por disciplina de time-box, no por agotarlo).
 - **4 bugs encontrados, arreglados, pusheados a prod y verificados; 0 regresiones.**

@@ -175,6 +175,17 @@ BEDROOMS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Word-form ordinals → 0-based position in the last search results.
+# Only WORD ordinals (primero/segundo/…) are positional; bare numbers ("el 2")
+# are left to the ID resolver since they usually mean a property [ID], not a position.
+_ORDINAL_WORDS: list[tuple[str, int]] = [
+    (r"\bprimer[oa]?\b", 0),
+    (r"\bsegund[oa]\b", 1),
+    (r"\btercer[oa]?\b", 2),
+    (r"\bcuart[oa]\b", 3),
+    (r"\bquint[oa]\b", 4),
+]
+
 # ── Scheduling data extractors ─────────────────────────────────
 
 NAME_PATTERN = re.compile(
@@ -474,6 +485,20 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         time_match = TIME_PATTERN.search(message)
         if time_match:
             belief.scheduling_time = time_match.group(1).strip()
+
+    # ── Ordinal reference → concrete ID from the last search list ──
+    # "me interesa el primero", "dame el segundo" map a list POSITION to the actual
+    # property ID in belief.last_search_ids. Deterministic lookup (no LLM). Runs only
+    # when nothing is selected yet, so it doesn't override an explicit ID. We do NOT
+    # add the "resolved_by_description" intent here on purpose: that would trigger the
+    # pre-LLM details shortcut and drop a bundled scheduling request ("el primero,
+    # agendá mañana 10"). Setting the ID is enough for the normal routing to proceed.
+    if belief.selected_property_id is None and getattr(belief, "last_search_ids", None):
+        for _opat, _opos in _ORDINAL_WORDS:
+            if re.search(_opat, fuzzy_text):
+                if 0 <= _opos < len(belief.last_search_ids):
+                    belief.selected_property_id = belief.last_search_ids[_opos]
+                break
 
     # Detect property reference by description (not ID)
     ref_match = re.search(

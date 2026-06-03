@@ -238,6 +238,11 @@ class CSAgentResponse(BaseModel):
     )
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Agent confidence (0-1)")
     messages: list[MessageChunk] = Field(default_factory=list, description="Multi-message bubbles")
+    belief_corrections: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Belief-state fields the LLM detected as wrong/missing and corrected "
+                    "from the real user message (typos, slang, context). Applied by the router.",
+    )
 
 
 class ChatRequest(BaseModel):

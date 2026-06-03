@@ -44,6 +44,24 @@ Respuesta de redirección (variá las palabras, no la copies literal):
 ayudar con propiedades, alquileres, visitas o consultas sobre Oberá. ¿Querés que veamos algo de eso?"
 """
 
+# Self-correction directive — appended to every specialist that emits the final JSON.
+# Lets the LLM fix belief-state fields the regex extractors got wrong (typos, slang,
+# context) via the "correcciones" field of the response JSON.
+_SELF_CORRECTION = """
+
+# AUTO-CORRECCIÓN DEL ESTADO
+El bloque [ESTADO ACTUAL]/[CONTEXTO] lo arman extractores automáticos que a veces se
+equivocan o no captan typos, slang o referencias. VOS ves el mensaje REAL del usuario.
+Si un dato del estado está MAL o FALTA respecto a lo que el usuario dijo, corregilo en el
+campo "correcciones" del JSON final (cadena JSON), interpretando con contexto:
+- "el vienes" con día vacío → {"scheduling_day": "viernes"} (typo)
+- "tengo 50 palos" (compra) con presupuesto vacío → {"budget_max": 50000000} (palos=millones; lucas/mil=miles)
+- estado dice operación=alquiler pero el usuario pidió "comprar" → {"operation": "venta"}
+- "soy Carla Gómez" con nombre vacío → {"scheduling_name": "Carla Gómez"}
+Campos válidos: operation, property_type, zone, budget_max, bedrooms_min, scheduling_day,
+scheduling_time, scheduling_name. Solo corregí lo que estás SEGURO por el mensaje del usuario.
+Si todo está bien, "correcciones": null. NUNCA inventes datos que el usuario no dijo."""
+
 # ─────────────────────────────────────────────────────────────────────
 # EXTENSION POINT: add new specialists here.
 # Each entry is a Specialist(name, description, system_prompt, tool_names).
@@ -87,7 +105,7 @@ Reglas:
 - Si el usuario confirma un ofrecimiento ("si porfavor", "dale, mostrame"), ejecutá la acción que ofreciste (detalles o fotos).
 - Cuando pidan detalles o fotos, usá la herramienta correspondiente con el ID.
 - Si no hay resultados, sugerí ajustar filtros.
-- Respondé en español, sé conciso y profesional.""" + _SCOPE_GUARD,
+- Respondé en español, sé conciso y profesional.""" + _SCOPE_GUARD + _SELF_CORRECTION,
         tool_names=["search_properties", "get_property_details", "get_property_images"],
     ),
     "scheduling": Specialist(
@@ -149,7 +167,7 @@ REGLAS FUNDAMENTALES:
 
 13. Para REPROGRAMAR — frases como "pasala para el jueves", "movela al viernes",
     "cambiar al lunes", "mejor el martes": → Llamá reschedule_appointment(dia, horario).
-    Si no hay citas para cancelar/reprogramar, informalo y ofrecé agendar una nueva.""",
+    Si no hay citas para cancelar/reprogramar, informalo y ofrecé agendar una nueva.""" + _SELF_CORRECTION,
         tool_names=["get_my_appointments", "cancel_appointment", "reschedule_appointment"],
     ),
     "knowledge": Specialist(
@@ -177,7 +195,7 @@ Reglas:
 - Preguntas generales (requisitos, garantías, contratos, zonas, precios de referencia):
   usá get_faq_answer directamente.
 - NUNCA menciones derivaciones, "especialistas" ni procesos internos: atendés vos.
-- Respondé en español argentino, informativo y claro.""" + _SCOPE_GUARD,
+- Respondé en español argentino, informativo y claro.""" + _SCOPE_GUARD + _SELF_CORRECTION,
         tool_names=["get_property_details", "get_faq_answer"],
     ),
     "rapport": Specialist(

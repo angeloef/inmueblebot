@@ -30,8 +30,22 @@ _STRICT_RESPONSE_SCHEMA = {
                         "<0.50: no se entendió bien, mejor derivar."
                     ),
                 },
+                "correcciones": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "AUTO-CORRECCIÓN del estado. Cadena JSON con los campos del "
+                        "[ESTADO ACTUAL] que están MAL o FALTAN respecto a lo que el "
+                        "usuario realmente dijo (interpretando typos, slang y contexto), "
+                        "o null si todo está correcto. Campos válidos: "
+                        "operation('alquiler'|'venta'), property_type, zone, "
+                        "budget_max(número en ARS), bedrooms_min(entero), "
+                        "scheduling_day(ej 'viernes'), scheduling_time('HH:MM'), "
+                        "scheduling_name. Ejemplo: "
+                        "'{\"scheduling_day\": \"viernes\", \"budget_max\": 50000000}'"
+                    ),
+                },
             },
-            "required": ["respuesta", "confianza"],
+            "required": ["respuesta", "confianza", "correcciones"],
             "additionalProperties": False,
         },
     },
@@ -136,6 +150,47 @@ def parse_llm_response(raw_text: str) -> tuple[str, float]:
 
     # Fallback: treat entire text as response
     return text, 0.5
+
+
+def parse_corrections(raw_text: str) -> dict:
+    """Extract the optional 'correcciones' object the LLM emits to self-correct
+    wrong/missing belief-state fields.
+
+    The field is a JSON-encoded string (strict schema) OR a nested object
+    (json_object mode). Returns a plain dict of {field: value}, or {} if absent.
+    Best-effort: never raises.
+    """
+    if not raw_text or "correccion" not in raw_text.lower():
+        return {}
+
+    # Try a sequence of candidate JSON blobs (direct, newline-fixed, code block).
+    candidates: list[str] = [raw_text.strip()]
+    try:
+        candidates.append(_fix_json_newlines(raw_text.strip()))
+    except Exception:
+        pass
+    code_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw_text, re.DOTALL)
+    if code_match:
+        candidates.append(code_match.group(1).strip())
+
+    for cand in candidates:
+        try:
+            data = json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        corr = data.get("correcciones")
+        if not corr:
+            return {}
+        if isinstance(corr, str):
+            try:
+                corr = json.loads(corr)
+            except (json.JSONDecodeError, ValueError):
+                continue
+        if isinstance(corr, dict):
+            return corr
+    return {}
 
 
 def _safe_extract(data: dict) -> tuple[str, float]:

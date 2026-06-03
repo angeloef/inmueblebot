@@ -2070,6 +2070,71 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
     if len(belief.tool_call_log) > max_entries:
         belief.tool_call_log = belief.tool_call_log[-max_entries:]
 
+    # ── LLM self-correction: apply belief fixes the model flagged this turn ──
+    _apply_belief_corrections(belief, getattr(result, "belief_corrections", None))
+
+
+# Fields the LLM is allowed to correct, with their validators/coercers.
+_CORRECTABLE_FIELDS: dict[str, str] = {
+    "operation": "operation",
+    "property_type": "str",
+    "zone": "str",
+    "budget_max": "float_pos",
+    "bedrooms_min": "int_small",
+    "scheduling_day": "str",
+    "scheduling_time": "str",
+    "scheduling_name": "str",
+}
+
+
+def _apply_belief_corrections(belief, corrections: "dict | None") -> None:
+    """Apply LLM-flagged corrections to the belief state, with strict validation.
+
+    The LLM emits these in the "correcciones" field when the regex-extracted state
+    contradicts what the user actually said (typos, slang, context). This is the
+    self-correction safety net for the unidirectional regex→belief pipeline.
+
+    Only whitelisted fields are accepted, each value is coerced + bounds-checked, and
+    anything invalid is silently dropped. Never raises.
+    """
+    if not corrections or not isinstance(corrections, dict):
+        return
+    for raw_key, raw_val in corrections.items():
+        key = str(raw_key).strip()
+        kind = _CORRECTABLE_FIELDS.get(key)
+        if kind is None:
+            continue
+        if raw_val in (None, "", "null", "None"):
+            continue
+        try:
+            if kind == "operation":
+                val = str(raw_val).strip().lower()
+                if val in ("alquilar", "rentar"):
+                    val = "alquiler"
+                if val in ("comprar", "compra"):
+                    val = "venta"
+                if val not in ("alquiler", "venta"):
+                    continue
+            elif kind == "float_pos":
+                val = float(raw_val)
+                if not (0 < val <= 1e12):
+                    continue
+            elif kind == "int_small":
+                val = int(float(raw_val))
+                if not (0 <= val <= 20):
+                    continue
+            else:  # "str"
+                val = str(raw_val).strip()
+                if not val or len(val) > 120:
+                    continue
+        except (ValueError, TypeError):
+            continue
+        _old = getattr(belief, key, None)
+        if _old == val:
+            continue
+        setattr(belief, key, val)
+        logger.info(f"[Router] 🔧 LLM self-correction: {key}: {_old!r} → {val!r}")
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # WhatsApp Inbox — Conversation persistence wrapper
