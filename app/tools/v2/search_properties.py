@@ -129,13 +129,31 @@ async def search_properties(
                         f"No tenemos {tipo_plural}{op_part}{zona_part}. "
                         f"Pero encontré {len(nearby)} {alt_plural}{op_part} en {zona or 'Oberá'}:"
                     )
-                else:
+                    return header + "\n\n" + _format_properties_list(nearby, operation)
+
+                elif mapped_tipo and nearby_has_matching_tipo:
+                    # Zone has the right tipo but different bedrooms/criteria.
+                    # E1 fix: don't duplicate tipo in header (tipo_plural already names it).
+                    # E4 fix: filter to show ONLY matching tipo — no mixed depto/terreno/casa.
+                    tipo_nearby = [p for p in nearby if p.category == mapped_tipo]
+                    dorm_part = (
+                        f", {dormitorios} dormitorio{'s' if dormitorios != 1 else ''}"
+                        if dormitorios > 0 else ""
+                    )
                     header = (
-                        f"No encontré {tipo_plural}{filters_desc}. "
+                        f"No encontré {tipo_plural}{op_part}{zona_part}{dorm_part}. "
+                        f"Hay {len(tipo_nearby)} {tipo_plural} disponibles{zona_part}:"
+                    )
+                    return header + "\n\n" + _format_properties_list(tipo_nearby, operation)
+
+                else:
+                    # No tipo filter — show all available types in zone.
+                    filters_no_tipo = _describe_filters(operation, "", zona, presupuesto_max, dormitorios)
+                    header = (
+                        f"No encontré propiedades{filters_no_tipo}. "
                         f"Opciones disponibles{zona_part}:"
                     )
-
-                return header + "\n\n" + _format_properties_list(nearby, operation)
+                    return header + "\n\n" + _format_properties_list(nearby, operation)
 
             # Fallback 2: drop zona, keep tipo + operacion (other zones, same tipo)
             # Only reached when the zone has ZERO properties of any type.

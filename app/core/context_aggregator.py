@@ -197,6 +197,11 @@ def build_context_prompt(belief: ConversationBeliefState) -> str:
                 criteria_parts.append(f"zona={c['zona']}")
             criteria_str = " ".join(criteria_parts) if criteria_parts else "sin filtros"
             lines.append(f"Búsqueda {idx + 1}: {criteria_str} → {entry.get('count', 0)} resultados")
+            # Include property IDs/titles so the LLM can resolve cross-turn references
+            # like "la casa en el centro" even when it's not in the last search context.
+            hist_ctx = entry.get("context", "")
+            if hist_ctx:
+                lines.append(f"  IDs: {hist_ctx[:300]}")
 
     # Last search context (for resolving descriptive references)
     if belief.last_search_context:

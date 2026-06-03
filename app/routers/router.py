@@ -832,7 +832,76 @@ async def _try_pre_llm_shortcut(
                 0.95,
                 "pre-llm::cost-data",
             )
-    
+
+    # Case 4: Detail request for a property identified by TYPE + ZONE from search history.
+    # "me pasas también los detalles de la casa en el centro?" — the user is pointing to a
+    # property they saw in a previous search list (not the last one, not a viewed one).
+    # update_belief() already ran: belief.zone = extracted zone, belief.property_type = type.
+    # We look for a matching ID in belief.search_history and call get_property_details directly,
+    # avoiding the LLM coordinator which gets confused by contradictory context (selected=UNAM
+    # casa but zone now=Centro).
+    # Broad "detail keyword" match — specificity comes from zone-in-message + search_history guards.
+    # Handles both "pasame los detalles" and "me pasas los detalles" (Spanish clitic variations).
+    _DETAIL_HIST_PAT = re.compile(
+        r"\b(?:detall(?:es?)|informaci[oó]n|info|datos|caracter[ií]sticas)\b",
+        re.IGNORECASE,
+    )
+    if (
+        _DETAIL_HIST_PAT.search(msg_lower)
+        and getattr(belief, "search_history", None)
+        and getattr(belief, "zone", None)
+        and getattr(belief, "property_type", None)
+    ):
+        # Guard: the zone must be explicitly in THIS message (not stale from a prior turn).
+        # Use the same zone-extraction patterns as update_belief.
+        from app.core.state_transitioner import ZONE_PATTERNS as _ZPATS
+        _zone_in_this_msg = any(re.search(p, message.lower()) for p, _ in _ZPATS)
+        if _zone_in_this_msg:
+            _tgt_tipo = belief.property_type.lower()
+            _tgt_zona = belief.zone.lower()
+            for _hist in reversed(belief.search_history):
+                _hist_zona = (_hist.get("criteria", {}).get("zona") or "").lower()
+                if not _hist_zona:
+                    continue
+                # Zone match (substring check covers "centro" ↔ "Centro" etc.)
+                if _hist_zona in _tgt_zona or _tgt_zona in _hist_zona:
+                    _hist_ctx = _hist.get("context", "")
+                    for _hid in _hist.get("ids", []):
+                        # Skip if we already showed this property's details this session
+                        if _hid == getattr(belief, "last_shown_detail_id", None):
+                            continue
+                        # Match tipo in context string: "[22] Casa en Centro"
+                        if re.search(rf"\[{_hid}\]\s*{_tgt_tipo}", _hist_ctx, re.IGNORECASE):
+                            logger.info(
+                                f"[Router] 🔍 History-detail resolver: "
+                                f"prop #{_hid} ({_tgt_tipo} en {_tgt_zona}) for {session_id}"
+                            )
+                            belief.selected_property_id = _hid
+                            det_text = await get_property_details(property_id=_hid)
+                            belief.last_tool_called = "get_property_details"
+                            belief.last_shown_detail_id = _hid
+                            _extract_property_data(belief, det_text)
+                            # Track in viewed_properties
+                            _vt = _extract_detail_title(det_text) or f"propiedad #{_hid}"
+                            _vt_tipo = _classify_title_type(_vt) or _tgt_tipo
+                            belief.viewed_properties = [
+                                v for v in belief.viewed_properties if v.get("id") != _hid
+                            ]
+                            belief.viewed_properties.append(
+                                {"id": _hid, "tipo": _vt_tipo, "titulo": _vt}
+                            )
+                            belief.viewed_properties = belief.viewed_properties[-10:]
+                            return (
+                                ChatResponse(
+                                    response=det_text,
+                                    tools_called=["get_property_details"],
+                                    confidence=0.95,
+                                ),
+                                ["get_property_details"],
+                                0.95,
+                                "pre-llm::detail-from-history",
+                            )
+
     return None
 
 
@@ -1646,20 +1715,28 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                         # regex didn't match (e.g. tool uses "--" instead of "—").
                         belief.last_search_context = result_text[:3000]
 
-                    # Zero-result zone fallback: when the zone-filtered search returns nothing,
-                    # clear the zone so the *next* turn searches broadly, and set a pending_offer
-                    # so the context tells the LLM exactly what to do when the user confirms.
-                    if not belief.last_search_ids and belief.zone:
+                    # Zero or fallback result zone clearing.
+                    # When the exact search returned nothing (ids empty) OR the result is a
+                    # fallback ("No encontré…" header with other-zone/different-criteria props),
+                    # clear zone so the next turn searches broadly rather than hitting the same
+                    # dead-end zone again.
+                    # E2 fix: also detect fallback responses (start with "No encontr")
+                    # — previously they left last_search_ids non-empty (fallback IDs) so the
+                    # zone was never cleared, causing the same failed search to repeat.
+                    _result_is_fallback = bool(
+                        re.match(r"No\s+encontr", result_text.lstrip(), re.IGNORECASE)
+                    )
+                    if (_result_is_fallback or not belief.last_search_ids) and belief.zone:
                         cleared_zone = belief.zone
                         belief.zone = None
                         belief.pending_offer = (
                             f"mostrar {belief.property_type or 'propiedades'} "
                             + (f"de {belief.operation} " if belief.operation else "")
-                            + f"disponibles en otras zonas (no hay resultados en {cleared_zone})"
+                            + f"disponibles en otras zonas (no hay resultados exactos en {cleared_zone})"
                             + " — llamar search_properties sin parámetro zona"
                         )
-                    elif belief.last_search_ids:
-                        # Results found — clear any stale zone-fallback offer
+                    elif belief.last_search_ids and not _result_is_fallback:
+                        # Exact results found — clear any stale zone-fallback offer
                         belief.pending_offer = None
 
                     # Populate search_history
