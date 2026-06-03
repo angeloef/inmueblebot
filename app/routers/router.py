@@ -340,6 +340,20 @@ _SHOW_ALL_ANYWAY = re.compile(
     re.IGNORECASE,
 )
 
+# Narrowing ESCAPE signals — the user is NOT answering the "which zone/dorms/budget?"
+# question; they reference a property, ask for details/photos, want to schedule, or ask
+# for something cheaper. In that case we must NOT swallow the message as a narrowing
+# answer (which re-runs the same broad search and re-asks) — clear `awaiting` and fall
+# through to normal routing (pronoun resolution, detail/photo handling, LLM specialist).
+_NARROW_ESCAPE = re.compile(
+    r"\b(fotos?|im[aá]gen(?:es)?|detalles?|informaci[oó]n|caracter[ií]sticas|"
+    r"opci[oó]n|el primero|la primera|el segundo|la segunda|el tercero|la tercera|"
+    r"primero|segundo|tercero|"
+    r"agendar|agend[aá]|agendame|visita|visitar|coordinar|coordin[aá]|turno|cita|"
+    r"m[aá]s\s+barat|m[aá]s\s+econ[oó]mic|m[aá]s\s+caro|m[aá]s\s+grande|m[aá]s\s+chico)\b",
+    re.IGNORECASE,
+)
+
 
 def _capture_narrow_field(belief, field: str, message: str) -> bool:
     """Set the specific search criterion the bot asked for from the user's answer.
@@ -1308,7 +1322,17 @@ async def _route_message_inner(
     # The bot asked for one or two missing criteria because the last search was too
     # broad. `_nfields` may be a comma-separated list (e.g. "zone,bedrooms_min") when
     # two criteria were requested at once — capture whichever the user provided.
-    if str(getattr(belief, "awaiting", "") or "").startswith("search_narrow:"):
+    _in_narrow = str(getattr(belief, "awaiting", "") or "").startswith("search_narrow:")
+    if _in_narrow and _NARROW_ESCAPE.search(message):
+        # Not a narrowing answer — user references a property / asks details|photos /
+        # wants to schedule / asks for cheaper. Clear awaiting and fall through to the
+        # normal routing below instead of re-running the same broad search.
+        logger.info(
+            f"[Router] 🚪 narrowing escape (non-answer intent) for {session_id}: {message[:60]}"
+        )
+        belief.awaiting = None
+        _in_narrow = False
+    if _in_narrow:
         _fields_str = belief.awaiting.split(":", 1)[1]
         _nfields = [f.strip() for f in _fields_str.split(",")]
         belief.awaiting = None
