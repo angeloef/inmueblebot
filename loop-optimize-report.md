@@ -60,7 +60,47 @@ ejecuta pero reporta día faltante pese a haberlo capturado. Requiere revisar
 `router.py` y `schedule_visit`. **Riesgo de regresión ALTO** (flujo core) → no se tocó sin
 margen para verificar dentro del time-box de 40 min.
 
-### Cierre
+---
+
+## Iteración 2 (2026-06-03 15:46 → 16:26) — foco AGENDADO + descubrimiento
+
+**Descubrimiento (4 personas nuevas, Haiku):** D2 (honestidad de features) PASS · D4 (saludo→negocio) PASS ·
+D1 (agendado denso en 1 mensaje) FAIL · D3 (slang "50 palos"→parseó 50 dormitorios, precios alquiler) FAIL.
+
+**Trabajo en el flujo de AGENDADO (P1/P10/D1):** descubrí que es un bug **multicapa**, no puntual:
+1. `update_belief` capturaba nombre/día/hora **solo si scheduling ya estaba activo** → en el 1er mensaje denso los slots se descartaban → booking con args vacíos.
+2. La ruta `scheduling-persist` devolvía el texto del LLM **sin pasar por el guard** → el LLM **fabricaba** confirmaciones ("Te confirmo la visita para #10") sin llamar `schedule_visit`.
+3. `_maybe_confirm_or_pass` trataba un `schedule_visit` fallido ("me falta día") como éxito.
+4. Typo de día ("vienes"→viernes) no lo captura `DAY_PATTERN` en update_belief.
+
+**Commits (push directo a main → prod):**
+- `2cf8577` fix(scheduling): kill fake confirmations + surface real missing slot
+- `a702a5b` fix(scheduling): capturar slots en el 1er turno denso + ampliar guard fake-booking
+- `e1ea8fe` fix(scheduling): anti-fabrication guard en ruta persist — agenda real o pregunta honesta
+
+**Resultado verificado:**
+| Persona | Antes | Después |
+|---|---|---|
+| **P1** (funnel→agenda) | confirmación FALSA sin `schedule_visit` | ✅ **PASS** — agenda de verdad (lunes 16:00, schedule_visit real) |
+| D1 (agendado denso) | confirmación falsa | ⚠️ ya NO finge: llama la tool y dice honestamente "me falta" — pero falta poblar slots del mensaje denso con ordinal |
+| P10 (typo "vienes") | confirmación falsa | ⚠️ honesto pero re-pregunta el día (typo no capturado) |
+
+**Logro clave:** se eliminó la **confirmación falsa silenciosa** (el peor bug: el usuario creía tener una visita inexistente). Ahora el bot **agenda de verdad cuando tiene los datos**, o **pregunta honestamente** lo que falta. P1 (el caso headline) quedó verde.
+
+**Pendiente (refactor dedicado, riesgo alto):**
+- Captura de slots en mensaje denso con ordinal ("me interesa el primero, agendá mañana 10, soy carla") — los slots no persisten en belief antes del booking.
+- Typo de día en `update_belief` (usar `extract_scheduling_day`, que tolera typos, en vez de `DAY_PATTERN`).
+- Slang de plata D3: "tengo 50 palos" no se parsea como presupuesto (BUDGET_PATTERN exige prefijo) y "50" se cuela como dormitorios.
+Estos requieren debug local con logging por request, no thrashing en prod — fuera del time-box.
+
+### Cierre iter2
+- **P1 (confirmación falsa de agendado) resuelto y verificado** — el bot ahora agenda de verdad.
+- Confirmación falsa silenciosa **eliminada** en todo el flujo (agenda real o pregunta honesta).
+- Regresión: smoke search / narrowing / details+photos / FAQ → **PASS** (sin regresiones por los cambios de scheduling).
+- 3 commits a prod. 2 sub-bugs de agendado (mensaje denso con ordinal, typo de día) + slang D3 documentados para refactor dedicado.
+- Total acumulado (iter1+iter2): **5 bugs resueltos+verificados, 0 regresiones, 8 commits.**
+
+### Cierre iter1
 - Duración real: ~31 min de las 40 (parado por disciplina de time-box, no por agotarlo).
 - **4 bugs encontrados, arreglados, pusheados a prod y verificados; 0 regresiones.**
 - 2 bugs (agendado) identificados con causa-raíz y diferidos por riesgo/tiempo.
