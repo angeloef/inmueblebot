@@ -197,6 +197,19 @@ async def health():
     result = await memory_manager.check_health()
     return {"status": "healthy", "service": "inmueblebot", "redis": result}
 
+@app.get("/version")
+async def version():
+    """Return the deployed git commit SHA (Render injects RENDER_GIT_COMMIT at build).
+
+    Used by the optimization loop to detect when a freshly-pushed deploy is live:
+    poll until the returned `commit` matches the SHA we just pushed.
+    """
+    import os
+    return {
+        "commit": os.getenv("RENDER_GIT_COMMIT", "dev"),
+        "service": "inmueblebot",
+    }
+
 @app.get("/health/redis")
 async def health_redis():
     from app.core.memory import memory_manager
