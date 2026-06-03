@@ -1,6 +1,7 @@
 """Dual router — S1 + Coordinator (multi-agent Phase 8)."""
 
 import asyncio
+import os
 import re
 import time
 
@@ -2330,12 +2331,149 @@ from app.db.session import async_session_factory
 from app.services.conversation_service import upsert_conversation, save_turn
 
 
+# ── Response guard (LLM critic over the candidate response) ───────────────────
+# Router labels whose responses are LLM-generated and safe to review/regenerate.
+# Deterministic shortcuts (pre-llm::*, awaiting::*, search-narrow*, select-*, …) and
+# stateful booking flows (scheduling) are intentionally NOT guarded.
+_GUARDABLE_LABELS = {
+    "search", "knowledge", "rapport", "negotiator",
+    "faq-knowledge", "search-refinement",
+}
+_GUARD_FALLBACK_MSG = (
+    "Disculpá, no te entendí del todo 🤔. ¿Podrías reformular tu mensaje de otra "
+    "forma así te ayudo mejor?"
+)
+
+
+def _recent_ctx_str(recent_messages: list) -> str:
+    """Compact the last few turns into a short text block for the guard."""
+    if not recent_messages:
+        return ""
+    out = []
+    for m in recent_messages[-4:]:
+        role = "Usuario" if m.get("role") == "user" else "Bot"
+        content = str(m.get("content", "")).strip().replace("\n", " ")
+        if content:
+            out.append(f"{role}: {content[:160]}")
+    return "\n".join(out)
+
+
+async def _apply_response_guard(
+    message: str, session_id: str, response: ChatResponse,
+    belief: ConversationBeliefState, router_label: str,
+) -> "tuple[ChatResponse, str]":
+    """Review an LLM-generated response; if it doesn't address the user's request,
+    re-route to the correct specialist (up to 2 attempts). After 2 failed re-routes,
+    return an honest fallback asking the user to rephrase.
+
+    Returns (response, router_label) — unchanged when the guard passes or is skipped.
+    Fail-open: any error leaves the original response untouched.
+    """
+    # ── Gating ────────────────────────────────────────────────────────────────
+    if os.getenv("RESPONSE_GUARD_ENABLED", "true").lower() not in ("1", "true", "yes"):
+        return response, router_label
+    if router_label not in _GUARDABLE_LABELS:
+        return response, router_label
+    if "schedule_visit" in (response.tools_called or []):
+        return response, router_label
+    if not (response.response and response.response.strip()):
+        return response, router_label
+
+    try:
+        from app.agents.response_guard import evaluate_response
+        from app.agents.coordinator import SPECIALISTS
+        from app.agents.s2_agent import process_message_with_specialist
+
+        # Rebuild the context the specialists need (same as _route_message_inner).
+        context_prompt = build_context_prompt(belief)
+        recent_messages: list = []
+        try:
+            from app.core.memory import MemoryManager
+            _raw = await MemoryManager().get_recent_messages(session_id, limit=6)
+            recent_messages = _strip_messages(_raw)
+        except Exception:
+            recent_messages = []
+        recent_ctx = _recent_ctx_str(recent_messages)
+
+        verdict = await evaluate_response(
+            message, response.response, response.tools_called or [], recent_ctx,
+        )
+        if verdict.get("ok", True):
+            return response, router_label
+
+        cur = response
+        attempts = 0
+        while not verdict.get("ok", True) and attempts < 2:
+            attempts += 1
+            esp_name = verdict.get("especialista") or "knowledge"
+            spec = SPECIALISTS.get(esp_name)
+            if spec is None:
+                break
+            logger.info(
+                f"[Guard] reroute #{attempts} → {esp_name} for {session_id}: "
+                f"{verdict.get('problema')}"
+            )
+            hint = (
+                "[REVISIÓN INTERNA] Tu respuesta anterior fue marcada como incorrecta: "
+                f"{verdict.get('problema') or 'no atendía lo que el usuario pidió'}. "
+                "Volvé a responder atendiendo EXACTAMENTE el pedido del usuario, sin "
+                "mencionar esta revisión.\n"
+            )
+            result = await process_message_with_specialist(
+                message=message,
+                session_id=session_id,
+                context_prompt=hint + (context_prompt or ""),
+                specialist=spec,
+                recent_messages=recent_messages,
+            )
+            _update_belief_from_result(belief, result)
+            cur = ChatResponse(
+                response=result.response,
+                tools_called=getattr(result, "tools_called", []),
+                confidence=getattr(result, "confidence", 0.9),
+                messages=getattr(result, "messages", []),
+            )
+            verdict = await evaluate_response(
+                message, cur.response, cur.tools_called or [], recent_ctx,
+            )
+
+        if not verdict.get("ok", True):
+            # 2 re-routes still failed → honest fallback asking to rephrase.
+            logger.info(f"[Guard] {attempts} reroutes failed → fallback for {session_id}")
+            belief.last_bot_message = _GUARD_FALLBACK_MSG
+            belief.consecutive_failures = (getattr(belief, "consecutive_failures", 0) or 0) + 1
+            return (
+                ChatResponse(response=_GUARD_FALLBACK_MSG, tools_called=[], confidence=0.4),
+                "guard::fallback",
+            )
+
+        belief.last_bot_message = cur.response
+        logger.info(f"[Guard] corrected response for {session_id} after {attempts} reroute(s)")
+        return cur, f"guard::corrected:{verdict.get('especialista') or 'knowledge'}"
+    except Exception as e:
+        logger.warning(f"[Guard] _apply_response_guard failed (fail-open): {e}")
+        return response, router_label
+
+
 async def route_message_with_persistence(
     message: str, session_id: str, phone: str = ""
 ) -> tuple:
     """Call route_message() and persist the turn to DB on success."""
     result = await route_message(message, session_id, phone)
     response, belief, router_label, latency_ms = result
+
+    # ── Response guard: review LLM-generated responses, re-route if wrong ──────
+    try:
+        _new_resp, _new_label = await _apply_response_guard(
+            message, session_id, response, belief, router_label,
+        )
+        if _new_resp is not response:
+            response = _new_resp
+            router_label = _new_label
+            await save_working_memory(belief)
+            result = (response, belief, router_label, latency_ms)
+    except Exception as _ge:
+        logger.warning(f"[Guard] wrapper failed (fail-open): {_ge}")
 
     # Do NOT persist if the response is an error or the message is empty
     if not response or not response.response:
