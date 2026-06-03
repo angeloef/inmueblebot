@@ -43,6 +43,8 @@ class ConversationBeliefState:
     last_property_data: str = ""  # Summary of last viewed property for context injection
     tool_call_log: list[dict] = field(default_factory=list)  # rolling log of tool calls this session
     last_shown_detail_id: int | None = None  # Last property ID shown via get_property_details
+    viewed_properties: list[dict] = field(default_factory=list)  # [{id, tipo, titulo}] seen via get_property_details
+    disambiguation_candidates: list[int] = field(default_factory=list)  # candidate IDs for "¿cuál?" disambiguation
 
     # ── Confirmation tracking ──────────────────────────────────
     pending_offer: Optional[str] = None  # e.g., "te paso la dirección del monoambiente"

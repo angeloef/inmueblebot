@@ -110,6 +110,15 @@ ZONE_PATTERNS = [
     (r"\b(stemberg|villa stemberg)\b", "Villa Stemberg"),
 ]
 
+# Explicit "broaden the zone" / "any zone" signals — clears any set zone.
+_ZONE_BROADEN = re.compile(
+    r"\b(cualquier(?:a)?\s+(?:otra\s+)?(?:zona|barrio|lado|lugar|parte)|"
+    r"otra\s+zona|otras?\s+zonas?|todas?\s+las\s+zonas?|"
+    r"no\s+importa\s+(?:la\s+)?(?:zona|el\s+barrio)|sin\s+importar\s+(?:la\s+)?zona|"
+    r"en\s+cualquier\s+(?:lado|lugar|parte)|donde\s+sea)\b",
+    re.IGNORECASE,
+)
+
 BUDGET_PATTERN = re.compile(
     r"(?:hasta|máximo|max|presupuesto de|hasta unos?|no más de|menos de|valga menos de|valga hasta|por menos de|no supere los?)\s*\$?\s*([\d.,]+\s*(?:mil|k|lucas|millones|palos)?)",
     re.IGNORECASE,
@@ -272,39 +281,50 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     if len(belief.history) > window:
         belief.history = belief.history[-window:]
 
-    # Extract operation (only if not already set)
-    if belief.operation is None:
-        for pattern, value in OPERATION_PATTERNS:
-            if re.search(pattern, fuzzy_text):
-                belief.operation = value
-                break
-    else:
-        # User is repeating/confirming an already-set operation.
-        # Only trigger a new search if no specific property is already selected.
-        for pattern, _ in OPERATION_PATTERNS:
-            if re.search(pattern, fuzzy_text):
-                if belief.selected_property_id is None:
-                    belief.active_intents.add("searching")
-                break
-
-    # Extract property type
-    if belief.property_type is None:
-        for pattern, value in TYPE_PATTERNS:
-            if re.search(pattern, fuzzy_text):
-                belief.property_type = value
-                break
-    else:
-        # User is repeating an already-set type → reinforce search intent
-        for pattern, _ in TYPE_PATTERNS:
-            if re.search(pattern, fuzzy_text):
+    # ── Operation: an explicit mention OVERRIDES (not just first-mention-wins) ──
+    # A user switching "alquilar" → "comprar" must update, not be ignored.
+    _new_op = None
+    for pattern, value in OPERATION_PATTERNS:
+        if re.search(pattern, fuzzy_text):
+            _new_op = value
+            break
+    if _new_op is not None:
+        if belief.operation is not None and _new_op != belief.operation:
+            belief.operation = _new_op  # explicit switch
+            if belief.selected_property_id is None:
                 belief.active_intents.add("searching")
-                break
+        elif belief.operation is None:
+            belief.operation = _new_op
+        elif belief.selected_property_id is None:
+            belief.active_intents.add("searching")  # repeat/confirm
 
-    # Extract zone
-    if belief.zone is None:
+    # ── Property type: an explicit mention OVERRIDES; a real switch resets zone ──
+    # Decision: on a type change keep operation/bedrooms/budget, reset zone (it usually
+    # no longer applies). Fixes "departamento → casa" being silently ignored.
+    _new_type = None
+    for pattern, value in TYPE_PATTERNS:
+        if re.search(pattern, fuzzy_text):
+            _new_type = value
+            break
+    if _new_type is not None:
+        if belief.property_type is not None and _new_type != belief.property_type:
+            belief.property_type = _new_type
+            belief.zone = None  # type switch → drop the (now-irrelevant) zone
+            belief.active_intents.add("searching")
+        elif belief.property_type is None:
+            belief.property_type = _new_type
+        else:
+            belief.active_intents.add("searching")  # repeat/confirm
+
+    # ── Zone: explicit broadening clears it; an explicit mention OVERRIDES ──
+    if _ZONE_BROADEN.search(text):
+        belief.zone = None
+        if belief.selected_property_id is None:
+            belief.active_intents.add("searching")
+    else:
         for pattern, value in ZONE_PATTERNS:
             if re.search(pattern, fuzzy_text):
-                belief.zone = value
+                belief.zone = value  # override (was first-mention-only)
                 break
 
     # Extract budget (overwrite if higher precision)
@@ -313,11 +333,10 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         if belief.budget_max is None or budget > 0:
             belief.budget_max = budget
 
-    # Extract bedrooms
+    # Extract bedrooms — explicit mention OVERRIDES (so "ahora de 2 dormitorios" updates).
     bedrooms = _parse_bedrooms(fuzzy_text)
     if bedrooms is not None and bedrooms > 0:
-        if belief.bedrooms_min is None:
-            belief.bedrooms_min = bedrooms
+        belief.bedrooms_min = bedrooms
 
     # Extract intents (use original text to avoid false positives)
     for pattern, intent in INTENT_PATTERNS:

@@ -196,6 +196,15 @@ _VISIT_PHRASE = re.compile(
     re.IGNORECASE,
 )
 
+# Preference/selection reference to a property TYPE among the ones the user already
+# viewed ("me interesa más la casa", "prefiero el departamento"). Group 1 = the type.
+_PREFERENCE_REF = re.compile(
+    r"\b(?:me\s+interesa|me\s+gusta|prefiero|me\s+quedo\s+con|me\s+inclino|me\s+convence|"
+    r"elijo|eleg[ií]|me\s+encanta|me\s+gust[oó])\b[^.?!]*?\b(?:la|el|esa|ese|esta|este)\s+"
+    r"(casa|departamento|depto|monoambiente|ph|terreno|propiedad)\b",
+    re.IGNORECASE,
+)
+
 
 # A bare money amount ("tengo 35 millones", "200 mil") — budget without a prefix.
 _BARE_AMOUNT = re.compile(r"\b\d[\d.,]*\s*(?:mil|millones|mill[oó]n|lucas|palos|k)\b", re.IGNORECASE)
@@ -323,6 +332,106 @@ def _capture_narrow_field(belief, field: str, message: str) -> bool:
             belief.operation = "venta"
     # property_type / zone rely on update_belief's extractors (already ran this turn).
     return getattr(belief, field, None) is not None
+
+
+async def _run_belief_search(belief):
+    """Run search_properties DETERMINISTICALLY from the belief's accumulated criteria.
+
+    The LLM does NOT choose the args, so it can't mix property types or silently drop
+    filters (zone/bedrooms/budget). Returns a synthetic agent result compatible with
+    _update_belief_from_result and the narrowing check.
+    """
+    from app.tools.v2.search_properties import search_properties
+    args = {
+        "operation": belief.operation or "",
+        "tipo": belief.property_type or "",
+        "zona": belief.zone or "",
+        "presupuesto_max": float(belief.budget_max) if belief.budget_max else 0,
+        "dormitorios": int(belief.bedrooms_min) if belief.bedrooms_min else 0,
+        "bedrooms_match": "exact",
+    }
+    text = await search_properties(**args)
+    return AgentResponse(
+        response=text,
+        tools_called=["search_properties"],
+        raw_tool_results=[{"name": "search_properties", "result": text, "arguments": args}],
+        confidence=0.95,
+    )
+
+
+# ── Viewed-property reference resolution ("me interesa más la casa") ───────────
+
+def _extract_detail_title(detail_text: str) -> str:
+    """Pull the property title (first non-decorative line) out of a get_property_details blob."""
+    for line in (detail_text or "").splitlines():
+        s = line.strip().lstrip("🏠").strip()
+        if s and "━" not in s and not s[:1] in ("📋", "📍", "💰", "🛏", "🚿", "📐", "✨", "📝"):
+            return s
+    return ""
+
+
+def _classify_title_type(title: str) -> "str | None":
+    """Map a property title to a canonical type."""
+    t = (title or "").lower()
+    if "casa" in t:
+        return "casa"
+    if "departamento" in t or "depto" in t or "monoambiente" in t or " amb" in t:
+        return "departamento"
+    if "ph" in t:
+        return "ph"
+    if "terreno" in t or "lote" in t:
+        return "terreno"
+    return None
+
+
+def _has_non_type_criteria(message: str) -> bool:
+    """True if the message carries a search criterion OTHER than a property type
+    (budget, bedrooms, zone, operation) — used to tell a SELECTION ("me interesa la
+    casa") apart from a REFINEMENT ("una casa de 1 dormitorio en centro")."""
+    from app.core.state_transitioner import (
+        BUDGET_PATTERN, BEDROOMS_PATTERN, ZONE_PATTERNS, OPERATION_PATTERNS,
+    )
+    low = (message or "").lower()
+    if BUDGET_PATTERN.search(low) or BEDROOMS_PATTERN.search(low) or _BARE_AMOUNT.search(low):
+        return True
+    for pattern, _ in (ZONE_PATTERNS + OPERATION_PATTERNS):
+        if re.search(pattern, low):
+            return True
+    return False
+
+
+def _resolve_viewed_reference(belief, ref_word: str) -> "tuple[str, list[dict]]":
+    """Resolve 'la casa'/'el depto' against properties the user VIEWED IN DETAIL.
+
+    Returns (status, matches): status is 'one' | 'many' | 'none'.
+    """
+    from app.core.state_transitioner import _REF_TYPE_SYNONYMS
+    target = _REF_TYPE_SYNONYMS.get((ref_word or "").lower())  # casa/departamento/ph/terreno, or None for "propiedad"
+    viewed = belief.viewed_properties or []
+    if target:
+        matches = [v for v in viewed if v.get("tipo") == target]
+    else:
+        matches = list(viewed)
+    if len(matches) == 1:
+        return "one", matches
+    if len(matches) >= 2:
+        return "many", matches
+    return "none", matches
+
+
+def _match_disambiguation(message: str, candidates: list) -> "dict | None":
+    """Pick a candidate from the user's reply by a distinctive title word or ordinal."""
+    low = (message or "").lower()
+    _generic = {"casa", "casas", "departamento", "depto", "dormitorios", "dormitorio", "amb", "obera", "misiones"}
+    for v in candidates:
+        for word in re.findall(r"[a-záéíóúñ]{4,}", (v.get("titulo") or "").lower()):
+            if word not in _generic and word in low:
+                return v
+    if re.search(r"\b(primera|primero|primer|1|una)\b", low) and candidates:
+        return candidates[0]
+    if re.search(r"\b(segunda|segundo|2|dos)\b", low) and len(candidates) > 1:
+        return candidates[1]
+    return None
 
 
 def _is_confirmation(message: str) -> bool:
@@ -1100,16 +1209,8 @@ async def _route_message_inner(
         _show_all = bool(_SHOW_ALL_ANYWAY.search(message))
         if not _show_all:
             _capture_narrow_field(belief, _nfield, message)
-        from app.agents.s2_agent import process_message_with_specialist as _pmws_narrow
-        from app.agents.coordinator import SPECIALISTS as _SPEC_narrow
-        result = await _pmws_narrow(
-            message=message,
-            session_id=session_id,
-            context_prompt=context_prompt,
-            specialist=_SPEC_narrow["search"],
-            recent_messages=recent_messages,
-            force_tool="search_properties",
-        )
+        # Re-run deterministically with the (possibly) added criterion.
+        result = await _run_belief_search(belief)
         _update_belief_from_result(belief, result)
         _narrow = None if _show_all else (
             _maybe_narrow_search(belief)
@@ -1137,6 +1238,65 @@ async def _route_message_inner(
             ),
             belief, "search-narrow-resolved", 0,
         )
+
+    # ── AWAITING: disambiguation between viewed properties ────────────
+    # The bot asked "¿Te referís a A o B?" — resolve the user's reply.
+    if getattr(belief, "awaiting", None) == "disambiguate_property":
+        belief.awaiting = None
+        _cands = [v for v in (belief.viewed_properties or [])
+                  if v.get("id") in (belief.disambiguation_candidates or [])]
+        _pick = _match_disambiguation(message, _cands)
+        belief.disambiguation_candidates = []
+        if _pick:
+            belief.selected_property_id = _pick["id"]
+            resp = (
+                f"Perfecto 👍 ¿Tenés alguna consulta sobre {_pick['titulo']}, "
+                f"o querés que coordinemos una visita para verla en persona?"
+            )
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                belief, "select-disambiguated", 0,
+            )
+        # Couldn't resolve → fall through to normal routing.
+
+    # ── Selection by reference to a VIEWED property ("me interesa más la casa") ──
+    # Resolve against properties the user saw IN DETAIL — not a fresh search.
+    _pref = _PREFERENCE_REF.search(message)
+    if (_pref and belief.viewed_properties
+            and not _has_non_type_criteria(message)
+            and not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_"))):
+        _status, _matches = _resolve_viewed_reference(belief, _pref.group(1))
+        if _status == "one":
+            _m = _matches[0]
+            belief.selected_property_id = _m["id"]
+            belief.disambiguation_candidates = []
+            resp = (
+                f"Perfecto 👍 ¿Tenés alguna consulta sobre {_m['titulo']}, "
+                f"o querés que coordinemos una visita para verla en persona?"
+            )
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                belief, "select-viewed", 0,
+            )
+        if _status == "many":
+            belief.disambiguation_candidates = [m["id"] for m in _matches]
+            belief.awaiting = "disambiguate_property"
+            _titles = " o ".join(m["titulo"] for m in _matches[:3])
+            resp = f"¿Te referís a {_titles}?"
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.9),
+                belief, "select-disambiguate", 0,
+            )
+        # status == "none" → fall through to normal routing.
 
     # ── Multi-intent: photos + scheduling in one message (FIX 6) ──
     # "quiero ver las fotos y también agendar una visita" → show photos FIRST,
@@ -1190,16 +1350,9 @@ async def _route_message_inner(
         # A refinement is a topic switch away from any stale scheduling persistence.
         _clear_scheduling_state(belief)
         await clear_saved_state(session_id)
-        from app.agents.s2_agent import process_message_with_specialist
-        from app.agents.coordinator import SPECIALISTS
-        result = await process_message_with_specialist(
-            message=message,
-            session_id=session_id,
-            context_prompt=context_prompt,
-            specialist=SPECIALISTS["search"],
-            recent_messages=recent_messages,
-            force_tool="search_properties",  # a refinement must actually re-search
-        )
+        # Deterministic, belief-driven search: guarantees the exact filters (single type,
+        # bedrooms, zone, budget). The LLM can't mix types or drop filters.
+        result = await _run_belief_search(belief)
         _update_belief_from_result(belief, result)
         # Too-broad guard: if the refined search is still > threshold and a criterion
         # is missing, ask for one more instead of dumping the list.
@@ -1545,6 +1698,19 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                     )][:5]
                     if key_lines:
                         belief.last_property_data = " | ".join(key_lines)[:300]
+                    # Record this property in the viewed-in-detail memory so an anaphoric
+                    # reference ("me interesa más la casa") resolves to what the user saw.
+                    _vid = belief.selected_property_id
+                    if _vid:
+                        _vtitle = _extract_detail_title(result_text) or f"propiedad #{_vid}"
+                        _vtipo = _classify_title_type(_vtitle)
+                        belief.viewed_properties = [
+                            v for v in belief.viewed_properties if v.get("id") != _vid
+                        ]
+                        belief.viewed_properties.append(
+                            {"id": _vid, "tipo": _vtipo, "titulo": _vtitle}
+                        )
+                        belief.viewed_properties = belief.viewed_properties[-10:]
 
         if "schedule_visit" in result.tools_called:
             # Extract property ID from the response if not already set
