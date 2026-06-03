@@ -1,8 +1,8 @@
 """Tests for the too-broad search narrowing feature.
 
-When search_properties returns more than _NARROW_RESULT_THRESHOLD (9) results and a
-search criterion is still missing, the bot asks for ONE more criterion before showing
-the list, iterating turn-by-turn until the list is small enough OR all criteria are set.
+When search_properties returns more than _NARROW_RESULT_THRESHOLD (9) results and one
+or more search criteria are still missing, the bot asks for UP TO TWO criteria before
+showing the list. The user can answer one or both at once.
 
 Run: pytest tests/test_search_narrowing.py -v
 """
@@ -13,6 +13,7 @@ from app.routers.router import (
     _capture_narrow_field,
     _SHOW_ALL_ANYWAY,
     _NARROW_RESULT_THRESHOLD,
+    _NARROW_FIELD_HINT,
 )
 
 
@@ -43,9 +44,38 @@ class TestNarrowThreshold:
         b = _belief_with(range(1, 13))  # 12 results, nothing set
         out = _maybe_narrow_search(b)
         assert out is not None
-        text, field = out
+        text, fields_key = out
         assert "12 opciones" in text
-        assert field == "operation"
+        # Primary (first) field is always "operation" when nothing is set
+        assert fields_key.split(",")[0] == "operation"
+
+    def test_two_criteria_asked_when_two_missing(self):
+        """When op+type are set but zone+bedrooms are missing, both asked at once."""
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        text, fields_key = out
+        primary, secondary = fields_key.split(",")
+        assert primary == "zone"
+        assert secondary == "bedrooms_min"
+        # Message should contain the primary question AND the secondary hint
+        assert "zona" in text.lower()
+        assert "dormitorios" in text.lower()
+        assert "También" in text or "también" in text
+
+    def test_single_criterion_when_one_remaining(self):
+        """When only one criterion is still missing, ask only for that one (no 'también')."""
+        b = _belief_with(
+            range(1, 15),
+            operation="alquiler", property_type="departamento",
+            zone="Centro", bedrooms_min=1,
+            # budget_max is the only missing one
+        )
+        out = _maybe_narrow_search(b)
+        assert out is not None
+        text, fields_key = out
+        assert "," not in fields_key   # single field, no comma
+        assert fields_key == "budget_max"
 
 
 class TestCriterionOrder:
@@ -54,9 +84,11 @@ class TestCriterionOrder:
         assert _next_narrow_criterion(b)[0] == "operation"
 
     def test_asks_zone_when_op_and_type_set(self):
+        """Primary field is zone; secondary hint about dormitorios included."""
         b = _belief_with(range(1, 13), operation="alquiler", property_type="departamento")
-        text, field = _maybe_narrow_search(b)
-        assert field == "zone"
+        text, fields_key = _maybe_narrow_search(b)
+        # Primary field is zone
+        assert fields_key.split(",")[0] == "zone"
         assert "zona" in text.lower()
 
     def test_asks_bedrooms_then_budget(self):
@@ -110,6 +142,28 @@ class TestCaptureNarrowField:
         b = _belief_with(range(1, 13), operation="alquiler", property_type="departamento", zone="Centro")
         # no number present → cannot set bedrooms
         assert _capture_narrow_field(b, "bedrooms_min", "no sé bien") is False
+
+    def test_capture_both_fields_from_combined_response(self):
+        """When user answers both zone AND dormitorios at once, both are captured."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        # Simulate update_belief already having run (zone captured by generic extractor)
+        st.update_belief(b, "en el centro, 1 dormitorio")
+        # Now simulate the handler looping over both fields
+        _capture_narrow_field(b, "zone", "en el centro, 1 dormitorio")
+        _capture_narrow_field(b, "bedrooms_min", "en el centro, 1 dormitorio")
+        assert b.zone == "Centro"
+        assert b.bedrooms_min == 1
+
+    def test_capture_only_one_when_user_answers_partial(self):
+        """User answers only zone (not dormitorios) — zone set, bedrooms stays None."""
+        import app.core.state_transitioner as st
+        b = _belief_with(range(1, 15), operation="alquiler", property_type="departamento")
+        st.update_belief(b, "en el centro")
+        _capture_narrow_field(b, "zone", "en el centro")
+        _capture_narrow_field(b, "bedrooms_min", "en el centro")
+        assert b.zone == "Centro"
+        assert b.bedrooms_min is None   # user didn't specify, stays missing
 
 
 class TestShowAllEscape:

@@ -275,26 +275,59 @@ def _next_narrow_criterion(belief) -> "tuple[str, str] | None":
     return None
 
 
-def _maybe_narrow_search(belief) -> "tuple[str, str] | None":
-    """If the last search was too broad AND a criterion is still missing, return
-    (question, field) asking for one more criterion (so we narrow before showing the
-    list). `field` is the belief attribute we're collecting next.
+# Short natural-language hints for the "also tell me" secondary criterion.
+_NARROW_FIELD_HINT: dict[str, str] = {
+    "operation":     "si buscás alquilar o comprar",
+    "property_type": "qué tipo de propiedad te interesa (departamento, casa, PH…)",
+    "zone":          "la zona o barrio de tu preferencia",
+    "bedrooms_min":  "cuántos dormitorios necesitás",
+    "budget_max":    "tu presupuesto máximo aproximado",
+}
 
-    Returns None when the result set is small enough (≤ threshold) OR every criterion
-    is already filled (then we just show the list as-is).
+
+def _maybe_narrow_search(belief) -> "tuple[str, str] | None":
+    """If the last search was too broad AND criteria are still missing, return
+    (question_text, fields_key) asking for up to TWO missing criteria in one message.
+
+    `fields_key` is a comma-separated string of the belief attributes to collect
+    (e.g. "zone" or "zone,bedrooms_min"). Set as ``belief.awaiting = f"search_narrow:{fields_key}"``.
+
+    Returns None when the result set is ≤ threshold OR every criterion is filled.
     """
     count = len(getattr(belief, "last_search_ids", None) or [])
     if count <= _NARROW_RESULT_THRESHOLD:
         return None
-    nxt = _next_narrow_criterion(belief)
-    if not nxt:
+
+    # Collect the next 1–2 still-missing criteria (in priority order).
+    missing: list[tuple[str, str]] = []
+    for field, question in _NARROW_CRITERIA:
+        if getattr(belief, field, None) is None:
+            missing.append((field, question))
+        if len(missing) >= 2:
+            break
+
+    if not missing:
         return None  # everything specified — show the (still broad) list as-is
-    field, question = nxt
+
+    field1, question1 = missing[0]
+
+    if len(missing) == 1:
+        # Single missing criterion — clean, focused question.
+        text = (
+            f"Encontré {count} opciones que coinciden 👍 Para mostrarte solo las que mejor "
+            f"se ajustan a lo que buscás, {question1}"
+        )
+        return text, field1
+
+    # Two criteria missing — ask for both so the user can answer one or both at once.
+    field2, _ = missing[1]
+    hint2 = _NARROW_FIELD_HINT.get(field2, field2)
     text = (
-        f"Encontré {count} opciones que coinciden 👍 Para mostrarte solo las que mejor "
-        f"se ajustan a lo que buscás, {question}"
+        f"Encontré {count} opciones que coinciden 👍 "
+        f"Para ajustar mejor los resultados, {question1} "
+        f"También podés indicarme {hint2} si ya lo tenés en mente."
     )
-    return text, field
+    return text, f"{field1},{field2}"
 
 
 # "Show them anyway" signals — the user opts out of further narrowing.
@@ -1269,15 +1302,17 @@ async def _route_message_inner(
             )
 
     # ── AWAITING: narrowing-criterion answer ─────────────────────────
-    # The bot asked for one more criterion because the last search was too broad.
-    # Capture the answer (handles bare "2" / "80 mil"), re-run the search, then either
-    # narrow again (next missing criterion) or show the now-smaller list.
+    # The bot asked for one or two missing criteria because the last search was too
+    # broad. `_nfields` may be a comma-separated list (e.g. "zone,bedrooms_min") when
+    # two criteria were requested at once — capture whichever the user provided.
     if str(getattr(belief, "awaiting", "") or "").startswith("search_narrow:"):
-        _nfield = belief.awaiting.split(":", 1)[1]
+        _fields_str = belief.awaiting.split(":", 1)[1]
+        _nfields = [f.strip() for f in _fields_str.split(",")]
         belief.awaiting = None
         _show_all = bool(_SHOW_ALL_ANYWAY.search(message))
         if not _show_all:
-            _capture_narrow_field(belief, _nfield, message)
+            for _nf in _nfields:
+                _capture_narrow_field(belief, _nf, message)
         # Re-run deterministically with the (possibly) added criterion.
         result = await _run_belief_search(belief)
         _update_belief_from_result(belief, result)
