@@ -1470,6 +1470,59 @@ async def _route_message_inner(
             belief, "multi-intent::photos+scheduling", 0,
         )
 
+    # ── Relative budget refinement fast-path ("algo más barato") ──────
+    # "más barato / más económico" carries no concrete number, so the generic
+    # refinement detector below skips it and the message fell into the narrowing
+    # loop ("¿en qué zona?"). Handle it explicitly: if a budget anchor exists,
+    # lower it 20% and re-search; otherwise ask for the budget (not the zone).
+    _rel_budget = re.search(r"\bm[aá]s\s+(?:barat|econ[oó]mic)", message.lower())
+    if (_rel_budget
+            and getattr(belief, "last_search_ids", None)
+            and not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_"))
+            and not _SCHEDULING_VERB.search(message)):
+        if getattr(belief, "budget_max", None):
+            belief.budget_max = round(float(belief.budget_max) * 0.8)
+            logger.info(f"[Router] 💸 relative-cheaper → budget_max={belief.budget_max} for {session_id}")
+            result = await _run_belief_search(belief)
+            _update_belief_from_result(belief, result)
+            _narrow = (
+                _maybe_narrow_search(belief)
+                if "search_properties" in (getattr(result, "tools_called", []) or [])
+                else None
+            )
+            if _narrow:
+                _ntext, _nfield = _narrow
+                belief.awaiting = f"search_narrow:{_nfield}"
+                belief.last_bot_message = _ntext
+                belief.consecutive_failures = 0
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=_ntext, tools_called=getattr(result, "tools_called", []), confidence=0.9),
+                    belief, "search-narrow", 0,
+                )
+            await _finalize_turn(belief, session_id, result.response)
+            await save_working_memory(belief)
+            return (
+                ChatResponse(
+                    response=result.response,
+                    tools_called=getattr(result, "tools_called", []),
+                    confidence=getattr(result, "confidence", 0.9),
+                    messages=getattr(result, "messages", []),
+                ),
+                belief, "relative-cheaper", 0,
+            )
+        # No budget anchor yet → ask for it (targeted), and reuse the narrowing
+        # capture machinery so the next "80 mil" answer lands on budget_max.
+        belief.awaiting = "search_narrow:budget_max"
+        resp = "Para mostrarte las más económicas, ¿cuál es tu presupuesto máximo aproximado?"
+        belief.last_bot_message = resp
+        belief.consecutive_failures = 0
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=resp, tools_called=[], confidence=0.9),
+            belief, "relative-cheaper-ask-budget", 0,
+        )
+
     # ── Search refinement fast-path (FIX 4/5) ─────────────────
     # After a search, a message with new criteria and no scheduling signal is a
     # refinement — re-run the search. This preempts the spurious-scheduling bug
