@@ -334,6 +334,14 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
         belief.operation = None
         if _ca is not None:
             _ca.add("operation")
+    elif (re.search(OPERATION_PATTERNS[0][0], fuzzy_text)
+          and re.search(OPERATION_PATTERNS[1][0], fuzzy_text)
+          and belief.operation is None):
+        # Ambiguous: user names BOTH operations ("alquilar o comprar") and hasn't
+        # picked one yet. Don't default to the first match — leave operation None and
+        # OUT of criteria_any so the narrowing step asks "¿alquilar o comprar?".
+        if _ca is not None:
+            _ca.discard("operation")
     else:
         _new_op = None
         for pattern, value in OPERATION_PATTERNS:
