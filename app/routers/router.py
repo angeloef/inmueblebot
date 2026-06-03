@@ -615,9 +615,14 @@ async def check_active_appointment(session_id: str) -> "str | None":
 # LLM "the visit is booked" claims emitted WITHOUT actually calling schedule_visit.
 # These must never reach the user as-is — they are fake confirmations.
 _FAKE_BOOKING = re.compile(
-    r"(dejo\s+(?:la\s+)?(?:visita\s+)?solicitad|qued[oó]\s+(?:agendad|coordinad|reservad)|"
-    r"visita\s+(?:agendad|confirmad|coordinad|reservad)|ya\s+(?:te\s+la\s+|la\s+)?agend|"
-    r"reserv[ée]\s+(?:la\s+)?visita|coordin[ée]\s+(?:la\s+)?visita)",
+    r"(dejo\s+(?:la\s+)?(?:visita\s+)?solicitad"
+    r"|qued[ao]\s+(?:agendad|coordinad|reservad|confirmad|registrad)"
+    r"|visita\s+(?:agendad|confirmad|coordinad|reservad|registrad|anotad)"
+    r"|(?:te\s+)?(?:la\s+)?anot[oé]\s+(?:la\s+)?visita|te\s+anoto\s+(?:la\s+)?visita"
+    r"|ya\s+(?:te\s+la\s+|la\s+)?agend|agend[ée]\s+(?:la\s+)?visita"
+    r"|reserv[ée]\s+(?:la\s+)?visita|coordin[ée]\s+(?:la\s+)?visita"
+    r"|visita\s+(?:para\s+el|para\s+ma[nñ]ana).{0,40}\b(?:hs|horas?|:\d{2})"
+    r"|lista\s+(?:la\s+)?visita|ya\s+est[áa]\s+(?:la\s+)?visita)",
     re.IGNORECASE,
 )
 # Markers that mean schedule_visit was called but did NOT succeed.

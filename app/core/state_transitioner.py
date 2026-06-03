@@ -444,9 +444,19 @@ def update_belief(belief: ConversationBeliefState, message: str) -> Conversation
     # When neither holds, we do not touch scheduling state — the LLM specialist drives
     # the conversation from the real message instead of a regex-seeded slot.
     _awaiting = str(getattr(belief, "awaiting", "") or "")
+    # Also treat the CURRENT message as scheduling when it carries an explicit booking
+    # verb ("agendame visita para mañana 10, soy carla"). On the FIRST scheduling turn
+    # the intent isn't active yet, so without this a dense message's day/time/name were
+    # dropped and the booking later fired with empty slots ("me falta el día/nombre").
+    _msg_has_sched_verb = bool(re.search(
+        r"\b(agendar|agend[aá]|agendame|agendá|coordinar|coordin[aá]|"
+        r"reservar|reserv[aá]|sacar turno|una visita|la visita|visitarl[oa])\b",
+        message, re.IGNORECASE,
+    ))
     _scheduling_active = (
         "scheduling" in belief.active_intents
         or _awaiting.startswith("scheduling")
+        or _msg_has_sched_verb
     )
     if _scheduling_active:
         name_match = NAME_PATTERN.search(message)
