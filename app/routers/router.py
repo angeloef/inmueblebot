@@ -247,7 +247,60 @@ def _is_search_refinement(belief, message: str) -> bool:
     # Don't hijack photo/detail asks — those route normally.
     if _PHOTO_DETAIL_INTENT.search(message):
         return False
+    # Don't hijack FAQ/knowledge questions — a question that merely mentions
+    # "alquilar/comprar" (operation) is informational, not a new search.
+    if _is_faq_question(message):
+        return False
     return True
+
+
+# ── FAQ / knowledge question detection ────────────────────────────────────────
+# A message is an informational (FAQ) question — NOT a property-search refinement —
+# when it carries a knowledge TOPIC (requisitos, garantía, contrato, documentación,
+# seña, expensas, comisión, mascotas…) or a PROCESS question ("cómo es el tema para
+# alquilar", "qué necesito para…"). This is used ONLY to ROUTE the turn to the
+# knowledge specialist; the answer itself is composed by the LLM (get_faq_answer)
+# with full conversation context — never assembled from regex.
+_FAQ_TOPIC = re.compile(
+    r"\b("
+    r"requisitos?|garant[ií]as?|garante|fiador|aval|"
+    r"recibos?\s+de\s+sueldo|comprobantes?\s+de\s+ingresos?|"
+    r"documentaci[oó]n|papeles|documentos?|"
+    r"contrato|escritura|boleto\s+de\s+compra|"
+    r"se[ñn]a|dep[oó]sito|adelanto|expensas?|comisi[oó]n|honorarios?|"
+    r"impuestos?|servicios?\s+(?:inclu|aparte|a\s+cargo)|mascotas?"
+    r")\b",
+    re.IGNORECASE,
+)
+_FAQ_PROCESS = re.compile(
+    r"(c[oó]mo\s+(?:es|ser[ií]a|funciona|hago|tengo\s+que\s+hacer|"
+    r"ser[ií]a\s+el\s+tema|es\s+el\s+tema|ingreso|hac[ée]s)|"
+    r"qu[eé]\s+(?:necesito|piden|hace\s+falta|requisitos?|documentos?|papeles|"
+    r"tengo\s+que\s+(?:hacer|presentar|llevar|tener))|"
+    r"se\s+puede\s+(?:alquilar|comprar)\s+(?:con|sin)|"
+    r"para\s+(?:alquilar|comprar|ingresar|entrar))",
+    re.IGNORECASE,
+)
+
+
+def _count_questions(message: str) -> int:
+    """Cheap count of DISTINCT questions in one message (number of '?' terminators,
+    collapsing runs like '???'). A hint for whether to request a multi-bubble answer —
+    the specialist LLM makes the final call on how to split."""
+    if not message:
+        return 0
+    return len(re.findall(r"\?+", message))
+
+
+def _is_faq_question(message: str) -> bool:
+    """True if the message is an informational/FAQ question rather than a property
+    search or scheduling action. Matches a knowledge topic OR a process question."""
+    low = (message or "").lower()
+    if _FAQ_TOPIC.search(low):
+        return True
+    if ("?" in message or "¿" in message) and _FAQ_PROCESS.search(low):
+        return True
+    return False
 
 
 # ── Too-broad search narrowing ────────────────────────────────────────────────
@@ -1598,6 +1651,52 @@ async def _route_message_inner(
         return (
             ChatResponse(response=resp, tools_called=[], confidence=0.9),
             belief, "relative-cheaper-ask-budget", 0,
+        )
+
+    # ── FAQ / knowledge question fast-route ───────────────────────────────────
+    # An informational question (requisitos, garantía, contrato, seña, expensas,
+    # "cómo es el tema para alquilar", …) must be answered by the knowledge
+    # specialist — NEVER re-run as a property search just because it mentions
+    # "alquilar/comprar". Supports MULTIPLE questions in one message: the specialist
+    # returns one self-contained answer per question (response.messages), delivered
+    # as sequential WhatsApp bubbles by the adapter.
+    if (_is_faq_question(message)
+            and not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_"))
+            and "scheduling" not in (getattr(belief, "active_intents", None) or set())):
+        _nq = _count_questions(message)
+        logger.info(f"[Router] ❓ FAQ route → knowledge ({_nq}q) for {session_id}: {message[:80]}")
+        from app.agents.s2_agent import process_message_with_specialist
+        from app.agents.coordinator import SPECIALISTS
+        _faq_ctx = context_prompt or ""
+        if _nq >= 2:
+            _faq_ctx = (
+                f"[MÚLTIPLES PREGUNTAS] El usuario hizo {_nq} preguntas distintas en un "
+                f"solo mensaje. Respondé CADA una por separado en el campo `mensajes` del "
+                f"JSON (una entrada por pregunta, en orden, autocontenidas).\n" + _faq_ctx
+            )
+        result = await process_message_with_specialist(
+            message=message,
+            session_id=session_id,
+            context_prompt=_faq_ctx,
+            specialist=SPECIALISTS["knowledge"],
+            recent_messages=recent_messages,
+        )
+        _update_belief_from_result(belief, result)
+        _resp_text = result.response
+        _handoff = await _finalize_and_check_handoff(
+            belief, session_id, _resp_text, getattr(result, "tools_called", []),
+        )
+        if _handoff is not None:
+            _resp_text, _ = _handoff
+        await save_working_memory(belief)
+        return (
+            ChatResponse(
+                response=_resp_text,
+                tools_called=getattr(result, "tools_called", []),
+                confidence=getattr(result, "confidence", 0.9),
+                messages=getattr(result, "messages", []),
+            ),
+            belief, "faq-knowledge", 0,
         )
 
     # ── Search refinement fast-path (FIX 4/5) ─────────────────

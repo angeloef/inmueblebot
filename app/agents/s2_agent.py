@@ -3,9 +3,11 @@
 import json
 
 from app.agents.cs_llm_client import get_client, get_model, LLMRole
-from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall
+from app.agents.schemas import CSAgentResponse as AgentResponse, CSStructuredToolCall, MessageChunk
 from app.agents.escalation import assess_confidence, build_clarification_message
-from app.core.response_parser import get_final_response_format, parse_llm_response, parse_corrections
+from app.core.response_parser import (
+    get_final_response_format, parse_llm_response, parse_corrections, parse_messages,
+)
 from app.nlp.empathy import get_empathetic_prefix
 from app.nlp.formality import detect_formality, get_formality_guidance
 from app.nlp.coherence import build_coherence_context
@@ -528,10 +530,19 @@ async def process_message_with_specialist(
     level, confidence = assess_confidence(raw_confidence)
     escalated_text = build_clarification_message(level, final_text)
 
+    # Multi-question: when the user asked several distinct questions, the specialist
+    # answers each in `mensajes`. Surface them as sequential bubbles (MessageChunks);
+    # the single-string `response` joins them as a fallback for non-bubble consumers.
+    _multi = parse_messages(raw_text)
+    _chunks = [MessageChunk(text=t, chunk_type="faq") for t in _multi] if _multi else []
+    if _multi:
+        escalated_text = "\n\n".join(_multi)
+
     return AgentResponse(
         response=escalated_text,
         tools_called=tools_called,
         raw_tool_results=tool_results,
         confidence=confidence,
+        messages=_chunks,
         belief_corrections=parse_corrections(raw_text),
     )

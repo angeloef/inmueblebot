@@ -62,6 +62,21 @@ Campos válidos: operation, property_type, zone, budget_max, bedrooms_min, sched
 scheduling_time, scheduling_name. Solo corregí lo que estás SEGURO por el mensaje del usuario.
 Si todo está bien, "correcciones": null. NUNCA inventes datos que el usuario no dijo."""
 
+# Multi-question directive — appended to specialists that may receive several questions
+# in one message (knowledge/FAQ). Lets the LLM split its answer into one bubble per
+# question via the "mensajes" array of the response JSON.
+_MULTI_QUESTION = """
+
+# PREGUNTAS MÚLTIPLES
+Detectá CUÁNTAS preguntas distintas hizo el usuario en su mensaje.
+- Si hizo UNA sola pregunta (o ninguna): respondé normal en "respuesta" y "mensajes": null.
+- Si hizo DOS O MÁS preguntas distintas: respondé CADA una por separado en el array
+  "mensajes" (una entrada por pregunta, en el MISMO orden en que las hizo). Cada entrada
+  debe ser autocontenida, clara y responder solo esa pregunta — no mezcles temas ni
+  repitas saludos en cada una. Igual completá "respuesta" con un resumen breve de todo.
+Ejemplo: usuario pregunta requisitos Y si aceptan mascotas →
+  "mensajes": ["Para alquilar te piden: …", "Sobre mascotas: …"]"""
+
 # ─────────────────────────────────────────────────────────────────────
 # EXTENSION POINT: add new specialists here.
 # Each entry is a Specialist(name, description, system_prompt, tool_names).
@@ -195,7 +210,7 @@ Reglas:
 - Preguntas generales (requisitos, garantías, contratos, zonas, precios de referencia):
   usá get_faq_answer directamente.
 - NUNCA menciones derivaciones, "especialistas" ni procesos internos: atendés vos.
-- Respondé en español argentino, informativo y claro.""" + _SCOPE_GUARD + _SELF_CORRECTION,
+- Respondé en español argentino, informativo y claro.""" + _SCOPE_GUARD + _SELF_CORRECTION + _MULTI_QUESTION,
         tool_names=["get_property_details", "get_faq_answer"],
     ),
     "rapport": Specialist(

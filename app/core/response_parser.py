@@ -44,8 +44,18 @@ _STRICT_RESPONSE_SCHEMA = {
                         "'{\"scheduling_day\": \"viernes\", \"budget_max\": 50000000}'"
                     ),
                 },
+                "mensajes": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": (
+                        "SÓLO cuando el usuario hizo VARIAS preguntas distintas en un "
+                        "mismo mensaje: una respuesta autocontenida por pregunta, en el "
+                        "mismo orden, para enviarlas como mensajes separados y secuenciales. "
+                        "Si hay una sola pregunta o no aplica, devolvé null y usá 'respuesta'."
+                    ),
+                },
             },
-            "required": ["respuesta", "confianza", "correcciones"],
+            "required": ["respuesta", "confianza", "correcciones", "mensajes"],
             "additionalProperties": False,
         },
     },
@@ -191,6 +201,48 @@ def parse_corrections(raw_text: str) -> dict:
         if isinstance(corr, dict):
             return corr
     return {}
+
+
+def parse_messages(raw_text: str) -> list[str]:
+    """Extract the optional 'mensajes' array the LLM emits to answer several
+    distinct questions as separate, sequential bubbles.
+
+    The field is a JSON array of strings (strict schema / json_object mode) or a
+    JSON-encoded string. Returns a list of >= 2 cleaned strings, or [] when the
+    field is absent, empty, or holds a single message (use 'respuesta' then).
+    Best-effort: never raises.
+    """
+    if not raw_text or "mensaje" not in raw_text.lower():
+        return []
+
+    candidates: list[str] = [raw_text.strip()]
+    try:
+        candidates.append(_fix_json_newlines(raw_text.strip()))
+    except Exception:
+        pass
+    code_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw_text, re.DOTALL)
+    if code_match:
+        candidates.append(code_match.group(1).strip())
+
+    for cand in candidates:
+        try:
+            data = json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        msgs = data.get("mensajes")
+        if not msgs:
+            return []
+        if isinstance(msgs, str):
+            try:
+                msgs = json.loads(msgs)
+            except (json.JSONDecodeError, ValueError):
+                return []
+        if isinstance(msgs, list):
+            out = [str(m).strip() for m in msgs if str(m).strip()]
+            return out if len(out) >= 2 else []
+    return []
 
 
 def _safe_extract(data: dict) -> tuple[str, float]:

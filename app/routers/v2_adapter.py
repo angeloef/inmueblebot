@@ -128,6 +128,20 @@ async def process_turn_v2(
             if len(response_text) < 200:
                 result["response_text"] = ""
 
+        # ── Multi-question FAQ answers → sequential bubbles ────────────────
+        # The knowledge specialist can answer several distinct questions as separate
+        # MessageChunks. Deliver each as its own WhatsApp message via a response_plan
+        # (only when there are no images, which already own the plan above).
+        if not images and response.messages and "response_plan" not in result["rich_content"]:
+            _faq_chunks = [
+                c for c in response.messages if str(getattr(c, "text", "")).strip()
+            ]
+            if len(_faq_chunks) >= 2:
+                result["rich_content"]["response_plan"] = [
+                    {"type": "text", "content": str(c.text)} for c in _faq_chunks
+                ]
+                result["response_text"] = ""  # superseded by the plan
+
         # Pass through any messages from the agentic loop
         if response.messages:
             result["messages"] = response.messages
