@@ -241,6 +241,90 @@ def _is_search_refinement(belief, message: str) -> bool:
     return True
 
 
+# ── Too-broad search narrowing ────────────────────────────────────────────────
+# When a search returns MORE than this many results, ask the user for ONE more
+# missing criterion (zone, dorms, budget, …) before dumping the list, so the
+# results match what they actually want. Repeats turn-by-turn until the list is
+# small enough OR every criterion is already filled.
+_NARROW_RESULT_THRESHOLD = 9
+
+# Order in which we request a narrowing criterion (first still-missing one wins).
+_NARROW_CRITERIA: list[tuple[str, str]] = [
+    ("operation", "¿La buscás para alquilar o para comprar?"),
+    ("property_type", "¿Qué tipo de propiedad te interesa? (departamento, casa, monoambiente, PH o terreno)"),
+    ("zone", "¿En qué zona o barrio preferís? (por ejemplo Centro, UNAM, Barrio Schuster, Krause…)"),
+    ("bedrooms_min", "¿Cuántos dormitorios necesitás como mínimo?"),
+    ("budget_max", "¿Cuál es tu presupuesto máximo aproximado?"),
+]
+
+
+def _next_narrow_criterion(belief) -> "tuple[str, str] | None":
+    """Return (field, question) for the next missing search criterion, or None if all set."""
+    for field, question in _NARROW_CRITERIA:
+        if getattr(belief, field, None) is None:
+            return field, question
+    return None
+
+
+def _maybe_narrow_search(belief) -> "tuple[str, str] | None":
+    """If the last search was too broad AND a criterion is still missing, return
+    (question, field) asking for one more criterion (so we narrow before showing the
+    list). `field` is the belief attribute we're collecting next.
+
+    Returns None when the result set is small enough (≤ threshold) OR every criterion
+    is already filled (then we just show the list as-is).
+    """
+    count = len(getattr(belief, "last_search_ids", None) or [])
+    if count <= _NARROW_RESULT_THRESHOLD:
+        return None
+    nxt = _next_narrow_criterion(belief)
+    if not nxt:
+        return None  # everything specified — show the (still broad) list as-is
+    field, question = nxt
+    text = (
+        f"Encontré {count} opciones que coinciden 👍 Para mostrarte solo las que mejor "
+        f"se ajustan a lo que buscás, {question}"
+    )
+    return text, field
+
+
+# "Show them anyway" signals — the user opts out of further narrowing.
+_SHOW_ALL_ANYWAY = re.compile(
+    r"\b(todos|todas|igual|no importa|me da igual|cualquiera|mostrame todo|"
+    r"ver todas|las que sean|no s[eé]|no tengo preferencia)\b",
+    re.IGNORECASE,
+)
+
+
+def _capture_narrow_field(belief, field: str, message: str) -> bool:
+    """Set the specific search criterion the bot asked for from the user's answer.
+
+    update_belief() already ran this turn and may have set operation/type/zone when
+    the words were present; this fills the gaps — notably BARE numeric answers like
+    "2" (dorms) or "80000"/"80 mil" (budget) that the generic extractors skip.
+    Returns True if the field is now set.
+    """
+    if getattr(belief, field, None) is not None:
+        return True
+    low = (message or "").lower()
+    if field == "bedrooms_min":
+        m = re.search(r"\b(\d{1,2})\b", low)
+        if m:
+            belief.bedrooms_min = int(m.group(1))
+    elif field == "budget_max":
+        from app.core.state_transitioner import _parse_budget
+        amt = _parse_budget(low)
+        if amt:
+            belief.budget_max = amt
+    elif field == "operation":
+        if re.search(r"alquil", low):
+            belief.operation = "alquiler"
+        elif re.search(r"compr|venta|vender|comprar", low):
+            belief.operation = "venta"
+    # property_type / zone rely on update_belief's extractors (already ran this turn).
+    return getattr(belief, field, None) is not None
+
+
 def _is_confirmation(message: str) -> bool:
     msg = (message or "").lower().strip()
     if _NEGATIVE_KW.search(msg):
@@ -1006,6 +1090,54 @@ async def _route_message_inner(
                 belief, label, 0,
             )
 
+    # ── AWAITING: narrowing-criterion answer ─────────────────────────
+    # The bot asked for one more criterion because the last search was too broad.
+    # Capture the answer (handles bare "2" / "80 mil"), re-run the search, then either
+    # narrow again (next missing criterion) or show the now-smaller list.
+    if str(getattr(belief, "awaiting", "") or "").startswith("search_narrow:"):
+        _nfield = belief.awaiting.split(":", 1)[1]
+        belief.awaiting = None
+        _show_all = bool(_SHOW_ALL_ANYWAY.search(message))
+        if not _show_all:
+            _capture_narrow_field(belief, _nfield, message)
+        from app.agents.s2_agent import process_message_with_specialist as _pmws_narrow
+        from app.agents.coordinator import SPECIALISTS as _SPEC_narrow
+        result = await _pmws_narrow(
+            message=message,
+            session_id=session_id,
+            context_prompt=context_prompt,
+            specialist=_SPEC_narrow["search"],
+            recent_messages=recent_messages,
+            force_tool="search_properties",
+        )
+        _update_belief_from_result(belief, result)
+        _narrow = None if _show_all else (
+            _maybe_narrow_search(belief)
+            if "search_properties" in (getattr(result, "tools_called", []) or [])
+            else None
+        )
+        if _narrow:
+            _ntext, _nf = _narrow
+            belief.awaiting = f"search_narrow:{_nf}"
+            belief.last_bot_message = _ntext
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=_ntext, tools_called=getattr(result, "tools_called", []), confidence=0.9),
+                belief, "search-narrow", 0,
+            )
+        await _finalize_turn(belief, session_id, result.response)
+        await save_working_memory(belief)
+        return (
+            ChatResponse(
+                response=result.response,
+                tools_called=getattr(result, "tools_called", []),
+                confidence=getattr(result, "confidence", 0.9),
+                messages=getattr(result, "messages", []),
+            ),
+            belief, "search-narrow-resolved", 0,
+        )
+
     # ── Multi-intent: photos + scheduling in one message (FIX 6) ──
     # "quiero ver las fotos y también agendar una visita" → show photos FIRST,
     # then kick off the scheduling flow in the same turn. Without this the bot
@@ -1069,6 +1201,23 @@ async def _route_message_inner(
             force_tool="search_properties",  # a refinement must actually re-search
         )
         _update_belief_from_result(belief, result)
+        # Too-broad guard: if the refined search is still > threshold and a criterion
+        # is missing, ask for one more instead of dumping the list.
+        _narrow = (
+            _maybe_narrow_search(belief)
+            if "search_properties" in (getattr(result, "tools_called", []) or [])
+            else None
+        )
+        if _narrow:
+            _ntext, _nfield = _narrow
+            belief.awaiting = f"search_narrow:{_nfield}"
+            belief.last_bot_message = _ntext
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=_ntext, tools_called=getattr(result, "tools_called", []), confidence=0.9),
+                belief, "search-narrow", 0,
+            )
         _handoff = await _finalize_and_check_handoff(
             belief, session_id, result.response, getattr(result, "tools_called", []),
         )
@@ -1254,6 +1403,23 @@ async def _route_message_inner(
 
     latency = (time.perf_counter() - t0) * 1000
     _update_belief_from_result(belief, result)
+    # Too-broad guard: if this search returned > threshold results and a criterion is
+    # still missing, ask for one more instead of showing a huge list.
+    _narrow = (
+        _maybe_narrow_search(belief)
+        if "search_properties" in (result.tools_called or [])
+        else None
+    )
+    if _narrow:
+        _ntext, _nfield = _narrow
+        belief.awaiting = f"search_narrow:{_nfield}"
+        belief.last_bot_message = _ntext
+        belief.consecutive_failures = 0
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=_ntext, tools_called=result.tools_called, confidence=0.9),
+            belief, "search-narrow", round(latency, 2),
+        )
     _resp_text = result.response
     _resp_tools = result.tools_called
     _handoff = await _finalize_and_check_handoff(belief, session_id, _resp_text, _resp_tools)
