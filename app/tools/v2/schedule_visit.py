@@ -47,10 +47,10 @@ async def schedule_visit(
         missing.append("día")
 
     if missing:
-        return (
-            f"⚠️ Faltan datos para confirmar: {', '.join(missing)}. "
-            f"El especialista debe recolectarlos antes de llamar a schedule_visit."
-        )
+        # User-facing, natural re-ask. NEVER leak internal/developer wording
+        # (e.g. "el especialista debe llamar a schedule_visit") to the chat.
+        faltan = " y ".join(missing) if len(missing) <= 2 else ", ".join(missing[:-1]) + " y " + missing[-1]
+        return f"Para agendar la visita me falta {faltan}. ¿Me lo pasás así la dejo confirmada?"
 
     # ── Parse date/time ─────────────────────────────────────────
     combined_input = f"{dia} {horario}".strip()

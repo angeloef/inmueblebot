@@ -189,6 +189,13 @@ _SCHEDULING_VERB = re.compile(
     re.IGNORECASE,
 )
 
+# "I want to see it in person" phrases that signal visit intent without a scheduling verb.
+_VISIT_PHRASE = re.compile(
+    r"\b(en persona|ir a verl[oa]|quiero verl[oa]|quisiera verl[oa]|"
+    r"me gustar[ií]a verl[oa]|visitarl[oa]|conocerl[oa]|ir a conocerl[oa])\b",
+    re.IGNORECASE,
+)
+
 
 # A bare money amount ("tengo 35 millones", "200 mil") — budget without a prefix.
 _BARE_AMOUNT = re.compile(r"\b\d[\d.,]*\s*(?:mil|millones|mill[oó]n|lucas|palos|k)\b", re.IGNORECASE)
@@ -1059,6 +1066,7 @@ async def _route_message_inner(
             context_prompt=context_prompt,
             specialist=SPECIALISTS["search"],
             recent_messages=recent_messages,
+            force_tool="search_properties",  # a refinement must actually re-search
         )
         _update_belief_from_result(belief, result)
         _handoff = await _finalize_and_check_handoff(
@@ -1089,6 +1097,48 @@ async def _route_message_inner(
         return (
             ChatResponse(response=loc, tools_called=["get_faq_answer"], confidence=0.95),
             belief, "inmobiliaria-visit", 0,
+        )
+
+    # ── Visit intent on a selected property → enter the scheduling flow ──
+    # "quiero verlo en persona", "coordinar una visita", etc. with a property already
+    # selected must route to the SCHEDULING specialist (which never asks for a phone and
+    # collects one slot at a time) AND establish scheduling state so the NEXT turn's
+    # day/time/name get captured by update_belief (its extraction is gated on an active
+    # scheduling context). Without this the message was misrouted to `search`: the wrong
+    # specialist asked for a phone, scheduling was never established, and the booking
+    # later failed with empty slots ("⚠️ Faltan datos…").
+    if (getattr(belief, "selected_property_id", None)
+            and not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling_"))
+            and "scheduling" not in (belief.active_intents or set())
+            and (_SCHEDULING_VERB.search(message) or _VISIT_PHRASE.search(message))
+            and not _PHOTO_DETAIL_INTENT.search(message)
+            and not _is_search_refinement(belief, message)):
+        logger.info(f"[Router] 🗓️ Visit intent → scheduling for {session_id}: {message[:80]}")
+        belief.active_intents.add("scheduling")
+        _capture_day_time(belief, message)  # capture any day/time bundled in this message
+        await save_specialist_state(session_id, "scheduling")
+        from app.agents.s2_agent import process_message_with_specialist
+        from app.agents.coordinator import SPECIALISTS, _build_scheduling_context as _bsc_vi
+        sched_context = _bsc_vi(belief) + "\n" + (context_prompt or "")
+        result = await process_message_with_specialist(
+            message=message,
+            session_id=session_id,
+            context_prompt=sched_context,
+            specialist=SPECIALISTS["scheduling"],
+            recent_messages=recent_messages,
+        )
+        _update_belief_from_result(belief, result)
+        await _finalize_turn(belief, session_id, result.response)
+        resp_text, _label = await _maybe_confirm_or_pass(belief, result, session_id)
+        # If the specialist's question didn't map to a concrete slot, advance to the
+        # next one we still need so the next turn enters the awaiting fast-path.
+        if not (getattr(belief, "awaiting", None) and str(belief.awaiting).startswith("scheduling")):
+            belief.awaiting = _next_scheduling_slot(belief) or "scheduling_day"
+        await save_working_memory(belief)
+        return (
+            ChatResponse(response=resp_text, tools_called=getattr(result, "tools_called", []),
+                         confidence=getattr(result, "confidence", 0.9)),
+            belief, "visit-intent::scheduling", 0,
         )
 
     # ── Cross-turn specialist persistence ─────────────────────

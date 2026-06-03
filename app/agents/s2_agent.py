@@ -370,11 +370,16 @@ async def process_message_with_specialist(
     context_prompt: str = "",
     specialist=None,
     recent_messages: list[dict] = None,
+    force_tool: str | None = None,
 ) -> AgentResponse:
     """Process a message through a specialist agent with filtered tools.
 
     Args:
         specialist: Specialist dataclass with system_prompt and tool_names.
+        force_tool: If given and the tool is in the specialist's set, force the
+            first LLM call to call exactly that tool (tool_choice). Used by the
+            search-refinement path so a refinement ALWAYS runs search_properties
+            instead of the model occasionally answering from memory.
     """
     from app.tools.v2.registry import TOOL_REGISTRY
 
@@ -398,12 +403,21 @@ async def process_message_with_specialist(
         messages.extend(recent_messages)
     messages.append({"role": "user", "content": message})
 
+    # Tool choice: "auto" by default, or force a specific tool when requested.
+    if filtered_tools:
+        if force_tool and force_tool in specialist_tool_names:
+            tool_choice = {"type": "function", "function": {"name": force_tool}}
+        else:
+            tool_choice = "auto"
+    else:
+        tool_choice = None
+
     # Step 1: LLM decides with filtered tools (REASONING role)
     response = await client.chat.completions.create(
         model=get_model(LLMRole.REASONING),
         messages=messages,
         tools=filtered_tools if filtered_tools else None,
-        tool_choice="auto" if filtered_tools else None,
+        tool_choice=tool_choice,
         max_completion_tokens=512,
     )
 

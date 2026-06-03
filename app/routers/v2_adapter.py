@@ -100,7 +100,13 @@ async def process_turn_v2(
             # response may only mention photos — we recover the details
             # text from the tool result stored in messages.
             if "get_property_details" in (response.tools_called or []):
+                # The LLM's final message often mentions only the photos, so the
+                # details it fetched get dropped. Recover them from the agentic
+                # loop's chunks, and if that's empty, fetch them straight from the
+                # DB so the user ALWAYS gets the details they asked for.
                 _details_text = _extract_detail_chunk(response)
+                if not _details_text:
+                    _details_text = await _resolve_details_for_belief(belief)
                 if _details_text:
                     _plan_segments.append({"type": "text", "content": _details_text})
 
@@ -163,6 +169,22 @@ async def _resolve_images_for_belief(belief) -> tuple[list[str], str]:
         return parsed.get("images", []), parsed.get("title", "")
     except Exception:
         return [], ""
+
+
+async def _resolve_details_for_belief(belief) -> str:
+    """Fetch the selected property's details text straight from the DB.
+
+    Fallback for the details+photos turn when the LLM's final message dropped the
+    details it had fetched. Returns "" if no property is selected or on error.
+    """
+    pid = getattr(belief, "selected_property_id", None)
+    if not pid:
+        return ""
+    try:
+        from app.tools.v2.get_property_details import get_property_details
+        return await get_property_details(property_id=pid)
+    except Exception:
+        return ""
 
 
 def _clean_photo_response(text: str) -> str:
