@@ -261,17 +261,34 @@ _AWAITING_SPECIALIST: dict[str, str] = {
 }
 
 # Detect when the user wants to visit the agency office itself (NOT a property).
-_INMOBILIARIA_VISIT = re.compile(
-    r"\b(la inmobiliaria|las? oficinas?|la agencia|sus oficinas|"
-    r"ir a la inmobiliaria|pasar por la (oficina|inmobiliaria)|"
-    r"d[oó]nde (est[aá]n|queda|los? encuentro)|la sucursal)\b",
+# A request for location/hours must carry an explicit visit intent, not just mention
+# the agency name in a greeting ("buenas tardes me comunico con la inmobiliaria?" is
+# NOT a location request — it's a greeting/confirmation). Require: mention of agency +
+# (visit intent OR location question).
+_VISIT_INTENT = re.compile(
+    r"\b(ir\s+a|pasar\s+por|visitar|ubicaci[oó]n|direcci[oó]n|d[oó]nde|"
+    r"qu[eé]\s+est[aá]|qu[eé]\s+queda|los\s+encuentro|horario|atenci[oó]n|"
+    r"est[aá]is?|en\s+qu[eé]\s+lugar)\b",
+    re.IGNORECASE,
+)
+_AGENCY_MENTION = re.compile(
+    r"\b(la inmobiliaria|las? oficinas?|la agencia|sus oficinas|la sucursal)\b",
     re.IGNORECASE,
 )
 
 
 def is_inmobiliaria_visit(message: str) -> bool:
-    """True if the user is asking to visit the agency office (share location, not book)."""
-    return bool(_INMOBILIARIA_VISIT.search(message or ""))
+    """True if the user is asking to visit the agency office (share location, not book).
+
+    Requires BOTH:
+    - Mention of the agency (not a property)
+    - An explicit visit/location intent
+
+    Avoids false positives like "buenas tardes me comunico con la inmobiliaria?"
+    (a greeting, not a location request).
+    """
+    msg = message or ""
+    return bool(_AGENCY_MENTION.search(msg) and _VISIT_INTENT.search(msg))
 
 
 async def get_inmobiliaria_location() -> str:
