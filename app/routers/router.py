@@ -326,6 +326,30 @@ def _looks_like_scheduling_answer(message: str) -> bool:
     return False
 
 
+# ── Slot rejection / change ("ese día no puedo, otro día?") ──────────────────
+# The user is rejecting or asking to change the day/time the bot just proposed.
+# Distinct from a plain "no" (which cancels) and from a mid-flow question (B3) —
+# so it must be handled BEFORE both: clear the rejected slot(s), capture any new
+# slot bundled in the same message, and ask for what's still missing WITHOUT the
+# repetitive "¿Seguimos con el agendamiento?" suffix.
+_REJECT_DAY = re.compile(
+    r"\b(no\s+puedo|no\s+(?:me\s+)?(?:viene|queda|sirve|conviene|va)|"
+    r"ese\s+d[ií]a\s+no|es[ea]\s+fecha\s+no|otro\s+d[ií]a|otra\s+fecha|"
+    r"cambiar?\s+(?:el\s+)?d[ií]a)\b",
+    re.IGNORECASE,
+)
+_REJECT_TIME = re.compile(
+    r"\b(esa\s+hora\s+no|a\s+esa\s+hora\s+no|otra\s+hora|otro\s+horario|"
+    r"cambiar?\s+(?:el\s+)?horario|m[áa]s\s+(?:temprano|tarde))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_slot_change_request(message: str) -> bool:
+    """True if the user is rejecting/changing the proposed scheduling slot."""
+    return bool(_REJECT_DAY.search(message or "") or _REJECT_TIME.search(message or ""))
+
+
 # ── Pure list-selection detection ("me interesa el 8") ────────────────────────
 # Detects a message whose sole intent is to PICK one property from the last search
 # list (by ID or ordinal). Used to auto-show that property's details instead of a
@@ -781,12 +805,15 @@ def _next_scheduling_slot(belief) -> "str | None":
     """
     if not getattr(belief, "selected_property_id", None):
         return "scheduling_property"
-    if not getattr(belief, "scheduling_name", None):
-        return "scheduling_name"
+    # Collect day + time BEFORE the name: the name is the last slot, asked only once
+    # the concrete slot is settled (so an ambiguous "sí" can never land as the name,
+    # and we never confirm a booking with an empty time).
     if not getattr(belief, "scheduling_day", None):
         return "scheduling_day"
     if not getattr(belief, "scheduling_time", None):
         return "scheduling_time"
+    if not getattr(belief, "scheduling_name", None):
+        return "scheduling_name"
     return None
 
 
@@ -955,6 +982,12 @@ async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str,
     if _booked and not _failed:
         return _resp, "scheduling::booked"
 
+    # Persist any concrete slot the specialist just PROPOSED in its reply
+    # ("¿Te quedaría bien el martes 09/06 a las 15:00?") so the visible suggestion
+    # becomes authoritative state — otherwise the booking can never assemble a
+    # complete day+time and the flow stalls or silently drops the booking.
+    _capture_proposed_slot(belief, _resp)
+
     _name = getattr(belief, "scheduling_name", None)
     _day = getattr(belief, "scheduling_day", None)
     _time = getattr(belief, "scheduling_time", None)
@@ -1055,6 +1088,32 @@ def _capture_day_time(belief, message: str) -> None:
                 belief.scheduling_day = day
         if not getattr(belief, "scheduling_time", ""):
             t = extract_scheduling_time(message)
+            if t:
+                belief.scheduling_time = t
+    except Exception as e:
+        logger.debug(f"[Scheduling] day/time capture skipped: {e}")
+
+
+def _capture_proposed_slot(belief, bot_text: str) -> None:
+    """Persist a concrete day/time the BOT itself proposed in its message
+    ("¿Te quedaría bien el martes 09/06 a las 15:00 hs?") into the belief, so the
+    suggestion the user actually sees becomes authoritative state.
+
+    Without this, a slot the specialist proposes lives only in the reply text: the
+    booking can never assemble a complete date (time stays empty), the slot order
+    skips ahead to the name, and a later "sí" + name produces no booking. Only fills
+    EMPTY fields; the extractors return None when no concrete value is present, so a
+    plain "¿qué día te viene bien?" writes nothing.
+    """
+    if not bot_text:
+        return
+    try:
+        if not getattr(belief, "scheduling_day", ""):
+            day = extract_scheduling_day(bot_text)
+            if day:
+                belief.scheduling_day = day
+        if not getattr(belief, "scheduling_time", ""):
+            t = extract_scheduling_time(bot_text)
             if t:
                 belief.scheduling_time = t
     except Exception:
@@ -1610,6 +1669,62 @@ async def _route_message_inner(
             _clear_scheduling_state(belief)
             await clear_saved_state(session_id)
             # Do NOT return — fall through to normal routing.
+
+        # B1.5 Slot rejection / change: "ese día no puedo, otro día?", "otra hora".
+        # Fires for ANY scheduling_* slot (incl. confirm). Clears the rejected slot(s),
+        # captures any new day/time bundled in the same message, and asks for what's
+        # missing — no "¿Seguimos…?" spam, no full cancel.
+        elif _is_slot_change_request(message) and not _is_confirmation(message):
+            _rej_day = bool(_REJECT_DAY.search(message))
+            # A day change invalidates the previously proposed time too.
+            if _rej_day:
+                belief.scheduling_day = ""
+                belief.scheduling_time = ""
+            else:
+                belief.scheduling_time = ""
+            # The user may have supplied a NEW slot in the same breath
+            # ("el viernes no, mejor el martes a las 10").
+            _capture_day_time(belief, message)
+            if not belief.scheduling_day:
+                belief.awaiting = "scheduling_day"
+                resp = "Sin problema 👍 ¿Qué otro día te queda bien para la visita?"
+                _label = "awaiting::slot-change-day"
+            elif not belief.scheduling_time:
+                belief.awaiting = "scheduling_time"
+                resp = (
+                    f"Perfecto, el {belief.scheduling_day} 👍 "
+                    "¿En qué horario te viene mejor?"
+                )
+                _label = "awaiting::slot-change-time"
+            else:
+                _taken = await _check_slot_or_suggest(belief)
+                if _taken is not None:
+                    belief.scheduling_time = ""
+                    belief.awaiting = "scheduling_time"
+                    resp = _taken
+                    _label = "awaiting::slot-change-taken"
+                elif belief.scheduling_name:
+                    belief.awaiting = "scheduling_confirm"
+                    resp = (
+                        f"¿Confirmo la visita para el {belief.scheduling_day} a las "
+                        f"{belief.scheduling_time} a nombre de {belief.scheduling_name}? "
+                        "Respondé Sí para confirmar."
+                    )
+                    _label = "awaiting::slot-change-confirm"
+                else:
+                    belief.awaiting = "scheduling_name"
+                    resp = (
+                        f"Genial, el {belief.scheduling_day} a las {belief.scheduling_time} 👍. "
+                        "¿A nombre de quién registro la visita?"
+                    )
+                    _label = "awaiting::slot-change-name"
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.92),
+                belief, _label, 0,
+            )
 
         # B2. Confirmation step.
         elif belief.awaiting == "scheduling_confirm":
