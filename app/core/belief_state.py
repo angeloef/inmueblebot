@@ -57,6 +57,7 @@ class ConversationBeliefState:
     scheduling_day: str = ""
     scheduling_time: str = ""
     scheduling_loop_count: int = 0  # Track repeated asks of same missing field
+    pending_scheduling: bool = False  # True while a scheduling flow is in progress (FSM-managed)
 
     # ── Conversation-flow tracking (schema v4) ─────────────────
     awaiting: Optional[str] = None  # slot bot is waiting for: "scheduling_name" | "scheduling_day" | "scheduling_time" | "scheduling_confirm"
@@ -200,6 +201,7 @@ def soft_reset(belief: ConversationBeliefState) -> ConversationBeliefState:
     belief.scheduling_day = ""
     belief.scheduling_time = ""
     belief.scheduling_loop_count = 0
+    belief.pending_scheduling = False
     belief.last_tool_called = None
     belief.awaiting = None
     belief.last_bot_message = ""

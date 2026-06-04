@@ -304,10 +304,18 @@ def _apply_fallback(turn, belief, message: str):
 
 # ── Tool execution ────────────────────────────────────────────────────────────
 
-async def _execute_tools(turn) -> tuple[list[str], list[str], bool]:
+# Structural marker emitted by format_appointment_confirmation on real DB commit.
+# Presence in the schedule_visit result string is the SOLE source of truth for
+# booking_succeeded. No other substring check is used.
+_BOOKING_SUCCESS_MARKER = "<!--CONFIRMED:"
+
+
+async def _execute_tools(turn) -> tuple[list[str], list[str], bool, bool]:
     """Execute tool_calls from engine output deterministically.
 
-    Returns (tools_used, tool_results, any_ran).
+    Returns (tools_used, tool_results, any_ran, booking_succeeded).
+    booking_succeeded is True only when schedule_visit returns a string containing
+    _BOOKING_SUCCESS_MARKER (the structural marker from format_appointment_confirmation).
     Each tool is validated before execution. Unknown/invalid tools are skipped.
     execute_tool never raises (returns error string).
     Tenant scope is already set via ContextVar from step 0.
@@ -318,6 +326,7 @@ async def _execute_tools(turn) -> tuple[list[str], list[str], bool]:
     tools_used: list[str] = []
     tool_results: list[str] = []
     any_ran = False
+    booking_succeeded = False
 
     for i, tc in enumerate(turn.tool_calls or []):
         args = tc.parsed_args()
@@ -328,15 +337,31 @@ async def _execute_tools(turn) -> tuple[list[str], list[str], bool]:
         try:
             call = CSStructuredToolCall(id=f"call_{i}", name=tc.name, arguments=args)
             result = await execute_tool(call)
+            result_str = str(result)
             tools_used.append(tc.name)
-            tool_results.append(str(result))
+            tool_results.append(result_str)
             any_ran = True
+            # Structural booking success check — only schedule_visit can emit this marker
+            if tc.name == "schedule_visit" and _BOOKING_SUCCESS_MARKER in result_str:
+                booking_succeeded = True
         except Exception as exc:
             logger.warning("[V3] Tool {} error: {}", tc.name, str(exc))
             tool_results.append(f"Error: {exc}")
             tools_used.append(tc.name)
 
-    return tools_used, tool_results, any_ran
+    return tools_used, tool_results, any_ran, booking_succeeded
+
+
+# ── Marker stripper ───────────────────────────────────────────────────────────
+
+_MARKER_STRIP_RE = re.compile(r"<!--CONFIRMED:.*?-->", re.DOTALL)
+
+
+def _strip_markers(text: str) -> str:
+    """Remove all <!--CONFIRMED:…--> markers from text before it reaches the user."""
+    if not text or _BOOKING_SUCCESS_MARKER not in text:
+        return text
+    return _MARKER_STRIP_RE.sub("", text).strip()
 
 
 # ── Response assembly ─────────────────────────────────────────────────────────
@@ -347,15 +372,21 @@ async def _assemble_response(
     tool_results: list[str],
     any_ran: bool,
     tenant_id,
+    booking_succeeded: bool = False,
+    fsm_plan: list | None = None,
 ) -> tuple[str, dict]:
     """Build response_text and rich_content from engine output + tool results.
 
-    Priority:
+    Priority (with FSM override and anti-hallucination guard):
+    0. FSM override (fsm_plan provided) — render it and return.
+    0b. Anti-hallucination guard: if turn.action=="book_step" AND booking_succeeded
+        is False → DISCARD any confirmation response_plan; emit safe gather message.
     1. Engine response_plan (non-empty) — preferred path, 0 extra LLM calls.
     2. Synthesis call (LLM Call 2) — only when tools ran but engine has no plan.
     3. Safe default — action in clarify/smalltalk/handoff with no plan.
 
     Returns (response_text, rich_content).
+    Strips <!--CONFIRMED:…--> markers from all text before returning.
     """
     from app.agents.cs_llm_client import get_client, get_model, max_tokens_kwarg, LLMRole
     from app.core.response_parser import get_final_response_format, parse_llm_response
@@ -367,6 +398,36 @@ async def _assemble_response(
         "search_criteria": belief.search_criteria,
         "active_intents": list(belief.active_intents),
     }
+
+    # ── Path 0: FSM override ───────────────────────────────────────────
+    if fsm_plan:
+        # Render FSM plan directly (same segment logic as Path 1)
+        text_segs = [p for p in fsm_plan if isinstance(p, dict) and p.get("type") == "text"]
+        if len(text_segs) == 1:
+            return _strip_markers(text_segs[0].get("content", "")), rich
+        if text_segs:
+            segments_out = [{"type": p.get("type", "text"), "content": p.get("content", "")} for p in fsm_plan]
+            rich["response_plan"] = segments_out
+            combined = " ".join(s.get("content", "") for s in text_segs)
+            return _strip_markers(combined), rich
+        # Fallback: use first item if any
+        if fsm_plan:
+            first = fsm_plan[0]
+            return _strip_markers(first.get("content", _SAFE_CLARIFY_ES)), rich
+
+    # ── Path 0b: Anti-hallucination guard ─────────────────────────────
+    # If the engine planned a book_step confirmation but schedule_visit did NOT
+    # succeed (no <!--CONFIRMED: marker), STRUCTURALLY discard the confirmation
+    # response_plan so no fake "Cita Agendada" reaches the user.
+    action = getattr(turn, "action", None)
+    if action == "book_step" and not booking_succeeded:
+        # Discard the engine's response_plan entirely.
+        # Emit a neutral "still gathering info" message instead.
+        _safe_gathering = (
+            "Estoy recopilando los detalles para tu visita. "
+            "¿Podés confirmarme el día y horario que preferís?"
+        )
+        return _safe_gathering, rich
 
     # ── Path 1: engine provided a response_plan ────────────────────────
     plan = turn.response_plan or []
@@ -392,14 +453,14 @@ async def _assemble_response(
 
         # Pure text plan
         if len(text_segs) == 1 and not image_segs:
-            return text_segs[0].content, rich
+            return _strip_markers(text_segs[0].content), rich
 
         # Multi-text plan — use response_plan for sequential delivery
         segments_out: list[dict] = [
-            {"type": seg.type, "content": seg.content} for seg in plan
+            {"type": seg.type, "content": _strip_markers(seg.content)} for seg in plan
         ]
         rich["response_plan"] = segments_out
-        combined = " ".join(s.content for s in text_segs if s.content)
+        combined = " ".join(_strip_markers(s.content) for s in text_segs if s.content)
         return combined, rich
 
     # ── Path 2: tools ran but no plan → synthesis call (LLM Call 2) ──
@@ -675,7 +736,7 @@ async def run_turn(
         logger.warning("[V3] save_belief_v5 failed: {}", str(exc))
 
     # ── Step 7: Execute tools ────────────────────────────────────────────────
-    tools_used, tool_results, any_ran = await _execute_tools(turn)
+    tools_used, tool_results, any_ran, booking_succeeded = await _execute_tools(turn)
 
     # Update belief with tool side-effects
     if "get_property_details" in tools_used or "get_property_images" in tools_used:
@@ -684,9 +745,39 @@ async def run_turn(
     if "search_properties" in tools_used:
         belief.last_tool_called = "search_properties"
 
+    # ── Step 7c: FSM post-engine guard ───────────────────────────────────────
+    fsm_result = None
+    try:
+        from app.routers.v3.scheduling.fsm import resolve as fsm_resolve
+
+        fsm_result = await fsm_resolve(
+            belief,
+            user_message,
+            turn,
+            booking_succeeded,
+            tool_results,
+            tenant_id,
+        )
+        # Re-persist belief if FSM mutated it (scheduling_loop_count, awaiting, etc.)
+        try:
+            await save_belief_v5(belief)
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.debug("[V3] fsm.resolve error (non-fatal): {}", str(exc))
+
     # ── Step 8: Assemble response ─────────────────────────────────────────────
+    _fsm_booking_succeeded = fsm_result.booking_succeeded if fsm_result else booking_succeeded
+    _fsm_plan = (fsm_result.response_plan if (fsm_result and fsm_result.override) else None)
+
     response_text, rich_content = await _assemble_response(
-        turn, belief, tool_results, any_ran, tenant_id
+        turn,
+        belief,
+        tool_results,
+        any_ran,
+        tenant_id,
+        booking_succeeded=_fsm_booking_succeeded,
+        fsm_plan=_fsm_plan,
     )
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
