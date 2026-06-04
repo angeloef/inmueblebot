@@ -61,14 +61,21 @@ async def _run_adapter(req: SimulateRequest) -> dict[str, Any]:
 
     if req.router == "v3":
         try:
-            from app.routers.v3.adapter import process_turn_v3  # type: ignore
+            from app.routers.v3.adapter import process_turn_v3
         except Exception as e:
             raise HTTPException(
                 status_code=501,
-                detail="router=v3 not available yet (built in Phase 2).",
+                detail="router=v3 not available yet.",
             ) from e
-        # V3 adds a tenant param; pass it through when present.
-        return await process_turn_v3(  # type: ignore[call-arg]
+        # Set the tenant ContextVar so resolve_tenant_id() in the adapter works correctly.
+        if req.tenant:
+            try:
+                from uuid import UUID
+                from app.core.tenancy import set_current_tenant
+                set_current_tenant(UUID(req.tenant))
+            except (ValueError, Exception) as _te:
+                logger.info(f"[simulate] tenant={req.tenant!r} not a UUID, ContextVar unset: {_te}")
+        return await process_turn_v3(
             phone=req.phone, user_message=req.message, bsuid=req.bsuid, tenant=req.tenant
         )
 

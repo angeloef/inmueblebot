@@ -2004,7 +2004,7 @@ class TenantUpdate(BaseModel):
     status: Optional[str] = None
 
 
-def _tenant_to_dict(t) -> dict:  # noqa: ANN001  (Tenant imported lazily)
+def _tenant_to_dict(t, *, active_router: str = "") -> dict:  # noqa: ANN001
     """Serialize a Tenant — NEVER includes the access token (only whether one is set)."""
     return {
         "id": str(t.id),
@@ -2019,18 +2019,42 @@ def _tenant_to_dict(t) -> dict:  # noqa: ANN001  (Tenant imported lazily)
         "plan": t.plan,
         "status": t.status,
         "created_at": t.created_at.isoformat() if t.created_at else None,
+        "active_router": active_router,  # "" means "use global bot_settings value"
     }
 
 
 @router.get("/tenants")
 async def list_tenants(_: bool = Depends(verify_admin_api_key)) -> dict:
-    """List all provisioned tenants (inmobiliarias). Token never returned."""
+    """List all provisioned tenants (inmobiliarias). Token never returned.
+
+    Includes the per-tenant ``active_router`` setting (V3 Phase 2).
+    """
     from sqlalchemy import select
-    from app.db.models.tenant import Tenant
+    from app.db.models.tenant import Tenant, TenantSettings
     async with _make_async_session() as db:
         rows = await db.execute(select(Tenant).order_by(Tenant.created_at))
         tenants = rows.scalars().all()
-        return {"tenants": [_tenant_to_dict(t) for t in tenants], "total": len(tenants)}
+
+        # Fetch active_router for all tenants in one query (batch, not N+1).
+        if tenants:
+            tenant_ids = [t.id for t in tenants]
+            ar_rows = await db.execute(
+                select(TenantSettings.tenant_id, TenantSettings.value).where(
+                    TenantSettings.tenant_id.in_(tenant_ids),
+                    TenantSettings.key == "active_router",
+                )
+            )
+            active_routers = {row.tenant_id: (row.value or "") for row in ar_rows}
+        else:
+            active_routers = {}
+
+        return {
+            "tenants": [
+                _tenant_to_dict(t, active_router=active_routers.get(t.id, ""))
+                for t in tenants
+            ],
+            "total": len(tenants),
+        }
 
 
 @router.post("/tenants")
@@ -2112,6 +2136,91 @@ async def delete_tenant(tenant_id: str, _: bool = Depends(verify_admin_api_key))
         await db.commit()
         bust_tenant_cache()
         return {"status": "deleted", "id": tenant_id}
+
+
+# ── Per-tenant settings (V3 Phase 2: active_router) ──────────────────────────
+
+_ALLOWED_TENANT_SETTINGS: dict[str, str] = {
+    "active_router": "Router activo para esta inmobiliaria: '' | 'v1' | 'v2' | 'v3'. "
+                     "Vacío = usar el valor global de bot_settings.",
+}
+
+
+class TenantSettingsUpdate(BaseModel):
+    active_router: Optional[str] = None  # "v1" | "v2" | "v3" | "" (inherit global)
+
+
+@router.get("/tenants/{tenant_id}/settings")
+async def get_tenant_settings(tenant_id: str, _: bool = Depends(verify_admin_api_key)) -> dict:
+    """Return per-tenant settings (currently: active_router).
+
+    An empty ``active_router`` means the tenant inherits the global ``bot_settings`` value.
+    """
+    from sqlalchemy import select
+    from app.db.models.tenant import TenantSettings
+
+    tid = _uuid.UUID(tenant_id)
+    async with _make_async_session() as db:
+        rows = await db.execute(
+            select(TenantSettings.key, TenantSettings.value).where(
+                TenantSettings.tenant_id == tid,
+                TenantSettings.key.in_(list(_ALLOWED_TENANT_SETTINGS)),
+            )
+        )
+        result = {k: "" for k in _ALLOWED_TENANT_SETTINGS}
+        for key, value in rows:
+            result[key] = value or ""
+        return result
+
+
+@router.patch("/tenants/{tenant_id}/settings")
+async def update_tenant_settings(
+    tenant_id: str,
+    data: TenantSettingsUpdate,
+    _: bool = Depends(verify_admin_api_key),
+) -> dict:
+    """Update per-tenant settings (currently: active_router).
+
+    Writes to ``tenant_settings`` table and busts the in-process settings cache so
+    the bot picks up the new router on the next turn (within the 5-min cache TTL).
+    """
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.db.models.tenant import Tenant, TenantSettings
+
+    updates = data.model_dump(exclude_unset=True)
+    if not updates:
+        return {"status": "no_changes"}
+
+    tid = _uuid.UUID(tenant_id)
+    async with _make_async_session() as db:
+        # Verify the tenant exists.
+        t_row = await db.execute(select(Tenant.id).where(Tenant.id == tid))
+        if not t_row.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Tenant not found")
+
+        for key, value in updates.items():
+            if key not in _ALLOWED_TENANT_SETTINGS:
+                continue
+            # Upsert: insert or update the row for this (tenant_id, key) pair.
+            stmt = pg_insert(TenantSettings).values(
+                tenant_id=tid, key=key, value=value or "",
+            ).on_conflict_do_update(
+                index_elements=["tenant_id", "key"],
+                set_={"value": value or ""},
+            )
+            await db.execute(stmt)
+
+        await db.commit()
+
+    # Bust the in-process settings cache so the next turn picks up the new router.
+    try:
+        from app.agents.prompts import _bust_settings_cache
+        _bust_settings_cache()
+    except Exception:
+        pass
+
+    return {"status": "updated", "tenant_id": tenant_id, "keys": list(updates.keys())}
 
 
 # ── WhatsApp Inbox — Conversations (Admin API) ──────────────────────────

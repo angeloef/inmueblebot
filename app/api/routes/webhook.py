@@ -112,23 +112,28 @@ def _resolve_active_router(settings) -> str:
     return "v2" if _resolve_use_v2_router(settings) else "v1"
 
 
-async def _process_turn_v3_or_fallback(*, phone: str, user_message: str,
-                                       media_url: Optional[str], bsuid: Optional[str]) -> dict:
-    """Dispatch to the V3 router if it's built; otherwise safely no-op to V2 (Phase 1.5).
+async def _process_turn_v3_or_fallback(
+    *, phone: str, user_message: str, media_url: Optional[str], bsuid: Optional[str],
+    tenant_id=None,  # UUID | None — resolved by process_messages; passed explicitly (Phase 2)
+) -> dict:
+    """Dispatch to the V3 router; pass the already-resolved tenant explicitly.
 
-    Phase 1.5 ships the switch BEFORE the V3 engine exists (Phase 2 builds
-    ``app/routers/v3/adapter.py``). Until then, selecting V3 must not break traffic — it
-    transparently serves V2. The import-guard auto-activates V3 the moment Phase 2 lands.
+    Phase 2 builds ``app/routers/v3/adapter.py``; the import-guard keeps traffic live
+    if the module is absent (Phase 1.5 no-op path). The ContextVar is already set by
+    ``process_messages`` — we pass ``tenant_id`` explicitly for traceability.
     """
     try:
-        from app.routers.v3.adapter import process_turn_v3  # built in Phase 2
+        from app.routers.v3.adapter import process_turn_v3
     except Exception:
         from app.routers.v2_adapter import process_turn_v2
-        logger.info("[Router] active_router=v3 but V3 not built yet — serving V2 (Phase 1.5 no-op)")
+        logger.info("[Router] active_router=v3 but V3 not built — serving V2 (Phase 1.5 no-op)")
         return await process_turn_v2(phone=phone, user_message=user_message,
                                      media_url=media_url, bsuid=bsuid)
-    return await process_turn_v3(phone=phone, user_message=user_message,
-                                 media_url=media_url, bsuid=bsuid)
+    return await process_turn_v3(
+        phone=phone, user_message=user_message,
+        media_url=media_url, bsuid=bsuid,
+        tenant=str(tenant_id) if tenant_id is not None else None,
+    )
 
 
 @dataclass
@@ -605,11 +610,13 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                     logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
 
             if active_router == "v3":
+                from app.core.tenancy import get_current_tenant
                 result = await _process_turn_v3_or_fallback(
                     phone=phone,
                     user_message=text,
                     media_url=media_url,
                     bsuid=msg.get("_bsuid"),
+                    tenant_id=get_current_tenant(),
                 )
             elif active_router == "v2":
                 from app.routers.v2_adapter import process_turn_v2

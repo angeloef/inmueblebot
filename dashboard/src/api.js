@@ -44,6 +44,7 @@ export const keys = {
   cobranzasSummary:['cobranzas', 'summary'],
   indices:         (code) => ['indices', code],
   tenants:         ['tenants'],
+  tenantSettings:  (id) => ['tenant-settings', id],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -787,6 +788,24 @@ export const useUpdateTenant = () => {
 export const useDeleteTenant = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: tenantApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.tenants }) });
+};
+
+// ─── Per-tenant settings (V3 Phase 2: active_router) ─────────────────────────
+
+const tenantSettingsApi = {
+  update: ({ id, ...d }) => http.patch(`/admin/tenants/${id}/settings`, d).then(r => r.data),
+};
+
+export const useUpdateTenantSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: tenantSettingsApi.update,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: keys.tenantSettings(vars.id) });
+      // Also invalidate the tenant list so active_router badge refreshes.
+      qc.invalidateQueries({ queryKey: keys.tenants });
+    },
+  });
 };
 
 // ─── WhatsApp Conversations ─────────────────────────────────────────────────

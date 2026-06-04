@@ -3,6 +3,7 @@ import { Icon, Button, pushToast } from './Primitives';
 import {
   useBotSettings, useUpdateBotSettings,
   useTenants, useCreateTenant, useUpdateTenant, useDeleteTenant,
+  useUpdateTenantSettings,
 } from './api';
 
 // ── Section wrapper ────────────────────────────────────────────────────────────
@@ -60,6 +61,51 @@ function RouterSegmented({ value, onChange, saving }) {
         ))}
       </div>
       <div className="config-hint" style={{ marginTop: 8 }}>{active.hint}</div>
+    </div>
+  );
+}
+
+// ── Per-tenant router badge + mini switch (V3 Phase 2) ────────────────────────
+
+const ROUTER_LABELS = { v1: 'V1', v2: 'V2', v3: 'V3', '': 'global' };
+
+function TenantRouterSwitch({ tenantId, currentRouter }) {
+  const updateMut = useUpdateTenantSettings();
+  const [switching, setSwitching] = React.useState(false);
+  const effective = currentRouter || 'v2';
+
+  const handleSwitch = async (newValue) => {
+    if (switching || newValue === currentRouter) return;
+    setSwitching(true);
+    try {
+      await updateMut.mutateAsync({ id: tenantId, active_router: newValue });
+      pushToast({ text: `Router ${newValue.toUpperCase()} activado para esta inmobiliaria.`, kind: 'success' });
+    } catch {
+      pushToast({ text: 'Error al cambiar el router.', kind: 'danger' });
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span className="sub" style={{ fontSize: 11, marginRight: 2 }}>router:</span>
+      <div className="segmented" role="radiogroup" aria-label="Router por inmobiliaria" style={{ gap: 2 }}>
+        {ROUTER_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={effective === o.value}
+            className={`segmented-item ${effective === o.value ? 'segmented-on' : ''}`}
+            style={{ padding: '2px 7px', fontSize: 11 }}
+            onClick={() => handleSwitch(o.value)}
+            disabled={switching}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -178,8 +224,8 @@ function TenantsSection() {
       ) : (
         <div className="tenant-list" style={{ display: 'grid', gap: 8 }}>
           {(tenants ?? []).map((t) => (
-            <div key={t.id} className="tenant-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8 }}>
-              <div>
+            <div key={t.id} className="tenant-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontWeight: 600 }}>{t.display_name} <span className="sub">({t.slug})</span></div>
                 <div className="config-hint">
                   {t.phone_number_id ? `Número: ${t.phone_number_id}` : 'Sin número asignado'}
@@ -187,6 +233,7 @@ function TenantsSection() {
                   {' · '}{t.status ?? 'active'}
                 </div>
               </div>
+              <TenantRouterSwitch tenantId={t.id} currentRouter={t.active_router || ''} />
               <div style={{ display: 'flex', gap: 6 }}>
                 <Button kind="secondary" size="sm" onClick={() => setMode(t.id)} disabled={busy}>Editar</Button>
                 <Button kind="danger" size="sm" onClick={() => handleDelete(t)} disabled={busy}>Eliminar</Button>
