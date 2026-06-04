@@ -43,6 +43,7 @@ export const keys = {
   contract:        (id) => ['contracts', id],
   cobranzasSummary:['cobranzas', 'summary'],
   indices:         (code) => ['indices', code],
+  tenants:         ['tenants'],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -759,6 +760,33 @@ export const useUpdateBotSettings = () => {
     mutationFn: settingsApi.update,
     onSuccess:  () => qc.invalidateQueries({ queryKey: keys.botSettings }),
   });
+};
+
+// ─── Tenants (inmobiliarias / SaaS tenants — V3 Phase 1) ─────────────────────
+
+const tenantApi = {
+  list:   ()             => http.get('/admin/tenants').then(r => r.data.tenants ?? []),
+  create: (data)         => http.post('/admin/tenants', data).then(r => r.data),
+  update: ({ id, ...d }) => http.patch(`/admin/tenants/${id}`, d).then(r => r.data),
+  remove: (id)           => http.delete(`/admin/tenants/${id}`).then(r => r.data),
+};
+
+export const useTenants = () =>
+  useQuery({ queryKey: keys.tenants, queryFn: tenantApi.list, staleTime: 30_000 });
+
+export const useCreateTenant = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: tenantApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: keys.tenants }) });
+};
+
+export const useUpdateTenant = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: tenantApi.update, onSuccess: () => qc.invalidateQueries({ queryKey: keys.tenants }) });
+};
+
+export const useDeleteTenant = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: tenantApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: keys.tenants }) });
 };
 
 // ─── WhatsApp Conversations ─────────────────────────────────────────────────

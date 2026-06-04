@@ -1975,6 +1975,145 @@ def update_bot_settings(
     return {"status": "updated", "keys": list(updates.keys())}
 
 
+# ── Tenant provisioning (V3 Phase 1 — admin-provisioned tenants, D6) ────────────
+# CRUD for inmobiliarias (SaaS tenants). The existing test account = the default tenant.
+# The WhatsApp access token is stored ENCRYPTED (Fernet) and never returned in responses.
+
+class TenantCreate(BaseModel):
+    slug: str
+    display_name: str
+    company_name: Optional[str] = None
+    business_hours: Optional[str] = None
+    timezone: Optional[str] = None
+    waba_id: Optional[str] = None
+    phone_number_id: Optional[str] = None
+    wa_access_token: Optional[str] = None  # plaintext in; stored encrypted
+    plan: Optional[str] = None
+    status: Optional[str] = None
+
+
+class TenantUpdate(BaseModel):
+    display_name: Optional[str] = None
+    company_name: Optional[str] = None
+    business_hours: Optional[str] = None
+    timezone: Optional[str] = None
+    waba_id: Optional[str] = None
+    phone_number_id: Optional[str] = None
+    wa_access_token: Optional[str] = None  # plaintext in; stored encrypted
+    plan: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _tenant_to_dict(t) -> dict:  # noqa: ANN001  (Tenant imported lazily)
+    """Serialize a Tenant — NEVER includes the access token (only whether one is set)."""
+    return {
+        "id": str(t.id),
+        "slug": t.slug,
+        "display_name": t.display_name,
+        "company_name": t.company_name,
+        "business_hours": t.business_hours,
+        "timezone": t.timezone,
+        "waba_id": t.waba_id,
+        "phone_number_id": t.phone_number_id,
+        "has_access_token": bool(t.wa_access_token),
+        "plan": t.plan,
+        "status": t.status,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+@router.get("/tenants")
+async def list_tenants(_: bool = Depends(verify_admin_api_key)) -> dict:
+    """List all provisioned tenants (inmobiliarias). Token never returned."""
+    from sqlalchemy import select
+    from app.db.models.tenant import Tenant
+    async with _make_async_session() as db:
+        rows = await db.execute(select(Tenant).order_by(Tenant.created_at))
+        tenants = rows.scalars().all()
+        return {"tenants": [_tenant_to_dict(t) for t in tenants], "total": len(tenants)}
+
+
+@router.post("/tenants")
+async def create_tenant(data: TenantCreate, _: bool = Depends(verify_admin_api_key)) -> dict:
+    """Provision a new tenant. wa_access_token is encrypted at rest."""
+    from app.db.models.tenant import Tenant
+    from app.core.crypto import encrypt_secret, encryption_available
+    from app.services.tenant_service import bust_tenant_cache
+
+    if data.wa_access_token and not encryption_available():
+        raise HTTPException(status_code=400, detail="TENANT_TOKEN_ENCRYPTION_KEY not configured")
+
+    payload = data.model_dump(exclude_unset=True)
+    if "wa_access_token" in payload:
+        payload["wa_access_token"] = encrypt_secret(payload["wa_access_token"])
+
+    async with _make_async_session() as db:
+        tenant = Tenant(**payload)
+        db.add(tenant)
+        try:
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail=f"Could not create tenant: {exc}") from exc
+        await db.refresh(tenant)
+        bust_tenant_cache()
+        return _tenant_to_dict(tenant)
+
+
+@router.patch("/tenants/{tenant_id}")
+async def update_tenant(tenant_id: str, data: TenantUpdate, _: bool = Depends(verify_admin_api_key)) -> dict:
+    """Update a tenant. Sending wa_access_token replaces the encrypted token."""
+    from sqlalchemy import select
+    from app.db.models.tenant import Tenant
+    from app.core.crypto import encrypt_secret, encryption_available
+    from app.services.tenant_service import bust_tenant_cache
+
+    updates = data.model_dump(exclude_unset=True)
+    if updates.get("wa_access_token") and not encryption_available():
+        raise HTTPException(status_code=400, detail="TENANT_TOKEN_ENCRYPTION_KEY not configured")
+
+    async with _make_async_session() as db:
+        row = await db.execute(select(Tenant).where(Tenant.id == _uuid.UUID(tenant_id)))
+        tenant = row.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        for key, value in updates.items():
+            if key == "wa_access_token":
+                value = encrypt_secret(value)
+            setattr(tenant, key, value)
+        try:
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail=f"Could not update tenant: {exc}") from exc
+        await db.refresh(tenant)
+        bust_tenant_cache()
+        return _tenant_to_dict(tenant)
+
+
+@router.delete("/tenants/{tenant_id}")
+async def delete_tenant(tenant_id: str, _: bool = Depends(verify_admin_api_key)) -> dict:
+    """Delete a tenant. Refuses to delete the default tenant (would orphan V2 data)."""
+    from sqlalchemy import select
+    from app.db.models.tenant import Tenant
+    from app.core.tenancy import default_tenant_id
+    from app.services.tenant_service import bust_tenant_cache
+
+    tid = _uuid.UUID(tenant_id)
+    if tid == default_tenant_id():
+        raise HTTPException(status_code=400, detail="Cannot delete the default tenant")
+
+    async with _make_async_session() as db:
+        row = await db.execute(select(Tenant).where(Tenant.id == tid))
+        tenant = row.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        await db.delete(tenant)
+        await db.commit()
+        bust_tenant_cache()
+        return {"status": "deleted", "id": tenant_id}
+
+
 # ── WhatsApp Inbox — Conversations (Admin API) ──────────────────────────
 
 import uuid as _uuid

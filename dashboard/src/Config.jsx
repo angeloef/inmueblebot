@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Icon, Button, pushToast } from './Primitives';
-import { useBotSettings, useUpdateBotSettings } from './api';
+import {
+  useBotSettings, useUpdateBotSettings,
+  useTenants, useCreateTenant, useUpdateTenant, useDeleteTenant,
+} from './api';
 
 // ── Section wrapper ────────────────────────────────────────────────────────────
 
@@ -28,29 +31,190 @@ function Field({ label, hint, children }) {
   );
 }
 
-// ── Toggle switch (inline, saves immediately) ─────────────────────────────────
+// ── Router segmented control (V1 / V2 / V3) — saves immediately ─────────────────
 
-function ToggleField({ label, hint, value, onChange, saving }) {
-  const isOn = value === 'true';
+const ROUTER_OPTIONS = [
+  { value: 'v1', label: 'V1', hint: 'Clasificador de intent + agente monolítico. Sistema clásico y estable.' },
+  { value: 'v2', label: 'V2', hint: 'S1 (regex rápido) + S2 (coordinador con especialistas). Scheduling conversacional.' },
+  { value: 'v3', label: 'V3', hint: 'Router multi-tenant schema-guided (en construcción). Por ahora hace fallback a V2 sin riesgo.' },
+];
+
+function RouterSegmented({ value, onChange, saving }) {
+  const active = ROUTER_OPTIONS.find((o) => o.value === value) ?? ROUTER_OPTIONS[1];
   return (
     <div className="field config-field">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-        <div>
-          <label style={{ marginBottom: 0 }}>{label}</label>
-          {hint && <div className="config-hint">{hint}</div>}
-        </div>
-        <button
-          type="button"
-          className={`toggle-switch ${isOn ? 'toggle-on' : 'toggle-off'}`}
-          onClick={() => onChange(isOn ? 'false' : 'true')}
-          disabled={saving}
-          title={isOn ? 'Click para desactivar' : 'Click para activar'}
-        >
-          <span className="toggle-knob" />
-          <span className="toggle-label">{isOn ? 'V2' : 'V1'}</span>
-        </button>
+      <label style={{ marginBottom: 8 }}>Router del chatbot</label>
+      <div className="segmented" role="radiogroup" aria-label="Router del chatbot">
+        {ROUTER_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            className={`segmented-item ${value === o.value ? 'segmented-on' : ''}`}
+            onClick={() => value !== o.value && onChange(o.value)}
+            disabled={saving}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div className="config-hint" style={{ marginTop: 8 }}>{active.hint}</div>
+    </div>
+  );
+}
+
+// ── Tenant (inmobiliaria) provisioning ─────────────────────────────────────────
+
+const EMPTY_TENANT = {
+  slug: '', display_name: '', company_name: '', business_hours: '',
+  timezone: 'America/Argentina/Cordoba', waba_id: '', phone_number_id: '',
+  wa_access_token: '', plan: '', status: 'active',
+};
+
+function TenantForm({ initial, onSubmit, onCancel, busy, isEdit }) {
+  const [form, setForm] = useState(initial);
+  useEffect(() => { setForm(initial); }, [initial]);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = () => {
+    if (!form.display_name.trim() || (!isEdit && !form.slug.trim())) {
+      pushToast({ text: 'Slug y nombre son obligatorios.', kind: 'danger' });
+      return;
+    }
+    // Only send non-empty fields; an empty access token must NOT overwrite an existing one.
+    const payload = {};
+    Object.entries(form).forEach(([k, v]) => {
+      if (v !== '' && v != null) payload[k] = typeof v === 'string' ? v.trim() : v;
+    });
+    if (isEdit) delete payload.slug; // slug is immutable on edit
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="tenant-form" style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+      {!isEdit && (
+        <Field label="Slug" hint="Identificador estable, sin espacios (ej: obera). No se puede cambiar luego.">
+          <input type="text" value={form.slug} onChange={set('slug')} placeholder="obera" maxLength={60} />
+        </Field>
+      )}
+      <Field label="Nombre visible">
+        <input type="text" value={form.display_name} onChange={set('display_name')} placeholder="Inmobiliaria Oberá" maxLength={200} />
+      </Field>
+      <Field label="Phone Number ID (Meta)" hint="Clave de ruteo del webhook. Único por inmobiliaria.">
+        <input type="text" value={form.phone_number_id} onChange={set('phone_number_id')} placeholder="1120063544518404" maxLength={64} />
+      </Field>
+      <Field label="WABA ID (Meta)">
+        <input type="text" value={form.waba_id} onChange={set('waba_id')} placeholder="WhatsApp Business Account id" maxLength={64} />
+      </Field>
+      <Field
+        label={isEdit ? 'WhatsApp access token (dejar vacío para no cambiar)' : 'WhatsApp access token'}
+        hint="Se guarda cifrado (Fernet). Nunca se muestra de vuelta."
+      >
+        <input type="password" value={form.wa_access_token} onChange={set('wa_access_token')} placeholder="EAAG…" autoComplete="off" />
+      </Field>
+      <Field label="Horario de atención">
+        <input type="text" value={form.business_hours} onChange={set('business_hours')} placeholder="Lunes a sábado de 9 a 18hs" maxLength={300} />
+      </Field>
+      <Field label="Zona horaria">
+        <input type="text" value={form.timezone} onChange={set('timezone')} placeholder="America/Argentina/Cordoba" maxLength={60} />
+      </Field>
+      <div className="config-actions" style={{ marginTop: 4 }}>
+        <Button kind="secondary" size="sm" onClick={onCancel} disabled={busy}>Cancelar</Button>
+        <Button kind="primary" size="sm" onClick={submit} disabled={busy}>
+          {busy ? 'Guardando…' : (isEdit ? 'Guardar' : 'Crear inmobiliaria')}
+        </Button>
       </div>
     </div>
+  );
+}
+
+function TenantsSection() {
+  const { data: tenants, isLoading } = useTenants();
+  const createMut = useCreateTenant();
+  const updateMut = useUpdateTenant();
+  const deleteMut = useDeleteTenant();
+  const [mode, setMode] = useState(null); // null | 'create' | editId
+
+  const busy = createMut.isPending || updateMut.isPending || deleteMut.isPending;
+
+  const handleCreate = async (payload) => {
+    try {
+      await createMut.mutateAsync(payload);
+      pushToast({ text: 'Inmobiliaria creada.', kind: 'success' });
+      setMode(null);
+    } catch (err) {
+      pushToast({ text: err?.response?.data?.detail ?? 'Error al crear.', kind: 'danger' });
+    }
+  };
+
+  const handleUpdate = async (id, payload) => {
+    try {
+      await updateMut.mutateAsync({ id, ...payload });
+      pushToast({ text: 'Inmobiliaria actualizada.', kind: 'success' });
+      setMode(null);
+    } catch (err) {
+      pushToast({ text: err?.response?.data?.detail ?? 'Error al actualizar.', kind: 'danger' });
+    }
+  };
+
+  const handleDelete = async (t) => {
+    if (!window.confirm(`¿Eliminar la inmobiliaria "${t.display_name}"? Se borran sus datos.`)) return;
+    try {
+      await deleteMut.mutateAsync(t.id);
+      pushToast({ text: 'Inmobiliaria eliminada.', kind: 'success' });
+    } catch (err) {
+      pushToast({ text: err?.response?.data?.detail ?? 'No se pudo eliminar.', kind: 'danger' });
+    }
+  };
+
+  return (
+    <Section
+      title="Inmobiliarias"
+      description="Cada inmobiliaria (tenant) tiene sus propios datos, número de WhatsApp y branding. El número entrante (phone_number_id) decide a qué inmobiliaria pertenece cada mensaje."
+    >
+      {isLoading ? (
+        <p className="sub">Cargando inmobiliarias…</p>
+      ) : (
+        <div className="tenant-list" style={{ display: 'grid', gap: 8 }}>
+          {(tenants ?? []).map((t) => (
+            <div key={t.id} className="tenant-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{t.display_name} <span className="sub">({t.slug})</span></div>
+                <div className="config-hint">
+                  {t.phone_number_id ? `Número: ${t.phone_number_id}` : 'Sin número asignado'}
+                  {' · '}{t.has_access_token ? 'token ✓' : 'sin token'}
+                  {' · '}{t.status ?? 'active'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button kind="secondary" size="sm" onClick={() => setMode(t.id)} disabled={busy}>Editar</Button>
+                <Button kind="danger" size="sm" onClick={() => handleDelete(t)} disabled={busy}>Eliminar</Button>
+              </div>
+            </div>
+          ))}
+          {(tenants ?? []).length === 0 && <p className="sub">No hay inmobiliarias provisionadas todavía.</p>}
+        </div>
+      )}
+
+      {mode === 'create' && (
+        <TenantForm initial={EMPTY_TENANT} onSubmit={handleCreate} onCancel={() => setMode(null)} busy={busy} isEdit={false} />
+      )}
+      {mode && mode !== 'create' && (() => {
+        const t = (tenants ?? []).find((x) => x.id === mode);
+        if (!t) return null;
+        const initial = { ...EMPTY_TENANT, ...t, wa_access_token: '' };
+        return <TenantForm initial={initial} onSubmit={(p) => handleUpdate(t.id, p)} onCancel={() => setMode(null)} busy={busy} isEdit />;
+      })()}
+
+      {!mode && (
+        <div style={{ marginTop: 12 }}>
+          <Button kind="primary" size="sm" onClick={() => setMode('create')} disabled={busy}>
+            <Icon name="plus" size={14} /> Nueva inmobiliaria
+          </Button>
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -64,18 +228,23 @@ export default function Config() {
   const [companyName,   setCompanyName]   = useState('');
   const [bizHours,      setBizHours]      = useState('');
   const [agentWA,       setAgentWA]       = useState('');
-  const [useV2Router,   setUseV2Router]   = useState('false');
+  const [activeRouter,  setActiveRouter]  = useState('v2');
   const [dirty,         setDirty]         = useState(false);
   const [saving,        setSaving]        = useState(false);
-  const [toggling,      setToggling]      = useState(false);
+  const [switching,     setSwitching]     = useState(false);
 
-  // Populate form from fetched settings
+  // Back-compat: derive active_router from the legacy use_v2_router when unset.
+  const deriveRouter = (s) => {
+    if (s?.active_router) return s.active_router;
+    return s?.use_v2_router === 'true' ? 'v2' : 'v1';
+  };
+
   useEffect(() => {
     if (!settings) return;
     setCompanyName(settings.company_name   ?? '');
     setBizHours(   settings.business_hours ?? '');
     setAgentWA(    settings.agent_whatsapp ?? '');
-    setUseV2Router(settings.use_v2_router  ?? 'false');
+    setActiveRouter(deriveRouter(settings));
     setDirty(false);
   }, [settings]);
 
@@ -106,27 +275,22 @@ export default function Config() {
     setCompanyName(settings.company_name   ?? '');
     setBizHours(   settings.business_hours ?? '');
     setAgentWA(    settings.agent_whatsapp ?? '');
-    setUseV2Router(settings.use_v2_router  ?? 'false');
+    setActiveRouter(deriveRouter(settings));
     setDirty(false);
   };
 
-  const handleToggleRouter = async (newValue) => {
-    setToggling(true);
-    const prev = useV2Router;
-    setUseV2Router(newValue); // optimistic
+  const handleSwitchRouter = async (newValue) => {
+    setSwitching(true);
+    const prev = activeRouter;
+    setActiveRouter(newValue); // optimistic
     try {
-      await updateMut.mutateAsync({ use_v2_router: newValue });
-      pushToast({
-        text: newValue === 'true'
-          ? 'Router V2 activado. El bot usará el nuevo sistema S1+S2.'
-          : 'Router V1 activado. El bot usará el sistema clásico.',
-        kind: 'success',
-      });
+      await updateMut.mutateAsync({ active_router: newValue });
+      pushToast({ text: `Router ${newValue.toUpperCase()} activado. Aplica en el próximo mensaje.`, kind: 'success' });
     } catch (err) {
-      setUseV2Router(prev); // rollback
+      setActiveRouter(prev); // rollback
       pushToast({ text: 'Error al cambiar el router.', kind: 'danger' });
     } finally {
-      setToggling(false);
+      setSwitching(false);
     }
   };
 
@@ -146,8 +310,6 @@ export default function Config() {
       </div>
     </div>
   );
-
-  const v2Active = useV2Router === 'true';
 
   return (
     <div className="page-view">
@@ -175,18 +337,11 @@ export default function Config() {
           title="Sistema"
           description="Control del motor del chatbot. Los cambios aplican en el próximo mensaje recibido."
         >
-          <ToggleField
-            label="Router del chatbot"
-            hint={
-              v2Active
-                ? 'V2 activo: S1 (regex rápido) + S2 (coordinador con especialistas). Respuestas más naturales, scheduling conversacional.'
-                : 'V1 activo: clasificador de intent + agente monolítico. Sistema clásico y estable.'
-            }
-            value={useV2Router}
-            onChange={handleToggleRouter}
-            saving={toggling}
-          />
+          <RouterSegmented value={activeRouter} onChange={handleSwitchRouter} saving={switching} />
         </Section>
+
+        {/* ── Inmobiliarias (tenants) ── */}
+        <TenantsSection />
 
         {/* ── Identidad ── */}
         <Section
