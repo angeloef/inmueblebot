@@ -579,6 +579,105 @@ def _resolve_viewed_reference(belief, ref_word: str) -> "tuple[str, list[dict]]"
     return "none", matches
 
 
+def _parse_search_context(context: str) -> list[dict]:
+    """Parse last_search_context into a list of {id, label} dicts.
+
+    Context entries look like:
+      "[4] Departamento en Barrio Schuster (Alquiler $46,149/mes)"
+    Handles both '|'-separated summaries and raw result text.
+    Returns a flat list sorted by id.
+    """
+    entries = []
+    for chunk in re.split(r"\s*\|\s*", context or ""):
+        m = re.match(r"\[(\d+)\]\s+(.+?)(?:\s*$|\s*\(.*?\))", chunk.strip())
+        if m:
+            pid = int(m.group(1))
+            label = m.group(2).strip()
+            entries.append({"id": pid, "label": label})
+    if not entries:
+        # Fallback: scan raw text for "[ID] SomeName" patterns
+        for m in re.finditer(r"\[(\d+)\]\s+([A-Za-záéíóúüñÁÉÍÓÚÜÑ][^\n\[\]]{3,60})", context or ""):
+            entries.append({"id": int(m.group(1)), "label": m.group(2).strip()})
+    return entries
+
+
+def _resolve_description_from_search(
+    belief, message: str
+) -> "tuple[str, list[dict]]":
+    """Resolve a property reference by description (zone/price/type) against the
+    current search list.
+
+    Handles the generic case: user says "el de barrio schuster" / "el más barato" /
+    "el de la ruta" when there are MULTIPLE matching properties in the last search.
+    Checks every IDs entry in last_search_ids against last_search_context.
+
+    Returns (status, matches):
+      'one'  – exactly one match → {id, label}
+      'many' – 2+ matches → [{id, label}, ...]
+      'none' – no useful match
+    """
+    ids = getattr(belief, "last_search_ids", None) or []
+    ctx = getattr(belief, "last_search_context", "") or ""
+    if not ids or not ctx:
+        return "none", []
+
+    # Index context by id for fast lookup.
+    parsed = {e["id"]: e["label"] for e in _parse_search_context(ctx)}
+    if not parsed:
+        return "none", []
+
+    low = (message or "").lower()
+
+    # Build a set of "tokens" the user mentioned (words ≥ 4 chars that look like
+    # zone/type descriptors; strip common stop-words). We then score each property.
+    _STOP = {
+        "dame", "deme", "pasa", "pase", "info", "mapa",
+        "quiero", "quisiera", "podria", "podría", "interesa", "interes",
+        "este", "esta", "aquel", "aquella", "cual", "cual",
+        "departamento", "departamentos", "depto", "deptos", "casa", "casas",
+        "propiedad", "propiedades", "inmo", "inmobiliaria",
+        "disponible", "disponibles", "alquiler", "venta",
+        "favor", "informacion", "detalles", "detalle",
+        # Spatial/generic tokens that appear in almost every label — keep them
+        # out so they don't make everything match "barrio schuster", "barrio norte", etc.
+        "barrio", "zona", "calle", "bario", "obera", "misiones",
+    }
+    user_tokens = {
+        t for t in re.findall(r"[a-záéíóúñ]{4,}", low)
+        if t not in _STOP
+    }
+    if not user_tokens:
+        return "none", []
+
+    matches = []
+    for pid in ids:
+        label = parsed.get(pid, "")
+        label_low = label.lower()
+        # Build the set of non-stop label tokens for this entry so we can require
+        # the user's tokens match only the DISTINCTIVE part of the label (e.g.
+        # "schuster", "krause", "centro", "norte", "palmas", "ruta") and not the
+        # generic "barrio" or "departamento" that every entry shares.
+        label_tokens = {
+            t for t in re.findall(r"[a-záéíóúñ]{4,}", label_low)
+            if t not in _STOP
+        }
+        # A candidate matches when at least ONE user token is present in the label's
+        # distinctive tokens (not just any substring).
+        if any(tok in label_tokens or tok in label_low for tok in user_tokens
+               if tok not in {"barrio", "zona", "bario"}):
+            # Extra precision: if ALL user tokens are generic words that appear in
+            # almost every label (len == 0 distinctive overlap), skip.
+            distinctive_overlap = user_tokens & label_tokens
+            if distinctive_overlap:
+                matches.append({"id": pid, "label": label})
+
+    if len(matches) == 1:
+        return "one", matches
+    if len(matches) >= 2:
+        return "many", matches
+    return "none", []
+
+
 def _match_disambiguation(message: str, candidates: list) -> "dict | None":
     """Pick a candidate from the user's reply by a distinctive title word or ordinal."""
     low = (message or "").lower()
@@ -1808,6 +1907,56 @@ async def _route_message_inner(
                 belief, "select-disambiguate", 0,
             )
         # status == "none" → fall through to normal routing.
+
+    # ── Ambiguous description reference: ask which property ───────────────────────
+    # When the user refers to a property by zone/type/description ("el de barrio
+    # schuster", "el más barato", "el de la ruta") and there are MULTIPLE candidates
+    # in the current search list that match, ask for clarification BEFORE fetching
+    # details. Generalises over any description attribute — zone, price tier, type.
+    # Gating: only when no property is selected yet, no scheduling is in progress,
+    # the message is NOT a pure ID/ordinal selection, and there IS a search list.
+    _should_check_desc = (
+        not getattr(belief, "selected_property_id", None)
+        and getattr(belief, "last_search_ids", None)
+        and not (getattr(belief, "awaiting", None) and str(belief.awaiting or "").startswith("scheduling_"))
+        and not _is_pure_selection(message)
+        and not _is_faq_question(message)
+        and not _is_search_refinement(belief, message)
+        and not _SCHEDULING_VERB.search(message)
+    )
+    if _should_check_desc:
+        _desc_status, _desc_matches = _resolve_description_from_search(belief, message)
+        if _desc_status == "one":
+            # Unambiguous description → set id and fall through to the detail shortcut
+            belief.selected_property_id = _desc_matches[0]["id"]
+            logger.info(f"[Router] 🎯 Desc→ID (unambiguous) {_desc_matches[0]['id']} for {session_id}: {message[:60]}")
+        elif _desc_status == "many":
+            # Multiple matches → build a contextual disambiguation question.
+            belief.disambiguation_candidates = [m["id"] for m in _desc_matches]
+            belief.awaiting = "disambiguate_property"
+            # Build a short, human-readable list of the candidates for the question.
+            _labels = _desc_matches[:4]
+            if len(_labels) == 2:
+                _opts = " o ".join(
+                    f"el [{m['id']}] en {m['label'].replace('Departamento en','').replace('Casa en','').strip()}"
+                    for m in _labels
+                )
+                resp = f"Hay {len(_desc_matches)} opciones en esa zona 😊 ¿A cuál te referís? {_opts}?"
+            else:
+                _list = "\n".join(
+                    f"• [{m['id']}] {m['label']}"
+                    for m in _labels
+                )
+                resp = f"Tengo varias opciones que coinciden:\n{_list}\n\n¿A cuál te referís? Podés decirme el número."
+            belief.last_bot_message = resp
+            belief.consecutive_failures = 0
+            await save_working_memory(belief)
+            logger.info(f"[Router] ❓ Ambiguous desc ({len(_desc_matches)} matches) for {session_id}: {message[:60]}")
+            return (
+                ChatResponse(response=resp, tools_called=[], confidence=0.9),
+                belief, "desc-disambiguate", 0,
+            )
+        # _desc_status == "none" → fall through normally
 
     # ── Multi-intent: photos + scheduling in one message (FIX 6) ──
     # "quiero ver las fotos y también agendar una visita" → show photos FIRST,
