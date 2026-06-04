@@ -448,7 +448,7 @@ input, select, textarea { font-family: inherit; }
 .notif-item.unread { background: var(--accent-50, #eff6ff); }
 .notif-item.unread:hover { background: var(--accent-100, #dbeafe); }
 
-.notif-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
+.notif-icon { display: inline-flex; flex-shrink: 0; }
 
 .notif-content { flex: 1; min-width: 0; }
 

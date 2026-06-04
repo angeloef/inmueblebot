@@ -68,17 +68,35 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
   );
 }
 
-// ── Icono por tipo de notificación ────────────────────────────────────────────
-const TYPE_ICON = {
-  visit_scheduled:   '📅',
-  visit_rescheduled: '🔄',
-  visit_cancelled:   '❌',
-  call_scheduled:    '📞',
-  handoff_requested: '🚨',
-  new_lead:          '👤',
-  lead_qualified:    '⭐',
-  bot_error:         '⚠️',
+// ── Config de notificaciones por tipo ─────────────────────────────────────────
+const NOTIF_TYPES = {
+  visit_scheduled:   { icon: 'calendarCheck',   color: '#155f6f', tint: '#eaf3f5' },
+  visit_rescheduled: { icon: 'calendarRefresh', color: '#b07d12', tint: '#fdf5e6' },
+  visit_cancelled:   { icon: 'calendarX',       color: '#b53b3b', tint: '#fbecec' },
+  call_scheduled:    { icon: 'phone',           color: '#3a5fa8', tint: '#ecf0f8' },
+  handoff_requested: { icon: 'headset',         color: '#b53b3b', solid: true },
+  new_lead:          { icon: 'userPlus',        color: '#6b4d99', tint: '#f1eef7' },
+  lead_qualified:    { icon: 'star',            color: '#3d8b4f', tint: '#ecf6ee' },
+  bot_error:         { icon: 'alert',           color: '#8b919a', tint: '#f5f6f7', muted: true },
 };
+
+function NotifBadge({ type, size = 32, radius = 9 }) {
+  const t = NOTIF_TYPES[type];
+  if (!t) return null;
+  const glyph = Math.round(size * 0.52);
+  const bg = t.solid ? t.color : t.tint;
+  const fg = t.solid ? '#fff' : t.color;
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: radius, background: bg,
+      color: fg, display: 'inline-flex', alignItems: 'center',
+      justifyContent: 'center', flexShrink: 0,
+      boxShadow: t.solid ? 'none' : `inset 0 0 0 1px ${t.color}1f`,
+    }}>
+      <Icon name={t.icon} size={glyph} stroke={1.6} />
+    </span>
+  );
+}
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -134,7 +152,7 @@ function NotificationPanel({ onClose, onAction }) {
               if (onAction) { onAction(n); onClose(); }
             }}
           >
-            <span className="notif-icon">{TYPE_ICON[n.type] ?? '🔔'}</span>
+            <span className="notif-icon"><NotifBadge type={NOTIF_TYPES[n.type] ? n.type : 'bot_error'} /></span>
             <div className="notif-content">
               <div className="notif-item-title">{n.title}</div>
               {n.body && <div className="notif-item-body">{n.body}</div>}
