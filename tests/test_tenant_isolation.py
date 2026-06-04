@@ -83,17 +83,20 @@ async def _setup():
             text("INSERT INTO t_tenants (id) VALUES (:a),(:b),(:d) ON CONFLICT DO NOTHING"),
             {"a": str(TENANT_A), "b": str(TENANT_B), "d": default_id},
         )
+        # Mirror prod EXACTLY: the app role OWNS the table and is non-superuser, so RLS only
+        # binds because of FORCE (a table owner bypasses non-forced RLS). This is precisely
+        # the Render condition (app connects as inmueblebot_user, which owns the tables).
+        await conn.execute(text(f"ALTER TABLE t_props OWNER TO {_APP_ROLE}"))
+        await conn.execute(text(f"ALTER TABLE t_tenants OWNER TO {_APP_ROLE}"))
         await conn.execute(text("ALTER TABLE t_props ENABLE ROW LEVEL SECURITY"))
+        await conn.execute(text("ALTER TABLE t_props FORCE ROW LEVEL SECURITY"))
         await conn.execute(text("DROP POLICY IF EXISTS p_iso ON t_props"))
         await conn.execute(text(
             "CREATE POLICY p_iso ON t_props "
             "USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid) "
             "WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid)"
         ))
-        # Grant the app role just enough to read/write the test tables.
         await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {_APP_ROLE}"))
-        await conn.execute(text(f"GRANT SELECT, INSERT ON t_props, t_tenants TO {_APP_ROLE}"))
-        await conn.execute(text(f"GRANT USAGE, SELECT ON SEQUENCE t_props_id_seq TO {_APP_ROLE}"))
     # Seed one row per tenant as admin (RLS bypassed for setup is fine here).
     sm = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
     for tid, title in ((TENANT_A, "casa A"), (TENANT_B, "casa B")):

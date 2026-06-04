@@ -184,6 +184,12 @@ def upgrade() -> None:
             continue
         policy = f"tenant_isolation_{table}"
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        # FORCE so RLS binds even for the table OWNER. On Render the app connects as
+        # inmueblebot_user, which OWNS these tables — without FORCE a table owner bypasses
+        # RLS entirely. Safe here: the backfill above already ran (before this loop), and the
+        # app/admin always set the tenant GUC via the session listener (default tenant when
+        # unset), so existing default-tenant rows stay fully visible to V2.
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         op.execute(f"DROP POLICY IF EXISTS {policy} ON {table}")
         op.execute(
             f"""
