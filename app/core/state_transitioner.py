@@ -2,6 +2,10 @@
 
 Replaces hardcoded transitions with regex-based entity extraction
 that accumulates criteria across turns.
+
+V3 note: update_belief and the entity extractors (extract_scheduling_day/time,
+ZONE_PATTERNS, etc.) are reused by the V3 engine as regex fallback only.
+V2 is the primary caller. Do NOT remove or modify any symbols here.
 """
 
 import re
