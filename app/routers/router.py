@@ -742,16 +742,84 @@ _SCHED_FAILED_MARKERS = (
 )
 
 
+async def _resolve_scheduling_datetime(belief) -> "datetime | None":
+    """Resolve belief.scheduling_day + scheduling_time into a concrete datetime,
+    using the SAME parser schedule_visit uses (so the availability check matches the
+    eventual booking). Returns None if it can't be resolved."""
+    try:
+        from app.core.hybrid.date import date_parser as _hybrid_date_parser
+        from app.utils.date_parser import get_argentina_now as _ar_now
+        from datetime import timedelta as _td
+        now = _ar_now()
+        day = getattr(belief, "scheduling_day", "") or ""
+        tm = getattr(belief, "scheduling_time", "") or ""
+        combined = f"{day} {tm}".strip()
+        if not combined:
+            return None
+        res = await _hybrid_date_parser.parse(
+            combined, {"date_str": day, "time_str": tm, "reference_dt": now},
+        )
+        dt = getattr(res, "value", None)
+        if dt is None:
+            return None
+        # Roll forward past times (mirror schedule_visit) so a same-day past slot
+        # checks the next week, not a stale moment.
+        try:
+            if dt <= now:
+                dt = dt + _td(days=7)
+        except TypeError:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=now.tzinfo)
+            if dt <= now:
+                dt = dt + _td(days=7)
+        return dt
+    except Exception as e:
+        logger.warning(f"[Scheduling] datetime resolve failed (fail-open): {e}")
+        return None
+
+
+async def _check_slot_or_suggest(belief) -> "str | None":
+    """Check if the proposed day/time is FREE before confirming. Returns None when the
+    slot is available (or can't be checked → fail-open), or a user-facing message
+    offering nearby available slots when it is taken."""
+    try:
+        pid = getattr(belief, "selected_property_id", None)
+        if not pid:
+            return None
+        dt = await _resolve_scheduling_datetime(belief)
+        if dt is None:
+            return None
+        from app.services.appointment_service import appointment_service
+        avail = await appointment_service.check_slot_availability(pid, dt)
+        if avail.get("available", True):
+            return None
+        sugg = avail.get("suggested_times", []) or []
+        if sugg:
+            lines = "\n".join(f"• {s.get('formatted', '')}" for s in sugg[:3] if s.get("formatted"))
+            return (
+                f"Uy, el {belief.scheduling_day} a las {belief.scheduling_time} ya está "
+                f"ocupado 😕\n\nTengo estos horarios disponibles:\n{lines}\n\n¿Alguno te sirve?"
+            )
+        return (
+            f"Uy, el {belief.scheduling_day} a las {belief.scheduling_time} ya está "
+            "ocupado 😕. ¿Qué otro día u horario te viene bien?"
+        )
+    except Exception as e:
+        logger.warning(f"[Scheduling] availability check failed (fail-open): {e}")
+        return None
+
+
 async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str, str]":
     """If all scheduling fields present and not yet confirming, inject confirm step.
 
-    Hardened against two scheduling bugs:
-      • P10 — schedule_visit was called but FAILED (e.g. empty day → "me falta día");
-        the failure text must not be surfaced as a successful booking.
-      • P1  — the LLM emits a fake "dejo la visita solicitada" without calling
-        schedule_visit; that fake confirmation must never reach the user.
-    In both cases we fall back to the deterministic confirm gate (if all slots are
-    present) or ask for the next genuinely-missing slot.
+    Hardened against scheduling bugs:
+      • P10 — schedule_visit called but FAILED → never surface as success.
+      • P1  — LLM fakes "dejo la visita solicitada" → never reaches the user.
+      • Name slot — once day+time+property are known, ask the NAME explicitly (not a
+        redundant day/time re-confirmation), so an ambiguous "sí" is never captured as
+        the visitor's name.
+      • Availability — verify the slot is FREE (DB + calendar) BEFORE asking the name
+        or confirming; if taken, offer nearby available slots instead.
     """
     _resp = result.response or ""
     _booked = bool(result.tools_called and "schedule_visit" in result.tools_called)
@@ -759,13 +827,38 @@ async def _maybe_confirm_or_pass(belief, result, session_id: str) -> "tuple[str,
     # Genuine success: tool called AND no failure markers.
     if _booked and not _failed:
         return _resp, "scheduling::booked"
-    have_all = bool(
-        getattr(belief, "scheduling_name", None)
-        and getattr(belief, "scheduling_day", None)
-        and getattr(belief, "scheduling_time", None)
-        and getattr(belief, "selected_property_id", None)
-    )
-    if have_all and getattr(belief, "awaiting", None) != "scheduling_confirm":
+
+    _name = getattr(belief, "scheduling_name", None)
+    _day = getattr(belief, "scheduling_day", None)
+    _time = getattr(belief, "scheduling_time", None)
+    _pid = getattr(belief, "selected_property_id", None)
+    have_slot = bool(_day and _time and _pid)
+    have_all = bool(have_slot and _name)
+    _awaiting = getattr(belief, "awaiting", None)
+
+    # Day+time known but NO name yet → verify the slot, then ask the name explicitly.
+    if have_slot and not _name and _awaiting != "scheduling_confirm":
+        _taken = await _check_slot_or_suggest(belief)
+        if _taken is not None:
+            belief.scheduling_time = ""        # drop the occupied time
+            belief.awaiting = "scheduling_time"
+            belief.last_bot_message = _taken
+            return _taken, "scheduling::slot-taken"
+        belief.awaiting = "scheduling_name"
+        ask = (
+            f"Genial, el {belief.scheduling_day} a las {belief.scheduling_time} 👍. "
+            "¿A nombre de quién registro la visita?"
+        )
+        belief.last_bot_message = ask
+        return ask, "scheduling::ask-name"
+
+    if have_all and _awaiting != "scheduling_confirm":
+        _taken = await _check_slot_or_suggest(belief)
+        if _taken is not None:
+            belief.scheduling_time = ""
+            belief.awaiting = "scheduling_time"
+            belief.last_bot_message = _taken
+            return _taken, "scheduling::slot-taken"
         belief.awaiting = "scheduling_confirm"
         confirm = (
             f"¿Confirmo la visita para el {belief.scheduling_day} a las "
@@ -952,6 +1045,48 @@ async def _try_pre_llm_shortcut(
         belief.last_tool_called = "get_property_details"
         _extract_property_data(belief, result_text)
         cta = "\n\n¿Querés ver las fotos o coordinar una visita para conocerla en persona?"
+
+        # Bundled question ("me interesa el 2, ¿el precio incluye los servicios?") →
+        # show the details AND answer the question, as two sequential messages. The
+        # knowledge specialist answers using the property's own data (or the FAQ),
+        # scoped to this property so it doesn't repeat the card or the list.
+        _has_q = ("?" in message or "¿" in message) and len(message.split()) >= 5
+        if _has_q:
+            try:
+                from app.agents.s2_agent import process_message_with_specialist
+                from app.agents.coordinator import SPECIALISTS
+                _hint = (
+                    f"[CONTEXTO] El usuario ya eligió la propiedad #{pid} y sus detalles se "
+                    f"le están mostrando en este mismo turno. Respondé SOLO la consulta "
+                    f"puntual que hace sobre esa propiedad, sin repetir la ficha ni la lista. "
+                    f"Si la info no figura en la propiedad, usá get_faq_answer (política "
+                    f"general) y aclaralo.\n"
+                )
+                _ans = await process_message_with_specialist(
+                    message=message,
+                    session_id=session_id,
+                    context_prompt=_hint,
+                    specialist=SPECIALISTS["knowledge"],
+                )
+                _ans_text = (_ans.response or "").strip()
+                if _ans_text:
+                    _chunks = [
+                        MessageChunk(text=result_text, tool_used="get_property_details", chunk_type="faq"),
+                        MessageChunk(text=_ans_text + cta, chunk_type="faq"),
+                    ]
+                    _tools = ["get_property_details"] + list(getattr(_ans, "tools_called", []) or [])
+                    return (
+                        ChatResponse(
+                            response=result_text,
+                            tools_called=_tools,
+                            confidence=0.97,
+                            messages=_chunks,
+                        ),
+                        _tools, 0.97, "pre-llm::selection+faq",
+                    )
+            except Exception as _e:
+                logger.warning(f"[Router] selection+faq bundled answer failed (fallback to details): {_e}")
+
         return (
             ChatResponse(
                 response=result_text + cta,
@@ -1351,6 +1486,36 @@ async def _route_message_inner(
 
         # B2. Confirmation step.
         elif belief.awaiting == "scheduling_confirm":
+            # Wrong-name correction → re-ask the name (keep day/time/property); do NOT
+            # cancel. "ese no es mi nombre", "está mal el nombre", "no me llamo así",
+            # or a correction that supplies the right name ("no, soy Juan Pérez").
+            _low_c = message.lower()
+            _mentions_name = bool(re.search(r"\bnombre\b|\bme llamo\b|\bme dicen\b", _low_c))
+            _name_wrong = bool(
+                re.search(r"\b(no|mal|equivoc|otro|cambi|corre|corregi|distinto)\b", _low_c)
+                or _SCHED_NAME_CUE.search(message)
+            )
+            if (not _is_confirmation(message)) and _mentions_name and _name_wrong:
+                belief.scheduling_name = ""
+                _capture_name(belief, message)  # maybe they gave the correct one
+                if belief.scheduling_name:
+                    # Got the corrected name → re-confirm with it.
+                    belief.awaiting = "scheduling_confirm"
+                    resp = (
+                        f"¡Perfecto! ¿Confirmo la visita para el {belief.scheduling_day} a las "
+                        f"{belief.scheduling_time} a nombre de {belief.scheduling_name}? "
+                        "Respondé Sí para confirmar."
+                    )
+                else:
+                    belief.awaiting = "scheduling_name"
+                    resp = "Perdón 🙏 ¿A nombre de quién registro la visita?"
+                belief.last_bot_message = resp
+                belief.consecutive_failures = 0
+                await save_working_memory(belief)
+                return (
+                    ChatResponse(response=resp, tools_called=[], confidence=0.95),
+                    belief, "awaiting::name-correction", 0,
+                )
             if _is_negative(message):
                 _clear_scheduling_state(belief)
                 belief.awaiting = None

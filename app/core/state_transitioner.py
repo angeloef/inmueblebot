@@ -602,6 +602,21 @@ async def extract_scheduling_name_llm(
       - NAME_REASK_SIGNAL   → user gave anaphora ("al mío") with no name; re-ask
       - None                → nothing extractable; caller keeps awaiting and re-anchors
     """
+    # 0. Affirmation/negation/filler guard — a yes/no or short courtesy reply is NEVER
+    # a name. This catches the case where the bot proposed a day/time and the user
+    # answered "sí" (confirming the slot) while the slot machine was awaiting the name:
+    # without this, "sí" was stored as the visitor's name ("a nombre de Si").
+    _stripped_low = (message or "").strip().lower().strip("¿?¡!.,")
+    _NON_NAME_WORDS = {
+        "si", "sí", "no", "dale", "ok", "oka", "okay", "okey", "listo", "perfecto",
+        "genial", "joya", "barbaro", "bárbaro", "buenisimo", "buenísimo", "de una",
+        "claro", "bueno", "buena", "obvio", "correcto", "exacto", "confirmo", "va",
+        "gracias", "hola", "chau", "sip", "nop", "aja", "ajá", "ahi", "ahí", "ese",
+        "esa", "no es mi nombre", "ese no es mi nombre",
+    }
+    if _stripped_low in _NON_NAME_WORDS:
+        return NAME_REASK_SIGNAL
+
     # 1. Anaphora guard FIRST — "al mío" must never become a real name.
     if _NAME_ANAPHORA.search(message) and not NAME_PATTERN.search(message):
         return NAME_REASK_SIGNAL

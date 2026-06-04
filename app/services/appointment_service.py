@@ -463,6 +463,49 @@ class AppointmentService:
         finally:
             await db.close()
     
+    async def check_slot_availability(
+        self,
+        property_id: int,
+        start_time: datetime,
+    ) -> dict:
+        """Check whether a property/time slot is free WITHOUT booking it.
+
+        Used to validate a proposed visit slot BEFORE asking the user to confirm,
+        so the bot never confirms an occupied time. Checks the local DB conflict
+        and (if configured) Google Calendar. Returns:
+          {"available": bool, "suggested_times": [{datetime, formatted}, ...]}
+
+        Fail-open: on any error returns available=True (booking will re-check anyway).
+        """
+        db = self._get_session()
+        try:
+            start_time = self._ensure_timezone(start_time)
+            if start_time < datetime.now(tz.utc):
+                return {"available": False, "suggested_times": []}
+            conflict = await self._check_conflict(db, property_id, start_time)
+            if conflict:
+                suggestions = await self._get_suggested_times(property_id, start_time, db)
+                return {"available": False, "suggested_times": suggestions}
+            if calendar_service.is_configured:
+                try:
+                    cal_check = await calendar_service.check_availability(
+                        property_id=property_id,
+                        date_str=start_time.strftime("%Y-%m-%d"),
+                        time_str=start_time.strftime("%H:%M"),
+                        duration_hours=1,
+                    )
+                    if not cal_check.get("available", True):
+                        suggestions = await self._get_suggested_times(property_id, start_time, db)
+                        return {"available": False, "suggested_times": suggestions}
+                except Exception as e:
+                    logger.warning(f"[check_slot_availability] calendar check failed (fail-open): {e}")
+            return {"available": True, "suggested_times": []}
+        except Exception as e:
+            logger.warning(f"[check_slot_availability] failed (fail-open): {e}")
+            return {"available": True, "suggested_times": []}
+        finally:
+            await db.close()
+
     async def _check_conflict(
         self,
         db: AsyncSession,

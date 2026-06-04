@@ -525,12 +525,15 @@ def _extract_time_from_text(user_text: str) -> Optional[Tuple[int]]:
     """Extract time from full text."""
     text = user_text.lower()
     
+    # Order matters: more specific markers (am/pm, "de la tarde", hs) are tried BEFORE
+    # the bare "a las N" — otherwise "a las 3pm" matches "a las 3" first and the pm is
+    # lost (→ 03:00 instead of 15:00). The \b after am/pm avoids false hits ("3 amigos").
     patterns = [
         r'(\d{1,2}):(\d{2})',                               # 15:30
-        r'a\s*las?\s*(\d{1,2})(?::(\d{2}))?',               # a las 15, a las 15:30
-        r'(\d{1,2})\s*(am|pm)',                              # 3pm, 10am
+        r'(\d{1,2})\s*(am|pm)\b',                            # 3pm, 10am, 3 pm
+        r'(\d{1,2})\s+de\s+la\s+(?:mañana|tarde|noche)',    # 3 de la tarde
         r'(\d{1,2})\s*hs',                                   # 15hs
-        r'(\d{1,2})\s+de\s+la\s+(?:mañana|tarde|noche)',    # 11 de la mañana
+        r'a\s*las?\s*(\d{1,2})(?::(\d{2}))?',               # a las 15, a las 15:30, a las 5
     ]
     
     # Afternoon/evening context: "por la tarde / de la tarde / a la noche" makes an
