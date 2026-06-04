@@ -628,47 +628,75 @@ def _resolve_description_from_search(
 
     low = (message or "").lower()
 
-    # Build a set of "tokens" the user mentioned (words ≥ 4 chars that look like
-    # zone/type descriptors; strip common stop-words). We then score each property.
+    # ── Step 1: canonical zone detection from the user's message ─────────────────
+    # Use the same ZONE_PATTERNS as update_belief so zone typos ("shuster"→"Barrio
+    # Schuster") are resolved the same way everywhere.
+    from app.core.state_transitioner import ZONE_PATTERNS as _ZPATS
+    canonical_zones: set[str] = set()
+    for _zpat, _zname in _ZPATS:
+        if re.search(_zpat, low, re.IGNORECASE):
+            canonical_zones.add(_zname.lower())
+
+    # ── Step 2: fuzzy fallback — if no canonical zone found, compare user tokens to
+    # all known zone names using difflib so "shuster" finds "schuster" etc.
+    # IMPORTANT: skip generic tokens that appear in many zone names ("barrio", "villa",
+    # "hospital") — they would add ALL "barrio X" zones, causing false multi-matches.
+    _FUZZY_STOP = {
+        "barrio", "villa", "hospital", "zona", "bario", "ruta",
+    }
+    if not canonical_zones:
+        import difflib
+        _all_zone_names = [zn.lower() for _, zn in _ZPATS]
+        for _tok in re.findall(r"[a-záéíóúñ]{4,}", low):
+            if _tok in _FUZZY_STOP:
+                continue
+            _close = difflib.get_close_matches(_tok, _all_zone_names, n=1, cutoff=0.72)
+            if _close:
+                canonical_zones.add(_close[0])
+            # Also check each word inside zone names (e.g. "schuster" in "barrio schuster")
+            for _zn in _all_zone_names:
+                for _zword in re.findall(r"[a-záéíóúñ]{4,}", _zn):
+                    if _zword in _FUZZY_STOP:
+                        continue
+                    _cw = difflib.get_close_matches(_tok, [_zword], n=1, cutoff=0.78)
+                    if _cw:
+                        canonical_zones.add(_zn)
+
+    # ── Step 3: if still nothing, try distinctive raw tokens (exact) ─────────────
     _STOP = {
         "dame", "deme", "pasa", "pase", "info", "mapa",
         "quiero", "quisiera", "podria", "podría", "interesa", "interes",
-        "este", "esta", "aquel", "aquella", "cual", "cual",
+        "este", "esta", "aquel", "aquella", "cual",
         "departamento", "departamentos", "depto", "deptos", "casa", "casas",
         "propiedad", "propiedades", "inmo", "inmobiliaria",
         "disponible", "disponibles", "alquiler", "venta",
         "favor", "informacion", "detalles", "detalle",
-        # Spatial/generic tokens that appear in almost every label — keep them
-        # out so they don't make everything match "barrio schuster", "barrio norte", etc.
         "barrio", "zona", "calle", "bario", "obera", "misiones",
+        "pasas", "podes", "puedes", "podrias", "quiero", "queda",
     }
-    user_tokens = {
+    raw_tokens = {
         t for t in re.findall(r"[a-záéíóúñ]{4,}", low)
         if t not in _STOP
     }
-    if not user_tokens:
-        return "none", []
 
+    # ── Step 4: score each search-list entry ──────────────────────────────────────
     matches = []
     for pid in ids:
         label = parsed.get(pid, "")
         label_low = label.lower()
-        # Build the set of non-stop label tokens for this entry so we can require
-        # the user's tokens match only the DISTINCTIVE part of the label (e.g.
-        # "schuster", "krause", "centro", "norte", "palmas", "ruta") and not the
-        # generic "barrio" or "departamento" that every entry shares.
-        label_tokens = {
-            t for t in re.findall(r"[a-záéíóúñ]{4,}", label_low)
-            if t not in _STOP
-        }
-        # A candidate matches when at least ONE user token is present in the label's
-        # distinctive tokens (not just any substring).
-        if any(tok in label_tokens or tok in label_low for tok in user_tokens
-               if tok not in {"barrio", "zona", "bario"}):
-            # Extra precision: if ALL user tokens are generic words that appear in
-            # almost every label (len == 0 distinctive overlap), skip.
-            distinctive_overlap = user_tokens & label_tokens
-            if distinctive_overlap:
+
+        # Zone-based match (most reliable)
+        if canonical_zones and any(z in label_low for z in canonical_zones):
+            matches.append({"id": pid, "label": label})
+            continue
+
+        # Raw-token fallback: distinctive overlap between user tokens and label
+        if raw_tokens:
+            label_tokens = {
+                t for t in re.findall(r"[a-záéíóúñ]{4,}", label_low)
+                if t not in _STOP
+            }
+            if raw_tokens & label_tokens:
                 matches.append({"id": pid, "label": label})
 
     if len(matches) == 1:
