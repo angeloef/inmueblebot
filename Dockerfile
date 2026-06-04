@@ -53,5 +53,11 @@ RUN useradd --create-home --shell /bin/bash appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
+# Ensure run.sh is executable
+RUN chmod +x /app/run.sh
+
 EXPOSE 8000 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# run.sh runs `alembic upgrade head` then `exec uvicorn` — schema is always
+# up to date before the app starts accepting traffic. Alembic is a no-op when
+# already at head (~1s), and row-level locks keep concurrent starts safe.
+CMD ["/app/run.sh"]
