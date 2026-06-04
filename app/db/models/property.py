@@ -4,8 +4,9 @@ Representa inmobiliarias disponibles (venta/alquiler).
 """
 from datetime import datetime
 from typing import Optional, List, Dict
-from sqlalchemy import String, Integer, Float, DateTime, Index, CheckConstraint, func, Text
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from uuid import uuid4
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint, func, Text
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -18,6 +19,14 @@ class Property(Base):
 
     # Integer primary key (seeded IDs from JSON data)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, comment="Primary key (seeded integer)")
+
+    # Agency (inmobiliaria) that owns this listing. Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="FK al tenant (inmobiliaria) dueño de la propiedad",
+    )
 
     # Original seed ID (integer) for compatibility
     original_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True, comment="Original seed ID (integer)")
@@ -175,6 +184,7 @@ class Property(Base):
         Index("ix_properties_price", "price"),
         Index("ix_properties_type_status", "type", "status"),
         Index("ix_properties_category", "category"),
+        Index("ix_properties_tenant_id", "tenant_id"),
     )
 
     def __repr__(self) -> str:

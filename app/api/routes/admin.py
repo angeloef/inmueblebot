@@ -1918,7 +1918,8 @@ _ALLOWED_SETTINGS = {
     "company_name":         "Nombre de la inmobiliaria",
     "business_hours":       "Horario de atención",
     "agent_whatsapp":       "WhatsApp del agente humano (handoffs)",
-    "use_v2_router":        "Activar router v2 (ChatbotSerio S1+S2). true/false",
+    "use_v2_router":        "Activar router v2 (ChatbotSerio S1+S2). true/false (legacy)",
+    "active_router":        "Router activo: v1 | v2 | v3 (V3 Phase 1.5). Supersede a use_v2_router.",
 }
 
 
@@ -1926,7 +1927,8 @@ class BotSettingsUpdate(BaseModel):
     company_name:     Optional[str] = None
     business_hours:   Optional[str] = None
     agent_whatsapp:   Optional[str] = None
-    use_v2_router:    Optional[str] = None  # "true" / "false"
+    use_v2_router:    Optional[str] = None  # "true" / "false" (legacy)
+    active_router:    Optional[str] = None  # "v1" | "v2" | "v3"
 
 
 @router.get("/settings")

@@ -13,7 +13,10 @@ metadata = MetaData(
         "ix": "ix_%(table_name)s_%(column_0_label)s",
         "uq": "uq_%(table_name)s_%(column_0_name)s",
         "ck": "ck_%(table_name)s_%(constraint_name)s",
-        "fk": "fk_%(table_name)s_%(referred_table_name)s",
+        # Include the local column so a table with two FKs to the same target gets
+        # distinct names (e.g. contracts.tenant_id (renter), contracts.owner_id and
+        # contracts.org_id (agency) all reference different tables but must not collide).
+        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
         "pk": "pk_%(table_name)s",
     }
 )

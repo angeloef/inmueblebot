@@ -2,6 +2,7 @@
 Modelos de la base de datos.
 Exporta todos los modelos ORM para uso convenient.
 """
+from app.db.models.tenant import Tenant, TenantSettings
 from app.db.models.user import User
 from app.db.models.property import Property
 from app.db.models.conversation import Conversation
@@ -12,6 +13,8 @@ from app.db.models.cobranzas import Contract, Charge, ContractExpense, EconomicI
 from app.db.models.user_episode import UserEpisode, ZoneStat, SearchFailure
 
 __all__ = [
+    "Tenant",
+    "TenantSettings",
     "User",
     "Property",
     "Conversation",

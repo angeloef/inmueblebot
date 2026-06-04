@@ -31,6 +31,13 @@ class Contract(Base):
         comment="Primary key UUID",
     )
 
+    # Agency (inmobiliaria) that owns this contract — the SaaS tenant. Named ``org_id``
+    # (not ``tenant_id``) because ``tenant_id`` below already means the *renter* (inquilino).
+    org_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True, comment="FK al tenant/inmobiliaria (agencia). Ver app/core/tenancy.py",
+    )
+
     # FK a la propiedad (Integer para coincidir con Property.id)
     property_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("properties.id", ondelete="SET NULL"),
@@ -119,7 +126,8 @@ class Contract(Base):
     __table_args__ = (
         Index("ix_contracts_status", "status"),
         Index("ix_contracts_property_id", "property_id"),
-        Index("ix_contracts_tenant_id", "tenant_id"),
+        Index("ix_contracts_tenant_id", "tenant_id"),  # renter (inquilino) FK index
+        Index("ix_contracts_org_id", "org_id"),         # agency (inmobiliaria) FK index
     )
 
     def __repr__(self) -> str:
@@ -131,6 +139,12 @@ class Charge(Base):
     __tablename__ = "charges"
 
     id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Agency (inmobiliaria). Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True, comment="FK al tenant (inmobiliaria)",
+    )
 
     contract_id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"),
@@ -191,6 +205,7 @@ class Charge(Base):
         Index("ix_charges_contract_id", "contract_id"),
         Index("ix_charges_status", "status"),
         Index("ix_charges_period", "period"),
+        Index("ix_charges_tenant_id", "tenant_id"),
     )
 
     def __repr__(self) -> str:
@@ -202,6 +217,12 @@ class ContractExpense(Base):
     __tablename__ = "contract_expenses"
 
     id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Agency (inmobiliaria). Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True, comment="FK al tenant (inmobiliaria)",
+    )
 
     contract_id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False,
@@ -232,6 +253,7 @@ class ContractExpense(Base):
 
     __table_args__ = (
         Index("ix_contract_expenses_contract_id", "contract_id"),
+        Index("ix_contract_expenses_tenant_id", "tenant_id"),
     )
 
     def __repr__(self) -> str:

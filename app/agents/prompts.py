@@ -422,41 +422,62 @@ TOOL_DEFINITIONS = [
 
 import time as _time
 
-_settings_cache: Dict[str, Any] = {}
-_settings_cache_ts: float = 0.0
+# Tenant-keyed cache (V3 Phase 1): one entry per tenant so a rollback/flip on tenant A
+# can't be masked by a stale global dict, and tenant B's overrides never bleed into A.
+# Each value = global bot_settings (fallback) merged with that tenant's tenant_settings.
+_settings_cache: Dict[str, Dict[str, str]] = {}
+_settings_cache_ts: Dict[str, float] = {}
 _SETTINGS_CACHE_TTL = 300  # seconds
 
 
 def _bust_settings_cache() -> None:
-    """Called by PATCH /admin/settings to invalidate the cache immediately."""
-    global _settings_cache_ts
-    _settings_cache_ts = 0.0
+    """Called by PATCH /admin/settings to invalidate the cache immediately (all tenants)."""
+    _settings_cache.clear()
+    _settings_cache_ts.clear()
 
 
 def _get_cached_bot_settings() -> Dict[str, str]:
-    """Return bot_settings from DB with 5-min in-memory cache."""
-    global _settings_cache, _settings_cache_ts
-    now = _time.monotonic()
-    if now - _settings_cache_ts < _SETTINGS_CACHE_TTL and _settings_cache:
-        return _settings_cache
+    """Return effective bot settings for the CURRENT tenant, with a 5-min in-memory cache.
 
+    Resolution = global ``bot_settings`` (back-compat default for the existing single tenant)
+    overlaid with this tenant's ``tenant_settings`` rows. For the default tenant with no
+    overrides this is byte-identical to the old global behavior (V2 safe).
+    """
+    from app.core.tenancy import resolve_tenant_id
+    tid = str(resolve_tenant_id())
+    now = _time.monotonic()
+    if now - _settings_cache_ts.get(tid, 0.0) < _SETTINGS_CACHE_TTL and tid in _settings_cache:
+        return _settings_cache[tid]
+
+    merged: Dict[str, str] = {}
     try:
         from app.api.routes.admin import _get_sync_session
-        import logging as _logging
-        _log = _logging.getLogger(__name__)
+        from sqlalchemy import text as _text
         db = _get_sync_session()
         try:
-            from sqlalchemy import text as _text
             rows = db.execute(_text("SELECT key, value FROM bot_settings")).fetchall()
-            _settings_cache = {r[0]: r[1] for r in rows}
-            _settings_cache_ts = now
+            merged = {r[0]: r[1] for r in rows}
+            # Per-tenant overrides (table may not exist pre-migration → guarded below).
+            try:
+                trows = db.execute(
+                    _text("SELECT key, value FROM tenant_settings WHERE tenant_id = :tid"),
+                    {"tid": tid},
+                ).fetchall()
+                for k, v in trows:
+                    if v is not None:
+                        merged[k] = v
+            except Exception:
+                pass  # tenant_settings not migrated yet — global values stand
+            _settings_cache[tid] = merged
+            _settings_cache_ts[tid] = now
         finally:
             db.close()
     except Exception as exc:
         import logging as _logging
         _logging.getLogger(__name__).debug("bot_settings DB read failed (using cache/defaults): %s", exc)
+        return _settings_cache.get(tid, {})
 
-    return _settings_cache
+    return merged
 
 
 def get_system_prompt(user_context: Dict[str, Any] = None) -> str:

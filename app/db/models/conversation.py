@@ -26,6 +26,14 @@ class Conversation(Base):
         comment="Primary key UUID"
     )
 
+    # Agency (inmobiliaria) that owns this conversation. Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="FK al tenant (inmobiliaria)"
+    )
+
     # FK al usuario
     user_id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True),
@@ -109,6 +117,10 @@ class Conversation(Base):
         Index("ix_conversations_user_id", "user_id"),
         Index("ix_conversations_session_id", "session_id"),
         Index("ix_conversations_state", "state"),
+        # Composite index for the hot tenant-scoped lookup (replaces relying on the
+        # single-column session_id index once queries are tenant-scoped).
+        Index("ix_conversations_tenant_session", "tenant_id", "session_id"),
+        Index("ix_conversations_tenant_user", "tenant_id", "user_id"),
     )
 
     def __repr__(self) -> str:

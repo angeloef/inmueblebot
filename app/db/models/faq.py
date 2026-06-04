@@ -4,8 +4,9 @@ Representa una entrada de FAQ asociada a la inmobiliaria.
 """
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, DateTime, Text, Boolean, func
-from sqlalchemy.dialects.postgresql import ARRAY
+from uuid import uuid4
+from sqlalchemy import String, Integer, DateTime, Text, Boolean, ForeignKey, Index, func
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -22,6 +23,14 @@ class FAQ(Base):
         primary_key=True,
         autoincrement=True,
         comment="Primary key autoincremental"
+    )
+
+    # Agency (inmobiliaria) that owns this FAQ entry. Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="FK al tenant (inmobiliaria)"
     )
 
     question: Mapped[str] = mapped_column(
@@ -71,6 +80,10 @@ class FAQ(Base):
         onupdate=func.now(),
         nullable=True,
         comment="Fecha de última actualización"
+    )
+
+    __table_args__ = (
+        Index("ix_faq_entries_tenant_id", "tenant_id"),
     )
 
     def __repr__(self) -> str:

@@ -12,12 +12,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.db.tenant_session import install_tenant_guc_listener
 
 settings = get_settings()
+
+# Tenant GUC + RLS (Phase 1): pool_reset_on_return rolls back on checkin so the
+# transaction-local tenant setting cannot leak across pooled connections.
+install_tenant_guc_listener()
 
 engine = create_async_engine(
     settings.resolved_database_url,
     echo=settings.DEBUG,
+    pool_pre_ping=True,
+    pool_reset_on_return="rollback",
 )
 
 async_session = async_sessionmaker(

@@ -215,6 +215,23 @@ class Settings(BaseSettings):
     COMPANY_NAME: str = Field(default="la inmobiliaria", description="Nombre de la inmobiliaria (usado en saludo inicial y mensajes de alcance)")
     INMOBILIARIA_NAME: str = Field(default="Inmobiliaria Oberá", description="Nombre completo de la inmobiliaria (usado en greetings)")
 
+    # === Multi-tenancy (V3 Phase 1) ===
+    # The single default tenant = the existing test account / inmobiliaria. Every
+    # pre-multitenant row is backfilled to this id, and any code path that runs
+    # WITHOUT an explicit tenant context (e.g. V2, cron, migrations) resolves here
+    # so behavior is identical to today. Keep in sync with the seeded tenants row.
+    DEFAULT_TENANT_ID: str = Field(
+        default="00000000-0000-0000-0000-000000000001",
+        description="UUID del tenant por defecto (inmobiliaria existente). Fallback bulletproof para V2.",
+    )
+    # Fernet key (urlsafe base64, 32 bytes) used to encrypt tenants.wa_access_token at
+    # the application layer. MUST come from a Render secret — never committed. When unset
+    # the app refuses to read/write encrypted tokens (fail-closed) rather than storing plaintext.
+    TENANT_TOKEN_ENCRYPTION_KEY: Optional[str] = Field(
+        default=None,
+        description="Clave Fernet (base64 urlsafe, 32 bytes) para cifrar wa_access_token. Solo desde secret de Render.",
+    )
+
     # === v2.0 Router Feature Flags (ChatbotSerio merge) ===
     USE_V2_ROUTER: bool = Field(default=False, description="Usar el nuevo router S1+S2 de ChatbotSerio. False = router v1.x")
     S1_CONFIDENCE_THRESHOLD: float = Field(default=0.70, description="Umbral de confianza para aceptar match de S1 (regex)")

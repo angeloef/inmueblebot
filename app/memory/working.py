@@ -17,8 +17,9 @@ settings = get_settings()
 
 
 async def save_working_memory(belief: ConversationBeliefState) -> None:
-    """Persist working memory to Redis with 24-hour TTL."""
-    key = f"working:{belief.session_id}"
+    """Persist working memory to Redis with 24-hour TTL (tenant-namespaced key)."""
+    from app.core.tenancy import tenant_redis_key
+    key = tenant_redis_key("working", belief.session_id)
     data = _serialize_belief(belief)
 
     redis = await _get_redis()
@@ -32,8 +33,9 @@ async def save_working_memory(belief: ConversationBeliefState) -> None:
 
 
 async def load_working_memory(session_id: str) -> Optional[ConversationBeliefState]:
-    """Load working memory from Redis or fallback store."""
-    key = f"working:{session_id}"
+    """Load working memory from Redis or fallback store (tenant-namespaced key)."""
+    from app.core.tenancy import tenant_redis_key
+    key = tenant_redis_key("working", session_id)
 
     redis = await _get_redis()
     if redis:
@@ -74,8 +76,9 @@ async def load_working_memory(session_id: str) -> Optional[ConversationBeliefSta
 
 
 async def clear_working_memory(session_id: str) -> None:
-    """Remove working memory for a session."""
-    key = f"working:{session_id}"
+    """Remove working memory for a session (tenant-namespaced key)."""
+    from app.core.tenancy import tenant_redis_key
+    key = tenant_redis_key("working", session_id)
 
     redis = await _get_redis()
     if redis:

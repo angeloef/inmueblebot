@@ -25,6 +25,14 @@ class Appointment(Base):
         comment="Primary key UUID"
     )
 
+    # Agency (inmobiliaria) that owns this appointment. Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="FK al tenant (inmobiliaria)"
+    )
+
     # FK al usuario
     user_id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True),
@@ -128,6 +136,7 @@ class Appointment(Base):
         Index("ix_appointments_property_id", "property_id"),
         Index("ix_appointments_start_time", "start_time"),
         Index("ix_appointments_status", "status"),
+        Index("ix_appointments_tenant_id", "tenant_id"),
     )
 
     def __repr__(self) -> str:

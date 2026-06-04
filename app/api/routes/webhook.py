@@ -93,6 +93,44 @@ def _resolve_use_v2_router(settings) -> bool:
     return bool(settings.USE_V2_ROUTER)
 
 
+def _resolve_active_router(settings) -> str:
+    """Resolve which router serves this turn: ``"v1" | "v2" | "v3"`` (V3 Phase 1.5).
+
+    Source of truth = bot_settings ``active_router`` (a global key for now; Phase 2 makes
+    it per-tenant). Back-compat: if ``active_router`` is unset, fall back to the legacy
+    ``use_v2_router`` boolean (true→v2, false→v1) so nothing changes until the owner opts in.
+    """
+    try:
+        from app.agents.prompts import _get_cached_bot_settings
+        bot_cfg = _get_cached_bot_settings() or {}
+        active = (bot_cfg.get("active_router") or "").strip().lower()
+        if active in ("v1", "v2", "v3"):
+            return active
+    except Exception:
+        pass
+    # Back-compat with the old boolean flag.
+    return "v2" if _resolve_use_v2_router(settings) else "v1"
+
+
+async def _process_turn_v3_or_fallback(*, phone: str, user_message: str,
+                                       media_url: Optional[str], bsuid: Optional[str]) -> dict:
+    """Dispatch to the V3 router if it's built; otherwise safely no-op to V2 (Phase 1.5).
+
+    Phase 1.5 ships the switch BEFORE the V3 engine exists (Phase 2 builds
+    ``app/routers/v3/adapter.py``). Until then, selecting V3 must not break traffic — it
+    transparently serves V2. The import-guard auto-activates V3 the moment Phase 2 lands.
+    """
+    try:
+        from app.routers.v3.adapter import process_turn_v3  # built in Phase 2
+    except Exception:
+        from app.routers.v2_adapter import process_turn_v2
+        logger.info("[Router] active_router=v3 but V3 not built yet — serving V2 (Phase 1.5 no-op)")
+        return await process_turn_v2(phone=phone, user_message=user_message,
+                                     media_url=media_url, bsuid=bsuid)
+    return await process_turn_v3(phone=phone, user_message=user_message,
+                                 media_url=media_url, bsuid=bsuid)
+
+
 @dataclass
 class WhatsAppIncomingMessage:
     """Parsed incoming WhatsApp message from Meta."""
@@ -291,6 +329,12 @@ async def receive_webhook(request: Request):
                 else:
                     logger.info(f"[WhatsApp] STATUS {status_val} | msg={msg_id} | to={recipient}")
 
+            # Tenant routing (V3 Phase 1, decision D2): one Meta app, many numbers.
+            # Resolve the inmobiliaria from value.metadata.phone_number_id, PER CHANGE
+            # (a single POST can batch multiple numbers). Threaded into processing so the
+            # tenant ContextVar + DB GUC are set for THIS change only.
+            _change_phone_number_id = (value.get("metadata") or {}).get("phone_number_id")
+
             messages = value.get("messages", [])
             if messages:
                 # v2.0: Dual-path processing
@@ -330,13 +374,13 @@ async def receive_webhook(request: Request):
                     asyncio.ensure_future(_capture_identity(value, msg))
 
                 # Inline processing fallback (Render has no worker process)
-                async def _safe_process(msgs):
+                async def _safe_process(msgs, phone_number_id):
                     try:
-                        await process_messages(msgs)
+                        await process_messages(msgs, phone_number_id=phone_number_id)
                     except Exception as e:
                         logger.error(f"[Webhook] process_messages crashed: {e}")
 
-                asyncio.ensure_future(_safe_process(messages))
+                asyncio.ensure_future(_safe_process(messages, _change_phone_number_id))
 
     return {"status": "ok"}
 
@@ -383,8 +427,34 @@ async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
         logger.debug(f"[Identity] capture failed (non-fatal): {e}")
 
 
-async def process_messages(messages: List[Dict[str, Any]]):
-    """Process incoming messages and send responses."""
+async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Optional[str] = None):
+    """Process incoming messages and send responses.
+
+    ``phone_number_id`` is the Meta number that received these messages. We resolve it to a
+    tenant (inmobiliaria) and set the per-task tenant ContextVar so every DB query/Redis key
+    downstream is scoped to that tenant. Running in a dedicated asyncio task, the ContextVar
+    is task-local — it cannot leak to other requests, so no manual reset is needed.
+
+    - Known number  → scope to that tenant.
+    - Unknown number (metadata present but not provisioned) → PARK (drop) the batch.
+    - No metadata (legacy/simulate path) → leave unset; resolve_tenant_id() falls back to the
+      default tenant, preserving V2 single-tenant behavior.
+    """
+    from app.core.tenancy import set_current_tenant
+    from app.services.tenant_service import resolve_tenant_id_by_phone_number_id
+
+    if phone_number_id:
+        _tid = await resolve_tenant_id_by_phone_number_id(phone_number_id)
+        if _tid is None:
+            logger.warning(
+                f"[Tenancy] Unknown phone_number_id={phone_number_id}; "
+                f"parking {len(messages)} message(s) from an unprovisioned number"
+            )
+            return
+        set_current_tenant(_tid)
+    else:
+        set_current_tenant(None)  # default-tenant fallback (V2 behavior)
+
     for msg in messages:
         # ── Production Guards ───────────────────────────────────────────────
         # 1. Skip echo messages (bot's own outgoing messages echoed back)
@@ -512,8 +582,10 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 )
                 continue
 
-            # ── v2.0 Router Feature Flag ──────────────────────────────────
-            use_v2 = _resolve_use_v2_router(settings)
+            # ── Router resolution (V3 Phase 1.5: 3-way switch) ────────────
+            active_router = _resolve_active_router(settings)
+            # v2 + v3 share the inbox/pause/adapter semantics; only legacy v1 differs.
+            use_v2 = active_router in ("v2", "v3")
 
             # ── Bot-paused check (WhatsApp Inbox) ────────────────────────
             # If the admin has paused the bot for this user, save the message
@@ -532,7 +604,14 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 except Exception as _bp_err:
                     logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
 
-            if use_v2:
+            if active_router == "v3":
+                result = await _process_turn_v3_or_fallback(
+                    phone=phone,
+                    user_message=text,
+                    media_url=media_url,
+                    bsuid=msg.get("_bsuid"),
+                )
+            elif active_router == "v2":
                 from app.routers.v2_adapter import process_turn_v2
                 result = await process_turn_v2(
                     phone=phone,

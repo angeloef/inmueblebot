@@ -4,8 +4,14 @@ from typing import Any
 
 from sqlalchemy import or_, select
 
+from app.core.tenancy import resolve_tenant_id
 from app.db.session import async_session_factory
 from app.db.models.property import Property
+
+
+def _scoped_select():
+    """``select(Property)`` filtered to the current tenant (app-layer wall over RLS)."""
+    return select(Property).where(Property.tenant_id == resolve_tenant_id())
 
 # Landmark aliases: users say "cerca de la UNAM" but the DB zone may not
 # contain that literal string.
@@ -77,7 +83,7 @@ async def search_properties(
     mapped_tipo = tipo_map.get(tipo.lower(), tipo.lower()) if tipo else ""
 
     async with async_session_factory() as session:
-        stmt = select(Property)
+        stmt = _scoped_select()
 
         if operation:
             stmt = stmt.where(Property.type == operation.lower())
@@ -103,7 +109,7 @@ async def search_properties(
 
             # Fallback 1: same zone, same operacion, ANY tipo
             # Priority: show what IS available in the requested zone before expanding zones.
-            fallback1 = select(Property)
+            fallback1 = _scoped_select()
             if operation:
                 fallback1 = fallback1.where(Property.type == operation.lower())
             if zona:
@@ -158,7 +164,7 @@ async def search_properties(
             # Fallback 2: drop zona, keep tipo + operacion (other zones, same tipo)
             # Only reached when the zone has ZERO properties of any type.
             if zona and (operation or mapped_tipo):
-                fb2 = select(Property)
+                fb2 = _scoped_select()
                 if operation:
                     fb2 = fb2.where(Property.type == operation.lower())
                 if mapped_tipo:
@@ -181,7 +187,7 @@ async def search_properties(
 
             # Fallback 3: drop zona, show anything matching operacion + tipo
             if zona and (operation or mapped_tipo or presupuesto_max > 0 or dormitorios > 0):
-                fb3 = select(Property)
+                fb3 = _scoped_select()
                 if operation:
                     fb3 = fb3.where(Property.type == operation.lower())
                 if mapped_tipo:

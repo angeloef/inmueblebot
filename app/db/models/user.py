@@ -5,7 +5,7 @@ Representa un contacto de WhatsApp que interactúa con el bot.
 from datetime import datetime
 from typing import Optional, List
 from uuid import uuid4
-from sqlalchemy import String, Integer, DateTime, Index, func
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Index, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -24,6 +24,16 @@ class User(Base):
         primary_key=True,
         default=uuid4,
         comment="Primary key UUID"
+    )
+
+    # Agency (inmobiliaria) that owns this lead. Nullable during the Phase 1 backfill;
+    # tightened to NOT NULL after every row is attributed to a tenant.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="FK al tenant (inmobiliaria) dueño del lead",
     )
 
     whatsapp_phone: Mapped[Optional[str]] = mapped_column(

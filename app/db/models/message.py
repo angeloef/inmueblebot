@@ -26,6 +26,14 @@ class Message(Base):
         comment="Primary key UUID"
     )
 
+    # Agency (inmobiliaria) that owns this message. Nullable during Phase 1 backfill.
+    tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="FK al tenant (inmobiliaria)"
+    )
+
     # FK a la conversación
     conversation_id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True),
@@ -92,6 +100,7 @@ class Message(Base):
         Index("ix_messages_conversation_id", "conversation_id"),
         Index("ix_messages_timestamp", "timestamp"),
         Index("ix_messages_role", "role"),
+        Index("ix_messages_tenant_conversation", "tenant_id", "conversation_id"),
     )
 
     def __repr__(self) -> str:
