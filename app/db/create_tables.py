@@ -1,29 +1,25 @@
 """
-Genera las tablas de la base de datos.
-Útil para desarrollo sin migraciones de Alembic.
+DESHABILITADO en Phase 0a (V3 build plan).
+
+Antes esto corría ``Base.metadata.create_all`` en cada arranque, lo que compite con la
+tabla de versiones de Alembic y causa drift silencioso de esquema. Alembic es ahora la
+ÚNICA autoridad de DDL: las tablas se crean/migran con ``alembic upgrade head`` en deploy
+(release command de Render).
+
+Se mantiene la firma ``create_tables(echo)`` como no-op para no romper callsites legacy
+(p. ej. ``app.main.lifespan``), que ya están gateados por ``RUN_LEGACY_STARTUP_MIGRATION``.
 """
 import asyncio
+
 from loguru import logger
-from sqlalchemy.ext.asyncio import create_async_engine
-from app.db.base import Base
-from app.db.models import (
-    User, Property, Conversation, Message, Appointment, FAQ,
-    Contract, Charge, ContractExpense, EconomicIndex,
-)
-from app.core.config import get_settings
 
 
-async def create_tables(echo: bool = False):
-    """Crea todas las tablas en la base de datos."""
-    settings = get_settings()
-    
-    engine = create_async_engine(settings.DATABASE_URL, echo=echo)
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    await engine.dispose()
-    logger.info("Database tables created successfully")
+async def create_tables(echo: bool = False) -> None:
+    """No-op. La creación de tablas la hace Alembic (`alembic upgrade head`)."""
+    logger.info(
+        "create_tables() es no-op (Phase 0a): Alembic es la única autoridad de DDL. "
+        "Usá `alembic upgrade head`."
+    )
 
 
 if __name__ == "__main__":

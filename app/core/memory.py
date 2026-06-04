@@ -46,12 +46,16 @@ class MemoryManager:
     
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 1.0
-    
+
     def __init__(self):
         settings = get_settings()
         self._pool: Optional[redis.ConnectionPool] = None
         self._redis: Optional[redis.Redis] = None
         self._redis_url = settings.resolve_redis_url()
+        # Allow MEMORY_REDIS_MAX_RETRIES=0 to skip retries in eval/dev environments
+        # where Redis is intentionally absent (fail-fast → immediate graceful fallback).
+        if hasattr(settings, "MEMORY_REDIS_MAX_RETRIES"):
+            self.MAX_RETRIES = settings.MEMORY_REDIS_MAX_RETRIES
         self._redis_available = False
         self._connection_tested = False
         self._degraded_logged = False

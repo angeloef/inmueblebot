@@ -15,16 +15,18 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager."""
     from sqlalchemy import text
     from app.db.session import async_session_factory
+    from app.core.config import get_settings
 
+    settings = get_settings()
     logger.info("Starting up")
 
-    # Auto-create tables if they don't exist
+    # Table creation is owned by Alembic now (Phase 0a). create_tables() is a no-op;
+    # `alembic upgrade head` (Render release command) creates/migrates the schema.
     try:
         from app.db.create_tables import create_tables
         await create_tables(echo=False)
-        logger.info("DB tables ensured")
     except Exception as e:
-        logger.warning("Table creation failed: %s", e)
+        logger.warning("Table creation step failed: %s", e)
 
     try:
         async with async_session_factory() as session:
@@ -34,46 +36,52 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("DB check failed: %s", e)
 
-    # ── Column-type migration: ensure varchar[] (not JSONB) for array prefs ──
-    try:
-        async with async_session_factory() as session:
-            for col in ("property_type", "location_preferences"):
-                result = await session.execute(text(
-                    f"SELECT data_type FROM information_schema.columns "
-                    f"WHERE table_name='users' AND column_name='{col}'"
-                ))
-                row = result.fetchone()
-                if row and row[0] in ("jsonb", "json"):
-                    logger.info(f"Migrating users.{col} from JSONB to varchar[]")
-                    await session.execute(text(
-                        f"ALTER TABLE users ALTER COLUMN {col} TYPE varchar[] "
-                        f"USING {col}::varchar[];"
+    # ── Legacy imperative startup DDL (Phase 0a) ─────────────────────────
+    # Gateado por RUN_LEGACY_STARTUP_MIGRATION. Sigue corriendo hasta que el
+    # baseline de Alembic esté validado y aplicado en prod; luego el owner pone
+    # el flag en False y Alembic queda como única autoridad de DDL.
+    if settings.RUN_LEGACY_STARTUP_MIGRATION:
+        # Column-type migration: ensure varchar[] (not JSONB) for array prefs
+        try:
+            async with async_session_factory() as session:
+                for col in ("property_type", "location_preferences"):
+                    result = await session.execute(text(
+                        f"SELECT data_type FROM information_schema.columns "
+                        f"WHERE table_name='users' AND column_name='{col}'"
                     ))
-                    await session.commit()
-                    logger.info(f"  → users.{col} migrated to varchar[]")
-    except Exception as e:
-        logger.warning("Column migration failed: %s", e)
+                    row = result.fetchone()
+                    if row and row[0] in ("jsonb", "json"):
+                        logger.info(f"Migrating users.{col} from JSONB to varchar[]")
+                        await session.execute(text(
+                            f"ALTER TABLE users ALTER COLUMN {col} TYPE varchar[] "
+                            f"USING {col}::varchar[];"
+                        ))
+                        await session.commit()
+                        logger.info(f"  → users.{col} migrated to varchar[]")
+        except Exception as e:
+            logger.warning("Column migration failed: %s", e)
 
-    # ── Ensure messages.id has auto-increment sequence ──────────────────
-    # The Render DB was created from an older schema; messages.id may
-    # lack a DEFAULT nextval().  This runs at startup before any traffic.
-    try:
-        async with async_session_factory() as session:
-            await session.execute(text(
-                "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
-            ))
-            await session.execute(text(
-                "ALTER TABLE messages ALTER COLUMN id "
-                "SET DEFAULT nextval('messages_id_seq')"
-            ))
-            await session.execute(text(
-                "SELECT setval('messages_id_seq', "
-                "COALESCE((SELECT MAX(id) FROM messages), 1))"
-            ))
-            await session.commit()
-            logger.info("messages.id sequence ensured")
-    except Exception as e:
-        logger.warning("messages sequence creation failed: %s", e)
+        # Ensure messages.id has auto-increment sequence. The Render DB was created
+        # from an older schema; messages.id may lack a DEFAULT nextval().
+        try:
+            async with async_session_factory() as session:
+                await session.execute(text(
+                    "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE messages ALTER COLUMN id "
+                    "SET DEFAULT nextval('messages_id_seq')"
+                ))
+                await session.execute(text(
+                    "SELECT setval('messages_id_seq', "
+                    "COALESCE((SELECT MAX(id) FROM messages), 1))"
+                ))
+                await session.commit()
+                logger.info("messages.id sequence ensured")
+        except Exception as e:
+            logger.warning("messages sequence creation failed: %s", e)
+    else:
+        logger.info("RUN_LEGACY_STARTUP_MIGRATION=False — skipping legacy startup DDL (Alembic owns schema)")
 
     # Seed data (development only)
     try:

@@ -2,10 +2,12 @@
 Seed script: 50 Oberá properties with images, categories, real street names.
 Run: python3 seed_obera.py
 """
-import asyncio, asyncpg, io, base64, random, json
+import asyncio, asyncpg, io, base64, random, json, os
 from PIL import Image
 
-DB = "postgresql://inmueblebot_user:XSqFG4FiC0q5OXXn1CiND25aHX076isu@dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com/inmueblebot_rfv1"
+# Credencial vía entorno (Phase 0a: nunca hardcodear el password en el repo).
+# asyncpg usa el scheme plano postgresql:// (sin +asyncpg).
+DB = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
 
 # ── 1. Generate placeholder JPEG images (tiny, ~2KB each) ──
 def make_jpeg_b64(r, g, b, w=120, h=90):

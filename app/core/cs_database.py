@@ -1,17 +1,23 @@
-"""Database engine and session management."""
+"""Database engine and session management (legacy ``cs_*`` path).
+
+Reconciliado en Phase 0a:
+- Usa ``settings.resolved_database_url`` (mismo resolutor que app + alembic), no la URL
+  cruda (que rompe el dialecto async en Render).
+- ``create_tables`` quedó DESHABILITADO: Alembic es la única autoridad de DDL en deploy.
+"""
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+
 settings = get_settings()
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.LOG_LEVEL == "DEBUG",
-    **(settings.DATABASE_ENGINE_KWARGS),
+    settings.resolved_database_url,
+    echo=settings.DEBUG,
 )
 
 async_session = async_sessionmaker(
@@ -38,8 +44,12 @@ async def ping_db() -> bool:
 
 
 async def create_tables() -> None:
-    """Create all tables defined by SQLAlchemy models (dev convenience)."""
-    from app.models.base import Base  # noqa: F811
+    """DISABLED (Phase 0a).
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    DDL is owned exclusively by Alembic (`alembic upgrade head` on deploy). Creating
+    tables here would race the migration version table and cause silent schema drift.
+    """
+    raise RuntimeError(
+        "create_tables() is disabled — Alembic is the single DDL authority. "
+        "Run `alembic upgrade head` instead."
+    )
