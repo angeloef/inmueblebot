@@ -87,6 +87,19 @@ class Settings(BaseSettings):
         description="URL de conexión a PostgreSQL"
     )
 
+    # === Legacy startup DDL (Phase 0a) ===
+    # Mientras se valida el baseline de Alembic contra un clon de prod, las migraciones
+    # imperativas de arranque (admin._run_startup_migration + DDL ad-hoc en main.lifespan)
+    # siguen corriendo. Una vez aplicado `alembic upgrade head` en prod, el owner pone
+    # esto en False y Alembic queda como ÚNICA autoridad de DDL.
+    # NOTA: las llamadas a Base.metadata.create_all quedan DESHABILITADAS por completo
+    # (no dependen de este flag) — Alembic crea las tablas en deploy.
+    RUN_LEGACY_STARTUP_MIGRATION: bool = Field(
+        default=True,
+        description="Ejecutar las migraciones imperativas de arranque (legacy). "
+                    "Poner False una vez que el baseline de Alembic esté aplicado en prod.",
+    )
+
     # === TTL Configuration ===
     WORKING_MEMORY_TTL: int = Field(default=86400, description="TTL for working memory (Redis)")
     CONTEXT_TTL: int = Field(default=86400, description="TTL for user context in Redis (24h)")

@@ -2,9 +2,11 @@
 Download real property images and update DB with base64 data URIs.
 Uses Unsplash free images - consistent, high-quality, real photos.
 """
-import asyncio, asyncpg, base64, urllib.request, ssl
+import asyncio, asyncpg, base64, urllib.request, ssl, os
 
-DB = "postgresql://inmueblebot_user:XSqFG4FiC0q5OXXn1CiND25aHX076isu@dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com/inmueblebot_rfv1"
+# Credencial vía entorno (Phase 0a: nunca hardcodear el password en el repo).
+# asyncpg usa el scheme plano postgresql:// (sin +asyncpg).
+DB = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
 
 # Unsplash free stock photo URLs (w=800 for reasonable size)
 PHOTOS = {

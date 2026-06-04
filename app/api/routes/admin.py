@@ -455,7 +455,10 @@ def _get_sync_session() -> Session:
                .replace("&ssl=require", "&sslmode=require"))
         _engine = create_engine(url, pool_pre_ping=True)
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
-        _run_startup_migration(_engine)
+        # Phase 0a: gateado. Alembic es la autoridad de DDL una vez aplicado el baseline;
+        # hasta entonces, las migraciones imperativas legacy siguen corriendo.
+        if get_settings().RUN_LEGACY_STARTUP_MIGRATION:
+            _run_startup_migration(_engine)
     return _SessionLocal()
 
 

@@ -9,6 +9,7 @@ from app.db.models.message import Message
 from app.db.models.appointment import Appointment
 from app.db.models.faq import FAQ
 from app.db.models.cobranzas import Contract, Charge, ContractExpense, EconomicIndex
+from app.db.models.user_episode import UserEpisode, ZoneStat, SearchFailure
 
 __all__ = [
     "User",
@@ -21,4 +22,7 @@ __all__ = [
     "Charge",
     "ContractExpense",
     "EconomicIndex",
+    "UserEpisode",
+    "ZoneStat",
+    "SearchFailure",
 ]

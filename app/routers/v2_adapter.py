@@ -152,10 +152,22 @@ async def process_turn_v2(
             f"tools={response.tools_called} | images={len(images)}"
         )
 
+        # Per-turn observability (Phase 0b). Additive + defensive — never breaks V2.
+        from app.core.turn_metrics import emit_turn_metrics
+        emit_turn_metrics(
+            router="v2",
+            router_label=router_label,
+            tools=response.tools_called or [],
+            latency_ms=latency_ms,
+            confidence=response.confidence,
+        )
+
         return result
 
     except Exception as e:
         logger.opt(exception=True).error("[V2] Router error: {}", str(e))
+        from app.core.turn_metrics import emit_turn_metrics
+        emit_turn_metrics(router="v2", router_label="v2::error", latency_ms=0.0)
         return {
             "response_text": "Disculpá, tuve un problema técnico. ¿Podés intentar de nuevo?",
             "tools_used": [],

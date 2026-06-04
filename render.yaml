@@ -1,6 +1,11 @@
 version: 1
 
 # ==================== DATABASES ====================
+# ⚠️ Phase 0a — DRIFT A RESOLVER (manual): este blueprint declara una DB administrada
+# 'inmueblebot' (databaseName), pero la app se conecta vía DATABASE_URL a una DB EXTERNA
+# distinta ('inmueblebot_rfv1' en dpg-d7vet8tckfvc73ehnjk0-a). O sea: este bloque
+# `databases:` está huérfano (no es la DB que usa la app). Decidí cuál es la canónica y
+# alineá ambas, o eliminá el bloque si la DB real se gestiona fuera del blueprint.
 databases:
   - name: inmueblebot-db
     plan: free
@@ -28,9 +33,18 @@ services:
     healthCheckPath: /health
     autoDeploy: true
 
+    # Phase 0a: Alembic es la única autoridad de DDL. Esto corre UNA vez antes de
+    # promover el nuevo deploy (no por-boot). Con 0 migraciones es un no-op seguro;
+    # cuando exista el baseline, lo aplica. Si falla, Render aborta el deploy (rollback
+    # automático al release anterior) — exactamente lo que queremos para una migración rota.
+    preDeployCommand: alembic upgrade head
+
     envVars:
+      # ⚠️ Phase 0a: el valor (con credencial ROTADA) vive SOLO en Render Secrets.
+      # sync:false ⇒ Render NO lo sobrescribe desde el blueprint. Cargalo a mano en el
+      # dashboard del servicio. NUNCA volver a comitear la URL con password al repo.
       - key: DATABASE_URL
-        value: "postgresql://inmueblebot_user:XSqFG4FiC0q5OXXn1CiND25aHX076isu@dpg-d7vet8tckfvc73ehnjk0-a.oregon-postgres.render.com/inmueblebot_rfv1?ssl=require"
+        sync: false
       - key: ENVIRONMENT
         value: production
       - key: PORT

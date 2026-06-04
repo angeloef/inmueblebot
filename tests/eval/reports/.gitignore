@@ -1,0 +1,3 @@
+# Per-run reports are transient. The committed signal is ../baseline-v2.json.
+*.json
+!.gitkeep
