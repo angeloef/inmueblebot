@@ -17,12 +17,16 @@ default tenant when unset — keeping V2 / cron / ad-hoc paths working unchanged
 from __future__ import annotations
 
 from loguru import logger
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
-from app.core.tenancy import TENANT_GUC, resolve_tenant_id
+from app.core.tenancy import resolve_tenant_id
 
 _listener_installed = False
+
+# Compiled via SQLAlchemy so the paramstyle is correct for BOTH backends sharing this one
+# global listener: psycopg2 (%s, sync dashboard sessions) and asyncpg ($1, the bot).
+_SET_TENANT_SQL = text("SELECT set_config('app.current_tenant_id', :tid, true)")
 
 
 def install_tenant_guc_listener() -> None:
@@ -38,9 +42,7 @@ def install_tenant_guc_listener() -> None:
             return
         try:
             tenant_id = resolve_tenant_id()
-            connection.exec_driver_sql(
-                "SELECT set_config(%s, %s, true)", (TENANT_GUC, str(tenant_id))
-            )
+            connection.execute(_SET_TENANT_SQL, {"tid": str(tenant_id)})
         except Exception as exc:  # pragma: no cover - defensive; never break a txn
             logger.warning(f"[Tenancy] could not set tenant GUC: {exc}")
 
