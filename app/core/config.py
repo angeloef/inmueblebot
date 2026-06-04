@@ -87,6 +87,14 @@ class Settings(BaseSettings):
         description="URL de conexión a PostgreSQL"
     )
 
+    # === Redis memory retry (Phase 0a) ===
+    # Set to 0 in .env or eval environments where Redis is intentionally absent
+    # to make the graceful fallback kick in immediately instead of waiting ~15s.
+    MEMORY_REDIS_MAX_RETRIES: int = Field(
+        default=3,
+        description="Redis retry attempts in MemoryManager. 0 = fail-fast (use for eval/dev without Redis).",
+    )
+
     # === Legacy startup DDL (Phase 0a) ===
     # Mientras se valida el baseline de Alembic contra un clon de prod, las migraciones
     # imperativas de arranque (admin._run_startup_migration + DDL ad-hoc en main.lifespan)

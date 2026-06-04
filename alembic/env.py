@@ -54,6 +54,7 @@ UNMANAGED_TABLES = {
     "alembic_version",  # tabla de versiones de Alembic
     "bot_settings",     # key-value crudo (admin.py) — se migra a tenant_settings en Phase 1
     "leads",            # modelo legacy eliminado en Phase 0a (entidad viva = users)
+    "notifications",    # tabla existente en prod sin modelo ORM (crear modelo en Phase 1)
 }
 
 

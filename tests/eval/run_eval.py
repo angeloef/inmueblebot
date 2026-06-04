@@ -39,8 +39,8 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             runs.append(await run_case(case, args.router, run_model=not args.no_model))
         results.append(CaseResult(case.id, case.split, case.tags, runs))
         cr = results[-1]
-        mark = "✅" if cr.pass_pow_k else ("🟡" if cr.pass_at_k else "❌")
-        print(f"  {mark} {case.id:30s} pass@1={cr.pass_at_1:.2f}")
+        mark = "OK" if cr.pass_pow_k else ("~" if cr.pass_at_k else "FAIL")
+        print(f"  [{mark:4s}] {case.id:30s} pass@1={cr.pass_at_1:.2f}")
 
     summary = aggregate(results, args.k)
     payload = {
