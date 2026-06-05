@@ -313,13 +313,20 @@ def _apply_fallback(turn, belief, message: str):
 _BOOKING_SUCCESS_MARKER = "<!--CONFIRMED:"
 
 
-async def _execute_tools(turn) -> tuple[list[str], list[str], bool, bool]:
+# Tools that operate on a specific property — if the model omitted property_id, fill
+# it from the resolved selection so a dropped id can't break details/photos/booking.
+_PROPERTY_ID_TOOLS = frozenset({"get_property_details", "get_property_images", "schedule_visit"})
+
+
+async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool]:
     """Execute tool_calls from engine output deterministically.
 
     Returns (tools_used, tool_results, any_ran, booking_succeeded).
     booking_succeeded is True only when schedule_visit returns a string containing
     _BOOKING_SUCCESS_MARKER (the structural marker from format_appointment_confirmation).
     Each tool is validated before execution. Unknown/invalid tools are skipped.
+    For property-scoped tools, a missing/zero property_id is backfilled from
+    belief.selected_property_id (set by the engine or the ordinal backstop).
     execute_tool never raises (returns error string).
     Tenant scope is already set via ContextVar from step 0.
     """
@@ -330,9 +337,12 @@ async def _execute_tools(turn) -> tuple[list[str], list[str], bool, bool]:
     tool_results: list[str] = []
     any_ran = False
     booking_succeeded = False
+    selected_id = getattr(belief, "selected_property_id", None)
 
     for i, tc in enumerate(turn.tool_calls or []):
         args = tc.parsed_args()
+        if tc.name in _PROPERTY_ID_TOOLS and not args.get("property_id") and selected_id:
+            args = {**args, "property_id": selected_id}
         ok, err = validate_tool_args(tc.name, args)
         if not ok:
             logger.debug("[V3] Skipping tool {}: {}", tc.name, err)
@@ -355,6 +365,59 @@ async def _execute_tools(turn) -> tuple[list[str], list[str], bool, bool]:
     return tools_used, tool_results, any_ran, booking_succeeded
 
 
+# ── Search-context persistence ────────────────────────────────────────────────
+
+_SEARCH_ID_RE = re.compile(r"\[(\d+)\]")
+
+
+_ORDINAL_PATTERNS: list[tuple] = [
+    (re.compile(r"\b(primer[oa]?|primera)\b", re.IGNORECASE), 0),
+    (re.compile(r"\b(segund[oa])\b", re.IGNORECASE), 1),
+    (re.compile(r"\b(tercer[oa]?|tercera)\b", re.IGNORECASE), 2),
+    (re.compile(r"\b(cuart[oa])\b", re.IGNORECASE), 3),
+    (re.compile(r"\b(quint[oa])\b", re.IGNORECASE), 4),
+]
+_LAST_ORDINAL_RE = re.compile(r"\b(últim[oa]|ultim[oa])\b", re.IGNORECASE)
+
+
+def _resolve_ordinal_to_id(message: str, last_search_ids: list) -> int | None:
+    """Map a positional reference ("la primera", "el tercero", "la última") to a
+    concrete property id from the previous search. Structural mapping only — no
+    understanding. Returns None when there is no ordinal or no prior results.
+    """
+    if not last_search_ids:
+        return None
+    msg = message or ""
+    if _LAST_ORDINAL_RE.search(msg):
+        return last_search_ids[-1]
+    for rx, idx in _ORDINAL_PATTERNS:
+        if rx.search(msg) and idx < len(last_search_ids):
+            return last_search_ids[idx]
+    return None
+
+
+def _persist_search_context(belief, tools_used: list[str], tool_results: list[str]) -> None:
+    """Store the latest search_properties result on the belief.
+
+    Lets the NEXT turn resolve ordinal/positional references ("la primera", "el 3")
+    to a concrete property id via [ESTADO].ultima_busqueda, and answer follow-ups
+    ("cuál tiene más ambientes") from the stored list. Without this the engine has no
+    way to map a position to an id. Fails silently — never breaks a turn.
+    """
+    try:
+        for name, res in zip(tools_used, tool_results):
+            if name != "search_properties" or not res:
+                continue
+            ids = [int(m) for m in _SEARCH_ID_RE.findall(res)]
+            belief.last_search_ids = ids
+            belief.last_search_count = len(ids)
+            # Cap the stored context so it doesn't bloat the cached-tail state JSON.
+            belief.last_search_context = res[:1200]
+            break
+    except Exception:
+        pass
+
+
 # ── Marker stripper ───────────────────────────────────────────────────────────
 
 _MARKER_STRIP_RE = re.compile(r"<!--CONFIRMED:.*?-->", re.DOTALL)
@@ -365,6 +428,66 @@ def _strip_markers(text: str) -> str:
     if not text or _BOOKING_SUCCESS_MARKER not in text:
         return text
     return _MARKER_STRIP_RE.sub("", text).strip()
+
+
+# ── Synthesis from tool results (shared by must-surface + no-plan paths) ──────
+
+# Tools whose TEXTUAL results must reach the user verbatim-ish — the engine's own
+# placeholder prose ("Buscando...") is NOT authoritative; show the real data.
+_DATA_TOOLS = frozenset({
+    "search_properties", "get_property_details", "get_faq_answer",
+    "get_my_appointments", "cancel_appointment", "reschedule_appointment",
+    "knowledge_retrieval",  # RAG safety-net injection
+})
+
+
+async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
+    """Compose a Spanish reply grounded in real tool results (LLM Call 2).
+
+    Returns "" on any failure so callers can fall back to the engine plan.
+    """
+    from app.agents.cs_llm_client import get_client, get_model, max_tokens_kwarg, LLMRole
+    from app.core.response_parser import get_final_response_format, parse_llm_response
+
+    if not tool_results:
+        return ""
+    try:
+        compact = json.dumps(_compact_state(belief), ensure_ascii=False)
+        tool_context = "\n".join(f"[{i+1}] {r}" for i, r in enumerate(tool_results))
+        synth_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Sos ChatbotSerio, asistente inmobiliario en Oberá. "
+                    "Usá los resultados de las herramientas para dar una respuesta clara y amigable al usuario. "
+                    "Mostrá las propiedades o datos que devolvieron las herramientas; no los resumas a 'estoy buscando'. "
+                    "Respondé SIEMPRE en español. Sé conciso y profesional."
+                ),
+            },
+            {"role": "system", "content": f"[ESTADO]\n{compact}"},
+            {
+                "role": "user",
+                "content": (
+                    f"Resultados de herramientas:\n{tool_context}\n\n"
+                    "Respondé al usuario basándote en estos resultados."
+                ),
+            },
+        ]
+        client = get_client(LLMRole.SYNTH)
+        model = get_model(LLMRole.SYNTH)
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=synth_messages,
+            response_format=get_final_response_format(),
+            **max_tokens_kwarg(512, LLMRole.SYNTH),
+        )
+        content = resp.choices[0].message.content if resp.choices else ""
+        if content:
+            text, _ = parse_llm_response(content)
+            return text or ""
+    except Exception as exc:
+        logger.warning("[V3] Synthesis call failed: {}", str(exc))
+    return ""
 
 
 # ── Response assembly ─────────────────────────────────────────────────────────
@@ -384,16 +507,16 @@ async def _assemble_response(
     0. FSM override (fsm_plan provided) — render it and return.
     0b. Anti-hallucination guard: if turn.action=="book_step" AND booking_succeeded
         is False → DISCARD any confirmation response_plan; emit safe gather message.
-    1. Engine response_plan (non-empty) — preferred path, 0 extra LLM calls.
-    2. Synthesis call (LLM Call 2) — only when tools ran but engine has no plan.
+    0c. Must-surface: a text-data tool produced results → synthesize from the REAL
+        results (LLM Call 2) instead of the engine's placeholder prose. Excludes the
+        image flow and booking confirmations.
+    1. Engine response_plan (non-empty) — used for clarify/smalltalk/photos/booking.
+    2. Synthesis — tools ran but engine has no plan (fallback to 0c's helper).
     3. Safe default — action in clarify/smalltalk/handoff with no plan.
 
     Returns (response_text, rich_content).
     Strips <!--CONFIRMED:…--> markers from all text before returning.
     """
-    from app.agents.cs_llm_client import get_client, get_model, max_tokens_kwarg, LLMRole
-    from app.core.response_parser import get_final_response_format, parse_llm_response
-
     rich: dict = {
         "images": [],
         "caption": "",
@@ -432,6 +555,26 @@ async def _assemble_response(
         )
         return _safe_gathering, rich
 
+    # ── Path 0c: must-surface real tool data ──────────────────────────
+    # When a text-data tool produced results, the user must SEE those results —
+    # the engine's placeholder prose ("Buscando...") is not authoritative. Synthesize
+    # from the real results instead of returning the engine's response_plan. Excludes
+    # the image flow (handled in Path 1) and booking confirmations (action==book_step).
+    plan = turn.response_plan or []
+    has_image_seg = any(getattr(p, "type", None) == "images" for p in plan)
+    requested = {tc.name for tc in (turn.tool_calls or [])}
+    must_surface = (
+        any_ran and tool_results
+        and not has_image_seg
+        and action != "book_step"
+        and "get_property_images" not in requested
+    )
+    if must_surface:
+        surfaced = await _synthesize_from_results(belief, tool_results)
+        if surfaced:
+            return surfaced, rich
+        # synthesis failed → fall through to the engine plan / safe default
+
     # ── Path 1: engine provided a response_plan ────────────────────────
     plan = turn.response_plan or []
     if plan:
@@ -466,49 +609,11 @@ async def _assemble_response(
         combined = " ".join(_strip_markers(s.content) for s in text_segs if s.content)
         return combined, rich
 
-    # ── Path 2: tools ran but no plan → synthesis call (LLM Call 2) ──
+    # ── Path 2: tools ran but no plan → synthesis (LLM Call 2) ──
     if any_ran and tool_results:
-        try:
-            compact = json.dumps(_compact_state(belief), ensure_ascii=False)
-            tool_context = "\n".join(
-                f"[{i+1}] {r}" for i, r in enumerate(tool_results)
-            )
-            synth_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Sos ChatbotSerio, asistente inmobiliario en Oberá. "
-                        "Usá los resultados de las herramientas para dar una respuesta clara y amigable al usuario. "
-                        "Respondé SIEMPRE en español. Sé conciso y profesional."
-                    ),
-                },
-                {
-                    "role": "system",
-                    "content": f"[ESTADO]\n{compact}",
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Resultados de herramientas:\n{tool_context}\n\n"
-                        "Respondé al usuario basándote en estos resultados."
-                    ),
-                },
-            ]
-            client = get_client(LLMRole.SYNTH)
-            model = get_model(LLMRole.SYNTH)
-            resp = await client.chat.completions.create(
-                model=model,
-                messages=synth_messages,
-                response_format=get_final_response_format(),
-                **max_tokens_kwarg(512, LLMRole.SYNTH),
-            )
-            content = resp.choices[0].message.content if resp.choices else ""
-            if content:
-                text, _ = parse_llm_response(content)
-                if text:
-                    return text, rich
-        except Exception as exc:
-            logger.warning("[V3] Synthesis call failed: {}", str(exc))
+        text = await _synthesize_from_results(belief, tool_results)
+        if text:
+            return text, rich
 
     # ── Path 3: safe default for clarify/smalltalk/handoff ────────────
     return _SAFE_CLARIFY_ES, rich
@@ -718,9 +823,15 @@ async def run_turn(
     belief.last_intent = turn.intent
     belief.action_history.append(turn.action)
 
-    # selected_property_id
+    # selected_property_id — engine first, then a deterministic ordinal backstop
+    # ("la primera"/"el tercero" → id from the previous search) so the model's
+    # inconsistent ordinal resolution can't drop the selection.
     if turn.selected_property_id is not None:
         belief.selected_property_id = turn.selected_property_id
+    else:
+        _ord_id = _resolve_ordinal_to_id(user_message, belief.last_search_ids)
+        if _ord_id is not None:
+            belief.selected_property_id = _ord_id
 
     # missing_slot → awaiting
     if turn.missing_slot is not None:
@@ -739,7 +850,7 @@ async def run_turn(
         logger.warning("[V3] save_belief_v5 failed: {}", str(exc))
 
     # ── Step 7: Execute tools ────────────────────────────────────────────────
-    tools_used, tool_results, any_ran, booking_succeeded = await _execute_tools(turn)
+    tools_used, tool_results, any_ran, booking_succeeded = await _execute_tools(turn, belief)
 
     # ── Step 7b: RAG safety-net for answer_knowledge (Phase 5) ───────────────
     # If engine chose answer_knowledge but didn't emit get_faq_answer in tool_calls,
@@ -771,6 +882,9 @@ async def run_turn(
         belief.last_tool_called = tools_used[-1]
     if "search_properties" in tools_used:
         belief.last_tool_called = "search_properties"
+        # Persist the result list so the NEXT turn can resolve "la primera"/"el 3"
+        # to a concrete id and answer follow-ups from the stored search.
+        _persist_search_context(belief, tools_used, tool_results)
 
     # ── Step 7c: FSM post-engine guard ───────────────────────────────────────
     fsm_result = None
