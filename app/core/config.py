@@ -196,6 +196,20 @@ class Settings(BaseSettings):
     # === Directive engine ===
     USE_DIRECTIVE_ENGINE: bool = Field(default=True, description="Use directive-based context engine instead of legacy imperative stacking")
 
+    # === V3 Quality Guard / Judge (Phase 6) ===
+    V3_JUDGE_ENABLED: bool = Field(
+        default=True,
+        description="Enable the V3 rubric LLM-judge. Gated to low-confidence/critical turns only (never every turn).",
+    )
+    V3_JUDGE_CONFIDENCE_THRESHOLD: float = Field(
+        default=0.70,
+        description="Judge fires when the engine's self-reported confidence is below this floor.",
+    )
+    V3_JUDGE_PASS_THRESHOLD: float = Field(
+        default=0.60,
+        description="Minimum judge score (0–1) to accept a response. Below this triggers ONE targeted regeneration.",
+    )
+
     # === Modular Prompts (Feature Flag) ===
     USE_MODULAR_PROMPTS: bool = Field(
         default=True,

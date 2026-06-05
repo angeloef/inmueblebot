@@ -5,11 +5,14 @@ Single-pass schema-guided LLM architecture:
   2. One structured OpenAI call (strict json_schema, gpt-5.4-mini via LLMRole.SYNTH)
      returning { belief_delta, intent, action, tool_calls, response_plan, confidence }
   3. Deterministic tool execution layer (tools listed in engine output, validated, run)
-  4. Optional synthesis call if tools ran but engine gave no response_plan (≤3rd LLM call)
+  4. Optional synthesis call if tools ran but engine gave no response_plan
+  5. Optional gated quality judge (guard.py) + one targeted regen on fail
 
-LLM call budget per turn:
+LLM call budget per turn (median ≤3):
   - Call 1 (always): engine structured call
   - Call 2 (conditional): response synthesis when tools ran + no response_plan
+  - Call 3 (conditional, gated): rubric judge on low-confidence/critical turns,
+    plus at most one targeted regeneration on a judge fail
   (safety gates are pure regex — 0 LLM calls)
 
 Cross-cutting guarantees:
@@ -804,6 +807,28 @@ async def run_turn(
         fsm_plan=_fsm_plan,
     )
 
+    # ── Step 8b: Quality guard — gated judge + one targeted regen (LLM Call 3) ─
+    # Runs only on low-confidence or critical turns (book_step/handoff/knowledge);
+    # most turns skip it, keeping the median call budget ≤3. Never raises.
+    judge_score: float | None = None
+    try:
+        from app.routers.v3 import guard
+
+        guard_result = await guard.run_guard(
+            action=turn.action,
+            confidence=turn.confidence,
+            user_message=user_message,
+            response_text=response_text,
+            state_json=json.dumps(_compact_state(belief), ensure_ascii=False),
+            tool_results=tool_results,
+            settings=settings,
+        )
+        # Strip any booking markers the regeneration may have copied from tool_results.
+        response_text = _strip_markers(guard_result.response_text)
+        judge_score = guard_result.judge_score
+    except Exception as exc:
+        logger.debug("[V3] guard.run_guard error (non-fatal): {}", str(exc))
+
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v3::{turn.action}"
     latency_ms = (time.perf_counter() - start) * 1000
@@ -821,13 +846,14 @@ async def run_turn(
             cache_hit=cache_hit,
             confidence=turn.confidence,
             extraction_source=extraction_source,
+            judge_score=judge_score,
         )
     except Exception:
         pass
 
     logger.debug(
-        "[V3] action={} intent={} tools={} latency={:.0f}ms conf={:.2f} src={}",
-        turn.action, turn.intent, tools_used, latency_ms, turn.confidence, extraction_source,
+        "[V3] action={} intent={} tools={} latency={:.0f}ms conf={:.2f} src={} judge={}",
+        turn.action, turn.intent, tools_used, latency_ms, turn.confidence, extraction_source, judge_score,
     )
 
     return {
