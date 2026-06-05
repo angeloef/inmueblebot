@@ -175,6 +175,24 @@ class Settings(BaseSettings):
     OPENAI_MODEL_REASONING: str = Field(default="gpt-5.5", description="Strong model for reasoning/tool decisions")
     OPENAI_MODEL_FAST: str = Field(default="gpt-5.4-mini", description="Fast model for classification and synthesis")
 
+    # === Knowledge RAG (Phase 5) ===
+    EMBEDDING_MODEL: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI embedding model for RAG knowledge index (text-embedding-3-small = 1536 dims, $0.02/1M tokens)",
+    )
+    EMBEDDING_DIMENSIONS: int = Field(
+        default=1536,
+        description="Vector dimensions — must match the embedding model (text-embedding-3-small → 1536)",
+    )
+    KNOWLEDGE_TOP_K: int = Field(
+        default=5,
+        description="Max chunks returned by semantic knowledge search per turn",
+    )
+    KNOWLEDGE_SIMILARITY_THRESHOLD: float = Field(
+        default=0.50,
+        description="Cosine similarity floor (0–1). Results below this score are discarded as irrelevant.",
+    )
+
     # === Directive engine ===
     USE_DIRECTIVE_ENGINE: bool = Field(default=True, description="Use directive-based context engine instead of legacy imperative stacking")
 

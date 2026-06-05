@@ -875,6 +875,10 @@ def create_property(
     db.add(prop)
     db.commit()
     db.refresh(prop)
+
+    # Fire-and-forget: embed into the knowledge index for RAG (Phase 5)
+    _schedule_property_embed(prop.id, getattr(prop, "tenant_id", None), prop.title, prop.description or "")
+
     return _prop_to_dict(prop)
 
 
@@ -884,6 +888,21 @@ def _next_property_id(db: Session) -> int:
     from sqlalchemy import func
     max_id = db.query(func.max(Property.id)).scalar() or 0
     return max_id + 1
+
+
+def _schedule_property_embed(prop_id: int, tenant_id, title: str, description: str) -> None:
+    """Fire-and-forget: embed property description into the knowledge index (Phase 5 RAG).
+
+    Called from sync routes via run_coroutine_threadsafe; never raises.
+    """
+    text = f"{title}. {description}".strip(". ").strip()
+    if not text or len(text) < 10:
+        return
+    try:
+        from app.routers.v3.knowledge.index import schedule_upsert
+        schedule_upsert(tenant_id, "property", prop_id, text)
+    except Exception:
+        pass
 
 
 @router.patch("/properties/{prop_id}")
@@ -940,6 +959,10 @@ def update_property(
             setattr(prop, k, v)
 
     db.commit()
+
+    # Re-embed after update (title/description may have changed)
+    _schedule_property_embed(prop.id, getattr(prop, "tenant_id", None), prop.title, prop.description or "")
+
     return _prop_to_dict(prop)
 
 
@@ -960,6 +983,14 @@ def delete_property(
     db.query(Appointment).filter(Appointment.property_id == prop_id).delete(synchronize_session=False)
     db.delete(prop)
     db.commit()
+
+    # Remove knowledge chunk on delete (best-effort)
+    try:
+        from app.routers.v3.knowledge.index import schedule_delete
+        schedule_delete(None, "property", prop_id)
+    except Exception:
+        pass
+
     return {"status": "deleted", "property_id": prop_id}
 
 
@@ -2395,6 +2426,22 @@ CLIENT_TABLES = [
     "user_episodes",
     "users",
 ]
+
+
+@router.post("/knowledge/reindex")
+async def reindex_knowledge(
+    _: bool = Depends(verify_admin_api_key),
+):
+    """Re-embed all FAQ entries and property descriptions for the default tenant.
+
+    Use after bulk imports or when the pgvector index is first set up.
+    Phase 5 RAG endpoint.
+    """
+    from app.routers.v3.knowledge.index import reindex_tenant
+    from app.core.tenancy import default_tenant_id
+
+    result = await reindex_tenant(default_tenant_id())
+    return {"status": "ok", **result}
 
 
 @router.post("/cleanup-clients")

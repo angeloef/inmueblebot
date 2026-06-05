@@ -1,14 +1,28 @@
-"""FAQ tool — answers real estate questions from the dashboard-configured FAQ database."""
+"""FAQ tool — grounded knowledge Q&A using pgvector RAG (Phase 5).
+
+Search order:
+  1. Semantic search over knowledge_chunks (FAQ entries + property descriptions),
+     returning the top-k chunks above the similarity threshold.
+  2. If semantic search unavailable (pgvector not enabled, embedding API down,
+     or no chunks indexed yet), fall back to keyword-based DB search.
+  3. If no match found in either layer, return a safe deferral message instead of
+     fabricating an answer.
+
+The tool name and signature are unchanged (V2 contract compatibility).
+"""
+from __future__ import annotations
+
+from loguru import logger
 
 from app.services.faq_service import faq_service
 
 
 async def get_faq_answer(pregunta: str = "") -> str:
-    """Answer frequently asked questions using the dashboard FAQ database.
+    """Answer frequently asked questions using the knowledge index (pgvector RAG).
 
-    Searches the faq_entries table (managed via admin dashboard) for questions
-    matching the user's query. Falls back to a curated hardcoded set for topics
-    not yet covered in the database.
+    Searches tenant knowledge chunks (FAQ entries + property descriptions) by
+    semantic similarity; falls back to keyword search when RAG unavailable.
+    Returns a safe deferral instead of hallucinating when nothing is found.
 
     Args:
         pregunta: Natural-language question from the user (e.g., '¿los servicios están incluidos?')
@@ -20,24 +34,87 @@ async def get_faq_answer(pregunta: str = "") -> str:
             "¿Sobre cuál querés información?"
         )
 
-    # ── Try DB-backed FAQ first (dashboard-curated) ──────────────────────
+    # ── 1. Semantic RAG search (Phase 5) ────────────────────────────────────
+    try:
+        from app.routers.v3.knowledge.index import search_knowledge
+        from app.core.tenancy import resolve_tenant_id
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        tenant_id = resolve_tenant_id()
+
+        chunks = await search_knowledge(
+            tenant_id=tenant_id,
+            query=pregunta,
+            limit=settings.KNOWLEDGE_TOP_K,
+            threshold=settings.KNOWLEDGE_SIMILARITY_THRESHOLD,
+        )
+
+        if chunks:
+            # Log cost signal (embedding call already logged in embedder.py)
+            logger.debug(
+                "[RAG] get_faq_answer: {} chunks retrieved (top similarity={:.2f})",
+                len(chunks),
+                chunks[0]["similarity"],
+            )
+            return _format_rag_answer(pregunta, chunks)
+
+    except Exception as exc:
+        logger.debug("[RAG] semantic search unavailable, falling back to keyword: {}", str(exc))
+
+    # ── 2. Keyword-based DB fallback ─────────────────────────────────────────
     try:
         matches = await faq_service.search_faqs(pregunta, limit=3)
         if matches:
-            # Return the best match — the service already scores by relevance
             best = matches[0]
             return best.answer
     except Exception:
-        # Graceful fallback: DB might not be available in some environments
         pass
 
-    # ── Fallback: curated hardcoded answers for known topics ─────────────
-    return _fallback_faq(pregunta.lower().strip())
+    # ── 3. Curated hardcoded fallback (when DB unavailable) ──────────────────
+    fallback = _fallback_faq(pregunta.lower().strip())
+    if fallback is not None:
+        return fallback
+
+    # ── 4. Safe deferral — nothing found, don't fabricate ────────────────────
+    return (
+        "No tengo información específica sobre eso en este momento. "
+        "Te consulto con un asesor y te confirmo a la brevedad. "
+        "¿Hay algo más en lo que pueda ayudarte?"
+    )
 
 
-def _fallback_faq(key: str) -> str:
-    """Curated answers for common topics. Extended when DB is unavailable."""
-    # Try exact keyword match
+def _format_rag_answer(query: str, chunks: list[dict]) -> str:
+    """Format retrieved knowledge chunks into a coherent answer.
+
+    When a single chunk is highly relevant (similarity ≥ 0.75), return it directly.
+    When multiple chunks are moderately relevant, combine the most informative ones.
+    """
+    if not chunks:
+        return ""
+
+    top = chunks[0]
+
+    # High-confidence single answer
+    if top["similarity"] >= 0.75 or len(chunks) == 1:
+        return top["text"]
+
+    # Moderate confidence: combine up to 2 chunks if they cover different sources
+    seen_ids = set()
+    parts: list[str] = []
+    for chunk in chunks[:3]:
+        key = (chunk["source_type"], chunk["source_id"])
+        if key not in seen_ids:
+            seen_ids.add(key)
+            parts.append(chunk["text"])
+        if len(parts) >= 2:
+            break
+
+    return "\n\n".join(parts)
+
+
+def _fallback_faq(key: str) -> str | None:
+    """Curated answers for common topics. Returns None when nothing matches."""
     exact = {
         "requisitos": (
             "Para alquilar necesitás:\n"
@@ -108,12 +185,10 @@ def _fallback_faq(key: str) -> str:
     if key in exact:
         return exact[key]
 
-    # Try substring match
     for topic, answer in exact.items():
         if topic in key or key in topic:
             return answer
 
-    # Try keyword-based matching
     keywords = {
         "requisitos": ["necesito", "documento", "papeles", "necesita", "requisito"],
         "garantía": ["garantia", "garantía", "aval", "respaldo"],
@@ -127,10 +202,6 @@ def _fallback_faq(key: str) -> str:
     }
     for topic, words in keywords.items():
         if any(w in key for w in words):
-            return exact.get(topic, "No tengo información sobre ese tema todavía.")
+            return exact.get(topic)
 
-    topics = ", ".join(sorted(exact.keys()))
-    return (
-        f"No tengo información específica sobre '{key}'. "
-        f"Puedo responder sobre: {topics}. ¿Querés que busque algo de eso?"
-    )
+    return None

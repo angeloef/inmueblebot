@@ -129,7 +129,12 @@ class FAQService:
             session.add(faq)
             await session.flush()
             await session.refresh(faq)
-            return faq
+
+        # Fire-and-forget: embed into the knowledge index for RAG (Phase 5)
+        if active:
+            self._schedule_embed(faq.id, faq.tenant_id, question, answer)
+
+        return faq
 
     async def update_faq(self, faq_id: int, **kwargs) -> Optional[FAQ]:
         """Actualiza una FAQ existente."""
@@ -147,7 +152,13 @@ class FAQService:
             )
             result = await session.execute(stmt)
             await session.flush()
-            return result.scalar_one_or_none()
+            faq = result.scalar_one_or_none()
+
+        # Re-embed if question or answer changed and FAQ is still active
+        if faq and faq.active:
+            self._schedule_embed(faq.id, faq.tenant_id, faq.question, faq.answer)
+
+        return faq
 
     async def delete_faq(self, faq_id: int) -> bool:
         """Elimina una FAQ."""
@@ -157,7 +168,34 @@ class FAQService:
             stmt = delete(FAQ).where(FAQ.id == faq_id)
             result = await session.execute(stmt)
             await session.flush()
-            return result.rowcount > 0
+            deleted = result.rowcount > 0
+
+        # Remove knowledge chunk on delete (best-effort)
+        if deleted:
+            self._schedule_delete(faq_id)
+
+        return deleted
+
+    # ── RAG embedding helpers (fire-and-forget, never raise) ─────────────────
+
+    @staticmethod
+    def _schedule_embed(faq_id: int, tenant_id, question: str, answer: str) -> None:
+        """Schedule async embedding without blocking the current request."""
+        try:
+            from app.routers.v3.knowledge.index import schedule_upsert
+            text = f"{question}\n{answer}"
+            schedule_upsert(tenant_id, "faq", faq_id, text)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _schedule_delete(faq_id: int) -> None:
+        """Schedule async deletion of knowledge chunk."""
+        try:
+            from app.routers.v3.knowledge.index import schedule_delete
+            schedule_delete(None, "faq", faq_id)
+        except Exception:
+            pass
 
     async def count_faqs(self) -> int:
         """Cuenta el total de FAQs."""

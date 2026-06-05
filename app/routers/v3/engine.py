@@ -738,6 +738,30 @@ async def run_turn(
     # ── Step 7: Execute tools ────────────────────────────────────────────────
     tools_used, tool_results, any_ran, booking_succeeded = await _execute_tools(turn)
 
+    # ── Step 7b: RAG safety-net for answer_knowledge (Phase 5) ───────────────
+    # If engine chose answer_knowledge but didn't emit get_faq_answer in tool_calls,
+    # proactively retrieve top-k knowledge chunks and inject into tool_results so
+    # the synthesis step can ground the answer rather than hallucinate.
+    if turn.action == "answer_knowledge" and not any_ran:
+        try:
+            from app.routers.v3.knowledge.index import search_knowledge
+            from app.core.config import get_settings as _get_settings
+            _s = _get_settings()
+            _chunks = await search_knowledge(
+                tenant_id=tenant_id,
+                query=user_message,
+                limit=_s.KNOWLEDGE_TOP_K,
+                threshold=_s.KNOWLEDGE_SIMILARITY_THRESHOLD,
+            )
+            if _chunks:
+                snippet_text = "\n\n".join(c["text"] for c in _chunks[:3])
+                tool_results.append(snippet_text)
+                tools_used.append("knowledge_retrieval")
+                any_ran = True
+                logger.debug("[V3] RAG safety-net: {} chunks injected", len(_chunks))
+        except Exception as _rag_exc:
+            logger.debug("[V3] RAG safety-net failed (non-fatal): {}", str(_rag_exc))
+
     # Update belief with tool side-effects
     if "get_property_details" in tools_used or "get_property_images" in tools_used:
         # Update last_tool_called for state_label compat
