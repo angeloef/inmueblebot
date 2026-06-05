@@ -233,12 +233,12 @@ V3 is additive until cutover. These interfaces are frozen:
 **Goal:** Prove production-readiness and switch the default tenant to V3.
 
 **Tasks**
-- [ ] **Full eval run** vs the 150-conversation suite for V3; produce the scorecard + diff vs V2 baseline. (Owner reviews + runs manual tests — promotion is manual per D5.)
-- [ ] **Concurrency + isolation hardening:** load test with two tenants in parallel; re-run cross-tenant leakage tests under the connection pooler; verify transaction-scoped GUC holds.
-- [ ] **Failure drills:** LLM timeout, malformed structured output, tool exception, Redis down, DB down — all fail-open to a safe Spanish message; never crash the webhook.
-- [ ] **Runbook + rollback:** document "flip `active_router` v3→v2 in the dashboard" as instant rollback; document tenant onboarding steps.
-- [ ] **Docs + memory:** update `ARCHITECTURE.md`, mark V2 deprecated-but-available, update the memory index. Leave V1/V2 code in place (switchable) but freeze them.
-- [ ] **Cutover:** owner flips the default tenant to V3 from the dashboard.
+- [ ] **Full eval run** vs the 150-conversation suite for V3; produce the scorecard + diff vs V2 baseline. (Owner reviews + runs manual tests — promotion is manual per D5.) → *Owner-gated: harness + command documented in [`docs/RUNBOOK-v3.md`](docs/RUNBOOK-v3.md) §4 (`python -m tests.eval.run_eval --router v3 --split all --k 3`); not auto-run (burns live tokens).*
+- [x] **Concurrency + isolation hardening:** load test with two tenants in parallel; re-run cross-tenant leakage tests under the connection pooler; verify transaction-scoped GUC holds. → `tests/v3/test_concurrency_isolation.py` (40 interleaved tasks + 5-round pool churn). Green on Docker Postgres.
+- [x] **Failure drills:** LLM timeout, malformed structured output, tool exception, Redis down, DB down — all fail-open to a safe Spanish message; never crash the webhook. → `tests/v3/test_failure_drills.py` (9 tests). Green.
+- [x] **Runbook + rollback:** document "flip `active_router` v3→v2 in the dashboard" as instant rollback; document tenant onboarding steps. → [`docs/RUNBOOK-v3.md`](docs/RUNBOOK-v3.md).
+- [x] **Docs + memory:** update `ARCHITECTURE.md`, mark V2 deprecated-but-available, update the memory index. Leave V1/V2 code in place (switchable) but freeze them.
+- [ ] **Cutover:** owner flips the default tenant to V3 from the dashboard. → *Owner-gated (D5).*
 
 **Acceptance:** V3 meets the owner's bar on the 150-set + manual tests; rollback is one dashboard toggle; isolation holds under load; docs updated.
 

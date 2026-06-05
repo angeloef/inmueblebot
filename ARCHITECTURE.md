@@ -57,15 +57,59 @@ app/memory/working.py (Redis, 24h TTL)
 
 Also configurable per-conversation via `bot_settings` in DB.
 
-## V1 vs V2 Routing
+## V1 vs V2 vs V3 Routing
 
-| Aspect | V1 (legacy) | V2 (current default) |
-|--------|-------------|----------------------|
-| State | 15-state enum (`ConversationState`) | Dynamic `ConversationBeliefState` |
-| Router | `RealEstateAgent.process_turn()` | `router.py` + S1 + Coordinator |
-| Tools | Methods on agent class | Registry-based (`app/tools/v2/`) |
-| Entry point | `real_estate_agent.py` | `v2_adapter.py` → `router.py` |
-| Migration status | Deprecated in favor of V2 | Active, still has some V1 references |
+All three routers ship in the same image and are switchable **per tenant** via the
+`active_router` setting (`"v1" | "v2" | "v3"`), resolved in `webhook.py:_resolve_active_router`.
+No redeploy is needed to switch. V2 is the default until the owner flips a tenant to V3.
+
+| Aspect | V1 (legacy, frozen) | V2 (deprecated-but-available) | V3 (multi-tenant, current target) |
+|--------|---------------------|-------------------------------|-----------------------------------|
+| State | 15-state enum (`ConversationState`) | Dynamic `ConversationBeliefState` | Typed `BeliefStateV5` (tenant-aware, v4→v5 lazy migrate) |
+| Understanding | regex state machine | regex extract → LLM correct + 15-gate cascade | **one** schema-guided LLM pass (strict json_schema) |
+| Router | `RealEstateAgent.process_turn()` | `router.py` + S1 + Coordinator | `routers/v3/engine.py` (single pass) + safety gates only |
+| Tenancy | single tenant | single tenant | true multi-tenant (RLS + GUC + ContextVar + tests) |
+| Tools | Methods on agent class | Registry-based (`app/tools/v2/`) | Same registry, tenant-scoped |
+| Entry point | `real_estate_agent.py` | `v2_adapter.py` → `router.py` | `routers/v3/adapter.py` → `engine.py` |
+| Migration status | Deprecated, frozen | **Deprecated-but-available** (rollback target) | Active build target; cutover is a manual dashboard flip (D5) |
+
+## V3 Router (multi-tenant, schema-guided) — `app/routers/v3/`
+
+The V3 inversion (vs V2): understanding lives in **one structured LLM call**, not 15
+ordered regex gates. Code keeps only (a) deterministic safety gates and (b) side-effects.
+
+```
+webhook.py → resolve tenant by phone_number_id → set GUC + ContextVar
+  → adapter.process_turn_v3 (V2 dict contract, never raises)
+    → engine.run_turn:
+        0. safety gates (regex, 0 LLM calls): emergency · human-request · out-of-scope · /reset
+        1. ONE schema-guided LLM call → {belief_delta, intent, action, tool_calls, response_plan, confidence}
+        2. deterministic tool execution (tenant-scoped registry)
+        3. scheduling FSM (single advance(), single booking call site, structural booking_succeeded)
+        4. RAG safety-net for answer_knowledge (pgvector, top-k tenant chunks)
+        5. optional synthesis (only if tools ran + no response_plan)
+        6. optional gated quality judge (guard.py) + ≤1 targeted regen
+```
+
+| File | Role |
+|------|------|
+| `routers/v3/adapter.py` | Drop-in dict contract == `process_turn_v2`; resolves tenant; wraps `run_turn` → `v3::error` on crash |
+| `routers/v3/engine.py` | Single-pass orchestrator; safety gates; tool exec; fail-open everywhere |
+| `routers/v3/schema.py` | Strict `json_schema` (`TurnOutput`) for OpenAI Structured Outputs |
+| `routers/v3/belief.py` | `BeliefStateV5` (tenant-aware) + Redis (de)serialize + v4→v5 migrate |
+| `routers/v3/prompts.py` | Static-first prompt assembly (system → tenant policy → history → state JSON last) for prompt-cache hits |
+| `routers/v3/guard.py` | Gated rubric LLM-judge (fires on low-confidence/critical only); one regen on fail |
+| `routers/v3/scheduling/fsm.py` | Explicit booking FSM; `booking_succeeded` iff `<!--CONFIRMED:` marker present |
+| `routers/v3/knowledge/index.py` | pgvector embedding index + retrieval (RAG grounding) |
+
+**Cost discipline (D7):** single model `gpt-5.4-mini` everywhere (judge included). Median
+≤3 LLM calls/turn; prompt caching on the byte-stable static prefix; `text-embedding-3-small`
+for RAG. **Tenant isolation:** four layers — RLS policy, transaction-scoped GUC
+(`set_config(..., true)`), app ContextVar, automated tests
+(`tests/test_tenant_isolation.py`, `tests/v3/test_concurrency_isolation.py`).
+**Fail-open:** `run_turn` never raises; every dependency failure → safe Spanish message
+(`tests/v3/test_failure_drills.py`). See [`docs/RUNBOOK-v3.md`](docs/RUNBOOK-v3.md) for
+switch/rollback/onboarding.
 
 ## Key Architectural Patterns
 
