@@ -2,11 +2,27 @@
 
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.core.tenancy import resolve_tenant_id
 from app.db.session import async_session_factory
 from app.db.models.property import Property
+
+# Accent folding done in SQL (no DB extension needed): translate() is built-in and
+# IMMUTABLE. We lower() first so accented uppercase (Á) folds via lower()→á→a.
+_ACCENTED = "áéíóúüñ"
+_PLAIN = "aeiouun"
+
+
+def _norm_accents(text: str) -> str:
+    """Lowercase + strip Spanish accents on the Python side (mirror of the SQL fold)."""
+    return (text or "").lower().translate(str.maketrans(_ACCENTED, _PLAIN))
+
+
+def _zone_like(col, zona: str):
+    """Accent- and case-insensitive substring match of ``zona`` against ``col``."""
+    folded_col = func.translate(func.lower(col), _ACCENTED, _PLAIN)
+    return folded_col.like(f"%{_norm_accents(zona)}%")
 
 
 def _scoped_select():
@@ -44,8 +60,15 @@ def _apply_bedrooms_filter(stmt, dormitorios: int, dormitorios_max: int, match_m
 
 
 def _build_zone_filters(zona: str) -> list:
-    """Build WHERE conditions for a zone/landmark search term."""
-    filters = [Property.location.ilike(f"%{zona}%")]
+    """Build WHERE conditions for a zone/landmark search term.
+
+    The zone name lives in the ``title`` ("Departamento en Centro, Oberá") and the
+    city tail of ``location``; match BOTH, accent- and case-insensitively, so a
+    user/LLM term like "centro" or "obera" hits "Centro" / "Oberá". (Previously this
+    only matched ``location`` with a plain ILIKE, so every zone-scoped search — where
+    the zone is only in the title, or sent without its accent — returned nothing.)
+    """
+    filters = [_zone_like(Property.title, zona), _zone_like(Property.location, zona)]
 
     zona_lower = zona.strip().lower()
     if zona_lower in _LANDMARK_ALIASES:

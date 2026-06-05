@@ -57,6 +57,9 @@ try:
                         'title': item.get('title'),
                         'description': item.get('description'),
                         'type': item.get('operation') or 'alquiler',  # venta/alquiler mapped to Property.type
+                        # Physical type (casa/departamento/ph/terreno) → Property.category,
+                        # per the model's documented intent. search_properties filters on it.
+                        'category': item.get('type'),
                         'currency': currency,
                         'location': location,
                         'lat': item.get('lat'),
@@ -98,10 +101,18 @@ async def seed_properties(force: bool = False):
                 print(f"[INFO] Already {count} properties exist. Skipping seed.")
                 return
         
+        # Tenant scoping: set tenant_id EXPLICITLY to the default tenant. The ORM
+        # inserts tenant_id=NULL otherwise (the model has no server_default, so the
+        # DB-level column DEFAULT added by migration 0002 is overridden), which makes
+        # every tenant-scoped query (_scoped_select) skip these rows.
+        from app.core.tenancy import default_tenant_id
+        _tid = default_tenant_id()
+
         # Crear propiedades (seeded from JSON if loaded)
         for prop_data in SAMPLE_PROPERTIES:
             prop = Property(
                 id=prop_data.get("id"),
+                tenant_id=_tid,
                 original_id=prop_data.get("id"),
                 external_id=prop_data.get("external_id"),
                 title=prop_data.get("title"),
@@ -109,6 +120,7 @@ async def seed_properties(force: bool = False):
                 price=int(prop_data.get("price")) if isinstance(prop_data.get("price"), (int, float)) else 0,
                 currency=prop_data.get("currency", "USD"),
                 type=prop_data.get("type"),
+                category=prop_data.get("category"),
                 location=prop_data.get("location"),
                 lat=prop_data.get("lat"),
                 lng=prop_data.get("lng"),
