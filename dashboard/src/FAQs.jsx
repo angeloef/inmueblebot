@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon, Button, IconButton, Pill, pushToast } from './Primitives';
 import { useFaqs, useCreateFaq, useUpdateFaq, useDeleteFaq } from './api';
+import { useFocusTrap } from './useFocusTrap';
 
 function FaqModal({ faq, onClose, defaultOrder }) {
   const [question, setQuestion] = useState(faq?.question ?? '');
@@ -13,6 +14,7 @@ function FaqModal({ faq, onClose, defaultOrder }) {
   const createMut = useCreateFaq();
   const updateMut = useUpdateFaq();
   const isEditing = !!faq?.id;
+  const trapRef = useFocusTrap(onClose);
 
   const handleSave = async () => {
     if (!question.trim() || !answer.trim()) {
@@ -46,11 +48,11 @@ function FaqModal({ faq, onClose, defaultOrder }) {
 
   return (
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer">
+      <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="faq-modal-title" ref={trapRef}>
         <div className="drawer-head">
-          <h2>{isEditing ? 'Editar FAQ' : 'Nueva FAQ'}</h2>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <h2 id="faq-modal-title">{isEditing ? 'Editar FAQ' : 'Nueva FAQ'}</h2>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="drawer-body">
           <div className="field">
@@ -118,7 +120,10 @@ function FaqRow({ faq, onEdit, onDelete, onMoveUp, onMoveDown, isFirst, isLast, 
 
   return (
     <div
+      tabIndex={0}
+      aria-label={`Editar FAQ: ${faq.question}`}
       onClick={() => onEdit(faq)}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onEdit(faq); } }}
       style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
@@ -229,9 +234,9 @@ export default function FAQs() {
             onChange={e => setSearch(e.target.value)}
           />
           {[['all', 'Todas', counts.all], ['active', 'Activas', counts.active], ['inactive', 'Inactivas', counts.inactive]].map(([k, l, n]) => (
-            <span key={k} className={`chip ${filterActive === k ? 'active' : ''}`} onClick={() => setFilterActive(k)}>
+            <button key={k} type="button" className={`chip ${filterActive === k ? 'active' : ''}`} aria-pressed={filterActive === k} onClick={() => setFilterActive(k)}>
               {l}<span className="num">{n}</span>
-            </span>
+            </button>
           ))}
         </div>
         <div className="tbl-scroll">

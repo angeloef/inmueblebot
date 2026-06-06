@@ -3,6 +3,7 @@ import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } f
 import { fmtCurrency, fmtTime12 } from './data';
 import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty } from './api';
 import { KIND_META } from './EventPopover';
+import { useFocusTrap } from './useFocusTrap';
 
 /** Devuelve true si el string es una URL de imagen (base64 o http) */
 const isImg = (s) => s && (
@@ -26,6 +27,7 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   const [assignSearch, setAssignSearch] = useState('');
   const [assignRelation, setAssignRelation] = useState(freshProperty.operation === 'rent' ? 'tenant' : 'buyer');
   const [linkEditOpen, setLinkEditOpen] = useState(null);
+  const trapRef = useFocusTrap(onClose);
   if (!property) return null;
 
   // Interested clients: from property_relations (new) and legacy interest array
@@ -44,14 +46,14 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   const isRent = property.operation === 'rent' && property.status !== 'sale';
   return (
     <Fragment>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer wide">
+      <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="drawer wide" role="dialog" aria-modal="true" aria-labelledby="property-drawer-title" ref={trapRef}>
         <div className="drawer-head">
           <div>
-            <h2>{property.addr}</h2>
+            <h2 id="property-drawer-title">{property.addr}</h2>
             <div className="sub">{property.neigh} · {property.type} · {property.rooms !== '—' && property.rooms + ' · '}{property.m2} m²</div>
           </div>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="drawer-body">
           {/* ── Image Gallery ── */}
@@ -114,8 +116,8 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
             {interestedClients.length === 0 ? (
               <div className="muted" style={{fontSize:12}}>Sin clientes asignados todavía.</div>
             ) : interestedClients.map(c => (
-              <div key={c.id} className="popover-attendee" style={{padding:'8px 0',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(c)}>
-                <span className="av">{initials(c.name)}</span>
+              <div key={c.id} className="popover-attendee" role="button" tabIndex={0} aria-label={`Ver perfil de ${c.name}`} style={{padding:'8px 0',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}} onClick={() => onOpenClient && onOpenClient(c)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenClient && onOpenClient(c); } }}>
+                <span className="av" aria-hidden="true">{initials(c.name)}</span>
                 <div style={{flex:1}}>
                   <div className="name" style={{fontSize:13,fontWeight:500}}>{c.name}</div>
                   <div className="meta">{c.tags.join(' · ')}</div>
@@ -145,20 +147,20 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
                         <Pill kind="active">{isBuyer ? 'Comprador' : 'Inquilino'}</Pill>
                         <div style={{position:'relative',marginLeft:4}} onClick={e => e.stopPropagation()}>
                           {linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? (
-                            <div style={{position:'absolute',top:'100%',right:0,minWidth:160,background:'white',border:'1px solid var(--border-default)',borderRadius:8,boxShadow:'var(--shadow-md)',zIndex:10,padding:4}}>
-                              <div className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: isBuyer ? 'tenant' : 'buyer', update_status: true }, { onSuccess: () => pushToast({ text: 'Relación actualizada.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
+                            <div className="status-dropdown-menu" style={{position:'absolute',top:'100%',right:0,minWidth:160,zIndex:10}} role="menu">
+                              <button type="button" role="menuitem" className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: isBuyer ? 'tenant' : 'buyer', update_status: true }, { onSuccess: () => pushToast({ text: 'Relación actualizada.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
                                 Cambiar a {isBuyer ? 'Inquilino' : 'Comprador'}
-                              </div>
-                              <div className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'interested', update_status: false }, { onSuccess: () => pushToast({ text: 'Cliente movido a interesados.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
+                              </button>
+                              <button type="button" role="menuitem" className="status-dropdown-item" onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'interested', update_status: false }, { onSuccess: () => pushToast({ text: 'Cliente movido a interesados.', kind: 'success' }), onError: () => pushToast({ text: 'Error al actualizar.', kind: 'danger' }) }); }}>
                                 Cambiar a Interesado
-                              </div>
+                              </button>
                               <div style={{borderTop:'1px solid var(--border-subtle)',margin:'4px 0'}} />
-                              <div className="status-dropdown-item" style={{color:'var(--danger-500)'}} onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'none' }, { onSuccess: () => pushToast({ text: 'Cliente desvinculado.', kind: 'success' }), onError: () => pushToast({ text: 'Error al desvincular.', kind: 'danger' }) }); }}>
+                              <button type="button" role="menuitem" className="status-dropdown-item" style={{color:'var(--danger-500)'}} onClick={() => { setLinkEditOpen(null); relateClient.mutate({ prop_id: property.id, client_id: linked.id, relation: 'none' }, { onSuccess: () => pushToast({ text: 'Cliente desvinculado.', kind: 'success' }), onError: () => pushToast({ text: 'Error al desvincular.', kind: 'danger' }) }); }}>
                                 Desvincular
-                              </div>
+                              </button>
                             </div>
                           ) : null}
-                          <IconButton name={linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? 'x' : 'edit'} onClick={() => setLinkEditOpen(linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? null : (isBuyer ? 'buyer' : 'tenant'))} />
+                          <IconButton name={linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? 'x' : 'edit'} aria-label={linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? 'Cerrar menú' : 'Editar relación'} onClick={() => setLinkEditOpen(linkEditOpen === (isBuyer ? 'buyer' : 'tenant') ? null : (isBuyer ? 'buyer' : 'tenant'))} />
                         </div>
                       </div>
                     </React.Fragment>
@@ -172,28 +174,32 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
                            style={{width:'100%',padding:'6px 10px',fontSize:13,border:'1px solid var(--border-default)',borderRadius:6}} autoFocus />
                     <div style={{display:'flex',gap:6}}>
                       {[['buyer','Comprador'],['tenant','Inquilino'],['interested','Interesado']].map(([k,l]) => (
-                        <span key={k} className={`chip ${assignRelation===k?'active':''}`} onClick={()=>setAssignRelation(k)}>{l}</span>
+                        <button key={k} type="button" className={`chip ${assignRelation===k?'active':''}`} aria-pressed={assignRelation===k} onClick={()=>setAssignRelation(k)}>{l}</button>
                       ))}
                     </div>
                     <div style={{maxHeight:160,overflowY:'auto',display:'flex',flexDirection:'column',gap:2}}>
-                      {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => (
-                        <div key={c.id} className="popover-attendee" style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
-                             onClick={() => {
-                               relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true }, {
-                                 onError: () => pushToast({ text: 'Error al vincular cliente. Verificá la conexión.', kind: 'danger' }),
-                                 onSuccess: () => pushToast({ text: 'Cliente vinculado correctamente.', kind: 'success' }),
-                               });
-                               setAssignOpen(false);
-                               setAssignSearch('');
-                             }}>
-                          <span className="av">{initials(c.name)}</span>
+                      {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).slice(0, 8).map(c => {
+                        const linkClient = () => {
+                          relateClient.mutate({ prop_id: property.id, client_id: c.id, relation: assignRelation, update_status: true }, {
+                            onError: () => pushToast({ text: 'Error al vincular cliente. Verificá la conexión.', kind: 'danger' }),
+                            onSuccess: () => pushToast({ text: 'Cliente vinculado correctamente.', kind: 'success' }),
+                          });
+                          setAssignOpen(false);
+                          setAssignSearch('');
+                        };
+                        return (
+                        <div key={c.id} className="popover-attendee" role="button" tabIndex={0} aria-label={`Vincular a ${c.name}`} style={{cursor:'pointer',padding:'6px 8px',borderRadius:6}}
+                             onClick={linkClient}
+                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); linkClient(); } }}>
+                          <span className="av" aria-hidden="true">{initials(c.name)}</span>
                           <div style={{flex:1}}>
                             <div className="name" style={{fontSize:13,fontWeight:500}}>{c.name}</div>
                             <div className="meta">{c.phone || c.email}</div>
                           </div>
                           <Pill kind={c.role} />
                         </div>
-                      ))}
+                        );
+                      })}
                       {clients.filter(c => assignSearch ? c.name.toLowerCase().includes(assignSearch.toLowerCase()) : true).length === 0 && (
                         <div className="muted" style={{fontSize:12,padding:8}}>Sin resultados.</div>
                       )}
@@ -238,19 +244,19 @@ function ImageGallery({ images }) {
       <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', aspectRatio: '4/3', background: 'var(--gray-100)', marginBottom: images.length > 1 ? 8 : 0 }}>
         {images.length > 1 && (
           <>
-            <button onClick={prev}
+            <button type="button" aria-label="Foto anterior" onClick={prev}
               style={{ position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',zIndex:2,
                        border:'none',background:'rgba(0,0,0,0.45)',color:'white',width:32,height:32,
                        borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',
                        justifyContent:'center',fontSize:16,lineHeight:1 }}>
-              ‹
+              <span aria-hidden="true">‹</span>
             </button>
-            <button onClick={next}
+            <button type="button" aria-label="Siguiente foto" onClick={next}
               style={{ position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',zIndex:2,
                        border:'none',background:'rgba(0,0,0,0.45)',color:'white',width:32,height:32,
                        borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',
                        justifyContent:'center',fontSize:16,lineHeight:1 }}>
-              ›
+              <span aria-hidden="true">›</span>
             </button>
           </>
         )}
@@ -262,27 +268,28 @@ function ImageGallery({ images }) {
           </div>
         )}
         {images.length > 1 && (
-          <div style={{ position:'absolute',bottom:8,left:'50%',transform:'translateX(-50%)',
+          <div aria-live="polite" aria-atomic="true"
+               style={{ position:'absolute',bottom:8,left:'50%',transform:'translateX(-50%)',
                         background:'rgba(0,0,0,0.55)',color:'white',fontSize:11,
                         padding:'2px 10px',borderRadius:10,whiteSpace:'nowrap' }}>
-            {idx + 1} / {images.length}
+            Foto {idx + 1} de {images.length}
           </div>
         )}
       </div>
       {images.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {images.map((url, i) => (
-            <div key={i} onClick={() => setIdx(i)}
-                 style={{ width: 56, height: 44, borderRadius: 6, overflow: 'hidden', cursor: 'pointer',
+            <button key={i} type="button" aria-label={`Ver foto ${i + 1}${i === idx ? ' (actual)' : ''}`} aria-pressed={i === idx} onClick={() => setIdx(i)}
+                 style={{ width: 56, height: 44, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', padding: 0,
                           border: i === idx ? '2px solid var(--primary-500)' : '2px solid transparent',
-                          opacity: i === idx ? 1 : 0.55, transition: 'all 0.15s',
+                          opacity: i === idx ? 1 : 0.55, transition: 'opacity 0.15s',
                           background: 'var(--gray-100)' }}>
               {isImg(url) ? (
                 <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'var(--fg-tertiary)' }}>📷</div>
+                <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'var(--fg-tertiary)' }} aria-hidden="true">📷</div>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -339,7 +346,7 @@ function PhotoDropzone({ photos, onAdd, onRemove, onSetCover }) {
 
   return (
     <div className="field">
-      <label>Fotos de la propiedad</label>
+      <label id="dropzone-label">Fotos de la propiedad</label>
       <div
         className={`dropzone ${drag ? 'drag' : ''} ${photos.length ? 'has-files' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
@@ -347,7 +354,10 @@ function PhotoDropzone({ photos, onAdd, onRemove, onSetCover }) {
         onDragLeave={() => setDrag(false)}
         onDrop={onDrop}
         onClick={() => inputRef.current && inputRef.current.click()}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current && inputRef.current.click(); } }}
         role="button"
+        tabIndex={0}
+        aria-labelledby="dropzone-label"
       >
         <input
           ref={inputRef}
@@ -370,12 +380,12 @@ function PhotoDropzone({ photos, onAdd, onRemove, onSetCover }) {
               {i === 0 && <span className="dz-cover-tag">Portada</span>}
               <div className="dz-thumb-actions">
                 {i !== 0 && (
-                  <button type="button" className="dz-btn" title="Marcar como portada"
+                  <button type="button" className="dz-btn" title="Marcar como portada" aria-label="Marcar como portada"
                           onClick={(e) => { e.stopPropagation(); onSetCover(p.id); }}>
                     <Icon name="star" size={12} />
                   </button>
                 )}
-                <button type="button" className="dz-btn danger" title="Eliminar"
+                <button type="button" className="dz-btn danger" title="Eliminar" aria-label="Eliminar foto"
                         onClick={(e) => { e.stopPropagation(); onRemove(p.id); }}>
                   <Icon name="trash" size={12} />
                 </button>
@@ -457,6 +467,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
   const canSave = form.addr.trim() && form.price;
   const errAddr  = touched.addr  && !form.addr.trim();
   const errPrice = touched.price && !form.price;
+  const trapRef = useFocusTrap(onClose);
 
   const submit = () => {
     setTouched({ addr: true, price: true });
@@ -484,11 +495,11 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
     });
   };
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal lg" onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal lg" role="dialog" aria-modal="true" aria-labelledby="property-modal-title" ref={trapRef} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{mode === 'edit' ? 'Editar propiedad' : 'Nueva propiedad'}</h3>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <h3 id="property-modal-title">{mode === 'edit' ? 'Editar propiedad' : 'Nueva propiedad'}</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="modal-body">
           <div className="field">
@@ -705,7 +716,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
         <div className="filter-bar">
           <input placeholder="Buscar por dirección, barrio..." value={search} onChange={e => setSearch(e.target.value)} />
           {[['all','Todas',counts.all],['available','Disponibles',counts.available],['rented','Alquiladas',counts.rented],['sale','En venta',counts.sale],['reserved','Reservadas',counts.reserved],['sold','Vendidas',counts.sold]].map(([k,l,n]) => (
-            <span key={k} className={`chip ${filter===k?'active':''}`} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></span>
+            <button key={k} type="button" className={`chip ${filter===k?'active':''}`} aria-pressed={filter===k} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></button>
           ))}
           <span style={{flex:1}}></span>
           <select value={op} onChange={e=>setOp(e.target.value)}>
@@ -713,9 +724,9 @@ export default function Properties({ onOpenClient, initialProperty }) {
             <option value="rent">Alquiler</option>
             <option value="sale">Venta</option>
           </select>
-          <div className="views">
-            <button className={view==='list'?'active':''} onClick={()=>setView('list')}><Icon name="list" size={13} /></button>
-            <button className={view==='grid'?'active':''} onClick={()=>setView('grid')}><Icon name="grid" size={13} /></button>
+          <div className="views" role="group" aria-label="Tipo de vista">
+            <button type="button" aria-label="Vista de lista" aria-pressed={view==='list'} className={view==='list'?'active':''} onClick={()=>setView('list')}><Icon name="list" size={13} /></button>
+            <button type="button" aria-label="Vista de grilla" aria-pressed={view==='grid'} className={view==='grid'?'active':''} onClick={()=>setView('grid')}><Icon name="grid" size={13} /></button>
           </div>
         </div>
         <div className="tbl-scroll">
@@ -732,7 +743,9 @@ export default function Properties({ onOpenClient, initialProperty }) {
               </tr></thead>
               <tbody>
                 {filtered.map(p => (
-                  <tr key={p.id} onClick={() => setOpen(p)}>
+                  <tr key={p.id} tabIndex={0} aria-label={`Ver propiedad ${p.addr}`}
+                      onClick={() => setOpen(p)}
+                      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(p); } }}>
                     <td>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <span className="prop-thumb" style={{background: isImg(p.photo) ? 'var(--gray-100)' : (p.photo || 'var(--gray-100)'), overflow: 'hidden'}}>
@@ -753,8 +766,8 @@ export default function Properties({ onOpenClient, initialProperty }) {
                     </td>
                     <td className="muted props-col-agent">{p.agent}</td>
                     <td><div className="row-actions" onClick={e => e.stopPropagation()}>
-                      <IconButton name="edit" onClick={() => setEditing(p)} />
-                      <IconButton name="trash" onClick={() => setDeleteTarget(p)} />
+                      <IconButton name="edit" aria-label="Editar propiedad" onClick={() => setEditing(p)} />
+                      <IconButton name="trash" aria-label="Eliminar propiedad" onClick={() => setDeleteTarget(p)} />
                     </div></td>
                   </tr>
                 ))}
@@ -764,7 +777,10 @@ export default function Properties({ onOpenClient, initialProperty }) {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:14,padding:14}}>
               {filtered.map(p => (
-                <div key={p.id} onClick={() => setOpen(p)} style={{border:'1px solid var(--border-default)',borderRadius:10,cursor:'pointer',background:'white',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
+                <div key={p.id} tabIndex={0} aria-label={`Ver propiedad ${p.addr}`}
+                     onClick={() => setOpen(p)}
+                     onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setOpen(p); } }}
+                     style={{border:'1px solid var(--border-default)',borderRadius:10,cursor:'pointer',background:'var(--surface-raised)',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
                   <div style={{position:'relative'}}>
                     {isImg(p.photo) ? (
                       <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden',borderRadius:'10px 10px 0 0'}}>
@@ -802,10 +818,10 @@ export default function Properties({ onOpenClient, initialProperty }) {
         />
       )}
       {deleteTarget && (
-        <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
-          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setDeleteTarget(null)} aria-hidden="true">
+          <div className="modal" style={{maxWidth:420}} role="dialog" aria-modal="true" aria-labelledby="delete-prop-title" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>Eliminar propiedad</h3>
+              <h3 id="delete-prop-title">Eliminar propiedad</h3>
             </div>
             <div className="modal-body">
               <p style={{fontSize:14,color:'var(--fg-secondary)',margin:0}}>

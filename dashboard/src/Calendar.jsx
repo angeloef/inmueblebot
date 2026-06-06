@@ -62,18 +62,23 @@ function MonthView({ events, onEventClick, today, onDayClick, year, month }) {
         return (
           <div key={i} className={`cal-day ${c.other ? 'other' : ''} ${isToday ? 'today' : ''} ${isDayPast ? 'past' : ''}`}
                style={isDayPast ? { cursor: 'default' } : undefined}
-               onClick={() => !isDayPast && onDayClick && onDayClick(c.iso)}>
+               tabIndex={isDayPast ? undefined : 0}
+               aria-label={isDayPast ? undefined : `Día ${c.iso}${dayEvents.length > 0 ? `, ${dayEvents.length} evento${dayEvents.length !== 1 ? 's' : ''}` : ', sin eventos'}. Crear evento`}
+               onClick={() => !isDayPast && onDayClick && onDayClick(c.iso)}
+               onKeyDown={(ev) => { if (!isDayPast && ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); onDayClick && onDayClick(c.iso); } }}>
             <span className="num">{c.d}</span>
             {dayEvents.slice(0, 4).map(e => {
               const label = KIND_LABEL[e.kind] ?? e.kind;
               const sub   = e.title ? e.title.replace(/^(Visita|Llamada)\s·\s/, '').trim() : '';
               return (
-                <span key={e.id}
+                <button key={e.id}
+                      type="button"
                       className={`cal-event ev-${e.kind} ${e.status === 'cancelled' ? 'cancelled' : ''}`}
                       onClick={(ev) => { ev.stopPropagation(); onEventClick(e, ev.currentTarget.getBoundingClientRect()); }}
+                      aria-label={`${label} a las ${fmtTime12(e.start)}${sub ? ` · ${sub}` : ''}`}
                       title={e.title || label}>
                   <span className="t">{fmtTime12(e.start)}</span> <b>{label}</b>{sub ? ` · ${sub}` : ''}
-                </span>
+                </button>
               );
             })}
             {dayEvents.length > 4 && <span className="cal-more">+{dayEvents.length - 4} más</span>}

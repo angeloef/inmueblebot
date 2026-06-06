@@ -31,31 +31,37 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
         <div className="sb-brand">
           <img src="/logo.svg" alt="InmuebleBot" />
         </div>
-        <div className="sb-nav">
+        <nav className="sb-nav" aria-label="Navegación principal">
           <div className="sb-section">Principal</div>
           {items.map(it => (
-            <div key={it.id}
+            <button key={it.id}
+                 type="button"
                  className={`sb-item ${active === it.id ? 'active' : ''}`}
+                 title={it.label}
+                 aria-current={active === it.id ? 'page' : undefined}
                  onClick={() => handleNav(it.id)}>
               <Icon name={it.icon} size={16} />
               <span>{it.label}</span>
               {it.badge && <span className="badge">{it.badge}</span>}
-            </div>
+            </button>
           ))}
           {more.map(it => (
-            <div key={it.id}
+            <button key={it.id}
+                 type="button"
                  className={`sb-item ${active === it.id ? 'active' : ''}`}
+                 title={it.label}
+                 aria-current={active === it.id ? 'page' : undefined}
                  onClick={() => handleNav(it.id)}>
               <Icon name={it.icon} size={16} />
               <span>{it.label}</span>
-            </div>
+            </button>
           ))}
           <div className="sb-section">Sistema</div>
-          <div className={`sb-item ${active === 'settings' ? 'active' : ''}`} onClick={() => handleNav('settings')}>
+          <button type="button" className={`sb-item ${active === 'settings' ? 'active' : ''}`} title="Configuración" aria-current={active === 'settings' ? 'page' : undefined} onClick={() => handleNav('settings')}>
             <Icon name="settings" size={16} />
             <span>Configuración</span>
-          </div>
-        </div>
+          </button>
+        </nav>
         <div className="sb-bottom">
           <span className="av">MP</span>
           <div className="who">
@@ -121,7 +127,7 @@ function NotificationPanel({ onClose, onAction }) {
   const hasRead = notifications.some(n => n.read);
 
   return (
-    <div className="notif-panel" onClick={e => e.stopPropagation()}>
+    <div className="notif-panel" role="dialog" aria-label="Notificaciones" onClick={e => e.stopPropagation()}>
       <div className="notif-header">
         <span className="notif-title">Notificaciones {unread > 0 && <span className="notif-badge-sm">{unread}</span>}</span>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
@@ -144,23 +150,26 @@ function NotificationPanel({ onClose, onAction }) {
           <div className="notif-empty">Sin notificaciones</div>
         )}
         {notifications.map(n => (
-          <div
-            key={n.id}
-            className={`notif-item ${n.read ? 'read' : 'unread'}`}
-            onClick={() => {
-              if (!n.read) markRead.mutate(n.id);
-              if (onAction) { onAction(n); onClose(); }
-            }}
-          >
-            <span className="notif-icon"><NotifBadge type={NOTIF_TYPES[n.type] ? n.type : 'bot_error'} /></span>
-            <div className="notif-content">
-              <div className="notif-item-title">{n.title}</div>
-              {n.body && <div className="notif-item-body">{n.body}</div>}
-              <div className="notif-time">{timeAgo(n.created_at)}</div>
-            </div>
+          <div key={n.id} className={`notif-item ${n.read ? 'read' : 'unread'}`}>
+            <button
+              type="button"
+              className="notif-item-btn"
+              onClick={() => {
+                if (!n.read) markRead.mutate(n.id);
+                if (onAction) { onAction(n); onClose(); }
+              }}
+            >
+              <span className="notif-icon"><NotifBadge type={NOTIF_TYPES[n.type] ? n.type : 'bot_error'} /></span>
+              <div className="notif-content">
+                <div className="notif-item-title">{n.title}</div>
+                {n.body && <div className="notif-item-body">{n.body}</div>}
+                <div className="notif-time">{timeAgo(n.created_at)}</div>
+              </div>
+            </button>
             <button
               className="notif-delete"
               title="Eliminar"
+              aria-label={`Eliminar notificación: ${n.title}`}
               onClick={e => { e.stopPropagation(); deleteNotif.mutate(n.id); }}
             >×</button>
           </div>
@@ -170,7 +179,7 @@ function NotificationPanel({ onClose, onAction }) {
   );
 }
 
-export function Topbar({ onMenuToggle, onNotifAction }) {
+export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { data } = useNotifications();
@@ -190,17 +199,37 @@ export function Topbar({ onMenuToggle, onNotifAction }) {
         <Icon name="menu" size={16} />
       </button>
       <div className="tb-spacer" />
+      {onToggleTheme && (
+        <button
+          type="button"
+          className="tb-icon"
+          title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+          aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'}
+          onClick={onToggleTheme}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={22} />
+        </button>
+      )}
       <div className="tb-notif-wrap" ref={ref}>
-        <span className="tb-icon" title="Notificaciones" onClick={() => setOpen(v => !v)}>
+        <button
+          type="button"
+          className="tb-icon"
+          title="Notificaciones"
+          aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ''}`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(v => !v)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+        >
           <Icon name="bell" size={24} />
-          {unread > 0 && <span className="dot">{unread > 9 ? '9+' : unread}</span>}
-        </span>
+          {unread > 0 && <span className="dot" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
+        </button>
         {open && <NotificationPanel onClose={() => setOpen(false)} onAction={onNotifAction} />}
       </div>
-      <span className="tb-icon" title="Ayuda">
+      <button type="button" className="tb-icon" title="Ayuda" aria-label="Ayuda">
         <Icon name="info" size={24} />
-      </span>
-      <span className="tb-avatar" title="María Pereyra">MP</span>
+      </button>
+      <span className="tb-avatar" title="María Pereyra" aria-hidden="true">MP</span>
     </header>
   );
 }

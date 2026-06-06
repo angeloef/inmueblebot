@@ -7,6 +7,7 @@ import {
   useGenerateCharges, useUpdateCharge, usePayCharge, useRemindCharge,
   useCreateExpense, useDeleteExpense, useIndices, useUpsertIndex,
 } from './api';
+import { useFocusTrap } from './useFocusTrap';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -104,12 +105,14 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
   const rentals = properties.filter(p => p.operation === 'rent');
   const propList = rentals.length ? rentals : properties;
 
+  const trapRef = useFocusTrap(onClose);
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="contract-editor-title" ref={trapRef} onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-head">
-          <h3>{isEdit ? 'Modificar contrato' : 'Nuevo contrato'}</h3>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <h3 id="contract-editor-title">{isEdit ? 'Modificar contrato' : 'Nuevo contrato'}</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="modal-body">
           <div className="field-row">
@@ -238,10 +241,15 @@ function ChargeRow({ ch, contract, onPay, onRemind, onEditAmount, busy }) {
                  onBlur={saveAmount}
                  onKeyDown={e => { if (e.key === 'Enter') saveAmount(); if (e.key === 'Escape') setEditing(false); }} />
         ) : (
-          <span style={{ cursor: isOpen ? 'pointer' : 'default' }} title={isOpen ? 'Editar monto' : ''}
-                onClick={() => isOpen && setEditing(true)}>
-            {money(ch.base_amount, cur)}{isOpen && <Icon name="edit" size={11} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />}
-          </span>
+          isOpen ? (
+            <button type="button" className="amount-edit-btn" aria-label={`Editar monto (${money(ch.base_amount, cur)})`}
+                    style={{ background: 'none', border: 'none', font: 'inherit', color: 'inherit', cursor: 'pointer', padding: 0 }}
+                    onClick={() => setEditing(true)}>
+              {money(ch.base_amount, cur)}<Icon name="edit" size={11} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />
+            </button>
+          ) : (
+            <span>{money(ch.base_amount, cur)}</span>
+          )
         )}
       </td>
       <td className="tabular muted">{ch.expenses_amount ? money(ch.expenses_amount, cur) : '—'}</td>
@@ -274,6 +282,7 @@ function ContractDrawer({ contractId, onClose, onEdit, onDelete }) {
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exp, setExp] = useState({ description: '', amount: '', category: 'servicio', recurring: false });
+  const trapRef = useFocusTrap(onClose);
 
   if (!contractId) return null;
 
@@ -305,25 +314,25 @@ function ContractDrawer({ contractId, onClose, onEdit, onDelete }) {
 
   return (
     <Fragment>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer wide">
+      <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="drawer wide" role="dialog" aria-modal="true" aria-labelledby="contract-drawer-title" ref={trapRef}>
         <div className="drawer-head" style={{ padding: 0, display: 'block', borderBottom: 'none' }}>
           <div style={{ display: 'flex', padding: '12px 16px 0', justifyContent: 'flex-end', gap: 4, alignItems: 'center' }}>
-            <IconButton name="edit" title="Editar contrato" onClick={() => onEdit(contract)} />
+            <IconButton name="edit" title="Editar contrato" aria-label="Editar contrato" onClick={() => onEdit(contract)} />
             {confirmDelete
               ? <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger-600)' }}>
                   ¿Eliminar?
                   <Button kind="danger" size="sm" onClick={() => onDelete(contract)}>Sí</Button>
                   <Button kind="ghost" size="sm" onClick={() => setConfirmDelete(false)}>No</Button>
                 </span>
-              : <IconButton name="trash" title="Eliminar contrato" onClick={() => setConfirmDelete(true)} />
+              : <IconButton name="trash" title="Eliminar contrato" aria-label="Eliminar contrato" onClick={() => setConfirmDelete(true)} />
             }
-            <IconButton name="x" onClick={onClose} />
+            <IconButton name="x" title="Cerrar" onClick={onClose} />
           </div>
           <div className="client-hero" style={{ borderBottom: 'none', paddingTop: 6 }}>
-            <span className="client-av size-lg"><Icon name="contract" /></span>
+            <span className="client-av size-lg" aria-hidden="true"><Icon name="contract" /></span>
             <div className="info">
-              <h2>{contract?.property_label || 'Contrato'}</h2>
+              <h2 id="contract-drawer-title">{contract?.property_label || 'Contrato'}</h2>
               <div className="meta">
                 {contract && <Pill kind={(CONTRACT_PILL[contract.status] ?? CONTRACT_PILL.active).kind}>{(CONTRACT_PILL[contract.status] ?? CONTRACT_PILL.active).label}</Pill>}
                 {contract?.tenant_name && <span className="client-tag">{contract.tenant_name}</span>}
@@ -441,6 +450,8 @@ function IndicesModal({ onClose }) {
   const upsertMut = useUpsertIndex();
   const [form, setForm] = useState({ period: '', index_level: '' });
 
+  const trapRef = useFocusTrap(onClose);
+
   const save = () => {
     if (!form.period || !form.index_level) { pushToast({ text: 'Completá mes y nivel.', kind: 'danger' }); return; }
     const period = form.period.length === 7 ? `${form.period}-01` : form.period; // YYYY-MM → YYYY-MM-01
@@ -451,11 +462,11 @@ function IndicesModal({ onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="indices-modal-title" ref={trapRef} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div className="modal-head">
-          <h3>Índices IPC (INDEC)</h3>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <h3 id="indices-modal-title">Índices IPC (INDEC)</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="modal-body">
           <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
@@ -571,7 +582,7 @@ export default function Cobranzas() {
         <div className="filter-bar">
           <input placeholder="Buscar por propiedad o inquilino..." value={search} onChange={e => setSearch(e.target.value)} />
           {[['all', 'Todos', counts.all], ['active', 'Activos', counts.active], ['pending', 'Con pendientes', counts.pending], ['overdue', 'Vencidos', counts.overdue]].map(([k, l, n]) => (
-            <span key={k} className={`chip ${filter === k ? 'active' : ''}`} onClick={() => setFilter(k)}>{l}<span className="num">{n}</span></span>
+            <button key={k} type="button" className={`chip ${filter === k ? 'active' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}<span className="num">{n}</span></button>
           ))}
         </div>
         <div className="tbl-scroll">
@@ -581,7 +592,9 @@ export default function Cobranzas() {
             </tr></thead>
             <tbody>
               {filtered.map(c => (
-                <tr key={c.id} onClick={() => setOpen(c.id)} style={{ cursor: 'pointer' }}>
+                <tr key={c.id} tabIndex={0} aria-label={`Ver contrato de ${c.tenant_name || c.property_label || 'contrato'}`}
+                    onClick={() => setOpen(c.id)} style={{ cursor: 'pointer' }}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(c.id); } }}>
                   <td><b>{c.property_label || '— Sin propiedad —'}</b></td>
                   <td className="muted">{c.tenant_name || '—'}</td>
                   <td className="tabular">{money(c.current_rent, c.currency)}</td>

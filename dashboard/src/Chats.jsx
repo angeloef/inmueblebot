@@ -38,7 +38,7 @@ const S = {
     display: 'flex',
     flexDirection: 'row',
     height: 'calc(100vh - 64px)',
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-base)',
   },
   // Left panel — conversation list
   panel: {
@@ -47,12 +47,12 @@ const S = {
     borderRight: '1px solid var(--border-subtle)',
     display: 'flex',
     flexDirection: 'column',
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-raised)',
   },
   panelHeader: {
     padding: '12px 16px',
     borderBottom: '1px solid var(--border-subtle)',
-    background: 'var(--bg-secondary, #fafafa)',
+    background: 'var(--surface-base)',
   },
   panelTitle: {
     fontSize: 16,
@@ -66,7 +66,7 @@ const S = {
     borderRadius: 8,
     border: '1px solid var(--border-subtle)',
     fontSize: 13,
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-raised)',
     color: 'var(--fg-primary)',
     outline: 'none',
     boxSizing: 'border-box',
@@ -164,7 +164,7 @@ const S = {
     padding: '0 16px',
     height: 56,
     borderBottom: '1px solid var(--border-subtle)',
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-raised)',
     gap: 12,
   },
   headerInfo: {
@@ -260,7 +260,7 @@ const S = {
     padding: '8px 16px',
     height: 56,
     gap: 8,
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-raised)',
     borderTop: '1px solid var(--border-subtle)',
   },
   input: {
@@ -269,7 +269,7 @@ const S = {
     borderRadius: 20,
     border: '1px solid var(--border-subtle)',
     fontSize: 13,
-    background: 'var(--bg-primary, #fff)',
+    background: 'var(--surface-raised)',
     color: 'var(--fg-primary)',
     outline: 'none',
   },
@@ -345,8 +345,14 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
 function ConversationRow({ conv, selected, onClick }) {
   const avatarLetter = (conv.phone ?? '?').charAt(0).toUpperCase() || '?';
   return (
-    <div style={S.convItem(selected)} onClick={onClick}>
-      <div style={S.avatar}>{avatarLetter}</div>
+    <button
+      type="button"
+      style={{ ...S.convItem(selected), width: '100%', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+      aria-current={selected ? 'true' : undefined}
+      aria-label={`Conversación con ${conv.phone || 'sin teléfono'}${conv.bot_paused ? ', bot pausado' : ''}`}
+      onClick={onClick}
+    >
+      <div style={S.avatar} aria-hidden="true">{avatarLetter}</div>
       <div style={S.convInfo}>
         <div style={S.convName}>{conv.phone || 'Sin teléfono'}</div>
         <div style={S.convPreview}>
@@ -359,9 +365,9 @@ function ConversationRow({ conv, selected, onClick }) {
         <div style={S.convTime}>
           {conv.last_message_at ? timeAgo(conv.last_message_at) : ''}
         </div>
-        {conv.bot_paused && <div style={S.pausedBadge}>⏸</div>}
+        {conv.bot_paused && <div style={S.pausedBadge} aria-hidden="true">⏸</div>}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -593,7 +599,7 @@ function ChatView({ conversationId, onBack }) {
         : 'No se pudo cargar la conversación';
     return (
       <div style={S.chatPanel}>
-        <div style={S.loading} style={{ color: 'var(--danger-500)' }}>
+        <div style={{ ...S.loading, color: 'var(--danger-500)' }}>
           {friendlyMessage}
         </div>
       </div>

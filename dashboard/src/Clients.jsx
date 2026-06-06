@@ -3,6 +3,7 @@ import { Icon, Button, IconButton, Pill, initials, pushToast } from './Primitive
 import { fmtCurrency, fmtTime12 } from './data';
 import { useClients, useProperties, useEvents, useCreateClient, useUpdateClient, useDeleteClient } from './api';
 import { KIND_META } from './EventPopover';
+import { useFocusTrap } from './useFocusTrap';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -43,19 +44,23 @@ function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
     onSave(form);
   };
 
+  const trapRef = useFocusTrap(onClose);
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="client-editor-title" ref={trapRef} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{isEdit ? 'Modificar cliente' : 'Nuevo cliente'}</h3>
-          <span className="close"><IconButton name="x" onClick={onClose} /></span>
+          <h3 id="client-editor-title">{isEdit ? 'Modificar cliente' : 'Nuevo cliente'}</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="modal-body">
           <div className="field">
-            <label>Nombre *</label>
+            <label htmlFor="client-name">Nombre *</label>
             <input
+              id="client-name"
               autoFocus
               className={errors.name ? 'invalid' : ''}
+              aria-invalid={errors.name ? 'true' : undefined}
               value={form.name}
               onChange={e => set('name', e.target.value)}
               placeholder="Nombre completo"
@@ -64,9 +69,11 @@ function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
           </div>
           <div className="field-row">
             <div className="field">
-              <label>Teléfono / WhatsApp *</label>
+              <label htmlFor="client-phone">Teléfono / WhatsApp *</label>
               <input
+                id="client-phone"
                 className={errors.phone ? 'invalid' : ''}
+                aria-invalid={errors.phone ? 'true' : undefined}
                 inputMode="numeric"
                 value={form.phone}
                 onChange={handlePhone}
@@ -75,19 +82,19 @@ function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
               {errors.phone && <span className="field-error">{errors.phone}</span>}
             </div>
             <div className="field">
-              <label>Email</label>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="nombre@email.com" />
+              <label htmlFor="client-email">Email</label>
+              <input id="client-email" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="nombre@email.com" />
             </div>
           </div>
           <div className="field">
-            <label>Rol</label>
-            <select value={form.role} onChange={e => set('role', e.target.value)}>
+            <label htmlFor="client-role">Rol</label>
+            <select id="client-role" value={form.role} onChange={e => set('role', e.target.value)}>
               {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <div className="field">
-            <label>Notas</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Preferencias, presupuesto, detalles..." />
+            <label htmlFor="client-notes">Notas</label>
+            <textarea id="client-notes" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Preferencias, presupuesto, detalles..." />
           </div>
         </div>
         <div className="modal-foot">
@@ -115,11 +122,12 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
   })).filter(({ prop }) => prop);
   const events = allEvents.filter(e => e.clientId === client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const today = new Date().toISOString().slice(0, 10);
+  const trapRef = useFocusTrap(onClose);
 
   return (
     <Fragment>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer wide">
+      <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="drawer wide" role="dialog" aria-modal="true" aria-labelledby="client-drawer-title" ref={trapRef}>
         <div className="drawer-head" style={{padding:0,display:'block',borderBottom:'none'}}>
           <div style={{display:'flex',padding:'12px 16px 0',justifyContent:'flex-end',gap:4,alignItems:'center'}}>
             <IconButton name="edit" title="Editar cliente" onClick={() => onEdit && onEdit(client)} />
@@ -134,9 +142,9 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
             <IconButton name="x" onClick={onClose} />
           </div>
           <div className="client-hero" style={{borderBottom:'none',paddingTop:6}}>
-            <span className="client-av size-lg">{initials(client.name)}</span>
+            <span className="client-av size-lg" aria-hidden="true">{initials(client.name)}</span>
             <div className="info">
-              <h2>{client.name}</h2>
+              <h2 id="client-drawer-title">{client.name}</h2>
               <div className="meta">
                 <Pill kind={client.role} />
                 {client.tags.map((t,i) => <span key={i} className="client-tag">{t}</span>)}
@@ -154,12 +162,14 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
             </div>
           </div>
         </div>
-        <div className="tabs">
+        <div className="tabs" role="tablist" aria-label="Secciones del cliente">
           {[['overview','Resumen'],['interest','Intereses'],['activity','Actividad']].map(([k,l]) => (
-            <button key={k} className={tab===k?'active':''} onClick={()=>setTab(k)}>{l}</button>
+            <button key={k} role="tab" id={`client-tab-${k}`} aria-controls={`client-tabpanel-${k}`}
+                    aria-selected={tab===k} tabIndex={tab===k ? 0 : -1}
+                    className={tab===k?'active':''} onClick={()=>setTab(k)}>{l}</button>
           ))}
         </div>
-        <div className="drawer-body">
+        <div className="drawer-body" role="tabpanel" id={`client-tabpanel-${tab}`} aria-labelledby={`client-tab-${tab}`}>
           {tab === 'overview' && <Fragment>
             <div className="detail-block">
               <h3>Datos</h3>
@@ -338,7 +348,7 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
         <div className="filter-bar">
           <input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e=>setSearch(e.target.value)} />
           {[['all','Todos',counts.all],['prospect','Prospectos',counts.prospect],['tenant','Inquilinos',counts.tenant],['owner','Propietarios',counts.owner]].map(([k,l,n]) => (
-            <span key={k} className={`chip ${filter===k?'active':''}`} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></span>
+            <button key={k} type="button" className={`chip ${filter===k?'active':''}`} aria-pressed={filter===k} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></button>
           ))}
         </div>
         <div className="tbl-scroll">
@@ -348,10 +358,12 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
             </tr></thead>
             <tbody>
               {filtered.map(c => (
-                <tr key={c.id} onClick={() => setOpen(c)}>
+                <tr key={c.id} tabIndex={0} aria-label={`Ver perfil de ${c.name}`}
+                    onClick={() => setOpen(c)}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(c); } }}>
                   <td>
                     <div className="client-row-name">
-                      <span className="client-av">{initials(c.name)}</span>
+                      <span className="client-av" aria-hidden="true">{initials(c.name)}</span>
                       <div>
                         <b>{c.name}</b>
                         <span>{c.tags.join(' · ')}</span>
@@ -363,7 +375,7 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
                   <td className="muted">{c.agent}</td>
                   <td className="tabular">{c.visits}</td>
                   <td className="muted">{c.lastContact}</td>
-                  <td><div className="row-actions"><IconButton name="phone" /><IconButton name="whatsapp" /><IconButton name="more" /></div></td>
+                  <td><div className="row-actions"><IconButton name="phone" aria-label="Llamar" /><IconButton name="whatsapp" aria-label="WhatsApp" /><IconButton name="more" aria-label="Más acciones" /></div></td>
                 </tr>
               ))}
               {filtered.length === 0 && <tr><td colSpan="7" className="tbl-empty">No hay clientes que coincidan con los filtros.</td></tr>}

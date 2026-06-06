@@ -79,6 +79,30 @@
   --border-strong: var(--gray-200);
   --border-focus:  var(--accent-400);
 
+  /* ───── Surfaces — elevation tiers ─────
+     Depth comes from shadow, never saturation. Light values preserve the
+     current look exactly: canvas = app gray, everything raised = white. */
+  --surface-base:    var(--gray-25);   /* app canvas (body) */
+  --surface-raised:  var(--gray-0);    /* cards, panels */
+  --surface-card:    var(--gray-0);    /* alias kept for legacy refs */
+  --surface-float:   var(--gray-0);    /* popovers, dropdowns, menus */
+  --surface-overlay: var(--gray-0);    /* modals */
+  --surface-sidebar: var(--bg-sidebar);/* sidebar */
+  --surface-topbar:  var(--gray-0);    /* topbar */
+
+  /* ───── State palette — SEPARATE from the brand accent ─────
+     Used by pills, chips, funnel, cobranzas, appointment states. Light values
+     mirror the existing hardcoded pill colors 1:1 (zero visual change). */
+  --state-success-bg: #ecf6ee; --state-success-fg: #275a33; --state-success-border: #d4ead8;
+  --state-warning-bg: #fdf5e6; --state-warning-fg: #74510a; --state-warning-border: #f7e6bf;
+  --state-danger-bg:  #fbecec; --state-danger-fg:  #7d2424; --state-danger-border:  #f4d0d0;
+  --state-info-bg:    #ecf0f8; --state-info-fg:    #25407a; --state-info-border:    #d0dcee;
+  --state-neutral-bg: #f5f6f7; --state-neutral-fg: #6c727b; --state-neutral-border: #e2e5e8;
+  --state-purple-bg:  #f1eef7; --state-purple-fg:  #4a3573; --state-purple-border:  #e3dcef;
+
+  /* ───── Theme transition ───── */
+  --theme-transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+
   /* ───── Type ───── */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Inter", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -149,6 +173,96 @@
   --row-h-compact: 32px;
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   Dark theme — "Quiet Linear" dark. Activated by [data-theme="dark"] on
+   <html>. Remaps the neutral ramp (light end → dark surfaces, dark end →
+   light text) plus every semantic token. Brand accent kept, lightened for
+   contrast on dark. Hardcoded white/#fff in styles.css is addressed in Fase 1.
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  /* Neutral ramp inverted: 0..150 become dark surfaces, 500..900 become text */
+  --gray-0:   #15181c;
+  --gray-25:  #1b1f24;
+  --gray-50:  #20242a;
+  --gray-100: #2a2f36;
+  --gray-150: #333941;
+  --gray-200: #3d444d;
+  --gray-300: #4d555f;
+  --gray-400: #7d858f;
+  --gray-500: #9aa1ab;
+  --gray-600: #b3bac3;
+  --gray-700: #cdd2d9;
+  --gray-800: #e6e9ed;
+  --gray-900: #f4f6f8;
+
+  /* Accent — lightened so it reads on dark surfaces; brand identity preserved */
+  --accent-50:  #122a30;
+  --accent-100: #16363e;
+  --accent-200: #1d4d59;
+  --accent-300: #2e7686;
+  --accent-400: #3f93a6;
+  --accent-500: #2f8597;   /* primary brand on dark (white text stays legible) */
+  --accent-600: #4aa3b5;
+  --accent-700: #6fbccb;
+  --accent-800: #9ad6e1;
+
+  /* Semantic single-value colors (keep tints dark, fg light) */
+  --success-50:  #16271b; --success-100: #25492f; --success-500: #5fb877; --success-700: #8fd4a1;
+  --warning-50:  #2a2310; --warning-100: #4d3f1a; --warning-500: #d8a849; --warning-700: #e8c578;
+  --danger-50:   #2a1717; --danger-100:  #4d2727; --danger-500:  #d97a7a; --danger-700:  #e8a0a0;
+  --info-50:     #16213a; --info-100:    #27406d; --info-500:    #6f97d8; --info-700:    #9bb6e6;
+  --purple-50:   #221b30; --purple-500:  #9a82c4;
+
+  /* Surfaces */
+  --bg-app:        #0f1216;
+  --bg-canvas:     #15181c;
+  --bg-sidebar:    #111418;
+  --bg-subtle:     #1b1f24;
+  --bg-hover:      #20242a;
+  --bg-active:     #262b31;
+  --bg-overlay:    rgba(0, 0, 0, 0.6);
+
+  --surface-base:    #0f1216;
+  --surface-raised:  #15181c;
+  --surface-card:    #15181c;
+  --surface-float:   #1b1f24;
+  --surface-overlay: #1b1f24;
+  --surface-sidebar: #111418;
+  --surface-topbar:  #15181c;
+
+  /* Foreground */
+  --fg-primary:   #e6e9ed;
+  --fg-secondary: #b3bac3;
+  --fg-tertiary:  #9aa1ab;
+  --fg-muted:     #6c747e;
+  --fg-inverse:   #ffffff;  /* text on accent fills stays white */
+  --fg-accent:    #5fb0c2;
+  --fg-link:      #5fb0c2;
+
+  /* Borders */
+  --border-subtle:  #20242a;
+  --border-default: #2a2f36;
+  --border-strong:  #363c44;
+  --border-focus:   #3f93a6;
+
+  /* State palette */
+  --state-success-bg: #16271b; --state-success-fg: #7fcf90; --state-success-border: #25492f;
+  --state-warning-bg: #2a2310; --state-warning-fg: #e3b96b; --state-warning-border: #4d3f1a;
+  --state-danger-bg:  #2a1717; --state-danger-fg:  #e88f8f; --state-danger-border:  #4d2727;
+  --state-info-bg:    #16213a; --state-info-fg:    #8fb0e8; --state-info-border:    #27406d;
+  --state-neutral-bg: #20242a; --state-neutral-fg: #9aa1ab; --state-neutral-border: #333941;
+  --state-purple-bg:  #221b30; --state-purple-fg:  #b89fe0; --state-purple-border:  #3a2d4d;
+
+  /* Shadows — deeper opacity reads on dark */
+  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 3px rgba(63, 147, 166, 0.35);
+
+  color-scheme: dark;
+}
+
 /* ───── Base ───── */
 html, body {
   font-family: var(--font-sans);
@@ -157,14 +271,24 @@ html, body {
   color: var(--fg-primary);
   background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: "cv11", "ss01", "ss03";
 }
 
+/* Smooth theme switch on the structural surfaces (kept narrow to avoid jank) */
+body, .sb, .tb, .canvas, .kpi, .surface, .tbl td, .tbl th {
+  transition: var(--theme-transition);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --theme-transition: none; }
+  body, .sb, .tb, .canvas, .kpi, .surface, .tbl td, .tbl th { transition: none; }
+}
+
 /* ───── Semantic typography ───── */
-.h1, h1 { font-size: var(--text-4xl); line-height: var(--lh-tight); font-weight: var(--fw-semibold); letter-spacing: -0.02em; color: var(--fg-primary); }
-.h2, h2 { font-size: var(--text-3xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.015em; color: var(--fg-primary); }
-.h3, h3 { font-size: var(--text-2xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.01em; color: var(--fg-primary); }
+.h1, h1 { font-size: var(--text-4xl); line-height: var(--lh-tight); font-weight: var(--fw-semibold); letter-spacing: -0.02em; color: var(--fg-primary); text-wrap: balance; }
+.h2, h2 { font-size: var(--text-3xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.015em; color: var(--fg-primary); text-wrap: balance; }
+.h3, h3 { font-size: var(--text-2xl); line-height: var(--lh-snug); font-weight: var(--fw-semibold); letter-spacing: -0.01em; color: var(--fg-primary); text-wrap: balance; }
 .h4, h4 { font-size: var(--text-lg); line-height: var(--lh-snug); font-weight: var(--fw-semibold); color: var(--fg-primary); }
 .body, p { font-size: var(--text-md); line-height: var(--lh-base); color: var(--fg-primary); }
 .body-sm  { font-size: var(--text-sm); line-height: var(--lh-base); color: var(--fg-secondary); }

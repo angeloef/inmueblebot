@@ -68,7 +68,7 @@ export function timeAgo(dateStr) {
  */
 const AR_TZ = 'America/Argentina/Buenos_Aires';
 
-function toDateStr(iso) {
+export function toDateStr(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   // Use en-CA locale which formats as YYYY-MM-DD

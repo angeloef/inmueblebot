@@ -21,6 +21,7 @@ PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
 import { Sidebar, Topbar } from './Shell';
+import { useTheme } from './useTheme';
 import { ToastStack, pushToast } from './Primitives';
 import { EventPopover } from './EventPopover';
 import { useUpdateEvent, useDeleteEvent } from './api';
@@ -40,6 +41,7 @@ const NOTIF_CLIENT_TYPES = new Set(['new_lead', 'lead_qualified', 'handoff_reque
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   const [active, setActive] = useState(
     () => PATH_TO_VIEW[location.pathname] ?? 'dashboard'
@@ -147,7 +149,7 @@ export default function App() {
     <div className="app">
       <Sidebar active={active} onNav={navTo} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="main">
-        <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} />
+        <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} theme={theme} onToggleTheme={toggleTheme} />
         <div className="canvas">
 
           {active === 'dashboard' && (

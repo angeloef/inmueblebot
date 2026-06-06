@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 
-export function Icon({ name, size = 24, stroke = 2, style, className }) {
+export function Icon({ name, size = 24, stroke = 2, style, className, 'aria-hidden': ariaHidden = true, 'aria-label': ariaLabel }) {
   const paths = {
     home: <><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></>,
     building: <><path d="M3 21h18"/><path d="M5 21V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v16"/><path d="M14 21V9a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v12"/><path d="M7.5 7.5h3M7.5 11h3"/><path d="M16 11.5h1.5M16 14.5h1.5"/><path d="M8.5 21v-3a1.5 1.5 0 0 1 3 0v3"/></>,
@@ -49,6 +49,7 @@ export function Icon({ name, size = 24, stroke = 2, style, className }) {
     list: <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
     copy: <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
     sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></>,
+    moon: <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>,
     menu: <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>,
     calendarCheck: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8.5 15.5l2.3 2.3 4.7-4.7"/></>,
     calendarRefresh: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8.6 16.2a3 3 0 0 1 5.1-1.6l1 .9"/><path d="M15 12.8v2.4h-2.4"/><path d="M15.4 16.2a3 3 0 0 1-5.1 1.6l-1-.9"/><path d="M9 19.6v-2.4h2.4"/></>,
@@ -59,7 +60,10 @@ export function Icon({ name, size = 24, stroke = 2, style, className }) {
   };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" style={style}>
+         strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" style={style}
+         role={ariaLabel ? 'img' : undefined}
+         aria-label={ariaLabel}
+         aria-hidden={ariaLabel ? undefined : ariaHidden}>
       {paths[name] || null}
     </svg>
   );
@@ -75,9 +79,10 @@ export function Button({ kind = 'secondary', size, icon, children, onClick, styl
   );
 }
 
-export function IconButton({ name, onClick, title, size = 16 }) {
+export function IconButton({ name, onClick, title, size = 16, 'aria-label': ariaLabel }) {
   return (
-    <button className="btn btn-ghost btn-icon" onClick={onClick} title={title} type="button">
+    <button className="btn btn-ghost btn-icon" onClick={onClick} title={title}
+            aria-label={ariaLabel ?? title} type="button">
       <Icon name={name} size={size} />
     </button>
   );
@@ -103,7 +108,7 @@ export function Pill({ kind, children, className }) {
   if (!k) return <span className={`pill pill-neutral ${className || ''}`}>{children}</span>;
   return (
     <span className={`pill ${k.cls} ${className || ''}`}>
-      <span className="dot" style={{ background: k.dot }} />
+      <span className="dot" style={{ background: k.dot }} aria-hidden="true" />
       {children || k.label}
     </span>
   );
@@ -149,21 +154,27 @@ export function StatusDropdown({ kind, onSelect, overlay, size = 'md' }) {
 
   return (
     <span ref={ref} className={`status-dropdown ${open ? 'open' : ''}`} style={{ position: overlay ? 'absolute' : 'relative', display:'inline-block', top: overlay ? 8 : undefined, right: overlay ? 8 : undefined, zIndex: overlay ? 1 : undefined }}>
-      <span className={cls} style={{ cursor:'pointer', userSelect:'none' }} onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}>
-        <span className="dot" style={{ background: current.dot }} />
+      <button type="button" className={cls}
+              style={{ cursor:'pointer', userSelect:'none', font:'inherit', border:'none' }}
+              aria-haspopup="menu" aria-expanded={open}
+              aria-label={`Estado: ${current.label}, cambiar`}
+              onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+              onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
+        <span className="dot" style={{ background: current.dot }} aria-hidden="true" />
         {current.label}
-        <svg width="8" height="8" viewBox="0 0 8 8" style={{ marginLeft:2, opacity:0.6 }}><path d="M2 3l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
-      </span>
+        <svg width="8" height="8" viewBox="0 0 8 8" style={{ marginLeft:2, opacity:0.6 }} aria-hidden="true"><path d="M2 3l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+      </button>
       {open && (
-        <div className="status-dropdown-menu" style={{ right: overlay ? 0 : undefined, left: overlay ? 'auto' : 0 }} onClick={(e) => e.stopPropagation()}>
+        <div className="status-dropdown-menu" role="menu" style={{ right: overlay ? 0 : undefined, left: overlay ? 'auto' : 0 }} onClick={(e) => e.stopPropagation()}>
           {STATUS_OPTIONS.map(sk => {
             const opt = STATUS_LABELS[sk];
             return (
-              <div key={sk} className={`status-dropdown-item ${sk === kind ? 'active' : ''}`}
+              <button key={sk} type="button" role="menuitemradio" aria-checked={sk === kind}
+                   className={`status-dropdown-item ${sk === kind ? 'active' : ''}`}
                    onClick={() => { onSelect(sk); setOpen(false); }}>
-                <span className="sd-dot" style={{ background: opt.dot }} />
+                <span className="sd-dot" style={{ background: opt.dot }} aria-hidden="true" />
                 {opt.label}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -190,9 +201,9 @@ export function ToastStack() {
     return () => { toastListeners.splice(toastListeners.indexOf(onPush), 1); };
   }, []);
   return (
-    <div className="toast-stack">
+    <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false">
       {items.map(t => (
-        <div key={t.id} className={`toast ${t.kind || ''}`}>
+        <div key={t.id} className={`toast ${t.kind || ''}`} role={t.kind === 'danger' ? 'alert' : undefined}>
           <Icon className="icon" name={t.kind === 'danger' ? 'x' : 'check'} size={16} />
           <span>{t.text}</span>
         </div>
