@@ -14,6 +14,34 @@ const isImg = (s) => s && (
   (s.length > 50 && /^[A-Za-z0-9+/=]+$/.test(s.slice(0, 100)))
 );
 
+/**
+ * Imagen de propiedad con skeleton shimmer (estilo YouTube) mientras carga.
+ * La imagen es un recurso HTTP diferido (loading=lazy): solo se descargan las
+ * visibles, en paralelo y cacheadas. El shimmer se muestra hasta `onLoad`.
+ */
+function PropertyImage({ src, alt = '', radius = 0, aspect = '4/3', fallback = null }) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const showImg = isImg(src) && !errored;
+  return (
+    <div className="prop-img" style={{ aspectRatio: aspect || undefined, borderRadius: radius }}>
+      {showImg && !loaded && <span className="img-skeleton" aria-hidden="true" />}
+      {showImg ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                   opacity: loaded ? 1 : 0, transition: 'opacity var(--dur-base, .25s) ease' }}
+        />
+      ) : fallback}
+    </div>
+  );
+}
+
 function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onDelete }) {
   const { data: clients = [] }   = useClients();
   const { data: properties = [] } = useProperties();
@@ -473,8 +501,10 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
     setTouched({ addr: true, price: true });
     if (!canSave) return;
     const imagesUrls = form.photos.map(p => p.url);
-    const photo = imagesUrls[0] || (mode === 'edit' ? initialData?.photo || '' : '');
-    const allImages = imagesUrls.length > 0 ? imagesUrls : (mode === 'edit' ? (initialData?.images || []) : []);
+    // En modo edición sin fotos nuevas, mandamos null = "sin cambios": las imágenes
+    // en memoria son URLs diferidas, no el base64 original, así que no las reenviamos.
+    const photo = imagesUrls[0] || (mode === 'edit' ? null : '');
+    const allImages = imagesUrls.length > 0 ? imagesUrls : (mode === 'edit' ? null : []);
     onSave({
       addr:      form.addr,
       neigh:     form.neigh,
@@ -748,8 +778,14 @@ export default function Properties({ onOpenClient, initialProperty }) {
                       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(p); } }}>
                     <td>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <span className="prop-thumb" style={{background: isImg(p.photo) ? 'var(--gray-100)' : (p.photo || 'var(--gray-100)'), overflow: 'hidden'}}>
-                          {isImg(p.photo) ? <img src={p.photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}} /> : <Icon name="building" />}
+                        <span className="prop-thumb" style={{overflow:'hidden',padding:0}}>
+                          <PropertyImage
+                            src={p.photo}
+                            alt=""
+                            radius={5}
+                            aspect={null}
+                            fallback={<Icon name="building" />}
+                          />
                         </span>
                         <div className="addr-block">
                           <div className="a1">{p.addr}</div>
@@ -782,13 +818,12 @@ export default function Properties({ onOpenClient, initialProperty }) {
                      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setOpen(p); } }}
                      style={{border:'1px solid var(--border-default)',borderRadius:10,cursor:'pointer',background:'var(--surface-raised)',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
                   <div style={{position:'relative'}}>
-                    {isImg(p.photo) ? (
-                      <div style={{aspectRatio:'4/3',background:'var(--gray-100)',overflow:'hidden',borderRadius:'10px 10px 0 0'}}>
-                        <img src={p.photo} alt={p.addr} style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} />
-                      </div>
-                    ) : (
-                      <div className="prop-photo" style={{background: p.photo || 'var(--gray-100)', borderRadius:'10px 10px 0 0', aspectRatio:'4/3'}}>{p.type}</div>
-                    )}
+                    <PropertyImage
+                      src={p.photo}
+                      alt={p.addr}
+                      radius="10px 10px 0 0"
+                      fallback={<div className="prop-photo-fallback">{p.type}</div>}
+                    />
                     <StatusDropdown kind={p.status} overlay onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} />
                   </div>
                   <div style={{padding:12,display:'flex',flexDirection:'column',gap:6}}>

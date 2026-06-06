@@ -361,6 +361,20 @@ input, select, textarea { font-family: inherit; }
 .prop-photo { background: linear-gradient(135deg, var(--gray-100), var(--gray-150)); border-radius: 8px; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); font-size: 11px; }
 .prop-thumb { width: 44px; height: 36px; background: var(--gray-100); border-radius: 5px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--fg-muted); }
 .prop-thumb svg { width: 18px; height: 18px; }
+
+/* Imagen diferida con skeleton shimmer (estilo YouTube) */
+.prop-img { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--gray-100);
+            display: flex; align-items: center; justify-content: center; }
+.prop-photo-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+                       background: linear-gradient(135deg, var(--gray-100), var(--gray-150));
+                       color: var(--fg-muted); font-size: 11px; }
+.img-skeleton { position: absolute; inset: 0; background: var(--gray-100); overflow: hidden; }
+.img-skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+                       background: linear-gradient(90deg, transparent 0%,
+                         color-mix(in srgb, var(--accent-400) 20%, transparent) 50%, transparent 100%);
+                       animation: img-shimmer 1.3s ease-in-out infinite; }
+@keyframes img-shimmer { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .img-skeleton::after { animation: none; } }
 .tbl .addr-block .a1 { color: var(--fg-primary); font-weight: 500; }
 .tbl .addr-block .a2 { font-size: 11px; color: var(--fg-tertiary); }
 

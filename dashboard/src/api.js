@@ -25,6 +25,26 @@ http.interceptors.request.use((config) => {
   return config;
 });
 
+const API_BASE  = import.meta.env.VITE_API_BASE_URL ?? '/api';
+const API_TOKEN = import.meta.env.VITE_API_TOKEN;
+
+/**
+ * URL hacia el endpoint que sirve una imagen de propiedad como recurso HTTP
+ * cacheable (no base64 inline). La key viaja como query param porque <img src>
+ * no puede enviar headers. `ver` (image_ver del backend) busta la caché al editar.
+ * @param {string|number} id  property id
+ * @param {number} index      índice de la imagen (0 = portada)
+ * @param {string|number} ver image_ver para cache-busting
+ * @returns {string}
+ */
+export function propertyImageUrl(id, index = 0, ver = '') {
+  const params = new URLSearchParams();
+  if (API_TOKEN) params.set('key', API_TOKEN);
+  if (ver) params.set('v', String(ver));
+  const qs = params.toString();
+  return `${API_BASE}/admin/properties/${id}/image/${index}${qs ? `?${qs}` : ''}`;
+}
+
 // ─── Query keys ───────────────────────────────────────────────────────────────
 
 export const keys = {
@@ -166,12 +186,27 @@ function normalizeImgUrl(url) {
 
 function toProperty(p) {
   const bedrooms = p.bedrooms ?? 0;
-  let photo = '';
+
+  // Imágenes inline (base64): presentes en respuestas optimistas (crear/editar) y
+  // en el GET de una sola propiedad. La lista liviana NO las trae.
+  let inlineImages = [];
   if (Array.isArray(p.images) && p.images.length > 0) {
-    photo = normalizeImgUrl(p.images[0]);
+    inlineImages = p.images.map(normalizeImgUrl);
   } else if (typeof p.images === 'string' && p.images) {
-    try { photo = normalizeImgUrl(JSON.parse(p.images)[0] ?? p.images); } catch { photo = normalizeImgUrl(p.images); }
+    try { inlineImages = (JSON.parse(p.images) || []).map(normalizeImgUrl); }
+    catch { inlineImages = [normalizeImgUrl(p.images)]; }
   }
+
+  // Sin inline → armar URLs hacia el endpoint de imágenes para carga diferida.
+  // La portada (índice 0) se muestra en la grilla; el resto carga al abrir el drawer.
+  const imageCount = p.image_count ?? inlineImages.length;
+  const imageVer   = p.image_ver ?? '';
+  const lazyImages = (inlineImages.length === 0 && imageCount > 0)
+    ? Array.from({ length: imageCount }, (_, i) => propertyImageUrl(p.id, i, imageVer))
+    : [];
+
+  const images = inlineImages.length > 0 ? inlineImages : lazyImages;
+  const photo  = images[0] ?? '';
   return {
     id:        String(p.id),
     addr:      p.location ?? p.address ?? '',
@@ -190,7 +225,8 @@ function toProperty(p) {
     baths:     p.bathrooms ?? 0,
     parking:   0,
     photo,
-    images:    p.images ? p.images.map(normalizeImgUrl) : (photo ? [photo] : []),
+    images,
+    imageCount,
     notes:     p.description ?? '',
     desc:      p.description ?? '',
     buyer_id:  p.buyer_id ?? null,
@@ -233,7 +269,11 @@ function fromProperty(d) {
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
-    images:        d.images && d.images.length > 0 ? d.images.map(normalizeImgUrl) : (d.photo ? [normalizeImgUrl(d.photo)] : []),
+    // images === null  → "sin cambios": el backend conserva las imágenes existentes
+    // (no las pisa con las URLs diferidas que tiene el dashboard en memoria).
+    images:        Array.isArray(d.images) && d.images.length > 0
+                     ? d.images.map(normalizeImgUrl)
+                     : (d.images === null ? null : (d.photo ? [normalizeImgUrl(d.photo)] : [])),
   };
 }
 

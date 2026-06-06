@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response, RedirectResponse
 from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
@@ -619,8 +619,13 @@ def _user_to_dict(u):
     }
 
 
-def _prop_to_dict(p):
-    """Serializa Property al shape que espera el dashboard (compatible con toProperty())."""
+def _prop_to_dict(p, include_images: bool = True):
+    """Serializa Property al shape que espera el dashboard (compatible con toProperty()).
+
+    include_images=False omite los arrays base64 (pesados) y devuelve solo
+    image_count + image_ver. El dashboard arma URLs hacia /properties/{id}/image/{i}
+    para cargar la portada (grilla) y el resto de fotos de forma diferida.
+    """
     extra = p.extra_data or {}
     city = extra.get("city", "")
     zone = extra.get("zone", "")
@@ -641,6 +646,11 @@ def _prop_to_dict(p):
         neigh = ""
         display_city = ""
     
+    imgs = p.images or []
+    # Versión de las imágenes: invalida la caché del navegador cuando se editan.
+    ver_dt = getattr(p, "updated_at", None) or getattr(p, "created_at", None)
+    image_ver = int(ver_dt.timestamp()) if ver_dt else 0
+
     return {
         "id": p.id,
         "title": p.title,
@@ -654,7 +664,9 @@ def _prop_to_dict(p):
         "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms,
         "area": p.area_m2,                                 # toProperty() reads area/area_m2
-        "images": p.images or [],
+        "images": imgs if include_images else [],          # base64 pesado solo bajo demanda
+        "image_count": len(imgs),
+        "image_ver": image_ver,
         "featured": False,
         "active": p.status in ("available", "reserved"),
         "status": p.status,
@@ -822,7 +834,74 @@ def list_properties(
 ):
     from app.db.models import Property
     props = db.query(Property).order_by(Property.created_at.desc().nullslast()).all()
-    return {"properties": [_prop_to_dict(p) for p in props], "total": len(props)}
+    # Payload liviano: sin base64. El dashboard carga la portada y el resto de fotos
+    # de forma diferida vía GET /properties/{id}/image/{index}.
+    return {
+        "properties": [_prop_to_dict(p, include_images=False) for p in props],
+        "total": len(props),
+    }
+
+
+def verify_admin_api_key_qp(
+    key: Optional[str] = None,
+    x_api_key: str = Header(None),
+    x_admin_api_key: str = Header(None),
+):
+    """Igual que verify_admin_api_key pero acepta la key como query param `key`.
+
+    Necesario para endpoints consumidos por <img src="...">, que no puede enviar
+    headers personalizados. El token ya vive en el bundle del dashboard, así que
+    exponerlo como query param no cambia el modelo de seguridad existente.
+    """
+    api_key = x_api_key or x_admin_api_key or key
+    if not api_key or api_key != get_settings().ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return True
+
+
+@router.get("/properties/{prop_id}/image/{index}")
+def get_property_image(
+    prop_id: int,
+    index: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_api_key_qp),
+):
+    """Devuelve los bytes de una imagen (decodificada de base64) como recurso HTTP
+    cacheable independiente. Permite que el navegador cargue las fotos en paralelo,
+    de forma diferida (loading=lazy) y las guarde en caché entre recargas."""
+    import base64
+    import re
+
+    from app.db.models import Property
+
+    prop = db.query(Property).filter(Property.id == prop_id).first()
+    imgs = (prop.images if prop else None) or []
+    if not prop or index < 0 or index >= len(imgs):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    raw = imgs[index]
+    # URLs externas (S3, etc.): redirigir en vez de proxear.
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return RedirectResponse(raw)
+
+    content_type = "image/jpeg"
+    b64 = raw
+    m = re.match(r"^data:([^;]+);base64,(.*)$", raw, re.DOTALL)
+    if m:
+        content_type = m.group(1)
+        b64 = m.group(2)
+    try:
+        img_bytes = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid image data")
+
+    # Cacheable e inmutable: la URL incluye ?v=<image_ver>, así que un cambio de
+    # imagen produce una URL nueva y nunca se sirve una versión vieja.
+    return Response(
+        content=img_bytes,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.post("/properties")
