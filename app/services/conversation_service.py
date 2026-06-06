@@ -316,7 +316,8 @@ async def list_conversations(
 ) -> list[dict]:
     """Return conversations with user info, sorted by last_message_at DESC.
 
-    Each item: id, phone, bsuid, last_message_at, state, turn_count, bot_paused.
+    Each item: id, phone, bsuid, last_message_at, state, turn_count, bot_paused,
+    last_sender.
     """
     await _ensure_schema(session)
     # Subquery: count messages per conversation
@@ -329,12 +330,26 @@ async def list_conversations(
         .subquery()
     )
 
+    # Correlated subquery: sender of the most recent message per conversation.
+    # Lets the dashboard tell apart a paused chat awaiting a human reply
+    # (last_sender == 'user') from one a human is already handling.
+    last_sender = (
+        select(Message.sender)
+        .where(Message.conversation_id == Conversation.id)
+        .order_by(Message.timestamp.desc())
+        .limit(1)
+        .correlate(Conversation)
+        .scalar_subquery()
+        .label("last_sender")
+    )
+
     query = (
         select(
             Conversation,
             User.whatsapp_phone,
             User.bsuid,
             func.coalesce(msg_count.c.turn_count, 0).label("turn_count"),
+            last_sender,
         )
         .join(User, Conversation.user_id == User.id)
         .outerjoin(msg_count, msg_count.c.conversation_id == Conversation.id)
@@ -347,7 +362,7 @@ async def list_conversations(
     rows = result.all()
 
     conversations = []
-    for conv, phone, bsuid, turn_count in rows:
+    for conv, phone, bsuid, turn_count, last_sender_value in rows:
         conversations.append({
             "id": str(conv.id),
             "phone": phone,
@@ -356,6 +371,7 @@ async def list_conversations(
             "state": conv.state,
             "turn_count": turn_count,
             "bot_paused": conv.bot_paused,
+            "last_sender": last_sender_value,
         })
     return conversations
 

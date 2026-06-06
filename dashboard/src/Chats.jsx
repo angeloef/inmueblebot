@@ -31,6 +31,40 @@ function formatTime(dateStr) {
   }).format(new Date(dateStr));
 }
 
+// ── Attention helpers ────────────────────────────────────────────────────────
+// A conversation needs a human when the bot deferred to an agent (handoff), or
+// when the bot is paused and the client's last message is still unanswered.
+
+function isHandoff(conv) {
+  if (conv.state === 'human_assistance' || conv.state === 'handoff') return true;
+  // Heuristic for routers that don't persist the handoff state: the bot paused
+  // itself right after its own message → it just deferred to a human.
+  return Boolean(conv.bot_paused) && conv.last_sender === 'bot';
+}
+
+function isAwaitingHuman(conv) {
+  // Paused chat whose most recent message is from the client → unanswered.
+  return Boolean(conv.bot_paused) && conv.last_sender === 'user';
+}
+
+function needsAttention(conv) {
+  return Boolean(conv.bot_paused) || isHandoff(conv);
+}
+
+// 'awaiting' (client waiting — most urgent) · 'handoff' (deferred to an agent)
+// · 'managed' (paused, a human is already handling it)
+function attentionKind(conv) {
+  if (isAwaitingHuman(conv)) return 'awaiting';
+  if (isHandoff(conv)) return 'handoff';
+  return 'managed';
+}
+
+const ATTENTION_META = {
+  awaiting: { label: 'Cliente espera',    urgent: true,  fg: 'var(--danger-500)',  tint: 'var(--danger-50)',  icon: 'alert' },
+  handoff:  { label: 'Derivado a agente', urgent: true,  fg: 'var(--danger-500)',  tint: 'var(--danger-50)',  icon: 'alert' },
+  managed:  { label: 'En gestión',        urgent: false, fg: 'var(--warning-500)', tint: 'var(--warning-50)', icon: 'clock' },
+};
+
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const S = {
@@ -75,16 +109,30 @@ const S = {
     flex: 1,
     overflowY: 'auto',
   },
-  convItem: (selected) => ({
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 16px',
-    borderBottom: '1px solid var(--border-subtle)',
-    cursor: 'pointer',
-    background: selected ? 'var(--gray-100, #f5f5f5)' : 'transparent',
-    transition: 'background 0.15s',
-    gap: 12,
-  }),
+  convItem: (selected, kind) => {
+    // Reset the user-agent <button> border — only a hairline divider remains,
+    // so rows read as a flat list instead of boxed cards (light + dark).
+    const base = {
+      display: 'flex',
+      alignItems: 'center',
+      padding: '11px 16px',
+      border: 'none',
+      borderBottom: '1px solid var(--border-subtle)',
+      borderLeft: '3px solid transparent',
+      cursor: 'pointer',
+      background: selected ? 'var(--accent-50)' : 'transparent',
+      transition: 'background 0.15s, border-color 0.15s',
+      gap: 12,
+    };
+    if (kind === 'awaiting' || kind === 'handoff') {
+      base.borderLeft = '3px solid var(--danger-500)';
+      if (!selected) base.background = 'var(--danger-50)';
+    } else if (kind === 'managed') {
+      base.borderLeft = '3px solid var(--warning-500)';
+      if (!selected) base.background = 'var(--warning-50)';
+    }
+    return base;
+  },
   avatar: {
     width: 40,
     height: 40,
@@ -129,10 +177,41 @@ const S = {
     fontSize: 11,
     color: 'var(--fg-tertiary)',
   },
-  pausedBadge: {
-    fontSize: 11,
-    color: '#e67e22',
-    fontWeight: 600,
+  attnBadge: (meta) => ({
+    width: 18,
+    height: 18,
+    borderRadius: '50%',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: meta.fg,
+    color: '#fff',
+    flexShrink: 0,
+    boxShadow: meta.urgent ? '0 0 0 3px var(--danger-50)' : 'none',
+  }),
+  sectionLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '12px 16px 6px',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: 'var(--fg-tertiary)',
+  },
+  sectionCount: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 16,
+    height: 16,
+    padding: '0 5px',
+    borderRadius: 8,
+    background: 'var(--danger-500)',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 700,
   },
   emptyList: {
     display: 'flex',
@@ -344,28 +423,35 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
 
 function ConversationRow({ conv, selected, onClick }) {
   const avatarLetter = (conv.phone ?? '?').charAt(0).toUpperCase() || '?';
+  const attention = needsAttention(conv);
+  const kind = attention ? attentionKind(conv) : null;
+  const meta = kind ? ATTENTION_META[kind] : null;
   return (
     <button
       type="button"
-      style={{ ...S.convItem(selected), width: '100%', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+      style={{ ...S.convItem(selected, kind), width: '100%', textAlign: 'left', font: 'inherit', color: 'inherit' }}
       aria-current={selected ? 'true' : undefined}
-      aria-label={`Conversación con ${conv.phone || 'sin teléfono'}${conv.bot_paused ? ', bot pausado' : ''}`}
+      aria-label={`Conversación con ${conv.phone || 'sin teléfono'}${meta ? `, ${meta.label}` : ''}`}
       onClick={onClick}
     >
       <div style={S.avatar} aria-hidden="true">{avatarLetter}</div>
       <div style={S.convInfo}>
         <div style={S.convName}>{conv.phone || 'Sin teléfono'}</div>
         <div style={S.convPreview}>
-          {conv.last_message_at
-            ? timeAgo(conv.last_message_at)
-            : '—'}
+          {meta
+            ? <span style={{ color: meta.fg, fontWeight: 600 }}>{meta.label}</span>
+            : (conv.last_message_at ? timeAgo(conv.last_message_at) : '—')}
         </div>
       </div>
       <div style={S.convRight}>
         <div style={S.convTime}>
           {conv.last_message_at ? timeAgo(conv.last_message_at) : ''}
         </div>
-        {conv.bot_paused && <div style={S.pausedBadge} aria-hidden="true">⏸</div>}
+        {meta && (
+          <span style={S.attnBadge(meta)} aria-hidden="true" title={meta.label}>
+            <Icon name={meta.icon} size={12} stroke={2.4} />
+          </span>
+        )}
       </div>
     </button>
   );
@@ -381,16 +467,18 @@ function ChatHeader({ conversation, botPaused, toggling, onToggleBot, onBack }) 
           type="button"
           onClick={onBack}
           style={{
-            width: 36, height: 36, flexShrink: 0,
-            border: 'none', background: 'transparent',
-            borderRadius: 6, cursor: 'pointer',
+            width: 40, height: 40, flexShrink: 0,
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--surface-base)',
+            borderRadius: 8, cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center',
-            justifyContent: 'center', color: 'var(--fg-secondary)',
-            marginRight: -4,
+            justifyContent: 'center', color: 'var(--accent-500)',
+            marginRight: 2,
           }}
-          aria-label="Abrir lista de contactos"
+          aria-label="Abrir lista de chats"
+          title="Ver lista de chats"
         >
-          <Icon name="chevronLeft" size={20} />
+          <Icon name="msg" size={20} />
         </button>
       )}
       <div style={S.avatar}>{avatarLetter}</div>
@@ -447,6 +535,19 @@ function ConversationList({ conversations, selectedId, onSelect, search, onSearc
       || (c.bsuid ?? '').toLowerCase().includes(q);
   });
 
+  // Chats that need a human float to the top in their own compartment.
+  const attention = list.filter(needsAttention);
+  const rest = list.filter(c => !needsAttention(c));
+
+  const renderRow = (conv) => (
+    <ConversationRow
+      key={conv.id}
+      conv={conv}
+      selected={String(conv.id) === String(selectedId)}
+      onClick={() => onSelect(conv.id)}
+    />
+  );
+
   return (
     <div style={{ ...S.panel, ...panelStyle }}>
       <div style={S.panelHeader}>
@@ -464,14 +565,26 @@ function ConversationList({ conversations, selectedId, onSelect, search, onSearc
             {search ? 'Sin resultados' : 'No hay conversaciones aún'}
           </div>
         )}
-        {list.map(conv => (
-          <ConversationRow
-            key={conv.id}
-            conv={conv}
-            selected={String(conv.id) === String(selectedId)}
-            onClick={() => onSelect(conv.id)}
-          />
-        ))}
+
+        {attention.length > 0 && (
+          <>
+            <div style={{ ...S.sectionLabel, color: 'var(--danger-500)' }}>
+              <Icon name="alert" size={12} />
+              Requieren atención
+              <span style={S.sectionCount}>{attention.length}</span>
+            </div>
+            {attention.map(renderRow)}
+          </>
+        )}
+
+        {rest.length > 0 && (
+          <>
+            {attention.length > 0 && (
+              <div style={S.sectionLabel}>Todas las conversaciones</div>
+            )}
+            {rest.map(renderRow)}
+          </>
+        )}
       </div>
     </div>
   );
@@ -740,34 +853,27 @@ export default function Chats() {
         />
       )}
 
-      {/* Left panel — conversation list (wrapped only on mobile for slide-out) */}
-      {isMobile ? (
-        <div style={{
-          ...S.panel,
+      {/* Left panel — conversation list. On mobile the panel itself becomes the
+          fixed slide-out: width is overridden here so the panel can never peek
+          past its own translateX(-100%) (the previous wrapper was 300px wide
+          while the panel inside it was 320px → a 20px sliver leaked on screen). */}
+      <ConversationList
+        conversations={conversations}
+        selectedId={selectedId}
+        onSelect={handleSelect}
+        search={search}
+        onSearchChange={setSearch}
+        panelStyle={isMobile ? {
           position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 101,
-          width: 300, minWidth: 300,
+          width: 300, minWidth: 0, maxWidth: '85vw',
           borderRight: 'none',
           transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 280ms cubic-bezier(0.2,0.7,0.2,1)',
-          boxShadow: '0 4px 8px rgba(0,0,0,0.06), 0 12px 32px rgba(0,0,0,0.10)',
-        }}>
-          <ConversationList
-            conversations={conversations}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            search={search}
-            onSearchChange={setSearch}
-          />
-        </div>
-      ) : (
-        <ConversationList
-          conversations={conversations}
-          selectedId={selectedId}
-          onSelect={handleSelect}
-          search={search}
-          onSearchChange={setSearch}
-        />
-      )}
+          boxShadow: sidebarOpen
+            ? '0 4px 8px rgba(0,0,0,0.06), 0 12px 32px rgba(0,0,0,0.10)'
+            : 'none',
+        } : undefined}
+      />
 
       {/* Right panel — chat view or placeholder */}
       {selectedId ? (
