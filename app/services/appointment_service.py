@@ -519,7 +519,18 @@ class AppointmentService:
         start_time: datetime,
         exclude_appointment_id: UUID = None
     ) -> Optional[Appointment]:
-        """Verifica si hay conflicto de horario (timezone-aware)."""
+        """Verifica si hay conflicto de horario (timezone-aware).
+
+        Availability is **per-agency**, NOT per-property (locked product decision):
+        the inmobiliaria runs ONE visit at a time, so any confirmed appointment that
+        overlaps the requested window is a conflict regardless of which property it is
+        for. RLS already scopes this query to the current tenant via the transaction
+        GUC, so we deliberately do NOT filter by ``property_id`` — that also makes
+        legacy rows with a NULL ``property_id`` visible to the check (they used to slip
+        through a ``property_id == N`` filter and cause double-bookings).
+
+        ``property_id`` is kept in the signature for logging/back-compat only.
+        """
         # Ensure start_time is in UTC for comparison
         if start_time.tzinfo is not None:
             start_time_utc = start_time.astimezone(tz.utc)
@@ -527,32 +538,34 @@ class AppointmentService:
             # If naive, assume it's Argentina time and convert
             arg_tz = pytz.timezone('America/Argentina/Buenos_Aires')
             start_time_utc = arg_tz.localize(start_time).astimezone(tz.utc)
-        
+
         end_time_utc = start_time_utc + self.DEFAULT_VISIT_DURATION
-        
-        # Handle both int and UUID property_id
-        prop_id = property_id if isinstance(property_id, int) else int(property_id)
-        
-        logger.info(f"[Conflict Check] property={prop_id}, start={start_time_utc} to {end_time_utc} (UTC)")
-        
+
+        logger.info(
+            f"[Conflict Check] per-agency (req. property={property_id}), "
+            f"start={start_time_utc} to {end_time_utc} (UTC)"
+        )
+
         query = select(Appointment).where(
             and_(
-                Appointment.property_id == prop_id,
                 Appointment.status == "confirmed",
                 Appointment.start_time < end_time_utc,
                 Appointment.end_time > start_time_utc
             )
         )
-        
+
         if exclude_appointment_id:
             query = query.where(Appointment.id != exclude_appointment_id)
-        
+
         result = await db.execute(query)
-        conflict = result.scalar_one_or_none()
-        
+        conflict = result.scalars().first()
+
         if conflict:
-            logger.info(f"[Conflict Check] CONFLICT found: {conflict.start_time} to {conflict.end_time}")
-        
+            logger.info(
+                f"[Conflict Check] CONFLICT found: appointment={conflict.id} "
+                f"property={conflict.property_id} {conflict.start_time} to {conflict.end_time}"
+            )
+
         return conflict
     
     async def _update_user_score(self, user_id: UUID, db: AsyncSession) -> None:
