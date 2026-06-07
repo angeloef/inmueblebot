@@ -14,9 +14,14 @@ These tests assert that invariant structurally (no LLM needed):
 Orchestrator runs these; do not execute manually.
 """
 
+import asyncio
 import unittest
 
 from app.routers.v3 import prompts
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 class TestSystemPromptStable(unittest.TestCase):
@@ -48,17 +53,22 @@ class TestTenantPolicyStable(unittest.TestCase):
     def test_same_tenant_same_policy(self):
         from uuid import uuid4
         tid = uuid4()
-        self.assertEqual(prompts.build_tenant_policy(tid), prompts.build_tenant_policy(tid))
+        self.assertEqual(_run(prompts.build_tenant_policy(tid)), _run(prompts.build_tenant_policy(tid)))
 
     def test_default_tenant_stable(self):
-        self.assertEqual(prompts.build_tenant_policy(None), prompts.build_tenant_policy(None))
+        self.assertEqual(_run(prompts.build_tenant_policy(None)), _run(prompts.build_tenant_policy(None)))
+
+    def test_policy_has_tenant_block_header(self):
+        pol = _run(prompts.build_tenant_policy(None))
+        self.assertIn("[POLÍTICA DEL TENANT", pol)
+        self.assertIn("Horario de atención", pol)
 
 
 class TestMessageOrdering(unittest.TestCase):
     def _build(self, state_json, user_message, history=None):
         return prompts.build_messages(
             prompts.build_system_prompt(),
-            prompts.build_tenant_policy(None),
+            _run(prompts.build_tenant_policy(None)),
             history or [],
             state_json,
             user_message,
@@ -72,7 +82,7 @@ class TestMessageOrdering(unittest.TestCase):
     def test_first_two_are_static_prefix(self):
         msgs = self._build('{"turno": 1}', "hola")
         self.assertEqual(msgs[0]["content"], prompts.build_system_prompt())
-        self.assertEqual(msgs[1]["content"], prompts.build_tenant_policy(None))
+        self.assertEqual(msgs[1]["content"], _run(prompts.build_tenant_policy(None)))
 
     def test_cached_prefix_identical_across_turns_only_tail_varies(self):
         turn1 = self._build('{"turno": 1}', "busco depto", history=[])

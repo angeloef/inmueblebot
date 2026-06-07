@@ -67,7 +67,7 @@ _JUDGE_SCHEMA: dict = {
 _RUBRIC_VERSION = "v3-judge-1"
 
 _JUDGE_SYSTEM = (
-    "Sos un evaluador de calidad de un asistente inmobiliario en Oberá, Misiones. "
+    "Sos un evaluador de calidad de un asistente inmobiliario. "
     "Calificás la ÚLTIMA respuesta del asistente al usuario según cuatro criterios:\n"
     "1. task-completion: responde lo que el usuario pidió.\n"
     "2. faithfulness: no inventa propiedades, precios ni datos; afirma una visita agendada solo si realmente se agendó.\n"
@@ -177,7 +177,7 @@ async def _regenerate(
         {
             "role": "system",
             "content": (
-                "Sos ChatbotSerio, asistente inmobiliario en Oberá. "
+                "Sos un asistente inmobiliario. "
                 "Reescribís una respuesta defectuosa para que sea correcta, clara y profesional, "
                 "en español rioplatense. Una sola pregunta por mensaje. "
                 "No inventes datos: usá solo lo que aportan los resultados de herramientas y el estado."

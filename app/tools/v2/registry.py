@@ -61,7 +61,7 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
             "function": {
                 "name": "search_properties",
                 "description": (
-                    "Busca propiedades en Oberá según los criterios del usuario. "
+                    "Busca propiedades de la inmobiliaria según los criterios del usuario. "
                     "Siempre usar esta herramienta cuando el usuario quiera buscar, alquilar o comprar. "
                     "Todos los filtros son opcionales; los omitidos matchean cualquier valor."
                 ),
@@ -82,7 +82,7 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                         },
                         "zona": {
                             "type": "string",
-                            "description": "Zona o barrio en Oberá: 'Centro', 'UNAM', 'Barrio Schuster', 'Ruta 14'.",
+                            "description": "Zona o barrio donde busca el usuario (según las zonas que opera la inmobiliaria, indicadas en la política del tenant).",
                         },
                         "presupuesto_max": {
                             "type": "number",

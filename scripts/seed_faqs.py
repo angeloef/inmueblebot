@@ -220,8 +220,12 @@ async def seed_faqs(force: bool = False):
             await session.execute(delete(FAQ))
             logger.info("[FAQs] FAQs existentes eliminadas.")
 
+        # Scope seeded FAQs to the default tenant so they're visible under RLS
+        # (FORCE ROW LEVEL SECURITY filters NULL-tenant rows).
+        from app.core.tenancy import default_tenant_id
+        tid = default_tenant_id()
         for faq_data in FAQS:
-            faq = FAQ(**faq_data)
+            faq = FAQ(tenant_id=tid, **faq_data)
             session.add(faq)
 
         await session.flush()
