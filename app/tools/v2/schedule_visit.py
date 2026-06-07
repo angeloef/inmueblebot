@@ -35,24 +35,19 @@ async def schedule_visit(
         horario: Natural language time (e.g., "tarde", "15:00", "a las 10").
         consulta: Any additional question or note.
     """
-    # ── Validate required fields ────────────────────────────────
-    # NOTE: `telefono` is NOT required — the user's identity (and contact) comes
-    # from the session (WhatsApp/BSUID), not from a number typed into the chat.
-    missing = []
+    # ── Step 1: require the fields needed to parse/validate the slot ─────────
+    # property_id + día + horario define the slot; nombre is checked LATER so an
+    # out-of-hours or invalid time is rejected IMMEDIATELY, not after we've made
+    # the user hand over their name. `telefono` is never required — identity comes
+    # from the session (WhatsApp/BSUID), not a number typed into the chat.
     if not property_id:
-        missing.append("ID de propiedad")
-    if not nombre:
-        missing.append("nombre")
+        return "Para agendar la visita necesito saber qué propiedad te interesa. ¿Cuál querés visitar?"
     if not dia:
-        missing.append("día")
+        return "¡Genial! ¿Qué día te gustaría la visita?"
+    if not horario or not horario.strip():  # None-safe (LLM JSON may send null)
+        return "¿En qué horario te gustaría la visita?"
 
-    if missing:
-        # User-facing, natural re-ask. NEVER leak internal/developer wording
-        # (e.g. "el especialista debe llamar a schedule_visit") to the chat.
-        faltan = " y ".join(missing) if len(missing) <= 2 else ", ".join(missing[:-1]) + " y " + missing[-1]
-        return f"Para agendar la visita me falta {faltan}. ¿Me lo pasás así la dejo confirmada?"
-
-    # ── Parse date/time ─────────────────────────────────────────
+    # ── Step 2: parse date/time ─────────────────────────────────────────────
     combined_input = f"{dia} {horario}".strip()
     now = get_argentina_now()
 
@@ -91,19 +86,48 @@ async def schedule_visit(
         if start_datetime <= _ar_now():
             start_datetime = start_datetime + timedelta(days=7)
 
-    # ── Business hours check ────────────────────────────────────
-    weekday = start_datetime.weekday()
-    hour = start_datetime.hour
-    if weekday == 6:
+    # ── Step 3: business-hours gate (reject BEFORE asking for the name) ──────
+    # Windows + timezone come from the tenant (FAQ-documented hours): Lun–Vie
+    # 9–18, Sáb 9–13, Dom cerrado by default. One source of truth.
+    from app.core.tenancy import resolve_tenant_id
+    from app.routers.v3.scheduling.utils import (
+        load_tenant_hours,
+        is_within_business_hours,
+        describe_hours,
+    )
+
+    windows, _tz = await load_tenant_hours(resolve_tenant_id())
+    hours_desc = describe_hours(windows)
+
+    if start_datetime.weekday() not in windows:
         return (
-            "Los domingos no realizamos visitas. Nuestro horario es "
-            "lunes a sábado de 9:00 a 18:00 hs. ¿Qué otro día te viene bien?"
+            f"Ese día no realizamos visitas. Nuestro horario es {hours_desc}. "
+            f"¿Qué otro día te viene bien?"
         )
-    if not (9 <= hour < 18):
+    if not is_within_business_hours(start_datetime, windows):
         return (
             f"El horario de las {start_datetime.strftime('%H:%M')} hs está fuera de nuestro "
-            f"horario de atención (9:00 a 18:00 hs). ¿A qué hora preferís?"
+            f"horario de atención ({hours_desc}). ¿A qué hora preferís?"
         )
+
+    # ── Step 3b: availability check (reject taken slots BEFORE asking name) ──
+    # Checks the local DB conflict + Google Calendar (when configured). Fail-open:
+    # returns available=True on any error, so a check failure never blocks booking.
+    avail = await appointment_service.check_slot_availability(property_id, start_datetime)
+    if not avail.get("available", True):
+        suggestions = avail.get("suggested_times", [])
+        if suggestions:
+            lines = [f"- {s.get('formatted', str(s))}" for s in suggestions[:3]]
+            return (
+                "Ese horario ya está reservado. 🎯 Tengo disponibles:\n"
+                + "\n".join(lines)
+                + "\n\n¿Alguno te sirve?"
+            )
+        return "Ese horario ya está reservado. ¿Qué otro horario te conviene?"
+
+    # ── Step 4: now require the name ────────────────────────────────────────
+    if not nombre:
+        return "¡Perfecto! ¿Me pasás tu nombre así dejo la visita confirmada?"
 
     # ── Resolve the user by SESSION identity (never the typed phone) ────
     # Identity comes from the webhook — BSUID first (stable, Meta migration), phone
@@ -180,10 +204,16 @@ async def schedule_visit(
         )
     except Exception as e:
         logger.error(f"[schedule_visit] create_appointment failed: {e}")
-        return "Tuve un problema técnico al agendar. ¿Podrías intentar en unos minutos?"
+        return await _handoff_on_failure(property_id, nombre, dia, horario)
 
     if not isinstance(result, dict) or not result.get("success"):
-        msg = result.get("message", "Horario no disponible") if isinstance(result, dict) else "Error al agendar"
+        # Technical failure (DB/RLS/unexpected) — NEVER confirm; hand off to a human
+        # rather than leaking the error or telling the user to "try again later".
+        if isinstance(result, dict) and result.get("error_type") == "technical":
+            return await _handoff_on_failure(property_id, nombre, dia, horario)
+
+        # Slot taken / not available — re-ask with concrete suggestions.
+        msg = result.get("message", "Ese horario no está disponible") if isinstance(result, dict) else "Ese horario no está disponible"
         suggestions = result.get("suggested_times", []) if isinstance(result, dict) else []
         if suggestions:
             lines = [f"- {s.get('formatted', str(s))}" for s in suggestions[:3]]
@@ -229,6 +259,26 @@ async def schedule_visit(
         "con la dirección exacta y horario coordinado. ¡Gracias!"
     )
     return "\n".join(lines)
+
+
+async def _handoff_on_failure(property_id: int, nombre: str, dia: str, horario: str) -> str:
+    """Hand the booking off to a human when persistence fails.
+
+    Per product decision: never confirm a visit that didn't persist. On a technical
+    failure we escalate to a human agent (best-effort) and tell the user a person will
+    finish coordinating — we do NOT say "agendada".
+    """
+    detail = f"Visita pedida — propiedad {property_id}, {nombre or 'sin nombre'}, {dia} {horario}".strip()
+    try:
+        from app.tools.v2.request_human_assistance import request_human_assistance
+        await request_human_assistance(reason="booking_failed", message=detail)
+    except Exception:
+        logger.debug("[schedule_visit] request_human_assistance failed (non-fatal)")
+    return (
+        "Tuve un inconveniente para dejar la visita registrada en el sistema. "
+        "Ya avisé a uno de nuestros asesores para que coordine con vos los últimos detalles. "
+        "¡Disculpá la demora!"
+    )
 
 
 def _parse_simple_date(dia: str, horario: str, now: datetime) -> datetime | None:

@@ -44,8 +44,8 @@ def observe(tool_name: str, result: str) -> Observation:
     if count_match:
         obs.result_count = int(count_match.group(1))
 
-    # Extract property IDs
-    id_matches = re.findall(r"\[(\d+)\]", result)
+    # Extract property IDs (supports normalized "ID:7" and legacy "[7]" formats)
+    id_matches = re.findall(r"(?:ID:|\[)(\d+)", result)
     obs.result_ids = [int(x) for x in id_matches]
 
     # Detect anomalies

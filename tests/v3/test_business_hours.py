@@ -17,14 +17,50 @@ import app.services.tenant_service  # noqa: F401 — ensure submodule loaded so 
 from app.routers.v3.scheduling.utils import (
     DEFAULT_TZ,
     _DEFAULT_WINDOWS,
+    describe_hours,
     is_within_business_hours,
     load_tenant_hours,
     parse_business_hours,
+    parse_business_hours_es,
 )
+
+
+class TestParseBusinessHoursEs(unittest.TestCase):
+    def test_faq_style_phrasing(self):
+        text = ("Nuestro horario de atención es de lunes a viernes de 9:00 a 18:00 hs, "
+                "y los sábados de 9:00 a 13:00 hs.")
+        windows = parse_business_hours_es(text)
+        self.assertIsNotNone(windows)
+        for wd in range(0, 5):
+            self.assertEqual(windows[wd], (9, 18))
+        self.assertEqual(windows[5], (9, 13))
+        self.assertNotIn(6, windows)
+
+    def test_other_city_hours(self):
+        # A tenant in another part of the country with different hours.
+        windows = parse_business_hours_es("Atendemos de lunes a sábado de 8 a 20 hs")
+        self.assertIsNotNone(windows)
+        self.assertEqual(windows[0], (8, 20))
+        self.assertEqual(windows[5], (8, 20))
+
+    def test_unparseable_returns_none(self):
+        self.assertIsNone(parse_business_hours_es("consultanos por WhatsApp cuando quieras"))
 
 
 def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
+
+
+class TestDescribeHours(unittest.TestCase):
+    def test_groups_consecutive_equal_windows(self):
+        # Default windows: Mon-Fri 9-18, Sat 9-13 → grouped, not enumerated per-day.
+        desc = describe_hours(_DEFAULT_WINDOWS)
+        self.assertIn("lunes a viernes de 09:00 a 18:00 hs", desc)
+        self.assertIn("sábado de 09:00 a 13:00 hs", desc)
+        self.assertNotIn("martes", desc)  # grouped away
+
+    def test_empty_windows_falls_back_to_default_text(self):
+        self.assertIn("lunes a viernes", describe_hours({}))
 
 
 class TestParseBusinessHours(unittest.TestCase):
@@ -137,6 +173,9 @@ class TestLoadTenantHours(unittest.TestCase):
         with patch(
             "app.services.tenant_service.get_tenant",
             new=AsyncMock(return_value=None),
+        ), patch(
+            "app.routers.v3.scheduling.utils._load_hours_from_faq",
+            new=AsyncMock(return_value=None),
         ):
             # re-import to pick up the patch
             from importlib import import_module
@@ -159,6 +198,9 @@ class TestLoadTenantHours(unittest.TestCase):
         with patch(
             "app.services.tenant_service.get_tenant",
             new=AsyncMock(return_value=fake_tenant),
+        ), patch(
+            "app.routers.v3.scheduling.utils._load_hours_from_faq",
+            new=AsyncMock(return_value=None),
         ):
             from importlib import import_module
             utils_mod = import_module("app.routers.v3.scheduling.utils")
@@ -180,6 +222,9 @@ class TestLoadTenantHours(unittest.TestCase):
         with patch(
             "app.services.tenant_service.get_tenant",
             new=AsyncMock(return_value=fake_tenant),
+        ), patch(
+            "app.routers.v3.scheduling.utils._load_hours_from_faq",
+            new=AsyncMock(return_value=None),
         ):
             from importlib import import_module
             utils_mod = import_module("app.routers.v3.scheduling.utils")

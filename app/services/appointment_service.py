@@ -14,6 +14,7 @@ from app.db.models import Property
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
+from app.core.tenancy import resolve_tenant_id
 
 from app.services.calendar_service import calendar_service
 
@@ -128,6 +129,7 @@ class AppointmentService:
             
             appointment = Appointment(
                 id=uuid4(),
+                tenant_id=resolve_tenant_id(),  # REQUIRED: RLS WITH CHECK rejects NULL tenant_id
                 user_id=user_id,
                 property_id=property_id,
                 start_time=start_time,
@@ -159,9 +161,12 @@ class AppointmentService:
         except Exception as e:
             await db.rollback()
             logger.error(f"Error al crear cita: {e}")
+            # Technical failure (DB/RLS/etc.) — do NOT leak the raw error to the user.
+            # Flag it so the caller can hand off to a human instead of confirming.
             return {
                 "success": False,
-                "message": str(e),
+                "error_type": "technical",
+                "message": "No pude registrar la visita por un problema técnico.",
                 "suggested_times": []
             }
         finally:
@@ -291,6 +296,7 @@ class AppointmentService:
             
             new_appointment = Appointment(
                 id=uuid4(),
+                tenant_id=getattr(old_appointment, "tenant_id", None) or resolve_tenant_id(),
                 user_id=old_appointment.user_id,
                 property_id=old_appointment.property_id,
                 start_time=new_start_time,

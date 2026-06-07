@@ -34,7 +34,7 @@ from loguru import logger
 # ── Safety-gate constants (verbatim from app/routers/router.py) ───────────────
 
 _OUT_OF_SCOPE_RESPONSE = (
-    "Soy un asistente inmobiliario especializado en propiedades en Oberá, Misiones. "
+    "Soy un asistente inmobiliario. "
     "Puedo ayudarte a buscar casas, departamentos, terrenos o PH en alquiler o venta. "
     "¿En qué querés que te ayude?"
 )
@@ -367,7 +367,9 @@ async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool
 
 # ── Search-context persistence ────────────────────────────────────────────────
 
-_SEARCH_ID_RE = re.compile(r"\[(\d+)\]")
+# Matches both the normalized "ID:7" format and the legacy "[7]" bracket format so
+# ordinal resolution keeps working across the format change.
+_SEARCH_ID_RE = re.compile(r"(?:ID:|\[)(\d+)")
 
 
 _ORDINAL_PATTERNS: list[tuple] = [
@@ -458,7 +460,7 @@ async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Sos ChatbotSerio, asistente inmobiliario en Oberá. "
+                    "Sos un asistente inmobiliario. "
                     "Usá los resultados de las herramientas para dar una respuesta clara y amigable al usuario. "
                     "Mostrá las propiedades o datos que devolvieron las herramientas; no los resumas a 'estoy buscando'. "
                     "Respondé SIEMPRE en español. Sé conciso y profesional."
@@ -500,6 +502,7 @@ async def _assemble_response(
     tenant_id,
     booking_succeeded: bool = False,
     fsm_plan: list | None = None,
+    tools_used: list[str] | None = None,
 ) -> tuple[str, dict]:
     """Build response_text and rich_content from engine output + tool results.
 
@@ -547,13 +550,40 @@ async def _assemble_response(
     # response_plan so no fake "Cita Agendada" reaches the user.
     action = getattr(turn, "action", None)
     if action == "book_step" and not booking_succeeded:
-        # Discard the engine's response_plan entirely.
-        # Emit a neutral "still gathering info" message instead.
-        _safe_gathering = (
+        # Discard the engine's (possibly fabricated) confirmation response_plan. BUT
+        # surface the REAL schedule_visit result — it carries the actual reason the
+        # booking didn't complete (out-of-hours, slot taken + suggestions, a missing
+        # field re-ask, or a handoff). In this branch the result never contains the
+        # CONFIRMED marker, so it's always a safe non-confirmation message. Returning
+        # it (instead of a generic "still gathering" reply) is what prevents the
+        # ask-the-same-thing loop the user hit in the first manual test.
+        if tools_used and tool_results:
+            for _name, _res in zip(tools_used, tool_results):
+                if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
+                    return _strip_markers(_res), rich
+        return (
             "Estoy recopilando los detalles para tu visita. "
             "¿Podés confirmarme el día y horario que preferís?"
-        )
-        return _safe_gathering, rich
+        ), rich
+
+    # ── Path 0b2: deterministic render for already-formatted data tools ──
+    # search_properties and get_property_details produce user-ready output (Argentine
+    # prices, normalized ID:N, progressive narrowing, structured card). Send it
+    # VERBATIM — re-synthesizing through the LLM is what caused the list truncation,
+    # price-format drift ($35,976 vs $35.976), and "claimed a filter that wasn't
+    # applied" bugs. Skip when the photo flow is involved (handled in Path 1).
+    # Ordered by specificity: if both ran in one turn, the detail card wins over the
+    # list so the more specific intent isn't silently dropped.
+    _VERBATIM_TOOLS = ("get_property_details", "search_properties")
+    _has_image = "get_property_images" in (tools_used or []) or any(
+        getattr(p, "type", None) == "images" for p in (turn.response_plan or [])
+    )
+    if tools_used and action != "book_step" and not _has_image:
+        for _tool in _VERBATIM_TOOLS:
+            if _tool in tools_used:
+                for _n, _r in zip(tools_used, tool_results):
+                    if _n == _tool and _r and not _r.startswith("Error:"):
+                        return _strip_markers(_r), rich
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
     # When a text-data tool produced results, the user must SEE those results —
@@ -780,9 +810,10 @@ async def run_turn(
 
     state_json = json.dumps(_compact_state(belief), ensure_ascii=False)
     history = _history_messages(belief)
+    tenant_policy = await prompts.build_tenant_policy(tenant_id)
     messages = prompts.build_messages(
         prompts.build_system_prompt(),
-        prompts.build_tenant_policy(tenant_id),
+        tenant_policy,
         history,
         state_json,
         user_message,
@@ -919,6 +950,7 @@ async def run_turn(
         tenant_id,
         booking_succeeded=_fsm_booking_succeeded,
         fsm_plan=_fsm_plan,
+        tools_used=tools_used,
     )
 
     # ── Step 8b: Quality guard — gated judge + one targeted regen (LLM Call 3) ─

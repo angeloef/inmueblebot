@@ -100,6 +100,34 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
         # Marker must be stripped before reaching user
         self.assertNotIn("<!--CONFIRMED:", text, "Marker was not stripped!")
 
+    def test_book_step_surfaces_real_tool_result_not_generic_loop(self):
+        """Manual-test-1 loop fix: when booking didn't succeed, surface the REAL
+        schedule_visit result (out-of-hours / slot taken / re-ask) instead of the
+        generic 'Estoy recopilando los detalles' message that caused the loop."""
+        from app.routers.v3.engine import _assemble_response
+
+        turn = _StubTurn(action="book_step", response_plan=[
+            _StubResponsePlanItem("text", "📅 *¡Cita Agendada!* (fabricado)"),
+        ])
+        belief = _StubBelief()
+        real_reason = (
+            "El horario de las 21:00 hs está fuera de nuestro horario de atención "
+            "(lunes a viernes de 09:00 a 18:00 hs, sábado de 09:00 a 13:00 hs). ¿A qué hora preferís?"
+        )
+
+        text, rich = _run(_assemble_response(
+            turn, belief,
+            tool_results=[real_reason],
+            any_ran=True,
+            tenant_id=None,
+            booking_succeeded=False,
+            tools_used=["schedule_visit"],
+        ))
+
+        self.assertIn("fuera de nuestro horario", text)
+        self.assertNotIn("Cita Agendada", text)
+        self.assertNotIn("recopilando los detalles", text)
+
     def test_non_book_step_passes_through_normally(self):
         """action != book_step is unaffected by the guard."""
         info_plan = [

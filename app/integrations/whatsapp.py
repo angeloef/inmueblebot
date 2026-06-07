@@ -22,52 +22,56 @@ class WhatsAppClient:
         return self._is_configured
 
     async def _post_message(self, payload: dict, label: str) -> dict:
-        """POST a /messages payload with BSUID→phone fallback (Meta identity migration).
+        """POST a /messages payload, phone-first with BSUID as opportunistic fallback.
 
-        We send BSUID-first (the durable identity), but Meta only enables OUTBOUND
-        sending to a BSUID from ~June 2026 — until then the API rejects it with
-        (#131009) "phone format". So if the primary send fails and the recipient
-        wasn't already the session phone, we retry once with the phone from the
-        current-turn identity ([app/core/identity.py]). This keeps delivery working
-        today and switches to BSUID automatically once Meta enables it — no code change.
+        Meta only enables OUTBOUND sending to a BSUID from ~mid-2026 — until then the
+        API rejects BSUID recipients with (#131009) "phone format". So we send to the
+        session PHONE first (the path that works today) and only fall back to the
+        originally-requested recipient (typically the BSUID) if no phone is known or
+        the phone send fails. Once Meta enables BSUID outbound, the BSUID send will
+        simply start succeeding — flip the order back then. See [app/core/identity.py].
         """
         url = f"{self.base_url}/{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+
+        requested_to = payload.get("to")
+        session_phone = None
+        try:
+            from app.core.identity import get_current_contact
+            session_phone = (get_current_contact() or {}).get("phone")
+        except Exception:
+            session_phone = None
+
+        # Build the ordered list of recipients to try: phone first, then the original
+        # (BSUID) target — de-duplicated, skipping falsy values.
+        targets: list[str] = []
+        for t in (session_phone, requested_to):
+            if t and t not in targets:
+                targets.append(t)
+
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
-            result = response.json()
-            if response.status_code < 400:
-                msg_id = result.get("messages", [{}])[0].get("id", "?")
-                logger.info(f"[WhatsApp] ✅ {label} OK → {payload.get('to')} | message_id={msg_id}")
-                return result
-
-            # Primary send failed — try the session phone as fallback.
-            to0 = payload.get("to")
-            fallback_phone = None
-            try:
-                from app.core.identity import get_current_contact
-                fallback_phone = (get_current_contact() or {}).get("phone")
-            except Exception:
-                fallback_phone = None
-
-            if fallback_phone and fallback_phone != to0:
-                err = (result.get("error") or {}).get("message", "")
-                logger.warning(
-                    f"[WhatsApp] {label} to {to0} failed ({response.status_code}: {err}); "
-                    f"retrying via phone {fallback_phone}"
-                )
-                payload = {**payload, "to": fallback_phone}
-                response = await client.post(url, json=payload, headers=headers)
+            result: dict = {}
+            for idx, to in enumerate(targets):
+                attempt_payload = {**payload, "to": to}
+                response = await client.post(url, json=attempt_payload, headers=headers)
                 result = response.json()
                 if response.status_code < 400:
                     msg_id = result.get("messages", [{}])[0].get("id", "?")
-                    logger.info(f"[WhatsApp] ✅ {label} OK (phone fallback) → {fallback_phone} | message_id={msg_id}")
+                    suffix = "" if idx == 0 else " (fallback)"
+                    logger.info(f"[WhatsApp] ✅ {label} OK{suffix} → {to} | message_id={msg_id}")
                     return result
+                err = (result.get("error") or {}).get("message", "")
+                # Only warn (and continue) if there's another target to try.
+                if idx < len(targets) - 1:
+                    logger.warning(
+                        f"[WhatsApp] {label} to {to} failed ({response.status_code}: {err}); "
+                        f"retrying via {targets[idx + 1]}"
+                    )
 
-            logger.error(f"[WhatsApp] ❌ {label} FAILED ({response.status_code}): {result}")
+            logger.error(f"[WhatsApp] ❌ {label} FAILED: {result}")
             return result
 
     async def send_message(self, to: str, message: str) -> dict:

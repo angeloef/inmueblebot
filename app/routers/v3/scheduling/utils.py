@@ -114,6 +114,110 @@ def parse_business_hours(text: str | None) -> dict[int, tuple[int, int]] | None:
     return result if result else None
 
 
+_DAY_NAMES_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def describe_hours(windows: dict[int, tuple[int, int]]) -> str:
+    """Human-readable hours description, grouping consecutive equal weekday windows.
+
+    e.g. {0..4:(9,18), 5:(9,13)} → "lunes a viernes de 9:00 a 18:00 hs, sábado de 9:00 a 13:00 hs".
+    """
+    if not windows:
+        return "lunes a viernes de 09:00 a 18:00 hs, sábado de 09:00 a 13:00 hs"
+    items = sorted(windows.items())
+    groups: list[list] = []
+    for wd, (oh, ch) in items:
+        if groups and groups[-1][2] == (oh, ch) and groups[-1][1] == wd - 1:
+            groups[-1][1] = wd
+        else:
+            groups.append([wd, wd, (oh, ch)])
+    parts = []
+    for start, end, (oh, ch) in groups:
+        rng = _DAY_NAMES_ES[start] if start == end else f"{_DAY_NAMES_ES[start]} a {_DAY_NAMES_ES[end]}"
+        parts.append(f"{rng} de {oh:02d}:00 a {ch:02d}:00 hs")
+    return ", ".join(parts)
+
+
+_ES_FULL_DAYS: dict[str, int] = {
+    "lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3,
+    "viernes": 4, "sabado": 5, "domingo": 6,
+}
+
+# Spanish natural-language clause: "lunes a viernes de 9:00 a 18:00", "sábados de 9 a 13".
+_HOURS_CLAUSE_RE = re.compile(
+    r"(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bados?|domingos?)"
+    r"(?:\s+a\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bados?|domingos?))?"
+    r"\s+(?:de\s+)?(\d{1,2})(?::\d{2})?\s*(?:a|hasta|-|–)\s*(\d{1,2})(?::\d{2})?",
+    re.IGNORECASE,
+)
+
+
+def _norm_day(token: str) -> int | None:
+    """Normalize a Spanish day token (accents/plurals) to a weekday int (0=Mon)."""
+    t = token.lower().strip().translate(str.maketrans("áéíóú", "aeiou"))
+    if t.endswith("s") and t[:-1] in _ES_FULL_DAYS:
+        t = t[:-1]
+    return _ES_FULL_DAYS.get(t)
+
+
+def parse_business_hours_es(text: str | None) -> dict[int, tuple[int, int]] | None:
+    """Parse a free-text Spanish hours description into weekday→(open_h, close_h).
+
+    Handles the FAQ-style phrasing the dashboard produces, e.g.
+        "de lunes a viernes de 9:00 a 18:00 hs, y los sábados de 9:00 a 13:00 hs"
+    Returns None when nothing parseable is found.
+    """
+    if not text:
+        return None
+    result: dict[int, tuple[int, int]] = {}
+    try:
+        for m in _HOURS_CLAUSE_RE.finditer(text):
+            d1 = _norm_day(m.group(1))
+            d2 = _norm_day(m.group(2)) if m.group(2) else d1
+            oh, ch = int(m.group(3)), int(m.group(4))
+            if d1 is None or d2 is None:
+                continue
+            if not (0 <= oh <= 23 and 0 <= ch <= 23):
+                continue
+            days = range(d1, d2 + 1) if d2 >= d1 else list(range(d1, 7)) + list(range(0, d2 + 1))
+            for d in days:
+                result[d] = (oh, ch)
+    except Exception as exc:
+        logger.debug("[scheduling.utils] parse_business_hours_es error: {}", exc)
+        return None
+    return result or None
+
+
+async def _load_hours_from_faq(tenant_id) -> dict[int, tuple[int, int]] | None:
+    """Read the tenant's 'horario de atención' FAQ and parse it into windows.
+
+    RLS scopes faq_entries to the current tenant, so this returns the calling
+    tenant's own hours. Returns None when no horario FAQ exists or it can't be parsed.
+    """
+    try:
+        from app.db.session import async_session_factory
+        from sqlalchemy import text as sql_text
+
+        async with async_session_factory() as session:
+            rows = (await session.execute(
+                sql_text("""
+                    SELECT answer FROM faq_entries
+                    WHERE active = TRUE
+                      AND (category ILIKE :cat OR question ILIKE :kw OR answer ILIKE :kw)
+                    ORDER BY "order" ASC
+                    LIMIT 5
+                """),
+                {"cat": "horario%", "kw": "%horario%"},
+            )).fetchall()
+        for row in rows:
+            windows = parse_business_hours_es(row[0]) or parse_business_hours(row[0])
+            if windows:
+                return windows
+    except Exception as exc:
+        logger.debug("[scheduling.utils] _load_hours_from_faq error: {}", exc)
+    return None
+
+
 def is_within_business_hours(
     dt: datetime, windows: dict[int, tuple[int, int]]
 ) -> bool:
@@ -137,31 +241,32 @@ async def load_tenant_hours(
 ) -> tuple[dict[int, tuple[int, int]], str]:
     """Load business-hours windows and IANA timezone for a tenant.
 
-    3-tier degradation (never raises):
-    1. Tenant found + business_hours parses → parsed windows + Tenant.timezone
-    2. Tenant found, business_hours null/malformed → DEFAULT_WINDOWS + Tenant.timezone
-    3. get_tenant None or tz invalid → DEFAULT_WINDOWS + DEFAULT_TZ
+    Hours source priority (per-tenant, dynamic — never raises):
+    1. The tenant's "horario de atención" FAQ (parsed) — the single source of truth
+       the inmobiliaria edits from the dashboard.
+    2. Tenant.business_hours column (structured override).
+    3. DEFAULT_WINDOWS.
+    Timezone comes from Tenant.timezone (validated), else DEFAULT_TZ.
     """
     try:
         from app.services.tenant_service import get_tenant
 
-        if tenant_id is None:
-            return _DEFAULT_WINDOWS.copy(), DEFAULT_TZ
+        tenant = await get_tenant(tenant_id) if tenant_id is not None else None
 
-        tenant = await get_tenant(tenant_id)
-        if tenant is None:
-            return _DEFAULT_WINDOWS.copy(), DEFAULT_TZ
-
-        # Validate timezone
-        tz_str = tenant.timezone or DEFAULT_TZ
+        # Timezone (validated)
+        tz_str = (tenant.timezone if tenant else None) or DEFAULT_TZ
         try:
             import zoneinfo
             zoneinfo.ZoneInfo(tz_str)
         except Exception:
             tz_str = DEFAULT_TZ
 
-        # Parse business_hours text
-        windows = parse_business_hours(tenant.business_hours)
+        # 1. FAQ (per-tenant, RLS-scoped)
+        windows = await _load_hours_from_faq(tenant_id) if tenant_id is not None else None
+        # 2. Tenant.business_hours column
+        if windows is None and tenant is not None:
+            windows = parse_business_hours(tenant.business_hours)
+        # 3. Defaults
         if windows is None:
             windows = _DEFAULT_WINDOWS.copy()
 

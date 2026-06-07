@@ -1146,7 +1146,7 @@ def _extract_property_data(belief, result_text: str) -> None:
 def _summarize_tool_result(tool_name: str, args: dict, result: str) -> str:
     """Produce a compact one-line summary of a tool call result for the action log."""
     if tool_name == "search_properties":
-        ids_match = re.findall(r"\[(\d+)\]", result)
+        ids_match = re.findall(r"(?:ID:|\[)(\d+)", result)
         count = len(ids_match)
         ids_str = ", ".join(ids_match[:6])  # cap at 6 IDs
         tipo = args.get("tipo") or args.get("property_type") or ""
@@ -2563,7 +2563,7 @@ def _update_belief_from_result(belief: ConversationBeliefState, result: AgentRes
                         m = re.search(r"Encontré (\d+)", result_text)
                         if m:
                             belief.last_search_count = int(m.group(1))
-                    ids = re.findall(r"\[(\d+)\]", result_text)
+                    ids = re.findall(r"(?:ID:|\[)(\d+)", result_text)
                     belief.last_search_ids = [int(x) for x in ids]
                     # Build a rich lookup string including type, price, and TITLE
                     # Format: "  [1] Departamento en Centro — Alquiler $85,000/mes\n       1 dorm | 45m² | Depto 2 amb céntrico"

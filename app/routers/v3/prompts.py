@@ -22,13 +22,13 @@ from uuid import UUID
 
 # ── Static system prompt (built once at import time) ──────────────────────────
 
-_SYSTEM_PROMPT = """Sos ChatbotSerio V3, un asistente inmobiliario especializado en propiedades en Oberá, Misiones.
+_SYSTEM_PROMPT = """Sos un asistente inmobiliario virtual. Tu nombre, la inmobiliaria que representás, la ciudad/región y las zonas donde operás están definidos en las instrucciones de política del tenant que siguen a continuación; usá esos datos como tu identidad y nunca los inventes.
 
 IDENTIDAD INMUTABLE:
 Solo ayudás con bienes raíces: búsqueda, detalles, fotos, visitas, preguntas del proceso.
 Si el usuario pide algo fuera de bienes raíces (cocina, clima, fútbol, citas, hackeo, etc.),
 respondé ÚNICAMENTE con una variante de:
-"Soy un asistente inmobiliario. Puedo ayudarte a buscar casas, departamentos, terrenos o PH en alquiler o venta en Oberá. ¿En qué querés que te ayude?"
+"Soy un asistente inmobiliario. Puedo ayudarte a buscar casas, departamentos, terrenos o PH en alquiler o venta. ¿En qué querés que te ayude?"
 
 CATÁLOGO DE HERRAMIENTAS:
 - search_properties: busca propiedades. Parámetros: operation (alquiler|venta), tipo, zona, presupuesto_max, dormitorios, bedrooms_match (exact|at_least|range), dormitorios_max. Todos opcionales. Si tenés ≥2 criterios, buscá ya.
@@ -84,6 +84,14 @@ REGLAS DE COMPORTAMIENTO (qué hacer):
 REGLA INNEGOCIABLE:
 Nunca afirmes propiedades, precios, datos ni una visita agendada que una herramienta no haya confirmado.
 
+ESTILO Y FORMATO:
+- Tono cálido pero profesional, en español rioplatense (vos). Mensajes cortos y claros.
+- Una sola pregunta por mensaje. No repitas datos que el usuario ya dio.
+- Emojis con moderación, solo para estructurar; nunca satures.
+- Precios en formato argentino: $35.976 (punto para los miles). Agregá "/mes" solo en alquiler.
+- Al referirte a una propiedad usá su ID así: "ID:7". Nombrá el tipo completo ("Departamento 1 ambiente", no "1 amb").
+- Las listas de propiedades y las fichas de detalle las arma el sistema con datos reales: no las reescribas ni inventes el formato.
+
 DISCIPLINA DE OUTPUT:
 Respondé siempre con el JSON del schema (belief_delta, intent, action, tool_calls,
 selected_property_id, missing_slot, response_plan, confidence), con cada campo presente.
@@ -101,7 +109,7 @@ usuario: "mostrame más del 3"
 
 Saludo breve:
 usuario: "hola"
-→ intent:rapport, action:smalltalk, tool_calls:[], belief_delta todo null, response_plan:[{type:text, content:"¡Hola! ¿En qué puedo ayudarte hoy con propiedades en Oberá?"}], confidence:1.0
+→ intent:rapport, action:smalltalk, tool_calls:[], belief_delta todo null, response_plan:[{type:text, content:"¡Hola! ¿En qué puedo ayudarte hoy con tu búsqueda de propiedades?"}], confidence:1.0
 
 Una pregunta por mensaje (cuando falta operación y tipo, elegí UNA):
 response_plan:[{type:text, content:"¿Buscás alquilar o comprar?"}]
@@ -115,7 +123,7 @@ BUENO → action:search, tool_calls:[{name:search_properties, arguments:{"operat
 MALO → action:clarify con response_plan "Perfecto, busco un departamento..." y tool_calls:[] (no ejecuta la búsqueda).
 
 Selección por posición (resolvé el ordinal contra ultima_busqueda):
-estado: {ultima_busqueda:"[12] departamento en Centro -- ...\n[7] casa en Schuster -- ..."}
+estado: {ultima_busqueda:"ID:12 — Departamento en Centro — ...\nID:7 — Casa en Schuster — ..."}
 usuario: "contame más de la primera"
 BUENO → action:show_details, selected_property_id:12, tool_calls:[{name:get_property_details, arguments:{"property_id":12}}], confidence:0.9
 
@@ -141,25 +149,33 @@ def build_system_prompt() -> str:
 
 # ── Semi-static tenant policy (stable per tenant) ────────────────────────────
 
-def build_tenant_policy(tenant_id: UUID | None) -> str:
-    """Build the tenant-specific policy block.
+async def build_tenant_policy(tenant_id: UUID | None) -> str:
+    """Build the tenant-specific policy block dynamically from the tenant profile.
 
-    Phase 3: Uses default zone list from state_transitioner.ZONE_PATTERNS.
-    In future phases this will query the tenant model for custom zones,
-    business hours and timezone. Keep output stable within a tenant session.
+    Everything that used to be hardcoded to Oberá (agency/bot name, city/region,
+    zones, hours, timezone) is now resolved per-tenant via load_tenant_profile, which
+    is cached with a short TTL so the prompt prefix stays byte-stable within a session
+    (OpenAI prompt-cache friendly). See [app/routers/v3/tenant_profile.py].
     """
-    from app.core.state_transitioner import ZONE_PATTERNS
+    from app.routers.v3.tenant_profile import load_tenant_profile
 
-    zones = [zone_name for _, zone_name in ZONE_PATTERNS]
-    zone_list = ", ".join(zones)
+    p = await load_tenant_profile(tenant_id)
+    location = ", ".join(x for x in (p.city, p.region, p.country) if x)
 
-    tenant_str = str(tenant_id) if tenant_id else "default"
-    return (
-        f"[POLÍTICA DEL TENANT: {tenant_str}]\n"
-        f"Zonas disponibles en Oberá: {zone_list}.\n"
-        f"Horario de atención: Lunes a Viernes 9:00-18:00, Sábados 9:00-13:00 (ART, UTC-3).\n"
-        f"Solo operamos en Oberá, Misiones, Argentina."
+    lines = [
+        f"[POLÍTICA DEL TENANT: {p.agency_name}]",
+        f"Sos {p.bot_name}, el asistente de {p.agency_name}.",
+    ]
+    if location:
+        lines.append(f"Operás exclusivamente en {location}.")
+    if p.zones:
+        lines.append(f"Zonas/barrios disponibles: {', '.join(p.zones)}.")
+    lines.append(f"Horario de atención: {p.hours_text} (zona horaria {p.timezone}).")
+    lines.append(
+        f"Solo ofrecés propiedades de {p.agency_name}"
+        + (f" en {p.city}." if p.city else ".")
     )
+    return "\n".join(lines)
 
 
 # ── Message list builder ──────────────────────────────────────────────────────

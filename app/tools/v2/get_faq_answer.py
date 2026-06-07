@@ -72,9 +72,17 @@ async def get_faq_answer(pregunta: str = "") -> str:
         pass
 
     # ── 3. Curated hardcoded fallback (when DB unavailable) ──────────────────
-    fallback = _fallback_faq(pregunta.lower().strip())
-    if fallback is not None:
-        return fallback
+    # These answers contain Oberá-specific data (zones, utilities, office address),
+    # so they're served ONLY to the default tenant. Other tenants rely on their own
+    # FAQ entries in the DB and otherwise get the safe deferral below.
+    try:
+        from app.core.tenancy import resolve_tenant_id, default_tenant_id
+        if resolve_tenant_id() == default_tenant_id():
+            fallback = _fallback_faq(pregunta.lower().strip())
+            if fallback is not None:
+                return fallback
+    except Exception:
+        pass
 
     # ── 4. Safe deferral — nothing found, don't fabricate ────────────────────
     return (
@@ -179,7 +187,7 @@ def _fallback_faq(key: str) -> str | None:
             "Podés contactarnos por:\n"
             "  • WhatsApp: +54 9 3755 5289339\n"
             "  • Oficina: Córdoba 450, Centro, Oberá\n"
-            "Horario: Lunes a Viernes 9-18hs, Sábados 9-12hs."
+            "Horario: Lunes a Viernes 9-18hs, Sábados 9-13hs."
         ),
     }
     if key in exact:

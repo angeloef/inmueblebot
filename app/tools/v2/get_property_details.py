@@ -15,7 +15,7 @@ async def get_property_details(property_id: int = 0) -> str:
         property_id: The numeric ID of the property (from search results).
     """
     if not property_id:
-        return "Necesito el número de ID de la propiedad. Usá el número que aparece entre corchetes en los resultados de búsqueda, por ejemplo 'mostrame más del 3'."
+        return "Necesito el número de ID de la propiedad. Usá el ID que aparece en los resultados de búsqueda (por ejemplo 'ID:3'), o decime 'mostrame más del 3'."
 
     async with async_session_factory() as session:
         result = await session.execute(
@@ -27,10 +27,9 @@ async def get_property_details(property_id: int = 0) -> str:
             return f"No encontré ninguna propiedad con ID {property_id}. ¿Revisamos los resultados de búsqueda de nuevo?"
 
         op_label = "ALQUILER" if prop.type == "alquiler" else "VENTA"
-        price_str = (
-            f"${prop.price:,.0f} por mes" if prop.type == "alquiler"
-            else f"${prop.price:,.0f}"
-        )
+        # Argentine price format: $35.976 (dot = thousands), "por mes" only for alquiler.
+        price_base = f"${prop.price:,.0f}".replace(",", ".")
+        price_str = f"{price_base} por mes" if prop.type == "alquiler" else price_base
         tipo_str = (prop.category or "propiedad").capitalize()
 
         amenities = (prop.extra_data or {}).get("amenities", []) if prop.extra_data else []

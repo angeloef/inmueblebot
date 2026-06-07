@@ -60,7 +60,7 @@ async def upsert_chunk(
                     INSERT INTO knowledge_chunks
                         (tenant_id, source_type, source_id, chunk_text, embedding)
                     VALUES
-                        (:tid, :stype, :sid, :txt, :emb::vector)
+                        (:tid, :stype, :sid, :txt, CAST(:emb AS vector))
                     ON CONFLICT (tenant_id, source_type, source_id)
                     DO UPDATE SET
                         chunk_text = EXCLUDED.chunk_text,
@@ -115,11 +115,11 @@ async def search_knowledge(
                         source_type,
                         source_id,
                         chunk_text,
-                        1.0 - (embedding <=> :emb::vector) AS similarity
+                        1.0 - (embedding <=> CAST(:emb AS vector)) AS similarity
                     FROM knowledge_chunks
                     WHERE tenant_id = :tid
-                      AND 1.0 - (embedding <=> :emb::vector) >= :threshold
-                    ORDER BY embedding <=> :emb::vector
+                      AND 1.0 - (embedding <=> CAST(:emb AS vector)) >= :threshold
+                    ORDER BY embedding <=> CAST(:emb AS vector)
                     LIMIT :lim
                 """),
                 {
