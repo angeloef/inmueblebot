@@ -843,8 +843,9 @@ async def run_turn(
         belief.turn_count += 1
 
     # History append (guard if fallback already appended)
+    # Use "user: " prefix so future turns can distinguish user vs. assistant messages.
     if not fallback_incremented:
-        belief.history.append(user_message)
+        belief.history.append(f"user: {user_message}")
     window = settings.HISTORY_WINDOW
     if len(belief.history) > window:
         belief.history = belief.history[-window:]
@@ -974,6 +975,18 @@ async def run_turn(
         judge_score = guard_result.judge_score
     except Exception as exc:
         logger.debug("[V3] guard.run_guard error (non-fatal): {}", str(exc))
+
+    # ── Step 8c: Store assistant response in history for next turn context ────────
+    # Include the bot's response so future turns can see the full conversation
+    # (essential for understanding context-dependent responses like "yes/no" to questions).
+    try:
+        belief.history.append(f"assistant: {response_text}")
+        window = settings.HISTORY_WINDOW
+        if len(belief.history) > window:
+            belief.history = belief.history[-window:]
+        await save_belief_v5(belief)
+    except Exception as exc:
+        logger.debug("[V3] Failed to append assistant response to history: {}", str(exc))
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v3::{turn.action}"

@@ -192,22 +192,31 @@ def build_messages(
     Order (cache-optimal):
       1. system prompt (static — highest cache hit)
       2. tenant policy (semi-static per tenant)
-      3. history turns (alternating user/assistant heuristic)
+      3. history turns (alternating user/assistant)
       4. current user message
       5. state block (dynamic — last, so it doesn't bust the cache above)
 
-    History entries are stored as plain user message strings; we surface them
-    as alternating user/assistant entries to give the model conversation context
-    without requiring us to have stored the bot's replies verbatim.
+    History entries are stored with role markers: "user: message" or "assistant: message".
+    We parse these and emit them as alternating user/assistant roles to give the model
+    full conversation context (essential for understanding context-dependent responses
+    like "yes/no" to a previous question).
     """
     msgs: list[dict] = [
         {"role": "system", "content": system},
         {"role": "system", "content": tenant_policy},
     ]
 
-    # History: emit as user messages (the model sees what the user said across turns)
+    # History: parse role markers and emit with proper roles
     for h_msg in history:
-        msgs.append({"role": "user", "content": h_msg})
+        if h_msg.startswith("user: "):
+            content = h_msg[6:]  # Strip "user: " prefix
+            msgs.append({"role": "user", "content": content})
+        elif h_msg.startswith("assistant: "):
+            content = h_msg[11:]  # Strip "assistant: " prefix
+            msgs.append({"role": "assistant", "content": content})
+        else:
+            # Fallback: legacy history without markers → treat as user
+            msgs.append({"role": "user", "content": h_msg})
 
     # Current user message
     msgs.append({"role": "user", "content": user_message})
