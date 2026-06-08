@@ -67,7 +67,13 @@ Si la acción no requiere herramientas, tool_calls debe ser [].
 
 CAMPO response_plan — plan de mensajes al usuario:
 Array de segmentos ordenados. type "text" para texto, "images" para fotos (incluye caption en content).
-Redactá la respuesta final aquí — no dejes segmentos vacíos.
+AHORRO DE TOKENS — cuándo redactar y cuándo no:
+- Si tool_calls trae CUALQUIER herramienta EXCEPTO get_property_images, el sistema arma el mensaje final
+  con los resultados REALES de la herramienta y DESCARTA tu texto de response_plan. En esos turnos NO
+  redactes la respuesta ni adelantes datos/precios/respuestas: poné UN solo segmento placeholder corto
+  (≤8 palabras), ej: [{type:text, content:"Un momento, reviso eso."}]. Nunca dejes el array vacío.
+- Redactá la respuesta final COMPLETA en response_plan SOLO cuando NO hay tool_calls (clarify, smalltalk,
+  handoff) o para el caption de fotos (get_property_images) — ahí tu texto SÍ se envía tal cual.
 Para imágenes: el sistema envía las URLs; vos solo ponés el caption en content.
 
 REGLAS DE COMPORTAMIENTO (qué hacer):
