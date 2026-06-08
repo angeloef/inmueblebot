@@ -549,6 +549,15 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
             if not _check_user_rate_limit(phone):
                 logger.info(f"Rate-limited unsupported '{msg_type}' from {phone}, not replying")
                 continue
+            # Set the session identity so whatsapp_client._post_message delivers to the
+            # *session phone* — the path that actually works today. The router path
+            # (process_turn_v2/v3) sets this on every text turn; the media branch never
+            # reaches the router, so without it the reply falls back to
+            # format_phone_number()'s mangled number, which Meta rejects (#131009) and
+            # the polite reply silently never arrives. This is why text worked but the
+            # audio/sticker fallback didn't.
+            from app.core.identity import set_current_contact
+            set_current_contact(phone=sanitize_phone(phone), bsuid=msg.get("_bsuid"))
             phone_to = format_phone_number(phone)
             if settings.WHATSAPP_SEND_BY_BSUID and msg.get("_bsuid"):
                 phone_to = msg.get("_bsuid")

@@ -35,6 +35,49 @@ _GUARANTEED = frozenset({
 })
 
 
+@pytest.fixture(autouse=True)
+def _no_inbox_side_effects():
+    """Keep the contract tests free of DB writes.
+
+    These tests assert only the returned contract dict — not persistence. The V3 adapter
+    now writes the turn to the inbox tables (parity with V2), and the configured
+    DATABASE_URL may point at a real database, so stub those side-effects to avoid
+    polluting it with ``549test*`` rows.
+    """
+    with patch("app.routers.v3.adapter._persist_turn_v3", new_callable=AsyncMock), \
+         patch("app.routers.v3.adapter._handle_handoff_v3", new_callable=AsyncMock):
+        yield
+
+
+def test_bot_text_for_persistence_prefers_response_text() -> None:
+    from app.routers.v3.adapter import _bot_text_for_persistence
+
+    assert _bot_text_for_persistence({"response_text": "hola"}) == "hola"
+
+
+def test_bot_text_for_persistence_falls_back_to_plan_text() -> None:
+    from app.routers.v3.adapter import _bot_text_for_persistence
+
+    result = {
+        "response_text": "",
+        "rich_content": {"response_plan": [
+            {"type": "text", "content": "Detalles..."},
+            {"type": "images", "images": ["u1"], "caption": ""},
+            {"type": "text", "content": "¿Coordinamos visita?"},
+        ]},
+    }
+    assert _bot_text_for_persistence(result) == "Detalles...\n\n¿Coordinamos visita?"
+
+
+def test_bot_text_for_persistence_image_only_plan() -> None:
+    from app.routers.v3.adapter import _bot_text_for_persistence
+
+    result = {"response_text": "", "rich_content": {"response_plan": [
+        {"type": "images", "images": ["u1"], "caption": ""},
+    ]}}
+    assert _bot_text_for_persistence(result) == "📷 (imágenes enviadas)"
+
+
 @pytest.mark.asyncio
 async def test_process_turn_v3_returns_guaranteed_keys() -> None:
     """V3 adapter must return the guaranteed-subset keys for a normal message."""

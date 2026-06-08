@@ -43,6 +43,10 @@ async def process_turn_v3(
     set_current_contact(phone, bsuid)
 
     tenant_id = _resolve_tenant(tenant)
+    # Pin the tenant for the whole adapter scope so the persistence calls below land in
+    # the same tenant the engine served (run_turn sets it too, but error paths may not).
+    from app.core.tenancy import set_current_tenant
+    set_current_tenant(tenant_id)
 
     start = time.perf_counter()
     try:
@@ -72,6 +76,17 @@ async def process_turn_v3(
             result.get("latency_ms", 0),
             tenant_id,
         )
+
+        # ── Inbox persistence + handoff (parity with V2) ──────────────────────
+        # V3's engine only writes belief state to Redis; it never persisted the turn
+        # to the inbox tables. The dashboard Chat tab, its live SSE stream, and the
+        # new-lead/handoff notifications all key off conversation_service — which V2
+        # reaches via route_message_with_persistence but V3 never called. That's why
+        # WhatsApp turns served by V3 were invisible on the dashboard.
+        await _persist_turn_v3(
+            phone=phone, bsuid=bsuid, user_message=user_message, result=result,
+        )
+        await _handle_handoff_v3(phone=phone, bsuid=bsuid, result=result)
         return result
 
     except Exception as exc:
@@ -92,6 +107,103 @@ async def process_turn_v3(
             "router_label": "v3::error",
             "latency_ms": latency_ms,
         }
+
+
+def _bot_text_for_persistence(result: dict) -> str:
+    """Best-effort plain-text rendering of the bot's reply for the inbox record.
+
+    response_text is empty on image / multi-segment turns (the content lives in
+    rich_content.response_plan); fall back to the plan's text segments so the dashboard
+    shows what the bot actually said instead of a blank bubble.
+    """
+    text = (result.get("response_text") or "").strip()
+    if text:
+        return text
+    rich = result.get("rich_content") or {}
+    plan = rich.get("response_plan") if isinstance(rich, dict) else None
+    if isinstance(plan, list):
+        parts = [
+            str(seg.get("content", "")).strip()
+            for seg in plan
+            if isinstance(seg, dict) and seg.get("type") == "text" and seg.get("content")
+        ]
+        if parts:
+            return "\n\n".join(parts)
+        if any(isinstance(seg, dict) and seg.get("type") == "images" for seg in plan):
+            return "📷 (imágenes enviadas)"
+    return ""
+
+
+async def _persist_turn_v3(
+    *, phone: str, bsuid: str | None, user_message: str, result: dict,
+) -> None:
+    """Persist a V3 turn to the inbox tables + push SSE events for the dashboard.
+
+    Mirrors V2's route_message_with_persistence. Best-effort: the user already got
+    their reply, so a persistence failure must never surface as an error.
+    """
+    bot_text = _bot_text_for_persistence(result)
+    if not bot_text:
+        return
+    canonical_id = bsuid or phone
+    try:
+        from app.db.session import async_session_factory
+        from app.services.conversation_service import upsert_conversation, save_turn
+        async with async_session_factory() as db:
+            conv_id = await upsert_conversation(db, canonical_id, phone=phone)
+            await save_turn(
+                db,
+                conv_id,
+                user_message=user_message,
+                bot_response=bot_text,
+                tools_called=result.get("tools_used") or [],
+                router=result.get("router_label") or "v3",
+                latency_ms=result.get("latency_ms") or 0,
+                confidence=result.get("confidence") or 0,
+            )
+    except Exception as exc:
+        logger.warning("[V3] persist turn failed (non-fatal): {}", str(exc))
+
+
+async def _handle_handoff_v3(*, phone: str, bsuid: str | None, result: dict) -> None:
+    """On a V3 human handoff, create a dashboard notification and pause the bot.
+
+    Fires when the turn used request_human_assistance (LLM tool path) or hit the
+    emergency / human-handoff safety gate. The V2/V3 request_human_assistance tool only
+    returns confirmation text — it neither notifies nor pauses — so for V3 a handoff was
+    completely invisible on the dashboard. Adds the missing notification and mirrors
+    v2_adapter's auto-pause. Best-effort.
+    """
+    tools = result.get("tools_used") or []
+    label = result.get("router_label") or ""
+    is_handoff = (
+        "request_human_assistance" in tools
+        or label in ("v3::emergency", "v3::human-handoff")
+    )
+    if not is_handoff:
+        return
+
+    reason = "emergencia" if label == "v3::emergency" else "user_requested"
+    try:
+        from app.services.notification_service import notification_service
+        await notification_service.handoff_requested(phone=phone, reason=reason)
+    except Exception as exc:
+        logger.warning("[V3] handoff notification failed (non-fatal): {}", str(exc))
+
+    canonical_id = bsuid or phone
+    try:
+        from app.db.session import async_session_factory
+        from app.services.conversation_service import (
+            upsert_conversation, toggle_bot, is_bot_paused,
+        )
+        async with async_session_factory() as db:
+            conv_id = await upsert_conversation(db, canonical_id, phone=phone)
+            # Guard against an unpause: toggle_bot flips the flag, so only flip when the
+            # bot isn't already paused (a repeat handoff must not re-enable the bot).
+            if not await is_bot_paused(db, phone):
+                await toggle_bot(db, conv_id)
+    except Exception as exc:
+        logger.warning("[V3] handoff auto-pause failed (non-fatal): {}", str(exc))
 
 
 def _resolve_tenant(tenant: str | None) -> UUID | None:
