@@ -40,6 +40,17 @@ _DEDUP_TTL = 300  # 5 minutes
 _user_locks: Dict[str, float] = {}
 _USER_RATE_LIMIT = 1.0  # seconds between messages from same user
 
+# ── Non-text message handling ──────────────────────────────────────────────────
+# WhatsApp message types we can actually process. Anything else (audio, video,
+# document, sticker, image, reaction, location, contacts, …) is unsupported for
+# now and gets a single polite reply instead of being silently dropped or routed
+# to the LLM as a "[Audio]"/"[Imagen]" placeholder.
+# NOTE: audio is intentionally unsupported until Whisper transcription is added.
+_SUPPORTED_MESSAGE_TYPES = frozenset({"text", "button", "interactive"})
+_UNSUPPORTED_MEDIA_REPLY = (
+    "Disculpá, por ahora solo puedo procesar mensajes de texto 📝"
+)
+
 
 def _is_duplicate(message_id: str) -> bool:
     """Check if a message_id was already processed (within TTL)."""
@@ -357,10 +368,12 @@ async def receive_webhook(request: Request):
                         phone = msg.get("from", "")
                         text = msg.get("text", {}).get("body", "")
                         if not text:
+                            # Only enqueue supported, text-bearing types. Non-text
+                            # media (audio/image/video/document/sticker/…) is handled
+                            # inline by process_messages with a polite reply and must
+                            # not be enqueued as a placeholder for the worker/LLM.
                             mtype = msg.get("type", "")
-                            if mtype == "image":
-                                text = msg.get("image", {}).get("caption", "") or "[Imagen]"
-                            elif mtype == "button":
+                            if mtype == "button":
                                 text = msg.get("button", {}).get("payload", "") or msg.get("button", {}).get("id", "")
                             elif mtype == "interactive":
                                 interactive = msg.get("interactive", {})
@@ -508,18 +521,6 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
         
         if msg_type == "text":
             text = msg.get("text", {}).get("body", "")
-        elif msg_type == "image":
-            media_url = msg.get("image", {}).get("link", "")
-            media_caption = msg.get("image", {}).get("caption", "")
-            text = media_caption or "[Imagen]"
-        elif msg_type == "video":
-            media_url = msg.get("video", {}).get("link", "")
-            text = "[Video]"
-        elif msg_type == "audio":
-            text = "[Audio]"
-        elif msg_type == "document":
-            media_url = msg.get("document", {}).get("link", "")
-            text = "[Documento]"
         elif msg_type == "button":
             # Button response
             button = msg.get("button", {})
@@ -531,13 +532,35 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                 text = interactive.get("button_reply", {}).get("id", "")
             elif interactive.get("type") == "list_reply":
                 text = interactive.get("list_reply", {}).get("id", "")
-        
-        # Also check for quick replies
+
+        # Also check for quick replies (can ride on non-text payloads)
         if not text:
             quick_reply = msg.get("quick_reply")
             if quick_reply:
                 text = quick_reply.get("payload", "")
-        
+
+        # ── Non-text / unsupported media ─────────────────────────────────────
+        # Audio (voice notes), video, GIFs, images, documents, stickers,
+        # reactions, location, contacts, etc. We can't process these yet, so
+        # reply politely once instead of dropping the message silently or
+        # feeding a "[Audio]"/"[Imagen]" placeholder to the LLM.
+        # NOTE: audio stays here until Whisper transcription is implemented.
+        if not text and msg_type not in _SUPPORTED_MESSAGE_TYPES:
+            if not _check_user_rate_limit(phone):
+                logger.info(f"Rate-limited unsupported '{msg_type}' from {phone}, not replying")
+                continue
+            phone_to = format_phone_number(phone)
+            if settings.WHATSAPP_SEND_BY_BSUID and msg.get("_bsuid"):
+                phone_to = msg.get("_bsuid")
+            logger.info(f"Unsupported message type '{msg_type}' from {phone}; sending polite reply")
+            try:
+                await whatsapp_client.send_message(to=phone_to, message=_UNSUPPORTED_MEDIA_REPLY)
+            except Exception as _media_err:
+                logger.warning(
+                    f"[Webhook] Failed to send unsupported-media reply to {phone}: {_media_err}"
+                )
+            continue
+
         if not text:
             logger.info(f"Ignoring empty message from {phone}")
             continue
