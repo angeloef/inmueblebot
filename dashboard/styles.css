@@ -40,7 +40,7 @@ input, select, textarea { font-family: inherit; }
 .sb-bottom .who span { color: var(--fg-tertiary); font-size: 11px; }
 
 /* ───── Topbar ───── */
-.tb { display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 1px solid var(--border-default); background: var(--surface-topbar); box-shadow: var(--shadow-xs); z-index: 2; }
+.tb { display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 1px solid var(--border-default); background: var(--surface-topbar); box-shadow: var(--shadow-xs); z-index: 20; }
 .tb-search { flex: 1; max-width: 420px; position: relative; }
 .tb-search input { width: 100%; padding: 7px 10px 7px 32px; font-size: 13px; border: 1px solid var(--border-default); border-radius: 7px; background: var(--gray-25); color: var(--fg-primary); outline: none; }
 .tb-search input:focus { border-color: var(--accent-400); background: var(--surface-raised); box-shadow: var(--shadow-focus); }
