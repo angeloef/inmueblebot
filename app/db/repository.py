@@ -120,7 +120,11 @@ class UserRepository(BaseRepository):
             user = await self.get_by_phone(phone)
         is_new = user is None
         if not user:
-            user = User(whatsapp_phone=phone or None, bsuid=bsuid or None)
+            # tenant_id REQUIRED: RLS WITH CHECK rejects NULL, and a NULL-tenant row would be
+            # invisible to every tenant-scoped query (dashboard leads, etc.). resolve_tenant_id()
+            # returns the per-request tenant (set by the webhook) or the default tenant fallback.
+            from app.core.tenancy import resolve_tenant_id
+            user = User(whatsapp_phone=phone or None, bsuid=bsuid or None, tenant_id=resolve_tenant_id())
             self.session.add(user)
             await self.session.flush()
             await self.session.refresh(user)

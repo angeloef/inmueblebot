@@ -22,6 +22,7 @@ from sqlalchemy import text as _text
 
 from app.api.routes.admin import get_db, verify_admin_api_key, _get_sync_session
 import app.api.routes.admin as _admin
+from app.core.tenancy import resolve_tenant_id
 from app.db.models import User, Property, Contract, Charge, ContractExpense, EconomicIndex
 from app.services import billing_service as bs
 
@@ -417,6 +418,10 @@ def create_contract(
     c = Contract(start_date=_parse_date(data.start_date) or bs.today_ar())
     _apply_contract_fields(c, data.model_dump())
     c.public_token = secrets.token_urlsafe(16)
+    # org_id is the agency (inmobiliaria) FK that RLS checks for contracts (NOT tenant_id,
+    # which here means the renter/inquilino). RLS WITH CHECK rejects NULL. See create_property.
+    if c.org_id is None:
+        c.org_id = resolve_tenant_id()
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -640,6 +645,8 @@ def create_expense(
     if not c:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
     e = ContractExpense(
+        # tenant_id REQUIRED: RLS WITH CHECK rejects NULL. See create_property.
+        tenant_id=resolve_tenant_id(),
         contract_id=c.id,
         charge_id=_as_uuid(data.charge_id, "charge_id") if data.charge_id else None,
         description=data.description or "",

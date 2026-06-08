@@ -97,7 +97,10 @@ async def increment_zone_search(zone_name: str) -> None:
         if stat:
             stat.search_count += 1
         else:
-            stat = ZoneStat(zone_name=zone_name, search_count=1)
+            # tenant_id REQUIRED: RLS WITH CHECK rejects NULL, and a NULL-tenant row would
+            # be invisible to every tenant-scoped query. See seed.py / appointment_service.
+            from app.core.tenancy import resolve_tenant_id
+            stat = ZoneStat(zone_name=zone_name, search_count=1, tenant_id=resolve_tenant_id())
             session.add(stat)
 
         await session.commit()

@@ -223,6 +223,12 @@ def ensure_charges(db, contract, model_charge, expenses: Optional[List] = None,
     expenses = expenses if expenses is not None else list(getattr(contract, "expenses", []) or [])
     index_map = index_map or {}
 
+    # tenant_id REQUIRED: RLS WITH CHECK rejects NULL on charges. A charge belongs to the
+    # same agency (inmobiliaria) as its contract → contract.org_id. Fall back to the
+    # resolver (default tenant) for legacy contracts whose org_id was never backfilled.
+    from app.core.tenancy import resolve_tenant_id
+    charge_tenant_id = getattr(contract, "org_id", None) or resolve_tenant_id()
+
     created = 0
     period = start
     while period <= last:
@@ -230,6 +236,7 @@ def ensure_charges(db, contract, model_charge, expenses: Optional[List] = None,
             rent, adj, _pending = compute_rent_for_period(contract, period, index_map)
             exp = expenses_for_period(expenses, period)
             charge = model_charge(
+                tenant_id=charge_tenant_id,
                 contract_id=contract.id,
                 period=period,
                 due_date=due_date_for(contract, period),

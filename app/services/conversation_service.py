@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, func, update, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenancy import resolve_tenant_id
 from app.db.models import Conversation, Message, User
 from app.db.repository import ConversationRepository, MessageRepository
 
@@ -122,9 +123,11 @@ async def upsert_conversation(
     if existing and existing.user_id == user.id:
         return existing.id
 
-    # Create new conversation
+    # Create new conversation. tenant_id REQUIRED: RLS WITH CHECK rejects NULL and a
+    # NULL-tenant conversation would be invisible to the dashboard's tenant-scoped queries.
     conv = Conversation(
         id=uuid4(),
+        tenant_id=resolve_tenant_id(),
         user_id=user.id,
         session_id=session_id,
         state="idle",
@@ -264,7 +267,10 @@ async def save_admin_message(
     Returns dict with id, timestamp, sender.
     """
     now = datetime.now(timezone.utc)
+    # tenant_id must equal the session GUC for RLS WITH CHECK to pass (NULL is rejected).
+    # resolve_tenant_id() returns exactly what the GUC listener set. See create_property.
     msg = Message(
+        tenant_id=resolve_tenant_id(),
         conversation_id=conversation_id,
         role="assistant",
         sender="admin",

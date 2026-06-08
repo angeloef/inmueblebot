@@ -737,13 +737,16 @@ def create_lead(
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
+    from app.core.tenancy import resolve_tenant_id
     from app.db.models import User
     extra = {
         "email": data.email,
         "role": data.role or "prospect",
         "notes": data.notes,
     }
-    user = User(whatsapp_phone=data.phone or None, name=data.name)
+    # tenant_id REQUIRED: RLS WITH CHECK rejects NULL (model has no server_default,
+    # so the ORM would emit NULL and override the DB column default). See create_property.
+    user = User(whatsapp_phone=data.phone or None, name=data.name, tenant_id=resolve_tenant_id())
     # extra_data column is added by startup migration; set it after object creation
     try:
         user.extra_data = extra
@@ -910,6 +913,7 @@ def create_property(
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
+    from app.core.tenancy import resolve_tenant_id
     from app.db.models import Property
     op = data.operation if data.operation in ("venta", "alquiler") else "venta"
 
@@ -937,6 +941,11 @@ def create_property(
 
     prop = Property(
         id=_next_property_id(db),
+        # Tenant scoping: set tenant_id EXPLICITLY to match the GUC the RLS WITH CHECK
+        # policy enforces. The model has no server_default, so the ORM would insert
+        # tenant_id=NULL otherwise — which RLS rejects ("new row violates row-level
+        # security policy"). resolve_tenant_id() falls back to the default tenant.
+        tenant_id=resolve_tenant_id(),
         title=data.title or data.location or "Sin título",
         description=data.description,
         type=op,
@@ -1271,6 +1280,7 @@ def create_appointment(
     db: Session = Depends(get_db),
     _: bool = Depends(verify_admin_api_key),
 ):
+    from app.core.tenancy import resolve_tenant_id
     from app.db.models import Appointment
     from datetime import datetime, timezone, timedelta
 
@@ -1301,6 +1311,8 @@ def create_appointment(
             pass   # invalid UUID — ignore, create without user link
 
     apt = Appointment(
+        # tenant_id REQUIRED: RLS WITH CHECK rejects NULL. See create_property.
+        tenant_id=resolve_tenant_id(),
         user_id=user_uuid,
         property_id=data.property_id,
         start_time=start,
@@ -1849,8 +1861,11 @@ async def create_faq(
     _: bool = Depends(verify_admin_api_key),
 ):
     """Crea una nueva entrada FAQ."""
+    from app.core.tenancy import resolve_tenant_id
     from app.db.models.faq import FAQ as FAQModel
     faq = FAQModel(
+        # tenant_id REQUIRED: RLS WITH CHECK rejects NULL. See create_property.
+        tenant_id=resolve_tenant_id(),
         question=data.question,
         answer=data.answer,
         category=data.category,

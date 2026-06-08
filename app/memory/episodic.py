@@ -5,6 +5,7 @@ PostgreSQL: user_episodes table — full durable records.
 """
 
 import json
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -15,6 +16,8 @@ from app.core.config import get_settings
 settings = get_settings()
 from app.db.session import async_session_factory
 from app.db.models.user_episode import UserEpisode
+
+logger = logging.getLogger(__name__)
 
 
 async def _pg_available() -> bool:
@@ -67,8 +70,12 @@ async def save_episode(
     """Save a session episode to PostgreSQL and Redis cache."""
     # PostgreSQL (durable) — gracefully skip if table missing
     try:
+        from app.core.tenancy import resolve_tenant_id
         async with async_session_factory() as session:
             episode = UserEpisode(
+                # tenant_id REQUIRED: RLS WITH CHECK rejects NULL, and a NULL-tenant row would
+                # be invisible to every tenant-scoped query. See seed.py / appointment_service.
+                tenant_id=resolve_tenant_id(),
                 phone=phone,
                 bsuid=get_identity_key() or None,
                 session_id=session_id,
@@ -81,9 +88,10 @@ async def save_episode(
             )
             session.add(episode)
             await session.commit()
-    except Exception:
-        # Table may not exist yet — Redis is enough
-        pass
+    except Exception as exc:
+        # Non-fatal: Redis cache below is still written. But log it — this previously
+        # swallowed RLS rejections (NULL tenant_id) silently, hiding real failures.
+        logger.warning(f"[EpisodicMemory] could not persist episode to PostgreSQL: {exc}")
 
     # Redis cache (fast retrieval)
     redis = await _get_redis()
