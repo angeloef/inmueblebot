@@ -377,6 +377,7 @@ export default function Config() {
         )}
       </div>
 
+      <div className="page-body">
       <div className="config-body">
 
         {/* ── Sistema ── */}
@@ -441,6 +442,7 @@ export default function Config() {
           </Field>
         </Section>
 
+      </div>
       </div>
 
       {/* Sticky save bar — visible when there are unsaved changes */}
