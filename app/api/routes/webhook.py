@@ -403,6 +403,25 @@ async def receive_webhook(request: Request):
     return {"status": "ok"}
 
 
+def _media_placeholder(msg_type: str) -> str:
+    """Return a user-friendly placeholder for non-text media types.
+
+    Shows in the admin's Chat tab so they know what the user sent, even if we
+    can't process it. Examples: "🎵 Audio message", "📷 Image", etc.
+    """
+    placeholders = {
+        "audio": "🎵 Audio message",
+        "image": "📷 Image",
+        "video": "🎬 Video",
+        "document": "📎 Document",
+        "sticker": "🎨 Sticker",
+        "location": "📍 Location",
+        "contacts": "👥 Contact(s)",
+        "reaction": "👍 Reaction",
+    }
+    return placeholders.get(msg_type, f"📦 {msg_type.capitalize()} message")
+
+
 async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
     """Phase 0 of the Meta BSUID migration — observe & store, change nothing.
 
@@ -567,6 +586,28 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
             except Exception as _media_err:
                 logger.warning(
                     f"[Webhook] Failed to send unsupported-media reply to {phone}: {_media_err}"
+                )
+
+            # ── Persist the user's media message to the inbox ──────────────────────
+            # The admin should see WHAT the user sent, even if we couldn't process it.
+            # Record a placeholder (e.g. "🎵 Audio message") so the Chat tab shows the
+            # full conversation with context for the admin's reply.
+            media_placeholder = _media_placeholder(msg_type)
+            canonical_id = msg.get("_bsuid") or phone
+            try:
+                from app.db.session import async_session_factory
+                from app.services.conversation_service import (
+                    upsert_conversation, save_user_message_only,
+                )
+                async with async_session_factory() as db:
+                    conv_id = await upsert_conversation(db, canonical_id, phone=phone)
+                    await save_user_message_only(db, conv_id, media_placeholder)
+                    logger.debug(
+                        f"[Webhook] Recorded {msg_type} placeholder to inbox for {phone}"
+                    )
+            except Exception as _inbox_err:
+                logger.warning(
+                    f"[Webhook] Failed to persist media placeholder to inbox: {_inbox_err}"
                 )
             continue
 

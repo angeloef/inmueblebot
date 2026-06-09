@@ -39,6 +39,41 @@ def _reset_dedup_and_ratelimit():
     webhook._user_locks.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_inbox_writes():
+    """Keep media tests offline — stub conversation persistence.
+
+    The media fallback now records a placeholder message in the inbox so the admin
+    sees what the user sent. These unit tests verify only the WhatsApp reply behavior,
+    not DB writes, so stub the inbox side-effect.
+    """
+    with patch(
+        "app.services.conversation_service.upsert_conversation",
+        new_callable=AsyncMock,
+        return_value="fake-conv-id",
+    ), \
+         patch(
+        "app.services.conversation_service.save_user_message_only",
+        new_callable=AsyncMock,
+    ):
+        yield
+
+
+def test_media_placeholder_mapping():
+    """Verify media type → emoji placeholder mapping."""
+    from app.api.routes.webhook import _media_placeholder
+
+    assert _media_placeholder("audio") == "🎵 Audio message"
+    assert _media_placeholder("image") == "📷 Image"
+    assert _media_placeholder("video") == "🎬 Video"
+    assert _media_placeholder("document") == "📎 Document"
+    assert _media_placeholder("sticker") == "🎨 Sticker"
+    assert _media_placeholder("location") == "📍 Location"
+    assert _media_placeholder("contacts") == "👥 Contact(s)"
+    # Unknown type gets fallback
+    assert _media_placeholder("unknown") == "📦 Unknown message"
+
+
 @pytest.mark.parametrize("msg_type", ["audio", "image", "video", "document", "sticker", "reaction", "location"])
 async def test_unsupported_type_gets_polite_reply(msg_type):
     send = AsyncMock()
