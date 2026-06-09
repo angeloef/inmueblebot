@@ -215,13 +215,41 @@ class TurnOutput(BaseModel):
     confidence: float
 
 
+def _extract_json_object(raw: str) -> dict:
+    """Extract the first JSON object from an LLM response.
+
+    Strict structured outputs *should* return a bare JSON object, but in
+    practice the engine model (gpt-5.4-mini) sometimes appends trailing text on
+    a second line or wraps the object in ```json fences. A plain json.loads()
+    then fails with "Extra data: line 2 column 1", the whole turn is discarded,
+    and the caller falls back to a low-confidence regex clarify — re-asking what
+    the user already answered. Decoding only the first object tolerates that
+    noise while keeping the structured slots.
+    """
+    text = raw.strip()
+    # Strip markdown code fences if present.
+    if text.startswith("```"):
+        text = text.split("```", 2)[1] if text.count("```") >= 2 else text.lstrip("`")
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[4:]
+        text = text.strip()
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("no JSON object found in engine output")
+    # raw_decode parses the first complete object and ignores any trailing data.
+    obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    if not isinstance(obj, dict):
+        raise ValueError("engine output is not a JSON object")
+    return obj
+
+
 def parse_turn_output(raw: str) -> TurnOutput:
     """Parse the LLM's JSON string response into a TurnOutput.
 
     Raises ValueError / pydantic.ValidationError on failure.
     The caller must catch and trigger the fallback path.
     """
-    data = json.loads(raw)
+    data = _extract_json_object(raw)
     # Supports both pydantic v1 (.parse_obj) and v2 (.model_validate)
     if hasattr(TurnOutput, "model_validate"):
         return TurnOutput.model_validate(data)
