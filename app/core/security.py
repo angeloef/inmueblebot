@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 from passlib.context import CryptContext
@@ -40,7 +40,10 @@ def _encode(claims: dict[str, Any], ttl: timedelta, token_type: str) -> str:
 
 
 def _base_claims(account_id: UUID, tenant_id: UUID, role: str) -> dict[str, Any]:
-    return {"sub": str(account_id), "tid": str(tenant_id), "role": role}
+    # jti = unique token id. Guarantees every access/refresh token is distinct even
+    # when minted within the same second (iat/exp are second-resolution), so a
+    # refresh always rotates to a new token. Also a hook for future revocation lists.
+    return {"sub": str(account_id), "tid": str(tenant_id), "role": role, "jti": uuid4().hex}
 
 
 def create_access_token(account_id: UUID, tenant_id: UUID, role: str) -> str:

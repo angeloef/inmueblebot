@@ -41,6 +41,24 @@ def _patch_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     config.get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_db_engine() -> None:
+    """Dispose the module-level async engine's pool after each test.
+
+    ``async_session_factory`` is a process-wide singleton bound to one engine.
+    Under ``asyncio_mode=auto`` every test runs in its own event loop, so a
+    connection created in test A's loop and reused in test B's loop raises
+    "attached to a different loop". Disposing after each test (in that test's
+    own loop) guarantees the next test opens fresh connections on its own loop.
+    """
+    yield
+    from app.db.session import async_session_factory
+
+    bind = async_session_factory.kw.get("bind")
+    if bind is not None:
+        await bind.dispose()
+
+
 # ---------------------------------------------------------------------------
 # Unit: password hashing
 # ---------------------------------------------------------------------------
