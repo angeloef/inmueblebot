@@ -247,10 +247,28 @@ NEXT_PUBLIC_META_CONFIG_ID=<config id>    # Fase 5
 
 ---
 
-## FASE 2 — Next.js: landing + páginas de auth
+## FASE 2 — Next.js: landing + páginas de auth ✅ COMPLETADA (2026-06-09)
 
 > Servicio Render nuevo. Reconstruye el diseño del artifact ViviendApp como app real y
 > conecta signup/login a la API.
+>
+> **Estado:** implementada y verificada (`npm run build` limpio — 0 errores TS, 16 rutas,
+> middleware Edge compilado). 38 archivos en `web/` (Next.js 15 App Router + TS + Tailwind v3).
+>
+> **Patrón de seguridad aplicado:** el browser nunca ve el JWT. Las credenciales pasan por
+> Route Handlers server-side (`web/src/app/api/auth/*`) que setean cookies **httpOnly + Secure
+> (prod) + SameSite=Lax** (`vivienda_access`/`vivienda_refresh`). `middleware.ts` (Edge) protege
+> `/app` y refresca el token proactivamente. `getSession` (setea cookies, solo route handlers)
+> vs `getSessionReadOnly` (solo lee, para server components). Open-redirect del `?next=`
+> bloqueado (solo rutas internas). Design tokens reales del artifact (primary #164a71, verdes
+> WhatsApp, Manrope+Inter+JetBrains) en `tailwind.config.ts`.
+>
+> **Placeholders intencionales:** redirect al dashboard Vite cross-domain (Fase 4), checkout
+> MercadoPago en Pricing (Fase 3), paso "Conectá tu WhatsApp (próximamente)" post-signup.
+>
+> **Pendiente al desplegar:** crear el Web Service en Render (ver `web/render.yaml`, rootDir
+> `web/`); setear `NEXT_PUBLIC_API_URL`/`API_URL` a la URL del backend y `NEXT_PUBLIC_SITE_URL`;
+> setear `PUBLIC_APP_URL` en el backend a la URL del web (links de email + CORS).
 
 ### Tarea 2.1 — Scaffold del proyecto Next.js
 - **Skill ECC:** `ecc:nextjs-turbopack`

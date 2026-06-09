@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: viviendapp-web
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://inmueblebot-api.onrender.com
+      - key: API_URL
+        value: https://inmueblebot-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: http://localhost:5173
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false

@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primary */
+  --color-primary: #164a71;
+  --color-primary-hover: #1d5a88;
+  --color-primary-active: #103957;
+  --color-on-primary: #ffffff;
+
+  /* Brand */
+  --color-brand-accent: #2e6ea0;
+  --color-brand-tint: #eaf1f7;
+  --color-brand-tint-strong: #d6e3f0;
+
+  /* WhatsApp */
+  --color-wa-green: #25d366;
+  --color-wa-dark: #128c7e;
+  --color-wa-bubble: #d9fdd3;
+  --color-wa-bg: #efeae2;
+
+  /* Surface */
+  --color-surface-soft: #fafafa;
+  --color-surface-card: #f5f6f7;
+  --color-surface-strong: #d4d8dc;
+  --color-surface-dark: #0f1114;
+  --color-surface-dark-elevated: #1d2024;
+
+  /* State */
+  --color-success-fg: #2f8f4e;
+  --color-success-bg: #e6f4ea;
+  --color-warning-fg: #b07d12;
+  --color-warning-bg: #fbf2dc;
+  --color-error-bg: #fbe9e7;
+  --color-info-bg: #eaf1f7;
+
+  /* Ink */
+  --color-ink-900: #2f3337;
+  --color-ink-700: #4a5057;
+  --color-ink-500: #6c727b;
+  --color-ink-300: #b6bcc3;
+
+  /* Fonts */
+  --font-manrope: 'Manrope', system-ui, sans-serif;
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-inter);
+    color: var(--color-ink-900);
+    background-color: var(--color-surface-soft);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-manrope);
+  }
+}
