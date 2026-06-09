@@ -60,18 +60,18 @@ def _no_inbox_writes():
 
 
 def test_media_placeholder_mapping():
-    """Verify media type → emoji placeholder mapping."""
+    """Verify media type → emoji placeholder mapping (Spanish)."""
     from app.api.routes.webhook import _media_placeholder
 
-    assert _media_placeholder("audio") == "🎵 Audio message"
-    assert _media_placeholder("image") == "📷 Image"
+    assert _media_placeholder("audio") == "🎵 Mensaje de audio"
+    assert _media_placeholder("image") == "📷 Imagen"
     assert _media_placeholder("video") == "🎬 Video"
-    assert _media_placeholder("document") == "📎 Document"
+    assert _media_placeholder("document") == "📎 Documento"
     assert _media_placeholder("sticker") == "🎨 Sticker"
-    assert _media_placeholder("location") == "📍 Location"
-    assert _media_placeholder("contacts") == "👥 Contact(s)"
+    assert _media_placeholder("location") == "📍 Ubicación"
+    assert _media_placeholder("contacts") == "👥 Contacto(s)"
     # Unknown type gets fallback
-    assert _media_placeholder("unknown") == "📦 Unknown message"
+    assert _media_placeholder("unknown") == "📦 Unknown"
 
 
 @pytest.mark.parametrize("msg_type", ["audio", "image", "video", "document", "sticker", "reaction", "location"])

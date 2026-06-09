@@ -407,19 +407,19 @@ def _media_placeholder(msg_type: str) -> str:
     """Return a user-friendly placeholder for non-text media types.
 
     Shows in the admin's Chat tab so they know what the user sent, even if we
-    can't process it. Examples: "🎵 Audio message", "📷 Image", etc.
+    can't process it. Examples: "🎵 Mensaje de audio", "📷 Imagen", etc.
     """
     placeholders = {
-        "audio": "🎵 Audio message",
-        "image": "📷 Image",
+        "audio": "🎵 Mensaje de audio",
+        "image": "📷 Imagen",
         "video": "🎬 Video",
-        "document": "📎 Document",
+        "document": "📎 Documento",
         "sticker": "🎨 Sticker",
-        "location": "📍 Location",
-        "contacts": "👥 Contact(s)",
-        "reaction": "👍 Reaction",
+        "location": "📍 Ubicación",
+        "contacts": "👥 Contacto(s)",
+        "reaction": "👍 Reacción",
     }
-    return placeholders.get(msg_type, f"📦 {msg_type.capitalize()} message")
+    return placeholders.get(msg_type, f"📦 {msg_type.capitalize()}")
 
 
 async def _capture_identity(value: Dict[str, Any], msg: Dict[str, Any]):
@@ -588,26 +588,34 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                     f"[Webhook] Failed to send unsupported-media reply to {phone}: {_media_err}"
                 )
 
-            # ── Persist the user's media message to the inbox ──────────────────────
-            # The admin should see WHAT the user sent, even if we couldn't process it.
-            # Record a placeholder (e.g. "🎵 Audio message") so the Chat tab shows the
-            # full conversation with context for the admin's reply.
+            # ── Persist user's media message + bot's reply to the inbox ────────────
+            # The admin should see WHAT the user sent (placeholder) AND the bot's reply
+            # so the Chat tab shows the full conversation with context.
             media_placeholder = _media_placeholder(msg_type)
             canonical_id = msg.get("_bsuid") or phone
             try:
                 from app.db.session import async_session_factory
-                from app.services.conversation_service import (
-                    upsert_conversation, save_user_message_only,
-                )
+                from app.services.conversation_service import upsert_conversation, save_turn
                 async with async_session_factory() as db:
                     conv_id = await upsert_conversation(db, canonical_id, phone=phone)
-                    await save_user_message_only(db, conv_id, media_placeholder)
+                    # save_turn persists both the user message (media placeholder) and
+                    # the bot's reply, so the admin sees the full exchange.
+                    await save_turn(
+                        db,
+                        conv_id,
+                        user_message=media_placeholder,
+                        bot_response=_UNSUPPORTED_MEDIA_REPLY,
+                        tools_called=[],
+                        router="v3::unsupported_media" if _resolve_active_router(settings) == "v3" else "v2::unsupported_media",
+                        latency_ms=0,
+                        confidence=1.0,
+                    )
                     logger.debug(
-                        f"[Webhook] Recorded {msg_type} placeholder to inbox for {phone}"
+                        f"[Webhook] Recorded {msg_type} (placeholder + reply) to inbox for {phone}"
                     )
             except Exception as _inbox_err:
                 logger.warning(
-                    f"[Webhook] Failed to persist media placeholder to inbox: {_inbox_err}"
+                    f"[Webhook] Failed to persist media placeholder/reply to inbox: {_inbox_err}"
                 )
             continue
 
