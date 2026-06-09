@@ -81,6 +81,28 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=True, description="Modo debug")
     SECRET_KEY: str = Field(default="change-me-in-production", description="Clave secreta para JWT/sessions")
 
+    # === Auth / JWT ===
+    JWT_ALGORITHM: str = Field(default="HS256", description="Algoritmo de firma JWT")
+    ACCESS_TOKEN_TTL_MIN: int = Field(default=60, description="TTL del access token en minutos")
+    REFRESH_TOKEN_TTL_DAYS: int = Field(default=7, description="TTL del refresh token en días")
+    TRIAL_DAYS: int = Field(default=14, description="Días de trial gratis al hacer signup")
+    RESEND_API_KEY: Optional[str] = Field(
+        default=None,
+        description="API key de Resend (email). Si falta, el envío se degrada a no-op.",
+    )
+    EMAIL_FROM: str = Field(
+        default="ViviendApp <no-reply@viviendapp.com>",
+        description="Remitente de los emails transaccionales",
+    )
+    MERCADOPAGO_ACCESS_TOKEN: Optional[str] = Field(
+        default=None,
+        description="Access token de MercadoPago (Fase 3)",
+    )
+    PUBLIC_APP_URL: str = Field(
+        default="http://localhost:3000",
+        description="URL base del frontend Next.js (links de email + CORS)",
+    )
+
     # === Base de Datos ===
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://postgres:postgres@db:5432/inmueblebot",
@@ -410,5 +432,17 @@ def get_settings() -> Settings:
     _admin = "SET" if settings.ADMIN_API_KEY and settings.ADMIN_API_KEY != "admin-secret-key" else "DEFAULT"
     logger.info(f"ADMIN_API_KEY: [{_admin}]")
     logger.info("=" * 50)
+
+    # Fail-closed en producción: el SECRET_KEY firma los JWT de auth (Fase 1). Si quedó en el
+    # default conocido, cualquiera puede forjar tokens válidos → suplantar tenants. Abortamos
+    # el arranque en prod antes de exponer el agujero. En dev se permite (solo se loguea).
+    _insecure_secret = settings.SECRET_KEY in ("", "change-me-in-production")
+    if _insecure_secret:
+        if settings.ENVIRONMENT.lower() == "production":
+            raise RuntimeError(
+                "SECRET_KEY tiene el valor default inseguro en producción. "
+                "Seteá un SECRET_KEY fuerte (ver Render secrets) antes de arrancar."
+            )
+        logger.warning("SECRET_KEY usa el default inseguro — OK en dev, NUNCA en producción.")
 
     return settings

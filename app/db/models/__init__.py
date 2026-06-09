@@ -11,6 +11,8 @@ from app.db.models.appointment import Appointment
 from app.db.models.faq import FAQ
 from app.db.models.cobranzas import Contract, Charge, ContractExpense, EconomicIndex
 from app.db.models.user_episode import UserEpisode, ZoneStat, SearchFailure
+from app.db.models.tenant_account import TenantAccount
+from app.db.models.subscription import Subscription
 
 __all__ = [
     "Tenant",
@@ -28,4 +30,6 @@ __all__ = [
     "UserEpisode",
     "ZoneStat",
     "SearchFailure",
+    "TenantAccount",
+    "Subscription",
 ]

@@ -181,6 +181,9 @@ async def lifespan(app: FastAPI):
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import get_settings as _get_settings
+
+_app_url = _get_settings().PUBLIC_APP_URL
 
 app = FastAPI(title="InmuebleBot", lifespan=lifespan)
 
@@ -191,6 +194,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:3000",
         "http://localhost:8051",
+        _app_url,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -504,6 +508,10 @@ app.include_router(admin_router)
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
 
+# Auth (JWT multi-tenant signup/login)
+from app.api.routes.auth import router as auth_router
+app.include_router(auth_router)
+
 # Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
 # on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
 # FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
@@ -512,6 +520,7 @@ from fastapi import APIRouter as _APIRouter
 _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 _api_compat.include_router(cobranzas_router)
+_api_compat.include_router(auth_router)
 app.include_router(_api_compat)
 
 # Serve dashboard SPA index.html for root and /dashboard/*

@@ -2,6 +2,8 @@
 Módulo de sesión de base de datos.
 Proporciona una fábrica de sesiones async para SQLAlchemy.
 """
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -32,3 +34,9 @@ def get_async_session_factory():
 install_tenant_guc_listener()
 
 async_session_factory = get_async_session_factory()
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Async DB dependency para rutas /auth y futuras. Tenant GUC vía listener global."""
+    async with async_session_factory() as session:
+        yield session
