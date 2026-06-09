@@ -89,6 +89,15 @@ _SAFE_CLARIFY_ES = (
     "¿Podés contarme qué tipo de propiedad estás buscando y si querés alquilar o comprar?"
 )
 
+# Sent as a separate message right after a property's photos, to keep the flow moving.
+_PHOTO_CTA_ES = (
+    "¿Te gustó la propiedad? Podemos coordinar una visita para que la veas en persona, "
+    "o si preferís te muestro otra opción de la lista. ¿Cómo seguimos?"
+)
+
+# Max photos to deliver per request (WhatsApp sends one image per message).
+_MAX_PHOTOS = 4
+
 # ── Gate helpers ──────────────────────────────────────────────────────────────
 
 def _is_emergency(message: str) -> bool:
@@ -566,6 +575,19 @@ async def _assemble_response(
             "¿Podés confirmarme el día y horario que preferís?"
         ), rich
 
+    # ── Path 0b-photos: deterministic photo delivery ──────────────────
+    # If get_property_images ran for a selected property, ALWAYS resolve and send the
+    # images + a visit CTA — never gate this on the engine emitting an 'images'
+    # segment (it does so inconsistently, which dropped photos entirely and left the
+    # user waiting). This mirrors the verbatim-render philosophy used for search/details.
+    if "get_property_images" in (tools_used or []) and belief.selected_property_id:
+        photo_rich = await _build_photo_plan(belief, rich)
+        if photo_rich is not None:
+            # Return the CTA as response_text so the assistant turn is recorded in
+            # history (the next "sí" then has context); delivery uses response_plan.
+            return _PHOTO_CTA_ES, photo_rich
+        # No images resolved → fall through to a normal text reply.
+
     # ── Path 0b2: deterministic render for already-formatted data tools ──
     # search_properties and get_property_details produce user-ready output (Argentine
     # prices, normalized ID:N, progressive narrowing, structured card). Send it
@@ -613,19 +635,12 @@ async def _assemble_response(
         text_segs = [p for p in plan if p.type == "text"]
 
         if image_segs and belief.selected_property_id:
-            # Resolve images from tool results or DB
-            images, title = await _resolve_images(belief)
-            if images:
-                rich["images"] = images
-                rich["caption"] = f"Fotos de '{title}'" if title else ""
-                segments: list[dict] = []
-                for seg in plan:
-                    if seg.type == "text":
-                        segments.append({"type": "text", "content": seg.content})
-                    elif seg.type == "images":
-                        segments.append({"type": "images", "images": images[:4], "caption": seg.content})
-                rich["response_plan"] = segments
-                return "", rich
+            # Engine asked for photos via a plan segment (without a get_property_images
+            # tool call). Deliver them the same deterministic way: images (no repeated
+            # caption) + a single visit CTA.
+            photo_rich = await _build_photo_plan(belief, rich)
+            if photo_rich is not None:
+                return _PHOTO_CTA_ES, photo_rich
 
         # Pure text plan
         if len(text_segs) == 1 and not image_segs:
@@ -647,6 +662,31 @@ async def _assemble_response(
 
     # ── Path 3: safe default for clarify/smalltalk/handoff ────────────
     return _SAFE_CLARIFY_ES, rich
+
+
+async def _build_photo_plan(belief, rich: dict) -> dict | None:
+    """Deterministically build the photo response_plan (images + visit CTA).
+
+    Triggered whenever get_property_images ran for a selected property — photo
+    delivery must NOT depend on the engine emitting a redundant 'images' segment in
+    response_plan. The engine does that inconsistently, which silently dropped the
+    photos and left the user waiting ("Te muestro las fotos de ID:45" with no images).
+
+    Returns an extended rich dict, or None if no images could be resolved (caller
+    then falls through to a normal text reply). Images carry NO caption (a repeated
+    caption under each photo is noise); a single CTA text segment follows the photos.
+    """
+    images, _title = await _resolve_images(belief)
+    if not images:
+        return None
+    out = dict(rich)
+    out["images"] = images
+    out["caption"] = ""
+    out["response_plan"] = [
+        {"type": "images", "images": images[:_MAX_PHOTOS], "caption": ""},
+        {"type": "text", "content": _PHOTO_CTA_ES},
+    ]
+    return out
 
 
 async def _resolve_images(belief) -> tuple[list[str], str]:
