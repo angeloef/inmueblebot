@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  ACCESS_COOKIE,
+  REFRESH_COOKIE,
+  ACCESS_MAX_AGE,
+  REFRESH_MAX_AGE,
+} from '@/lib/cookies'
 
 export const config = {
   matcher: ['/app/:path*'],
@@ -8,9 +14,6 @@ const API_BASE =
   process.env.API_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
   'http://localhost:8000'
-
-const ACCESS_COOKIE = 'vivienda_access'
-const REFRESH_COOKIE = 'vivienda_refresh'
 
 export default async function middleware(req: NextRequest) {
   const access = req.cookies.get(ACCESS_COOKIE)?.value
@@ -50,11 +53,11 @@ export default async function middleware(req: NextRequest) {
       }
       response.cookies.set(ACCESS_COOKIE, data.access_token, {
         ...base,
-        maxAge: 3600,
+        maxAge: ACCESS_MAX_AGE,
       })
       response.cookies.set(REFRESH_COOKIE, data.refresh_token, {
         ...base,
-        maxAge: 604800,
+        maxAge: REFRESH_MAX_AGE,
       })
       return response
     }
