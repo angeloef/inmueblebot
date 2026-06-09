@@ -2,3 +2,9 @@ node_modules
 .next
 .env.local
 next-env.d.ts
+
+# El .gitignore raíz tiene `*.json` (para el backend Python). Re-incluimos los
+# archivos de config JSON del frontend, que SÍ deben versionarse.
+!package.json
+!package-lock.json
+!tsconfig.json

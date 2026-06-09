@@ -7,11 +7,13 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
       - key: NEXT_PUBLIC_API_URL
         value: https://inmueblebot-api.onrender.com
       - key: API_URL
         value: https://inmueblebot-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
-        value: http://localhost:5173
+        value: http://localhost:5173   # PLACEHOLDER Fase 4 (dashboard Vite)
       - key: NEXT_PUBLIC_SITE_URL
-        sync: false
+        sync: false                      # setear a la URL pública del web tras el 1er deploy
