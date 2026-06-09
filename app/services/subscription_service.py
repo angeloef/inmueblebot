@@ -162,7 +162,7 @@ async def create_preapproval(tenant_id: UUID, payer_email: str) -> str:
 
     if resp.status_code >= 400:
         logger.error("[mp] preapproval falló (%s): %s", resp.status_code, resp.text)
-        raise SubscriptionProviderError("MercadoPago rechazó la suscripción")
+        raise SubscriptionProviderError(f"MP {resp.status_code}: {resp.text[:400]}")
 
     data = resp.json()
     init_point = data.get("init_point") or data.get("sandbox_init_point")

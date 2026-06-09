@@ -89,7 +89,7 @@ async def subscribe(
     except subscription_service.SubscriptionProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo iniciar la suscripción",
+            detail=f"No se pudo iniciar la suscripción [TEMP-DIAG {exc}]",  # TEMP: revert
         ) from exc
     return SubscribeResponse(init_point=init_point)
 
