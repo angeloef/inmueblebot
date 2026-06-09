@@ -50,14 +50,28 @@ async def reschedule_appointment(dia: str = "", horario: str = "", cual: str = "
         new_dt = res.value
         if not new_dt:
             return f"No pude entender la nueva fecha '{combined}'. Decime día y hora, ej: 'jueves 15:00'."
+        roll_note = ""
         if new_dt <= now:
             new_dt = new_dt + timedelta(days=7)
+            roll_note = "ℹ️ Esa fecha ya pasó, así que tomé la próxima semana. "
         if new_dt.weekday() == 6 or not (9 <= new_dt.hour < 18):
             return ("Ese horario está fuera de nuestra atención (lunes a sábado, 9:00 a 18:00 hs). "
                     "¿Qué otro día y hora te sirve?")
 
         new_appt = await appointment_service.reschedule_appointment(target_id, new_dt)
-        return (f"Listo, reprogramé tu visita para el {format_datetime_argentina(new_appt.start_time)}. "
+
+        # Include the property address in the confirmation (parity with new bookings).
+        address = ""
+        try:
+            from app.tools.v2.schedule_visit import _load_property_title_address
+            _title, _addr = await _load_property_title_address(new_appt.property_id)
+            if _addr:
+                address = f"\n📍 Dirección: {_addr}"
+        except Exception:
+            pass
+
+        return (f"{roll_note}Listo, reprogramé tu visita para el "
+                f"{format_datetime_argentina(new_appt.start_time)}.{address}\n"
                 f"Un agente te va a contactar para confirmar.")
     except Exception as e:
         logger.error(f"[reschedule_appointment] {e}")

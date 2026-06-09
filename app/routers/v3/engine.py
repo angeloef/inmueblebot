@@ -575,6 +575,18 @@ async def _assemble_response(
             "¿Podés confirmarme el día y horario que preferís?"
         ), rich
 
+    # ── Path 0b-booked: surface the REAL confirmation on success ───────
+    # Mirror of the failure guard above. When the booking SUCCEEDED, the
+    # schedule_visit result is the only string carrying the actual date/time/
+    # address (+ the <!--CONFIRMED:--> marker). The engine's response_plan is just
+    # a short placeholder ("Listo, agendo tu visita") — if we let it win, the user
+    # gets a dateless generic confirmation while the appointment really exists.
+    # Surface the tool result instead (markers stripped before sending).
+    if action == "book_step" and booking_succeeded and tools_used and tool_results:
+        for _name, _res in zip(tools_used, tool_results):
+            if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
+                return _strip_markers(_res), rich
+
     # ── Path 0b-photos: deterministic photo delivery ──────────────────
     # If get_property_images ran for a selected property, ALWAYS resolve and send the
     # images + a visit CTA — never gate this on the engine emitting an 'images'
@@ -997,24 +1009,29 @@ async def run_turn(
     # ── Step 8b: Quality guard — gated judge + one targeted regen (LLM Call 3) ─
     # Runs only on low-confidence or critical turns (book_step/handoff/knowledge);
     # most turns skip it, keeping the median call budget ≤3. Never raises.
+    # EXCEPTION: a SUCCESSFUL booking confirmation is deterministic, carries the
+    # real date/time/address, and must never be regenerated — an LLM rewrite could
+    # silently drop those structured fields. Skip the judge entirely in that case.
     judge_score: float | None = None
-    try:
-        from app.routers.v3 import guard
+    _booked_ok = (turn.action == "book_step" and _fsm_booking_succeeded)
+    if not _booked_ok:
+        try:
+            from app.routers.v3 import guard
 
-        guard_result = await guard.run_guard(
-            action=turn.action,
-            confidence=turn.confidence,
-            user_message=user_message,
-            response_text=response_text,
-            state_json=json.dumps(_compact_state(belief), ensure_ascii=False),
-            tool_results=tool_results,
-            settings=settings,
-        )
-        # Strip any booking markers the regeneration may have copied from tool_results.
-        response_text = _strip_markers(guard_result.response_text)
-        judge_score = guard_result.judge_score
-    except Exception as exc:
-        logger.debug("[V3] guard.run_guard error (non-fatal): {}", str(exc))
+            guard_result = await guard.run_guard(
+                action=turn.action,
+                confidence=turn.confidence,
+                user_message=user_message,
+                response_text=response_text,
+                state_json=json.dumps(_compact_state(belief), ensure_ascii=False),
+                tool_results=tool_results,
+                settings=settings,
+            )
+            # Strip any booking markers the regeneration may have copied from tool_results.
+            response_text = _strip_markers(guard_result.response_text)
+            judge_score = guard_result.judge_score
+        except Exception as exc:
+            logger.debug("[V3] guard.run_guard error (non-fatal): {}", str(exc))
 
     # ── Step 8c: Store assistant response in history for next turn context ────────
     # Include the bot's response so future turns can see the full conversation

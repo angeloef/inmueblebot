@@ -11,7 +11,7 @@ import pytz
 from app.db.models import Appointment
 from app.db.models import User
 from app.db.models import Property
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from app.core.tenancy import resolve_tenant_id
@@ -65,14 +65,39 @@ class AppointmentService:
         db = self._get_session()
         try:
             start_time = self._ensure_timezone(start_time)
-            
+
             if start_time < datetime.now(tz.utc):
                 return {
                     "success": False,
                     "message": "La fecha y hora ya pasaron. Por favor selecciona una fecha futura.",
                     "suggested_times": []
                 }
-            
+
+            # ── Serialize concurrent bookings for this tenant (advisory lock) ──
+            # Availability is per-agency (one visit at a time), so a transaction-scoped
+            # advisory lock keyed on the tenant turns the check-then-insert sequence
+            # below into a critical section: two racing requests can't both pass the
+            # conflict check and both insert. Auto-released on commit/rollback. Best-effort.
+            try:
+                import zlib
+                lock_key = zlib.crc32(str(resolve_tenant_id()).encode()) & 0x7FFFFFFF
+                await db.execute(sql_text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key})
+            except Exception as lock_exc:
+                logger.debug(f"[Create Appointment] advisory lock skipped: {lock_exc}")
+
+            # ── Idempotency: same user + property + exact slot already booked ──
+            # A duplicate book_step emission (retry / double-send / user re-confirms)
+            # must NOT create a second row. Return the existing confirmation instead.
+            dup = await self._find_duplicate(db, user_id, property_id, start_time)
+            if dup is not None:
+                logger.info(f"[Create Appointment] idempotent hit: existing appointment={dup.id}")
+                return {
+                    "success": True,
+                    "message": "Cita ya agendada (idempotente)",
+                    "appointment": dup,
+                    "confirmed_datetime": dup.start_time.isoformat(),
+                }
+
             # Check local database conflict
             conflict = await self._check_conflict(db, property_id, start_time)
             if conflict:
@@ -143,9 +168,17 @@ class AppointmentService:
             db.add(appointment)
             await db.commit()
             await db.refresh(appointment)
-            
-            await self._update_user_score(user_id, db)
-            
+
+            # Lead-score bump is SECONDARY: it must never roll back a committed
+            # appointment. If it raised inside the main try, the outer `except`
+            # would rollback (no-op for the already-committed row) and return a
+            # technical failure → the caller would tell the user the booking
+            # failed while the row actually persisted (split-brain). Isolate it.
+            try:
+                await self._update_user_score(user_id, db)
+            except Exception as score_exc:
+                logger.warning(f"[Create Appointment] lead-score update failed (non-fatal): {score_exc}")
+
             logger.info(f"Cita creada: {appointment.id} calendar_event_id={calendar_event_id}")
             
             calendar_note = ""
@@ -568,6 +601,38 @@ class AppointmentService:
 
         return conflict
     
+    async def _find_duplicate(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        property_id,
+        start_time: datetime,
+    ) -> Optional[Appointment]:
+        """Return an existing confirmed appointment for the SAME user + property +
+        exact start slot, if any. Used for idempotency so a duplicate book_step
+        emission returns the original confirmation instead of creating a second row.
+        """
+        try:
+            if start_time.tzinfo is not None:
+                start_utc = start_time.astimezone(tz.utc)
+            else:
+                start_utc = pytz.timezone("America/Argentina/Buenos_Aires").localize(
+                    start_time
+                ).astimezone(tz.utc)
+            query = select(Appointment).where(
+                and_(
+                    Appointment.status == "confirmed",
+                    Appointment.user_id == user_id,
+                    Appointment.property_id == property_id,
+                    Appointment.start_time == start_utc,
+                )
+            )
+            result = await db.execute(query)
+            return result.scalars().first()
+        except Exception as exc:
+            logger.debug(f"[Create Appointment] dup check skipped: {exc}")
+            return None
+
     async def _update_user_score(self, user_id: UUID, db: AsyncSession) -> None:
         """Actualiza el lead_score del usuario (+30 puntos por cita agendada)."""
         try:
@@ -594,15 +659,23 @@ class AppointmentService:
         return dt
 
 
-def format_appointment_confirmation(appointment: Appointment, property_title: str = None, action_type: str = 'new') -> str:
+def format_appointment_confirmation(
+    appointment: Appointment,
+    property_title: str = None,
+    action_type: str = 'new',
+    address: str = None,
+    note_prefix: str = None,
+) -> str:
     """
     Formatea un mensaje de confirmación de cita para WhatsApp.
-    
+
     Args:
         appointment: Cita a formatear
         property_title: Título de la propiedad (opcional)
         action_type: 'new' para cita nueva, 'reschedule' para reprogramación
-    
+        address: Dirección de la propiedad a visitar (opcional pero recomendado)
+        note_prefix: Aviso a anteponer (ej: la fecha pedida ya había pasado)
+
     Returns:
         Mensaje formateado listo para enviar (incluye metadata estructurada para el LLM)
     """
@@ -639,15 +712,22 @@ def format_appointment_confirmation(appointment: Appointment, property_title: st
     
     if property_title:
         lines.append(f"🏠 *Propiedad:* {property_title}")
-    
+    if address:
+        lines.append(f"📍 *Dirección:* {address}")
+
     lines.extend([
         "",
         "📝 *Nota:* Un agente te contactará para confirmar los detalles.",
         "",
         "¿Necesitas hacer algún cambio? Solo dime."
     ])
-    
-    message = "\n".join(lines)
+
+    # Optional heads-up prepended above the confirmation card (e.g. the date the
+    # user gave had already passed and was rolled forward to the next occurrence).
+    if note_prefix:
+        message = note_prefix.rstrip() + "\n\n" + "\n".join(lines)
+    else:
+        message = "\n".join(lines)
     
     # Append structured metadata for LLM consumption (hidden from user)
     # Format: <!--CONFIRMED:{datetime}--> where datetime is YYYY-MM-DD HH:MM

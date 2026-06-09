@@ -151,10 +151,11 @@ class TestIsWithinBusinessHours(unittest.TestCase):
         dt = datetime(2026, 6, 7, 10, 0)  # 2026-06-07 is a Sunday
         self.assertFalse(is_within_business_hours(dt, self._WINDOWS))
 
-    def test_fail_open_on_exception(self):
-        # Passing something invalid should fail-open (True)
+    def test_fail_closed_on_exception(self):
+        # Business hours are a HARD constraint: an invalid datetime must fail CLOSED
+        # (False), never silently permit an out-of-hours booking.
         result = is_within_business_hours(None, {})  # type: ignore[arg-type]
-        self.assertTrue(result)
+        self.assertFalse(result)
 
 
 class TestLoadTenantHours(unittest.TestCase):

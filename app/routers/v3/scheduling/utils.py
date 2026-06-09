@@ -224,7 +224,9 @@ def is_within_business_hours(
     """Return True if dt falls within the open window for its weekday.
 
     Sunday (weekday 6) closed if not in windows.
-    Never raises — on any exception returns True (fail-open).
+    Business hours are a HARD constraint: on any unexpected error we fail CLOSED
+    (return False) and log it, rather than silently letting an out-of-hours slot
+    through. The caller then re-asks for a time instead of booking a 3am visit.
     """
     try:
         wd = dt.weekday()
@@ -232,8 +234,9 @@ def is_within_business_hours(
             return False
         open_h, close_h = windows[wd]
         return open_h <= dt.hour < close_h
-    except Exception:
-        return True
+    except Exception as exc:
+        logger.warning("[scheduling.utils] is_within_business_hours failed, failing closed: {}", exc)
+        return False
 
 
 async def load_tenant_hours(
