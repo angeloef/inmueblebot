@@ -14,7 +14,7 @@ export default function PreciosPage() {
     <main>
       <Navbar />
       <div className="py-12">
-        <Pricing showTitle={true} />
+        <Pricing />
       </div>
       <Footer />
     </main>

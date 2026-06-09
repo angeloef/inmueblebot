@@ -3,60 +3,191 @@
 @tailwind utilities;
 
 :root {
-  /* Primary */
-  --color-primary: #164a71;
-  --color-primary-hover: #1d5a88;
-  --color-primary-active: #103957;
-  --color-on-primary: #ffffff;
+  /* ---------- Brand & Primary ---------- */
+  --primary:            #164a71;
+  --primary-hover:      #1d5a88;
+  --primary-active:     #103957;
+  --primary-disabled:   #eceef0;
+  --brand-accent:       #2e6ea0;
+  --brand-tint:         #eaf1f7;
+  --brand-tint-strong:  #d6e3f0;
 
-  /* Brand */
-  --color-brand-accent: #2e6ea0;
-  --color-brand-tint: #eaf1f7;
-  --color-brand-tint-strong: #d6e3f0;
+  /* ---------- Channel (WhatsApp) ---------- */
+  --whatsapp:           #25d366;
+  --whatsapp-dark:      #128c7e;
+  --whatsapp-bubble:    #d9fdd3;
+  --whatsapp-bg:        #efeae2;
 
-  /* WhatsApp */
-  --color-wa-green: #25d366;
-  --color-wa-dark: #128c7e;
-  --color-wa-bubble: #d9fdd3;
-  --color-wa-bg: #efeae2;
+  /* ---------- Ink / Text ---------- */
+  --ink:        #1d2024;
+  --body:       #2f3337;
+  --muted:      #4a5057;
+  --muted-soft: #6c727b;
+  --on-primary: #ffffff;
+  --on-dark:    #ffffff;
+  --on-dark-soft:#b6bcc3;
 
-  /* Surface */
-  --color-surface-soft: #fafafa;
-  --color-surface-card: #f5f6f7;
-  --color-surface-strong: #d4d8dc;
-  --color-surface-dark: #0f1114;
-  --color-surface-dark-elevated: #1d2024;
+  /* ---------- Surfaces ---------- */
+  --canvas:        #ffffff;
+  --surface-soft:  #fafafa;
+  --surface-card:  #f5f6f7;
+  --surface-strong:#d4d8dc;
+  --surface-dark:  #0f1114;
+  --surface-dark-elevated:#1d2024;
 
-  /* State */
-  --color-success-fg: #2f8f4e;
-  --color-success-bg: #e6f4ea;
-  --color-warning-fg: #b07d12;
-  --color-warning-bg: #fbf2dc;
-  --color-error-bg: #fbe9e7;
-  --color-info-bg: #eaf1f7;
+  /* ---------- Hairlines ---------- */
+  --hairline:      #e2e5e8;
+  --hairline-soft: #eceef0;
 
-  /* Ink */
-  --color-ink-900: #2f3337;
-  --color-ink-700: #4a5057;
-  --color-ink-500: #6c727b;
-  --color-ink-300: #b6bcc3;
+  /* ---------- Semantic ---------- */
+  --success:    #2f8f4e;
+  --success-bg: #e6f4ea;
+  --warning:    #b07d12;
+  --warning-bg: #fbf2dc;
+  --error:      #c0392b;
+  --error-bg:   #fbe9e7;
+  --info:       #2e6ea0;
+  --info-bg:    #eaf1f7;
 
-  /* Fonts */
-  --font-manrope: 'Manrope', system-ui, sans-serif;
-  --font-inter: 'Inter', system-ui, sans-serif;
-  --font-jetbrains: 'JetBrains Mono', monospace;
+  /* ---------- Typography ---------- */
+  /* Next.js injects --font-manrope, --font-inter, --font-jetbrains via layout.tsx */
+  --font-display: var(--font-manrope), 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body:    var(--font-inter),   'Inter',   -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Legacy aliases for Tailwind config */
+  --color-primary:            var(--primary);
+  --color-primary-hover:      var(--primary-hover);
+  --color-primary-active:     var(--primary-active);
+  --color-brand-accent:       var(--brand-accent);
+  --color-brand-tint:         var(--brand-tint);
+  --color-brand-tint-strong:  var(--brand-tint-strong);
+  --color-wa-green:            var(--whatsapp);
+  --color-wa-dark:             var(--whatsapp-dark);
+  --color-wa-bubble:           var(--whatsapp-bubble);
+  --color-wa-bg:               var(--whatsapp-bg);
+  --color-surface-soft:        var(--surface-soft);
+  --color-surface-card:        var(--surface-card);
+  --color-surface-strong:      var(--surface-strong);
+  --color-surface-dark:        var(--surface-dark);
+  --color-surface-dark-elevated: var(--surface-dark-elevated);
+  --color-success-fg:          var(--success);
+  --color-success-bg:          var(--success-bg);
+  --color-warning-fg:          var(--warning);
+  --color-warning-bg:          var(--warning-bg);
+  --color-error-bg:            var(--error-bg);
+  --color-info-bg:             var(--info-bg);
+  --color-ink-900:             var(--ink);
+  --color-ink-700:             var(--muted);
+  --color-ink-500:             var(--muted-soft);
+  --color-ink-300:             var(--on-dark-soft);
+
+  /* ---------- Radius ---------- */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-pill: 9999px;
+
+  /* ---------- Shadows ---------- */
+  --shadow-sm:   0 1px 2px rgba(15,17,20,0.05);
+  --shadow-md:   0 4px 12px rgba(15,17,20,0.08);
+  --shadow-lg:   0 12px 32px rgba(15,17,20,0.12);
+  --shadow-card: 0 1px 2px rgba(15,17,20,0.04), 0 1px 3px rgba(15,17,20,0.06);
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    font-family: var(--font-inter);
-    color: var(--color-ink-900);
-    background-color: var(--color-surface-soft);
+    font-family: var(--font-body);
+    color: var(--body);
+    background-color: var(--canvas);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-manrope);
+    font-family: var(--font-display);
   }
+}
+
+/* ---------- Landing animations ---------- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: scale(.93); }
+  to   { opacity: 1; transform: scale(1);  }
+}
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: translateY(0);    opacity: .5; }
+  40%           { transform: translateY(-4px); opacity: 1;  }
+}
+
+.typing-dot {
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+
+/* ---------- Responsive helpers ---------- */
+@media (max-width: 768px) {
+  .hero-grid     { grid-template-columns: 1fr !important; }
+  .problem-grid  { grid-template-columns: 1fr !important; }
+  .steps-grid    { grid-template-columns: repeat(2,1fr) !important; }
+  .feat-grid     { grid-template-columns: 1fr !important; }
+  .persona-grid  { grid-template-columns: 1fr !important; }
+  .testi-grid    { grid-template-columns: 1fr !important; }
+  .price-grid    { grid-template-columns: 1fr !important; }
+  .footer-grid   { grid-template-columns: 1fr !important; }
+  .stat-grid     { grid-template-columns: repeat(2,1fr) !important; }
+  .panel-inner   { grid-template-columns: 1fr !important; }
+  .prop-grid     { grid-template-columns: 1fr !important; }
+  .nav-desktop   { display: none !important; }
+  .cta-row       { flex-direction: column; align-items: center; }
+}
+
+@media (max-width: 480px) {
+  .steps-grid { grid-template-columns: 1fr !important; }
+  .hero-cta   { flex-direction: column; }
+}
+
+/* ---------- Range input styling ---------- */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  margin-top: -7px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.15);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  cursor: pointer;
 }

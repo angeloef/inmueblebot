@@ -1,41 +1,61 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Wordmark, LandingButton } from './atoms'
+
+const NAV_LINKS = [
+  { l: 'Cómo funciona', h: '#como-funciona' },
+  { l: 'Funciones',     h: '#funciones'     },
+  { l: 'Precios',       h: '#precios'       },
+  { l: 'Clientes',      h: '#clientes'      },
+]
+
 export default function Navbar() {
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-surface-strong">
-      <nav className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
-        <a
-          href="/"
-          className="font-display font-bold text-xl text-primary tracking-tight"
-        >
-          ViviendApp
+    <header style={{
+      position: 'sticky', top: 0, zIndex: 30, height: 66,
+      background: 'rgba(255,255,255,.82)',
+      backdropFilter: 'saturate(180%) blur(12px)',
+      borderBottom: `1px solid ${scrolled ? 'var(--hairline)' : 'transparent'}`,
+      transition: 'border-color .2s',
+    }}>
+      <div style={{
+        maxWidth: 1200, margin: '0 auto', height: '100%',
+        padding: '0 28px', display: 'flex', alignItems: 'center', gap: 32,
+      }}>
+        <a href="#top" style={{ textDecoration: 'none' }}>
+          <Wordmark height={28} />
         </a>
 
-        <div className="hidden md:flex items-center gap-6 text-sm text-ink-700">
-          <a href="/#funcionalidades" className="hover:text-primary transition-colors">
-            Funcionalidades
-          </a>
-          <a href="/#como-funciona" className="hover:text-primary transition-colors">
-            ¿Cómo funciona?
-          </a>
-          <a href="/precios" className="hover:text-primary transition-colors">
-            Precios
-          </a>
-        </div>
+        <nav className="nav-desktop" style={{ display: 'flex', gap: 26, marginLeft: 14 }}>
+          {NAV_LINKS.map(l => (
+            <a key={l.l} href={l.h} style={{
+              fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: 14,
+              color: 'var(--muted)', textDecoration: 'none',
+            }}>
+              {l.l}
+            </a>
+          ))}
+        </nav>
 
-        <div className="flex items-center gap-3">
-          <a
-            href="/login"
-            className="text-sm font-medium text-ink-700 hover:text-primary transition-colors px-3 py-2"
-          >
-            Ingresar
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <a href="/login" className="nav-desktop" style={{
+            fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 14,
+            color: 'var(--ink)', textDecoration: 'none',
+          }}>
+            Iniciar sesión
           </a>
-          <a
-            href="/signup"
-            className="text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors px-4 py-2 rounded-lg"
-          >
-            Probar gratis
-          </a>
+          <LandingButton size="sm" href="/signup">Probar 30 días gratis</LandingButton>
         </div>
-      </nav>
+      </div>
     </header>
   )
 }
