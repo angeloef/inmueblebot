@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getSessionReadOnly } from '@/lib/auth'
+import TrialBanner from '@/components/billing/TrialBanner'
 
 export const metadata: Metadata = {
   title: 'Panel',
@@ -21,6 +22,13 @@ export default async function AppPage() {
             Panel de ViviendApp
           </h1>
         </div>
+
+        {session?.subscription && (
+          <TrialBanner
+            status={session.subscription.status}
+            trialEndsAt={session.subscription.trial_ends_at}
+          />
+        )}
 
         <div className="rounded-xl bg-state-info-bg border border-brand-tint-strong p-4">
           <p className="text-sm text-primary font-medium">

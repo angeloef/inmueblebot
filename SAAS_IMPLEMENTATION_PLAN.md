@@ -300,9 +300,57 @@ NEXT_PUBLIC_META_CONFIG_ID=<config id>    # Fase 5
 
 ---
 
-## FASE 3 — MercadoPago: suscripción + gating + trial
+## FASE 3 — MercadoPago: suscripción + gating + trial ✅ COMPLETADA (2026-06-09)
 
 > Habilita cobrar. El estado de la suscripción gobierna el acceso al dashboard.
+>
+> **Estado:** implementada y verificada. Backend: 13 tests offline verdes (4 firma
+> HMAC + 4 gating + 5 webhook/auth vía ASGI) + 2 tests de DB (transición de estado +
+> idempotencia + expiración de trial) que se saltan sin Postgres; ruff limpio. Web:
+> `npm run build` limpio (21 rutas, incluye `/checkout`, `/checkout/{success,failure,
+> pending}`, `/api/billing/subscribe`).
+>
+> **Decisión de diseño:** `billing_service.py` NO se tocó — es el módulo de *cobranzas*
+> de alquiler (IPC/punitorios), no de suscripción SaaS. La suscripción MercadoPago vive
+> en **`app/services/subscription_service.py`** (módulo nuevo, dedicado).
+>
+> **Archivos:** `app/services/subscription_service.py` (preapproval + webhook sync +
+> firma HMAC + gating puro + `mark_expired_trials`), `app/api/routes/billing.py`
+> (`/billing/subscribe`, `/billing/status`, `/webhooks/mercadopago`), `app/api/deps.py`
+> (`require_active_subscription` → 402), `app/core/config.py` (MP_* + PUBLIC_API_URL),
+> `tests/test_billing.py`, y en `web/`: `app/api/billing/subscribe/route.ts`,
+> `app/checkout/page.tsx` + `success|failure|pending`, `components/billing/{CheckoutButton,
+> TrialBanner,CheckoutResult}.tsx`, banner de trial en `app/app/page.tsx`.
+>
+> **Flujo elegido:** preapproval *sin plan asociado* con `status="pending"` (sin
+> card_token) → MercadoPago devuelve `init_point` y el usuario carga la tarjeta allí.
+>
+> ⚠️ **Producto MercadoPago = "Suscripciones", NO "Checkout Pro".** Son productos
+> distintos: Checkout Pro (`POST /checkout/preferences`) **no soporta pagos recurrentes**;
+> las suscripciones recurrentes usan la API de **preapproval** (`POST /preapproval`), que
+> es lo que implementa `subscription_service.py`. En el panel de MercadoPago, al crear/
+> configurar la app y los webhooks, elegir la pestaña **"Suscripciones" → "Suscripciones
+> con integración"** (NO "Checkouts/Checkout Pro"). El backend ya es correcto: no hay
+> cambio de código, solo de selección en el panel. El access token es el mismo por app.
+>
+> **Security review aplicada (`security-review`):**
+> - Firma `x-signature` validada con HMAC-SHA256 + `hmac.compare_digest` (tiempo constante).
+> - **Fail-closed en producción:** sin `MERCADOPAGO_WEBHOOK_SECRET` el webhook devuelve 403.
+> - **Hardening:** la firma se valida ANTES de parsear el body (no se parsea JSON de un
+>   caller no autenticado).
+> - Precio **server-authoritative** (`MP_PLAN_PRICE_ARS`), el cliente nunca elige el monto.
+> - JWT nunca llega al browser: `/billing/subscribe` se hace vía Route Handler server-side
+>   que reenvía la cookie httpOnly como Bearer.
+> - Gating aislado por tenant: la suscripción se busca por el `tenant_id` del JWT.
+> - Webhook idempotente (re-aplicar el mismo estado no cambia nada).
+>
+> **Pendiente al desplegar (manual, owner):**
+> 1. Setear en Render: `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`,
+>    `MP_PLAN_PRICE_ARS`, `PUBLIC_API_URL`.
+> 2. En MercadoPago → *Tus integraciones → Webhooks*: registrar
+>    `https://<api>/webhooks/mercadopago` y copiar el secret de la firma.
+> 3. (Opcional) `NEXT_PUBLIC_PLAN_PRICE_ARS` en el web para mostrar el precio en `/checkout`.
+> 4. Probar el flujo con credenciales **sandbox** (TEST-...) antes de prod.
 
 ### Tarea 3.1 — Revisar/extender `billing_service.py`
 - **Skill ECC:** `ecc:backend-patterns` + `ecc:documentation-lookup` (API preapproval MercadoPago)

@@ -98,9 +98,26 @@ class Settings(BaseSettings):
         default=None,
         description="Access token de MercadoPago (Fase 3)",
     )
+    MERCADOPAGO_WEBHOOK_SECRET: Optional[str] = Field(
+        default=None,
+        description="Secret de la notificación de MercadoPago para validar x-signature (HMAC-SHA256). "
+                    "Sin esto, el webhook se rechaza en producción (fail-closed).",
+    )
+    MP_PLAN_PRICE_ARS: float = Field(
+        default=0.0,
+        description="Precio mensual en ARS del plan SaaS. 0 = no configurado (subscribe falla con 503).",
+    )
+    MP_PLAN_NAME: str = Field(
+        default="ViviendApp Mensual",
+        description="Nombre del plan mostrado en MercadoPago (campo 'reason' del preapproval).",
+    )
     PUBLIC_APP_URL: str = Field(
         default="http://localhost:3000",
         description="URL base del frontend Next.js (links de email + CORS)",
+    )
+    PUBLIC_API_URL: str = Field(
+        default="http://localhost:8000",
+        description="URL pública de esta API (destino del webhook de MercadoPago).",
     )
 
     # === Base de Datos ===

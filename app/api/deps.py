@@ -10,8 +10,9 @@ from sqlalchemy import select
 
 from app.core.security import decode_token
 from app.core.tenancy import reset_current_tenant, set_current_tenant
-from app.db.models import TenantAccount
+from app.db.models import Subscription, TenantAccount
 from app.db.session import async_session_factory
+from app.services.subscription_service import subscription_grants_access
 
 _bearer = HTTPBearer(auto_error=True)
 
@@ -66,3 +67,24 @@ def require_role(*roles: str):  # noqa: ANN201
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return account
     return _checker
+
+
+async def require_active_subscription(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> TenantAccount:
+    """Gating de suscripción: deja pasar solo trial vigente o suscripción activa.
+
+    Devuelve 402 (Payment Required) si el trial venció o la suscripción está
+    pausada/cancelada. ``subscriptions`` es global (sin RLS), así que se consulta
+    con el tenant del account ya resuelto por ``get_current_account``.
+    """
+    async with async_session_factory() as session:
+        sub = await session.scalar(
+            select(Subscription).where(Subscription.tenant_id == account.tenant_id)
+        )
+    if not subscription_grants_access(sub):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Subscription required",
+        )
+    return account

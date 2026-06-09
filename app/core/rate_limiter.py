@@ -14,9 +14,8 @@ Usage:
         return
 """
 
-import time
 import logging
-from app.core.config import get_settings
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +74,44 @@ class RateLimiter:
 
         except Exception as e:
             logger.debug("[RateLimiter] Redis error during check — allowing: %s", e)
+            return True
+
+    async def check_key(
+        self, key: str, max_count: int, window_seconds: int
+    ) -> bool:
+        """Per-key sliding-window limit. ``True`` = within limit (allow).
+
+        Unlike ``check_global`` (one shared bucket), this rate-limits an arbitrary
+        key independently — e.g. ``f"billing:subscribe:{tenant_id}"`` so one tenant
+        can't spam an endpoint without affecting others. Degrades open (returns
+        ``True``) when Redis is unreachable, matching ``check_global``.
+        """
+        try:
+            from app.core.memory import memory_manager
+
+            r = await memory_manager._get_redis()
+        except Exception:
+            logger.debug("[RateLimiter] Redis unavailable — allowing %s", key)
+            return True
+
+        redis_key = f"rate_limit:{key}"
+        now = time.time()
+        window_start = now - float(window_seconds)
+
+        try:
+            await r.zremrangebyscore(redis_key, 0, window_start)
+            count = await r.zcard(redis_key)
+            if count >= max_count:
+                logger.warning(
+                    "[RateLimiter] key limit hit: %s (%d >= %d / %ds)",
+                    key, count, max_count, window_seconds,
+                )
+                return False
+            await r.zadd(redis_key, {f"{now}:{count}": now})
+            await r.expire(redis_key, window_seconds)
+            return True
+        except Exception as e:
+            logger.debug("[RateLimiter] Redis error on %s — allowing: %s", key, e)
             return True
 
     async def get_remaining(self) -> int:
