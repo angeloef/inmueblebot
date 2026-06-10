@@ -252,8 +252,12 @@ async def load_belief_v5(session_id: str) -> BeliefStateV5:
     try:
         redis = await _get_redis()
         if redis:
-            raw = await redis.get(key)
-            await redis.aclose()
+            # try/finally so the connection is always returned even if get() raises
+            # (plan #18): aclose() used to run only on the happy path → leak per error.
+            try:
+                raw = await redis.get(key)
+            finally:
+                await redis.aclose()
             if raw:
                 try:
                     d = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
@@ -295,9 +299,13 @@ async def save_belief_v5(belief: BeliefStateV5) -> None:
     try:
         redis = await _get_redis()
         if redis:
-            data = serialize_v5(belief)
-            await redis.set(key, data, ex=settings.WORKING_MEMORY_TTL)
-            await redis.aclose()
+            # try/finally so the connection is always returned even if set() raises
+            # (plan #18): aclose() used to run only on the happy path → leak per error.
+            try:
+                data = serialize_v5(belief)
+                await redis.set(key, data, ex=settings.WORKING_MEMORY_TTL)
+            finally:
+                await redis.aclose()
         else:
             # Redis unavailable — fall back to in-memory store
             from app.core.belief_state import save_belief
