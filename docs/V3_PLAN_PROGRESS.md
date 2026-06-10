@@ -36,7 +36,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 13 | P1 | Conversation | DONE | TBD | New _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent) in step 6: clears awaiting + pending_scheduling only when this turn AND the previous one are both non-scheduling and awaiting still startswith "scheduling_". prev_last_intent captured before last_intent overwrite. Single FAQ interruption (prev was scheduling) preserves the flow; scheduling_name untouched. 6 tests in tests/v3/test_stale_awaiting_clear.py. |
 | 14 | P1 | Response quality | DONE | TBD | _assemble_response now returns a 3rd value source ∈ {verbatim,synthesis,plan,fsm}; threaded into run_guard(source=...). When source=="verbatim" the judge still SCORES but never regenerates — deterministic search list / detail card / real confirmation reach the user byte-exact (no LLM price/format drift). Updated all 18 returns + run_turn caller + 5 test files' unpacking. 2 new tests in test_quality_guard.py (verbatim not-regenerated + synthesis control). |
 | 15 | P1 | Silent failure | DONE | TBD | belief.py: added loguru logger; load_belief_v5 deserialize/migrate failure + outer except now log WARNING (were `except: pass`); save_belief_v5 except logs WARNING. engine.py step 8c assistant-history append promoted debug→warning. All still non-fatal (graceful fresh belief / turn proceeds). 2 tests in tests/v3/test_silent_failure_logging.py (loguru sink capture). |
-| 16 | P1 | Booking integrity | TODO | | availability fail-open → log WARNING + metric (§ backlog #16) |
+| 16 | P1 | Booking integrity | DONE | TBD | New emit_availability_failopen(stage, property_id, reason) in turn_metrics.py logs a selectable AVAILABILITY_FAILOPEN marker line (WARNING). Wired into both fail-open branches of appointment_service.check_slot_availability (calendar sub-check + outer DB check). Fail-open behavior preserved (product call); now observable for rate alerting. 4 tests in tests/v3/test_availability_failopen.py. |
 | 17 | P1 | Response quality | TODO | | cancel/reschedule: generic Spanish error, no raw exception leak (§ backlog #17) |
 | 18 | P1 | Infra | TODO | | try/finally around Redis get/set to fix connection leak (§ backlog #18) |
 | 19 | P2 | Persona/format | TODO | | normalize `$40.000`, fix dropped accents in no-results msg (§ backlog #19) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 9/12 done · P2: 0/7 done · **Total: 15/25** ✅ all P0 complete
+- P0: 6/6 done · P1: 10/12 done · P2: 0/7 done · **Total: 16/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -73,3 +73,4 @@ _(append-only; newest last — one line per completed item)_
 - #13 Conversation: clear stale scheduling awaiting after two consecutive off-topic turns — 2026-06-10 TBD
 - #14 Response quality: verbatim-aware guard (source flag) never regenerates verbatim text — 2026-06-10 TBD
 - #15 Silent failure: promote belief load/save + assistant-history failures to logger.warning — 2026-06-10 TBD
+- #16 Booking integrity: availability fail-open emits AVAILABILITY_FAILOPEN metric line — 2026-06-10 TBD

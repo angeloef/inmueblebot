@@ -40,6 +40,24 @@ _FIELDS = (
 # Marker prefix so a log shipper can select turn-metric lines deterministically.
 _MARKER = "TURN_METRICS"
 
+# Marker for booking-availability fail-open events (plan #16): the availability
+# check failed and we proceeded anyway (product call), risking a double-booking.
+# Selectable independently so an alert can fire on a sustained rate.
+_AVAILABILITY_FAILOPEN_MARKER = "AVAILABILITY_FAILOPEN"
+
+
+def emit_availability_failopen(*, stage: str, property_id: Any = None, reason: str = "") -> None:
+    """Log one structured line whenever the availability check fails open (plan #16).
+
+    ``stage`` distinguishes the calendar sub-check from the outer DB check. Never
+    raises — observability must never break a booking turn.
+    """
+    try:
+        payload = {"stage": stage, "property_id": property_id, "reason": reason[:200]}
+        logger.warning("{} {}", _AVAILABILITY_FAILOPEN_MARKER, json.dumps(payload, ensure_ascii=False))
+    except Exception:  # pragma: no cover - observability must never break a turn
+        logger.opt(exception=True).debug("emit_availability_failopen failed (ignored)")
+
 
 def emit_turn_metrics(
     *,
