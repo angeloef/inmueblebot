@@ -600,6 +600,21 @@ async def _assemble_response(
             if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
                 return _strip_markers(_res), rich
 
+    # ── Path 0a2: requested-but-none-ran → targeted clarify ───────────
+    # The engine asked for tools but EVERY one was skipped by validation (e.g. a
+    # property-scoped tool with no property_id and no selection). any_ran is False
+    # and there are no results at all, so the only thing left to render would be the
+    # engine's ≤8-word placeholder ("Un momento, reviso eso.") — a dead end (plan #2).
+    # Replace it with a question that actually moves the conversation forward.
+    requested_names = {tc.name for tc in (turn.tool_calls or [])}
+    if requested_names and not any_ran and not tool_results:
+        if requested_names & _PROPERTY_ID_TOOLS and not getattr(belief, "selected_property_id", None):
+            return (
+                "¿De cuál propiedad querés que te muestre eso? "
+                'Decime el ID o la posición en la lista (por ejemplo, "la primera").'
+            ), rich
+        return _SAFE_CLARIFY_ES, rich
+
     # ── Path 0b-photos: deterministic photo delivery ──────────────────
     # If get_property_images ran for a selected property, ALWAYS resolve and send the
     # images + a visit CTA — never gate this on the engine emitting an 'images'

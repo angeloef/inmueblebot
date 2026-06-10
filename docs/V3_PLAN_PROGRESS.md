@@ -22,7 +22,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | # | Pri | Area | Status | Commit | Notes |
 |---|-----|------|--------|--------|-------|
 | 1 | P0 | Tool selection | DONE | 234de0c | Path 0a-appt surfaces cancel/reschedule/get_my_appointments results verbatim before the book_step guard; added `scheduling → answer_knowledge` taxonomy line. 4 new tests in tests/v3/test_scheduling_guard.py. |
-| 2 | P0 | Response quality | TODO | | requested-but-none-ran → targeted clarify, never the placeholder (§5.2) |
+| 2 | P0 | Response quality | DONE | TBD | Path 0a2 in _assemble_response: tools requested but all skipped (no results) → property-scoped w/o selection asks "¿De cuál propiedad?", else _SAFE_CLARIFY_ES; never the "Un momento" placeholder. 5 tests in tests/v3/test_skipped_tool_clarify.py. |
 | 3 | P0 | Conversation | TODO | | reset selected_property_id + scheduling slots on new search (§4.1) |
 | 4 | P0 | Conversation/infra | TODO | | wrap V3 webhook block in get_user_lock; consolidate belief saves (§ backlog #4) |
 | 5 | P0 | Response quality | TODO | | schedule_visit fallback confirmation must emit `<!--CONFIRMED:` marker (§ backlog #5) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 1/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 1/25**
+- P0: 2/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 2/25**
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -59,3 +59,4 @@ _(If a run stops mid-item, record here exactly what was done and what remains, s
 _(append-only; newest last — one line per completed item)_
 
 - #1 Tool selection: surface appointment-management results verbatim before book_step guard + taxonomy line — 2026-06-10 234de0c
+- #2 Response quality: requested-but-none-ran → targeted clarify (Path 0a2), never the placeholder — 2026-06-10 TBD
