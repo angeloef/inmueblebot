@@ -17,7 +17,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 
 | # | Pri | Area | Status | Commit | Notes |
 |---|-----|------|--------|--------|-------|
-| 1 | P0 | Tool selection | TODO | | book_step guard → require `schedule_visit in requested` + appt-mgmt taxonomy line (§3.1, §5.1) |
+| 1 | P0 | Tool selection | DONE | _PENDING_ | Path 0a-appt surfaces cancel/reschedule/get_my_appointments results verbatim before the book_step guard; added `scheduling → answer_knowledge` taxonomy line. 4 new tests in tests/v3/test_scheduling_guard.py. |
 | 2 | P0 | Response quality | TODO | | requested-but-none-ran → targeted clarify, never the placeholder (§5.2) |
 | 3 | P0 | Conversation | TODO | | reset selected_property_id + scheduling slots on new search (§4.1) |
 | 4 | P0 | Conversation/infra | TODO | | wrap V3 webhook block in get_user_lock; consolidate belief saves (§ backlog #4) |
@@ -44,7 +44,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 0/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 0/25**
+- P0: 1/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 1/25**
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -54,4 +54,4 @@ _(If a run stops mid-item, record here exactly what was done and what remains, s
 ## Implementation log
 _(append-only; newest last — one line per completed item)_
 
-- _(none yet)_
+- #1 Tool selection: surface appointment-management results verbatim before book_step guard + taxonomy line — 2026-06-10 _PENDING_

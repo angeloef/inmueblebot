@@ -558,6 +558,19 @@ async def _assemble_response(
     # succeed (no <!--CONFIRMED: marker), STRUCTURALLY discard the confirmation
     # response_plan so no fake "Cita Agendada" reaches the user.
     action = getattr(turn, "action", None)
+
+    # ── Path 0a-appt: surface appointment-management results verbatim ──
+    # cancel/reschedule/get_my_appointments are NOT new bookings — their tool
+    # output is already a user-ready confirmation/listing. Surface it BEFORE the
+    # book_step anti-hallucination guard below: the model frequently mislabels
+    # these turns as book_step, and the guard would then discard the real result
+    # and reply "Estoy recopilando los detalles para tu visita" (plan #1).
+    _APPT_MGMT_TOOLS = ("get_my_appointments", "cancel_appointment", "reschedule_appointment")
+    if tools_used and tool_results:
+        for _name, _res in zip(tools_used, tool_results):
+            if _name in _APPT_MGMT_TOOLS and _res and not _res.startswith("Error:"):
+                return _strip_markers(_res), rich
+
     if action == "book_step" and not booking_succeeded:
         # Discard the engine's (possibly fabricated) confirmation response_plan. BUT
         # surface the REAL schedule_visit result — it carries the actual reason the

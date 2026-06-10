@@ -51,6 +51,7 @@ search     → show_details (usuario quiere más info de un ID concreto → get_
 search     → show_photos (usuario pide fotos de un ID concreto → get_property_images)
 scheduling → book_step (ya hay property_id + día + horario + nombre → emití schedule_visit ESTE turno)
 scheduling → clarify (falta día, horario o nombre → pedí solo ese, sin tool_call)
+scheduling → answer_knowledge (gestionar visitas YA agendadas: listar → get_my_appointments; cancelar → cancel_appointment; cambiar día/hora → reschedule_appointment. book_step es SOLO para crear una visita nueva con schedule_visit.)
 knowledge  → answer_knowledge (FAQ inmobiliaria — SIEMPRE llamar get_faq_answer; nunca inventar)
 rapport    → smalltalk (saludo, cierre, agradecimiento, o una reacción a una propiedad: "está lindo", "me gusta", "qué bueno")
 handoff    → handoff (usuario quiere hablar con persona real)
