@@ -476,6 +476,13 @@ _ORDINAL_PATTERNS: list[tuple] = [
 ]
 _LAST_ORDINAL_RE = re.compile(r"\b(últim[oa]|ultim[oa])\b", re.IGNORECASE)
 
+# Per-property header line from _format_properties_list: "  ID:12 — Departamento en
+# Centro — $250.000/mes". These compact lines (id + tipo + zona + precio) are the
+# clean comparative material for follow-ups; the secondary "2 dorm | …" spec lines and
+# any header/footer prose are dropped (plan #21). Cap the count to bound state size.
+_SEARCH_SUMMARY_LINE_RE = re.compile(r"^ID:\d+\s+—\s+.+—.+$")
+_MAX_SUMMARY_LINES = 12
+
 
 def _resolve_ordinal_to_id(message: str, last_search_ids: list) -> int | None:
     """Map a positional reference ("la primera", "el tercero", "la última") to a
@@ -493,6 +500,21 @@ def _resolve_ordinal_to_id(message: str, last_search_ids: list) -> int | None:
     return None
 
 
+def _compact_search_summary(res: str) -> str:
+    """Reduce a formatted search result to one compact line per property (plan #21).
+
+    Keeps the "ID:N — Tipo en Zona — $precio" header lines (whole, never truncated),
+    drops the secondary spec lines and any header/footer prose, and caps the count so
+    the stored state JSON stays small. Falls back to a char-capped prefix if the result
+    isn't in the expected format (e.g. a no-results or progressive-narrowing message).
+    """
+    lines = [ln.strip() for ln in (res or "").splitlines()]
+    summary = [ln for ln in lines if _SEARCH_SUMMARY_LINE_RE.match(ln)]
+    if summary:
+        return "\n".join(summary[:_MAX_SUMMARY_LINES])
+    return (res or "")[:1200]
+
+
 def _persist_search_context(belief, tools_used: list[str], tool_results: list[str]) -> None:
     """Store the latest search_properties result on the belief.
 
@@ -508,8 +530,10 @@ def _persist_search_context(belief, tools_used: list[str], tool_results: list[st
             ids = [int(m) for m in _SEARCH_ID_RE.findall(res)]
             belief.last_search_ids = ids
             belief.last_search_count = len(ids)
-            # Cap the stored context so it doesn't bloat the cached-tail state JSON.
-            belief.last_search_context = res[:1200]
+            # Store compact one-line-per-ID summaries instead of a char-truncated blob
+            # (plan #21): cheaper tokens, never cuts an entry mid-line, and gives the
+            # model clean material for comparative answers / descriptive selection.
+            belief.last_search_context = _compact_search_summary(res)
             break
     except Exception:
         pass
