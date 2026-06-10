@@ -472,8 +472,26 @@ _DATA_TOOLS = frozenset({
 })
 
 
-async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
+def _recent_history_tail(belief, max_entries: int = 4) -> str:
+    """Last few conversation lines for synthesis context (plan #7).
+
+    ``belief.history`` already has the current ``user:`` message appended by run_turn
+    before assembly, so drop that trailing entry — it is passed separately as the
+    question. Returns the preceding ``max_entries`` lines joined, or "" if none.
+    """
+    history = list(belief.history or [])
+    if history and history[-1].startswith("user: "):
+        history = history[:-1]
+    tail = history[-max_entries:]
+    return "\n".join(tail)
+
+
+async def _synthesize_from_results(belief, tool_results: list[str], user_message: str = "") -> str:
     """Compose a Spanish reply grounded in real tool results (LLM Call 2).
+
+    Grounded in the user's actual question and the recent conversation tail (plan #7):
+    without them the synthesizer only saw the tool dump + state and could answer the
+    wrong question (e.g. a generic FAQ instead of the pet-policy that was asked).
 
     Returns "" on any failure so callers can fall back to the engine plan.
     """
@@ -485,6 +503,19 @@ async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
     try:
         compact = json.dumps(_compact_state(belief), ensure_ascii=False)
         tool_context = "\n".join(f"[{i+1}] {r}" for i, r in enumerate(tool_results))
+        history_tail = _recent_history_tail(belief)
+        question = (user_message or "").strip()
+        user_parts: list[str] = []
+        if question:
+            user_parts.append(f"Pregunta del usuario:\n{question}")
+        if history_tail:
+            user_parts.append(f"Conversación reciente:\n{history_tail}")
+        user_parts.append(f"Resultados de herramientas:\n{tool_context}")
+        user_parts.append(
+            "Respondé la pregunta del usuario basándote SOLO en estos resultados."
+            if question
+            else "Respondé al usuario basándote en estos resultados."
+        )
         synth_messages = [
             {
                 "role": "system",
@@ -496,13 +527,7 @@ async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
                 ),
             },
             {"role": "system", "content": f"[ESTADO]\n{compact}"},
-            {
-                "role": "user",
-                "content": (
-                    f"Resultados de herramientas:\n{tool_context}\n\n"
-                    "Respondé al usuario basándote en estos resultados."
-                ),
-            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
         ]
         client = get_client(LLMRole.SYNTH)
         model = get_model(LLMRole.SYNTH)
@@ -532,6 +557,7 @@ async def _assemble_response(
     booking_succeeded: bool = False,
     fsm_plan: list | None = None,
     tools_used: list[str] | None = None,
+    user_message: str = "",
 ) -> tuple[str, dict]:
     """Build response_text and rich_content from engine output + tool results.
 
@@ -682,7 +708,7 @@ async def _assemble_response(
         and "get_property_images" not in requested
     )
     if must_surface:
-        surfaced = await _synthesize_from_results(belief, tool_results)
+        surfaced = await _synthesize_from_results(belief, tool_results, user_message)
         if surfaced:
             return surfaced, rich
         # synthesis failed → fall through to the engine plan / safe default
@@ -716,7 +742,7 @@ async def _assemble_response(
 
     # ── Path 2: tools ran but no plan → synthesis (LLM Call 2) ──
     if any_ran and tool_results:
-        text = await _synthesize_from_results(belief, tool_results)
+        text = await _synthesize_from_results(belief, tool_results, user_message)
         if text:
             return text, rich
 
@@ -1061,6 +1087,7 @@ async def run_turn(
         booking_succeeded=_fsm_booking_succeeded,
         fsm_plan=_fsm_plan,
         tools_used=tools_used,
+        user_message=user_message,
     )
 
     # ── Step 8b: Quality guard — gated judge + one targeted regen (LLM Call 3) ─
