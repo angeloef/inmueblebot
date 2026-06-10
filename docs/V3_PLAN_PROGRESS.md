@@ -42,13 +42,13 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 19 | P2 | Persona/format | DONE | TBD | get_faq_answer curated "precios" fallback: comma-thousands → dot-thousands ($40,000→$40.000, …$22.000.000). search_properties no-results msg accents fixed ("No encontré propiedades… ¿Querés ajustar algún filtro?"). Legacy V1/V2 prompt strings left as-is (out of V3 scope). 3 tests in tests/v3/test_format_normalization.py. |
 | 20 | P2 | Tool selection | DONE | TBD | Dropped echo/get_time from _TOOL_NAMES + their prompt tool-list lines (no real-estate purpose, invited off-task calls; still in registry for legacy). Removed dead select_property from the action enum (never in taxonomy nor engine-handled). 5 tests in tests/v3/test_schema_prompt_consistency.py incl. "every action enum value appears in the prompt taxonomy". |
 | 21 | P2 | Conversation | DONE | TBD | _persist_search_context now stores _compact_search_summary(res): one "ID:N — Tipo en Zona — $precio" line per property (whole, never char-truncated), spec/prose lines dropped, capped at _MAX_SUMMARY_LINES=12. Falls back to res[:1200] for non-list messages (no-results/progressive-narrowing). Cheaper tokens + clean comparative material. 6 tests in tests/v3/test_compact_search_summary.py. |
-| 22 | P2 | Conversation | TODO | | FSM T-7 pre-check live after #10; add unit coverage (§ backlog #22) |
+| 22 | P2 | Conversation | DONE | TBD | T-7 availability pre-check is live now that #10 persists scheduling_day/time. Test-only item: 3 tests in tests/v3/test_fsm_availability_precheck.py — taken slot → override + re-ask time (scheduling_time cleared, awaiting=scheduling_time), free slot → no override (slot untouched), already-booked → check skipped. No production change. |
 | 23 | P2 | Quality | TODO | | raise RAG combine threshold to ≥0.60 (§ backlog #23) |
 | 24 | P2 | Conversation | TODO | | record safety-gate turns in history (§ backlog #24) |
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 12/12 done · P2: 3/7 done · **Total: 21/25** ✅ all P0+P1 complete
+- P0: 6/6 done · P1: 12/12 done · P2: 4/7 done · **Total: 22/25** ✅ all P0+P1 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -79,3 +79,4 @@ _(append-only; newest last — one line per completed item)_
 - #19 Persona/format: dot-thousands in curated FAQ prices + accents in no-results msg — 2026-06-10 TBD
 - #20 Tool selection: drop echo/get_time from V3 enum + remove dead select_property action — 2026-06-10 TBD
 - #21 Conversation: compact per-ID search summary lines instead of 1200-char blob — 2026-06-10 TBD
+- #22 Conversation: unit coverage for live FSM T-7 availability pre-check (post-#10) — 2026-06-10 TBD
