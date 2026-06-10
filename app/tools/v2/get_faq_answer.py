@@ -175,12 +175,12 @@ def _fallback_faq(key: str) -> str | None:
         ),
         "precios": (
             "Precios de referencia en Oberá (2026):\n"
-            "  • Monoambiente: desde $40,000/mes (alquiler)\n"
-            "  • Depto 1 dorm.: $55,000–$85,000/mes\n"
-            "  • Depto 2 dorm.: $70,000–$120,000/mes\n"
-            "  • Casa: $65,000–$95,000/mes\n"
-            "  • Terreno: desde $5,500,000 (venta)\n"
-            "  • Casa en venta: desde $22,000,000\n"
+            "  • Monoambiente: desde $40.000/mes (alquiler)\n"
+            "  • Depto 1 dorm.: $55.000–$85.000/mes\n"
+            "  • Depto 2 dorm.: $70.000–$120.000/mes\n"
+            "  • Casa: $65.000–$95.000/mes\n"
+            "  • Terreno: desde $5.500.000 (venta)\n"
+            "  • Casa en venta: desde $22.000.000\n"
             "Estos son aproximados. Buscá con tu presupuesto para ver opciones reales."
         ),
         "contacto": (

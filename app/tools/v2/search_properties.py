@@ -280,7 +280,7 @@ async def search_properties(
                         f"\n{_format_properties_list(no_zone_results, operation, presupuesto_max, skip=skip_tokens)}"
                     )
 
-            return f"No encontre propiedades{filters_desc}. Queres ajustar algun filtro?"
+            return f"No encontré propiedades{filters_desc}. ¿Querés ajustar algún filtro?"
 
         # Progressive narrowing: when there are too many matches, ask for the next
         # unknown filter (zona → dormitorios → presupuesto) instead of dumping a long

@@ -39,7 +39,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 16 | P1 | Booking integrity | DONE | TBD | New emit_availability_failopen(stage, property_id, reason) in turn_metrics.py logs a selectable AVAILABILITY_FAILOPEN marker line (WARNING). Wired into both fail-open branches of appointment_service.check_slot_availability (calendar sub-check + outer DB check). Fail-open behavior preserved (product call); now observable for rate alerting. 4 tests in tests/v3/test_availability_failopen.py. |
 | 17 | P1 | Response quality | DONE | TBD | cancel_appointment / reschedule_appointment except blocks no longer interpolate the raw exception into the user reply ("No pude cancelar la visita: {e}" leaked asyncpg/SQL text). Now a generic Spanish retry message; detail stays in logger.error. 2 tests in tests/v3/test_appt_error_no_leak.py assert the sentinel/asyncpg text never reaches the user. |
 | 18 | P1 | Infra | DONE | TBD | load_belief_v5 + save_belief_v5 wrap the redis get/set in try/finally so aclose() always runs (was happy-path only → one leaked connection per error). 3 tests in tests/v3/test_redis_no_leak.py (fake redis raising in get/set asserts aclose still awaited + turn degrades). |
-| 19 | P2 | Persona/format | TODO | | normalize `$40.000`, fix dropped accents in no-results msg (§ backlog #19) |
+| 19 | P2 | Persona/format | DONE | TBD | get_faq_answer curated "precios" fallback: comma-thousands → dot-thousands ($40,000→$40.000, …$22.000.000). search_properties no-results msg accents fixed ("No encontré propiedades… ¿Querés ajustar algún filtro?"). Legacy V1/V2 prompt strings left as-is (out of V3 scope). 3 tests in tests/v3/test_format_normalization.py. |
 | 20 | P2 | Tool selection | TODO | | resolve select_property schema/prompt drift; drop echo/get_time (§ backlog #20) |
 | 21 | P2 | Conversation | TODO | | structured last_search summary lines instead of 1200-char blob (§4.4) |
 | 22 | P2 | Conversation | TODO | | FSM T-7 pre-check live after #10; add unit coverage (§ backlog #22) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 12/12 done · P2: 0/7 done · **Total: 18/25** ✅ all P0+P1 complete
+- P0: 6/6 done · P1: 12/12 done · P2: 1/7 done · **Total: 19/25** ✅ all P0+P1 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -76,3 +76,4 @@ _(append-only; newest last — one line per completed item)_
 - #16 Booking integrity: availability fail-open emits AVAILABILITY_FAILOPEN metric line — 2026-06-10 TBD
 - #17 Response quality: cancel/reschedule return generic Spanish error, no raw exception leak — 2026-06-10 TBD
 - #18 Infra: try/finally around Redis get/set so aclose() always runs (no connection leak) — 2026-06-10 TBD
+- #19 Persona/format: dot-thousands in curated FAQ prices + accents in no-results msg — 2026-06-10 TBD
