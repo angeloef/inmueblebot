@@ -34,5 +34,6 @@ async def cancel_appointment(cual: str = "", motivo: str = "") -> str:
         await appointment_service.cancel_appointment(target_id, reason=motivo or "Cancelada por el cliente")
         return f"Listo, cancelé tu visita del {desc}. ¿Querés coordinar otra?"
     except Exception as e:
+        # Never leak the raw exception (asyncpg/SQL text) to the user (plan #17).
         logger.error(f"[cancel_appointment] {e}")
-        return f"No pude cancelar la visita: {e}"
+        return "Tuve un problema para cancelar la visita. ¿Probamos de nuevo en un momento?"
