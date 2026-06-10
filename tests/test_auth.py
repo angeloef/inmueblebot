@@ -205,3 +205,58 @@ async def test_refresh_rotates() -> None:
         new_data = resp.json()
         assert "access_token" in new_data
         assert new_data["access_token"] != signup.json()["access_token"]
+
+
+@_db_skip
+async def test_cross_tenant_property_isolation() -> None:
+    """Tenant A's JWT cannot access Tenant B's properties — RLS boundary check."""
+    from app.main import app
+
+    async def _signup(client: httpx.AsyncClient, name: str) -> str:
+        email = f"iso+{uuid4().hex[:8]}@example.com"
+        r = await client.post("/auth/signup", json={
+            "email": email,
+            "password": "password123",
+            "agency_name": name,
+        })
+        assert r.status_code == 201, r.text
+        return r.json()["access_token"]
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        token_a = await _signup(client, "Agencia Aislamiento A")
+        token_b = await _signup(client, "Agencia Aislamiento B")
+        auth_a = {"Authorization": f"Bearer {token_a}"}
+        auth_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Arrange: tenant A creates a property
+        created = await client.post(
+            "/admin/properties",
+            json={"title": "Casa de A", "operation": "venta", "price": 100000},
+            headers=auth_a,
+        )
+        assert created.status_code == 200, created.text
+        prop_id = created.json()["id"]
+
+        # Assert: tenant A can see their own property
+        list_a = await client.get("/admin/properties", headers=auth_a)
+        assert list_a.status_code == 200
+        a_ids = [p["id"] for p in list_a.json().get("properties", [])]
+        assert prop_id in a_ids, "Tenant A should see their own property"
+
+        # Assert: tenant B's JWT cannot see tenant A's property
+        list_b = await client.get("/admin/properties", headers=auth_b)
+        assert list_b.status_code == 200
+        b_ids = [p["id"] for p in list_b.json().get("properties", [])]
+        assert prop_id not in b_ids, "Tenant B must not see Tenant A's property (RLS violation)"
+
+        # Assert: tenant B's JWT gets 404 when fetching A's property image
+        img_resp = await client.get(
+            f"/admin/properties/{prop_id}/image/0",
+            headers=auth_b,
+        )
+        assert img_resp.status_code == 404, (
+            f"Tenant B should not reach Tenant A's property image, got {img_resp.status_code}"
+        )

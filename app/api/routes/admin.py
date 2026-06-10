@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse, Response, RedirectResponse
 from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from app.api.deps import get_current_account, require_superadmin
+from app.api.deps import get_current_account, require_active_subscription, require_superadmin
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
 import uuid as _uuid
@@ -471,15 +471,6 @@ def get_db():
         db.close()
 
 
-# ── Auth ───────────────────────────────────────────────────────────────────────
-
-def verify_admin_api_key(x_api_key: str = Header(None), x_admin_api_key: str = Header(None)):
-    api_key = x_api_key or x_admin_api_key
-    if not api_key or api_key != get_settings().ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return True
-
-
 @router.get("/debug/users")
 def debug_users(
     _: object = Depends(require_superadmin),
@@ -703,7 +694,7 @@ def _apt_to_dict(a):
 def list_leads(
     limit: int = 500,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import User
     from sqlalchemy import func as _func
@@ -719,7 +710,7 @@ def list_leads(
 def get_lead(
     lead_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import User
     try:
@@ -736,7 +727,7 @@ def get_lead(
 def create_lead(
     data: LeadCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import User
@@ -764,7 +755,7 @@ def update_lead(
     lead_id: str,
     data: LeadUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import User
     try:
@@ -796,7 +787,7 @@ def update_lead(
 def delete_lead(
     lead_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import User
     try:
@@ -814,7 +805,7 @@ def delete_lead(
 @router.post("/users/{phone}/reset")
 async def reset_user_context(
     phone: str,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Reset conversation context for a user by phone number.
     Clears Redis keys, in-memory fallback, and PostgreSQL preferences.
@@ -834,7 +825,7 @@ async def reset_user_context(
 @router.get("/properties")
 def list_properties(
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Property
     props = db.query(Property).order_by(Property.created_at.desc().nullslast()).all()
@@ -846,29 +837,12 @@ def list_properties(
     }
 
 
-def verify_admin_api_key_qp(
-    key: Optional[str] = None,
-    x_api_key: str = Header(None),
-    x_admin_api_key: str = Header(None),
-):
-    """Igual que verify_admin_api_key pero acepta la key como query param `key`.
-
-    Necesario para endpoints consumidos por <img src="...">, que no puede enviar
-    headers personalizados. El token ya vive en el bundle del dashboard, así que
-    exponerlo como query param no cambia el modelo de seguridad existente.
-    """
-    api_key = x_api_key or x_admin_api_key or key
-    if not api_key or api_key != get_settings().ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return True
-
-
 @router.get("/properties/{prop_id}/image/{index}")
 def get_property_image(
     prop_id: int,
     index: int,
     db: Session = Depends(get_db),
-    _: object = Depends(get_current_account),
+    _: object = Depends(require_active_subscription),
 ):
     """Devuelve los bytes de una imagen (decodificada de base64) como recurso HTTP
     cacheable independiente. Permite que el navegador cargue las fotos en paralelo,
@@ -912,7 +886,7 @@ def get_property_image(
 def create_property(
     data: PropertyCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Property
@@ -999,7 +973,7 @@ def update_property(
     prop_id: int,
     data: PropertyCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Property
     prop = db.query(Property).filter(Property.id == prop_id).first()
@@ -1059,7 +1033,7 @@ def update_property(
 def delete_property(
     prop_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Property, Appointment
     prop = db.query(Property).filter(Property.id == prop_id).first()
@@ -1090,7 +1064,7 @@ def update_property_status(
     prop_id: int,
     data: PropertyStatusUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Quick status update without full property edit."""
     from app.db.models import Property
@@ -1112,7 +1086,7 @@ def relate_client_to_property(
     prop_id: int,
     data: PropertyRelateClient,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Link a client to a property with a relationship type. Optionally updates property status.
 
@@ -1202,7 +1176,7 @@ def toggle_client_property_interest(
     lead_id: str,
     data: ClientPropertyInterest,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Toggle a client's interest in a property."""
     from app.db.models import User
@@ -1246,7 +1220,7 @@ def list_appointments(
     status: Optional[str] = None,
     limit: int = 200,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Appointment
     query = db.query(Appointment)
@@ -1260,7 +1234,7 @@ def list_appointments(
 def get_appointment(
     apt_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Obtiene un appointment por UUID — usado por el dashboard para abrir el modal desde notificación."""
     from app.db.models import Appointment
@@ -1279,7 +1253,7 @@ def get_appointment(
 def create_appointment(
     data: AppointmentCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Appointment
@@ -1473,7 +1447,7 @@ def update_appointment(
     apt_id: str,
     data: AppointmentUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Appointment
     from datetime import datetime, timedelta
@@ -1543,7 +1517,7 @@ def update_appointment(
 def delete_appointment(
     apt_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Appointment
     try:
@@ -1564,7 +1538,7 @@ def delete_appointment(
 
 @router.get("/calendar/status")
 def calendar_status(
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Return Google Calendar integration status and configured timezone."""
     try:
@@ -1583,7 +1557,7 @@ def calendar_status(
 def list_calendar_events(
     days_ahead: int = 30,
     max_results: int = 50,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Fetch upcoming events from Google Calendar for the dashboard."""
     import asyncio
@@ -1606,7 +1580,7 @@ def list_calendar_events(
 @router.get("/conversations/by-phone/{phone}")
 async def get_conversation_by_phone(
     phone: str,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """(Legacy) Look up conversation context by phone number.
     Prefer /admin/conversations/{id} for inbox integration."""
@@ -1631,7 +1605,7 @@ async def get_conversation_by_phone(
 async def handoff_to_agent(
     phone: str,
     request: HandoffRequest = HandoffRequest(),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.services.handoff_service import handoff_service
     try:
@@ -1753,7 +1727,7 @@ async def simulate_conversation_turn(
 async def agent_reply(
     phone: str,
     body: AgentReply,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.integrations.whatsapp import whatsapp_client
     from app.api.routes.webhook import format_phone_number
@@ -1767,7 +1741,7 @@ async def agent_reply(
 @router.post("/resume/{phone}")
 async def resume_bot(
     phone: str,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     from app.core.state_machine import state_machine, ConversationStateEnum
     from app.integrations.whatsapp import whatsapp_client
@@ -1822,7 +1796,7 @@ async def list_faqs(
     search: str = None,
     active: bool = None,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Lista todas las entradas FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1845,7 +1819,7 @@ async def list_faqs(
 async def get_faq(
     faq_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Obtiene una entrada FAQ por ID."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1859,7 +1833,7 @@ async def get_faq(
 async def create_faq(
     data: FAQCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Crea una nueva entrada FAQ."""
     from app.core.tenancy import resolve_tenant_id
@@ -1885,7 +1859,7 @@ async def update_faq(
     faq_id: int,
     data: FAQUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Actualiza una entrada FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1904,7 +1878,7 @@ async def update_faq(
 async def delete_faq(
     faq_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Elimina una entrada FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1919,7 +1893,7 @@ async def delete_faq(
 @router.get("/faqs/categories/list")
 async def list_faq_categories(
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Lista todas las categorías de FAQ distintas."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1953,7 +1927,7 @@ def list_notifications(
     unread: bool = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Lista notificaciones. ?unread=true filtra solo no leídas."""
     from sqlalchemy import text as _t
@@ -1978,7 +1952,7 @@ def list_notifications(
 def mark_notification_read(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Marca una notificación como leída."""
     from sqlalchemy import text as _t
@@ -1995,7 +1969,7 @@ def mark_notification_read(
 @router.post("/notifications/read-all")
 def mark_all_notifications_read(
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Marca todas las notificaciones como leídas."""
     from sqlalchemy import text as _t
@@ -2008,7 +1982,7 @@ def mark_all_notifications_read(
 def delete_notification(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Elimina una notificación."""
     from sqlalchemy import text as _t
@@ -2025,7 +1999,7 @@ def delete_notification(
 @router.post("/notifications/delete-read")
 def delete_read_notifications(
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Elimina todas las notificaciones ya leídas."""
     from sqlalchemy import text as _t
@@ -2060,7 +2034,7 @@ class BotSettingsUpdate(BaseModel):
 @router.get("/settings")
 def get_bot_settings(
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Devuelve todos los bot_settings como un dict plano {key: value}."""
     from sqlalchemy import text as _t
@@ -2076,7 +2050,7 @@ def get_bot_settings(
 def update_bot_settings(
     data: BotSettingsUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Actualiza uno o más bot_settings. Solo acepta campos de _ALLOWED_SETTINGS."""
     from sqlalchemy import text as _t
@@ -2372,7 +2346,7 @@ def _make_async_session():
 async def admin_list_conversations(
     limit: int = 50,
     offset: int = 0,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """List all conversations, sorted by last_message_at DESC."""
     from app.services.conversation_service import list_conversations as _list
@@ -2384,7 +2358,7 @@ async def admin_list_conversations(
 @router.get("/conversations/{conversation_id}")
 async def admin_get_conversation(
     conversation_id: str,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Get conversation detail with all messages."""
     from app.services.conversation_service import get_conversation as _get
@@ -2399,7 +2373,7 @@ async def admin_get_conversation(
 async def admin_reply_to_conversation(
     conversation_id: str,
     body: ConversationReply,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Admin replies to a conversation — sends WhatsApp message + persists."""
     from app.core.identity import set_current_contact
@@ -2453,7 +2427,7 @@ async def admin_reply_to_conversation(
 @router.patch("/conversations/{conversation_id}/toggle-bot")
 async def admin_toggle_bot(
     conversation_id: str,
-    _: bool = Depends(get_current_account),
+    _: bool = Depends(require_active_subscription),
 ):
     """Toggle bot_paused on a conversation."""
     from app.services.conversation_service import toggle_bot as _toggle
@@ -2468,7 +2442,7 @@ async def admin_toggle_bot(
 @router.get("/conversations/{conversation_id}/stream")
 async def admin_conversation_stream(
     conversation_id: str,
-    _: object = Depends(get_current_account),
+    _: object = Depends(require_active_subscription),
 ):
     """SSE stream for real-time conversation updates.
 
