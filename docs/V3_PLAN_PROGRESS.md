@@ -9,6 +9,10 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 - Working branch: `v3/improvement-plan`
 - Rule: **one item = one commit.** Commit (and update this file) after EACH item so
   an interrupted run never loses work.
+- Commit-hash convention: commit code + tests + this file together in ONE commit, leaving
+  the Commit cell as `TBD`. Do **not** `git commit --amend` to backfill the hash (it changes
+  the hash and the gate blocks it). If you want the hash recorded, run a single follow-up
+  `docs:` commit that fills the `TBD` cells — never amend.
 
 ## Status legend
 `TODO` not started · `WIP` partially done (see notes) · `DONE` implemented + tested + committed · `BLOCKED` needs human input (see notes)
@@ -17,7 +21,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 
 | # | Pri | Area | Status | Commit | Notes |
 |---|-----|------|--------|--------|-------|
-| 1 | P0 | Tool selection | DONE | _PENDING_ | Path 0a-appt surfaces cancel/reschedule/get_my_appointments results verbatim before the book_step guard; added `scheduling → answer_knowledge` taxonomy line. 4 new tests in tests/v3/test_scheduling_guard.py. |
+| 1 | P0 | Tool selection | DONE | 234de0c | Path 0a-appt surfaces cancel/reschedule/get_my_appointments results verbatim before the book_step guard; added `scheduling → answer_knowledge` taxonomy line. 4 new tests in tests/v3/test_scheduling_guard.py. |
 | 2 | P0 | Response quality | TODO | | requested-but-none-ran → targeted clarify, never the placeholder (§5.2) |
 | 3 | P0 | Conversation | TODO | | reset selected_property_id + scheduling slots on new search (§4.1) |
 | 4 | P0 | Conversation/infra | TODO | | wrap V3 webhook block in get_user_lock; consolidate belief saves (§ backlog #4) |
@@ -54,4 +58,4 @@ _(If a run stops mid-item, record here exactly what was done and what remains, s
 ## Implementation log
 _(append-only; newest last — one line per completed item)_
 
-- #1 Tool selection: surface appointment-management results verbatim before book_step guard + taxonomy line — 2026-06-10 _PENDING_
+- #1 Tool selection: surface appointment-management results verbatim before book_step guard + taxonomy line — 2026-06-10 234de0c
