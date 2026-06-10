@@ -698,11 +698,31 @@ async def _assemble_response(
         getattr(p, "type", None) == "images" for p in (turn.response_plan or [])
     )
     if tools_used and action != "book_step" and not _has_image:
+        verbatim_text = ""
         for _tool in _VERBATIM_TOOLS:
             if _tool in tools_used:
                 for _n, _r in zip(tools_used, tool_results):
                     if _n == _tool and _r and not _r.startswith("Error:"):
-                        return _strip_markers(_r), rich
+                        verbatim_text = _strip_markers(_r)
+                        break
+            if verbatim_text:
+                break
+        if verbatim_text:
+            # Multi-intent turn (plan #9): a verbatim tool ran alongside another data
+            # tool (e.g. "busco depto en el centro, ¿y qué requisitos piden?" →
+            # search_properties + get_faq_answer). Returning only the verbatim block
+            # silently drops the second answer. Synthesize the remaining non-verbatim
+            # data results and append them so both intents are answered.
+            other_results = [
+                _r for _n, _r in zip(tools_used, tool_results)
+                if _n in _DATA_TOOLS and _n not in _VERBATIM_TOOLS
+                and _r and not _r.startswith("Error:")
+            ]
+            if other_results:
+                tail = await _synthesize_from_results(belief, other_results, user_message)
+                if tail:
+                    return f"{verbatim_text}\n\n{tail}".strip(), rich
+            return verbatim_text, rich
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
     # When a text-data tool produced results, the user must SEE those results —
