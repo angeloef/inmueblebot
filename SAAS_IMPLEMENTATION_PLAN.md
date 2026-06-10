@@ -333,6 +333,21 @@ NEXT_PUBLIC_META_CONFIG_ID=<config id>    # Fase 5
 > con integración"** (NO "Checkouts/Checkout Pro"). El backend ya es correcto: no hay
 > cambio de código, solo de selección en el panel. El access token es el mismo por app.
 >
+> ✅ **Verificado en SANDBOX (2026-06-09) — integración probada end-to-end:**
+> - App MercadoPago "ViviendApp" (id `6245975125066731`) creada como Suscripciones.
+> - Webhook `subscription_preapproval` → `https://inmueblebot-api.onrender.com/webhooks/mercadopago`
+>   configurado vía MCP de MercadoPago.
+> - `/billing/subscribe` (prod en Render) genera preapproval real → `init_point` válido.
+> - Pago autorizado con tarjeta de prueba → preapproval quedó **`status: authorized`**, cobro
+>   **recurrente mensual** (`next_payment_date` seteado), monto 1000 ARS, sin dinero real.
+> - **Lección de sandbox:** suscripciones exigen que collector y payer sean del **mismo tipo**;
+>   en prueba el collector debe ser un **usuario de prueba vendedor** (sus credenciales de
+>   *producción* funcionan como sandbox). En PRODUCCIÓN no aplica: cuenta real + pagador real.
+>
+> **Pendiente real para cobrar de verdad → ver [`PRODUCTION_LAUNCH_CHECKLIST.md`](PRODUCTION_LAUNCH_CHECKLIST.md):**
+> token de **producción** (`APP_USR-…`) + secret de webhook de producción en Render, prueba con
+> tarjeta real (monto bajo) → cancelar/reembolsar, y dominio propio para emails.
+>
 > **Security review aplicada (`security-review`):**
 > - Firma `x-signature` validada con HMAC-SHA256 + `hmac.compare_digest` (tiempo constante).
 > - **Fail-closed en producción:** sin `MERCADOPAGO_WEBHOOK_SECRET` el webhook devuelve 403.
