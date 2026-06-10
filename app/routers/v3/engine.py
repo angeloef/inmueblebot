@@ -326,6 +326,26 @@ _BOOKING_SUCCESS_MARKER = "<!--CONFIRMED:"
 # it from the resolved selection so a dropped id can't break details/photos/booking.
 _PROPERTY_ID_TOOLS = frozenset({"get_property_details", "get_property_images", "schedule_visit"})
 
+_SCHEDULING_AWAITING_SLOTS = ("scheduling_day", "scheduling_time", "scheduling_confirm")
+
+
+def _apply_new_search_reset(belief, turn) -> None:
+    """Plan #3: a fresh search clears the prior selection and in-flight scheduling slots.
+
+    Called from step 6 when the engine requests search_properties this turn. Without
+    it, a property-scoped follow-up ("mostrame fotos") backfills the OLD
+    selected_property_id and a half-finished booking leaks across searches — the user
+    can see or book the wrong unit. ``scheduling_name`` is preserved (the person's name
+    carries across searches). The ordinal backstop is intentionally NOT applied by the
+    caller on a new search (an ordinal like "la primera" refers to the new list).
+    """
+    belief.selected_property_id = turn.selected_property_id  # usually None → cleared
+    if getattr(belief, "awaiting", None) in _SCHEDULING_AWAITING_SLOTS:
+        belief.awaiting = None
+        belief.pending_scheduling = False
+        belief.scheduling_day = ""
+        belief.scheduling_time = ""
+
 
 async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool]:
     """Execute tool_calls from engine output deterministically.
@@ -935,10 +955,19 @@ async def run_turn(
     belief.last_intent = turn.intent
     belief.action_history.append(turn.action)
 
+    # Reset-on-new-search (plan #3): a fresh search invalidates the prior selection
+    # and any in-flight scheduling slots. Without this, "mostrame fotos" after a new
+    # search backfills the OLD selected_property_id (step 7 backfill / _build_photo_plan),
+    # and a half-finished booking leaks across — the user can see/book the wrong unit.
+    requested = {tc.name for tc in (turn.tool_calls or [])}
+    if "search_properties" in requested:
+        # Selection + scheduling slots reset; ordinal backstop intentionally skipped
+        # (an ordinal like "la primera" refers to the NEW list, resolved next turn).
+        _apply_new_search_reset(belief, turn)
     # selected_property_id — engine first, then a deterministic ordinal backstop
     # ("la primera"/"el tercero" → id from the previous search) so the model's
     # inconsistent ordinal resolution can't drop the selection.
-    if turn.selected_property_id is not None:
+    elif turn.selected_property_id is not None:
         belief.selected_property_id = turn.selected_property_id
     else:
         _ord_id = _resolve_ordinal_to_id(user_message, belief.last_search_ids)
