@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 
 from app.core.identity import get_identity_key
 from app.core.config import get_settings
+from app.core.tenancy import tenant_redis_key
 settings = get_settings()
 from app.db.session import async_session_factory
 from app.db.models.user_episode import UserEpisode
@@ -96,7 +97,7 @@ async def save_episode(
     # Redis cache (fast retrieval)
     redis = await _get_redis()
     if redis:
-        key = f"episodic:{get_identity_key() or phone}"
+        key = tenant_redis_key("episodic", get_identity_key() or phone)
         entry = json.dumps({
             "session_id": session_id,
             "summary": summary,
@@ -119,7 +120,7 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
     """
     redis = await _get_redis()
     if redis:
-        entries = await redis.lrange(f"episodic:{get_identity_key() or phone}", 0, limit - 1)
+        entries = await redis.lrange(tenant_redis_key("episodic", get_identity_key() or phone), 0, limit - 1)
         await redis.aclose()
         if entries:
             return [json.loads(e if isinstance(e, str) else e.decode()) for e in entries]

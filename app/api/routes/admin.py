@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from app.api.deps import get_current_account, require_active_subscription, require_superadmin
+from app.db.models import TenantAccount
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
 import uuid as _uuid
@@ -1927,20 +1928,24 @@ def list_notifications(
     unread: bool = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-    _: bool = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_active_subscription),
 ):
     """Lista notificaciones. ?unread=true filtra solo no leídas."""
     from sqlalchemy import text as _t
-    query = "SELECT * FROM notifications"
-    params = {}
+    tid = str(account.tenant_id)
+    query = "SELECT * FROM notifications WHERE tenant_id = :tid"
+    params = {"tid": tid}
     if unread is True:
-        query += " WHERE read = FALSE"
+        query += " AND read = FALSE"
     elif unread is False:
-        query += " WHERE read = TRUE"
+        query += " AND read = TRUE"
     query += " ORDER BY created_at DESC LIMIT :limit"
     params["limit"] = limit
     rows = db.execute(_t(query), params).fetchall()
-    unread_count = db.execute(_t("SELECT COUNT(*) FROM notifications WHERE read = FALSE")).scalar()
+    unread_count = db.execute(
+        _t("SELECT COUNT(*) FROM notifications WHERE read = FALSE AND tenant_id = :tid"),
+        {"tid": tid},
+    ).scalar()
     return {
         "notifications": [_notif_to_dict(r) for r in rows],
         "unread_count": unread_count,
@@ -1952,13 +1957,13 @@ def list_notifications(
 def mark_notification_read(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_active_subscription),
 ):
     """Marca una notificación como leída."""
     from sqlalchemy import text as _t
     result = db.execute(
-        _t("UPDATE notifications SET read = TRUE WHERE id = :id"),
-        {"id": notif_id}
+        _t("UPDATE notifications SET read = TRUE WHERE id = :id AND tenant_id = :tid"),
+        {"id": notif_id, "tid": str(account.tenant_id)},
     )
     db.commit()
     if result.rowcount == 0:
@@ -1969,11 +1974,14 @@ def mark_notification_read(
 @router.post("/notifications/read-all")
 def mark_all_notifications_read(
     db: Session = Depends(get_db),
-    _: bool = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_active_subscription),
 ):
     """Marca todas las notificaciones como leídas."""
     from sqlalchemy import text as _t
-    db.execute(_t("UPDATE notifications SET read = TRUE WHERE read = FALSE"))
+    db.execute(
+        _t("UPDATE notifications SET read = TRUE WHERE tenant_id = :tid AND read = FALSE"),
+        {"tid": str(account.tenant_id)},
+    )
     db.commit()
     return {"status": "ok"}
 
@@ -1982,13 +1990,13 @@ def mark_all_notifications_read(
 def delete_notification(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_active_subscription),
 ):
     """Elimina una notificación."""
     from sqlalchemy import text as _t
     result = db.execute(
-        _t("DELETE FROM notifications WHERE id = :id"),
-        {"id": notif_id}
+        _t("DELETE FROM notifications WHERE id = :id AND tenant_id = :tid"),
+        {"id": notif_id, "tid": str(account.tenant_id)},
     )
     db.commit()
     if result.rowcount == 0:
@@ -1999,11 +2007,14 @@ def delete_notification(
 @router.post("/notifications/delete-read")
 def delete_read_notifications(
     db: Session = Depends(get_db),
-    _: bool = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_active_subscription),
 ):
     """Elimina todas las notificaciones ya leídas."""
     from sqlalchemy import text as _t
-    result = db.execute(_t("DELETE FROM notifications WHERE read = TRUE"))
+    result = db.execute(
+        _t("DELETE FROM notifications WHERE tenant_id = :tid AND read = TRUE"),
+        {"tid": str(account.tenant_id)},
+    )
     db.commit()
     return {"status": "deleted", "count": result.rowcount}
 

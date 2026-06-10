@@ -38,18 +38,21 @@ class NotificationService:
         """Inserta una notificación en la tabla `notifications`."""
         try:
             from app.db.session import async_session_factory
+            from app.core.tenancy import resolve_tenant_id
             from sqlalchemy import text
             import json
 
             meta_json = json.dumps(metadata or {})
+            tid = str(resolve_tenant_id())
 
             async with async_session_factory() as session:
                 await session.execute(
                     text("""
-                        INSERT INTO notifications (type, title, body, phone, metadata)
-                        VALUES (:type, :title, :body, :phone, CAST(:metadata AS jsonb))
+                        INSERT INTO notifications (tenant_id, type, title, body, phone, metadata)
+                        VALUES (CAST(:tenant_id AS uuid), :type, :title, :body, :phone, CAST(:metadata AS jsonb))
                     """),
                     {
+                        "tenant_id": tid,
                         "type": type,
                         "title": title,
                         "body": body or "",

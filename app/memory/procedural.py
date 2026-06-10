@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.core.config import get_settings
+from app.core.tenancy import tenant_redis_key
 settings = get_settings()
 
 
@@ -20,7 +21,7 @@ async def record_skill_use(
     if not redis:
         return
 
-    key = f"procedural:{phone}"
+    key = tenant_redis_key("procedural", phone)
     entry = json.dumps({
         "skill": skill_name,
         "success": success,
@@ -40,7 +41,7 @@ async def get_skill_stats(phone: str) -> dict:
     if not redis:
         return {}
 
-    entries = await redis.lrange(f"procedural:{phone}", 0, 49)
+    entries = await redis.lrange(tenant_redis_key("procedural", phone), 0, 49)
     await redis.aclose()
 
     stats: dict[str, dict] = {}

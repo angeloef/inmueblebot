@@ -9,6 +9,7 @@ from sqlalchemy import select, or_, and_
 
 from app.db.session import async_session_factory
 from app.db.models.faq import FAQ
+from app.core.tenancy import resolve_tenant_id
 
 
 class FAQService:
@@ -39,6 +40,7 @@ class FAQService:
             stmt = (
                 select(FAQ)
                 .where(FAQ.active == True)
+                .where(FAQ.tenant_id == resolve_tenant_id())
                 .order_by(FAQ.order)
                 .limit(100)
             )
@@ -87,12 +89,14 @@ class FAQService:
                 stmt = (
                     select(FAQ)
                     .where(FAQ.active == True)
+                    .where(FAQ.tenant_id == resolve_tenant_id())
                     .order_by(FAQ.order)
                     .limit(500)
                 )
             else:
                 stmt = (
                     select(FAQ)
+                    .where(FAQ.tenant_id == resolve_tenant_id())
                     .order_by(FAQ.order)
                     .limit(500)
                 )
@@ -103,7 +107,7 @@ class FAQService:
         """Obtiene una FAQ por ID."""
         async with async_session_factory() as session:
             result = await session.execute(
-                select(FAQ).where(FAQ.id == faq_id)
+                select(FAQ).where(FAQ.id == faq_id, FAQ.tenant_id == resolve_tenant_id())
             )
             return result.scalar_one_or_none()
 

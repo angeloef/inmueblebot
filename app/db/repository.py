@@ -229,7 +229,11 @@ class PropertyRepository(BaseRepository):
             "terreno": "land", "land": "land",
         }
 
-        query = select(Property).where(Property.status == status)
+        from app.core.tenancy import resolve_tenant_id
+        query = select(Property).where(
+            Property.status == status,
+            Property.tenant_id == resolve_tenant_id(),
+        )
 
         if type:
             query = query.where(Property.type == type)
@@ -397,10 +401,14 @@ class PropertyRepository(BaseRepository):
     async def get_featured(self, limit: int = 10) -> list["Property"]:
         """Obtiene propiedades destacadas (ej. con metadata)."""
         from app.db.models import Property
-        
+        from app.core.tenancy import resolve_tenant_id
+
         result = await self.session.execute(
             select(Property)
-            .where(Property.status == "available")
+            .where(
+                Property.status == "available",
+                Property.tenant_id == resolve_tenant_id(),
+            )
             .order_by(Property.created_at.desc())
             .limit(limit)
         )

@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.core.config import get_settings
 from app.core.identity import get_identity_key
+from app.core.tenancy import tenant_redis_key
 settings = get_settings()
 
 
@@ -19,7 +20,7 @@ async def get_persona(phone: str) -> dict:
     """
     redis = await _get_redis()
     if redis:
-        data = await redis.get(f"persona:{get_identity_key() or phone}")
+        data = await redis.get(tenant_redis_key("persona", get_identity_key() or phone))
         await redis.aclose()
         if data:
             return json.loads(data if isinstance(data, str) else data.decode())
@@ -106,7 +107,7 @@ async def update_persona(phone: str, updates: dict) -> None:
     # Persist
     redis = await _get_redis()
     if redis:
-        await redis.set(f"persona:{get_identity_key() or phone}", json.dumps(persona), ex=settings.PERSONA_TTL)
+        await redis.set(tenant_redis_key("persona", get_identity_key() or phone), json.dumps(persona), ex=settings.PERSONA_TTL)
         await redis.aclose()
 
 
