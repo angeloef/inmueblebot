@@ -472,6 +472,17 @@ _DATA_TOOLS = frozenset({
 })
 
 
+def _is_about_shown_results(turn, belief) -> bool:
+    """True when the turn is a follow-up about the JUST-SHOWN search results (plan #8).
+
+    The model labels comparative/price questions about the visible list as
+    intent==search; when ``last_search_context`` is populated the answer lives in the
+    state, so the RAG safety-net must NOT inject FAQ/property chunks (they drown the
+    real answer). Used to gate Step 7b.
+    """
+    return getattr(turn, "intent", None) == "search" and bool(belief.last_search_context)
+
+
 def _recent_history_tail(belief, max_entries: int = 4) -> str:
     """Last few conversation lines for synthesis context (plan #7).
 
@@ -1023,7 +1034,13 @@ async def run_turn(
     # If engine chose answer_knowledge but didn't emit get_faq_answer in tool_calls,
     # proactively retrieve top-k knowledge chunks and inject into tool_results so
     # the synthesis step can ground the answer rather than hallucinate.
-    if turn.action == "answer_knowledge" and not any_ran:
+    #
+    # Gate (plan #8): when the user is asking about the JUST-SHOWN search results
+    # ("¿cuál es la más barata?", "¿cuál tiene más ambientes?") the model labels the
+    # turn intent==search but may pick answer_knowledge with no tool. Injecting FAQ/
+    # property chunks here drowns the answer in irrelevant material. Skip the net in
+    # that case and let the response plan answer from ultima_busqueda in the state.
+    if turn.action == "answer_knowledge" and not any_ran and not _is_about_shown_results(turn, belief):
         try:
             from app.routers.v3.knowledge.index import search_knowledge
             from app.core.config import get_settings as _get_settings

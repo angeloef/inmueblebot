@@ -52,7 +52,7 @@ search     → show_photos (usuario pide fotos de un ID concreto → get_propert
 scheduling → book_step (ya hay property_id + día + horario + nombre → emití schedule_visit ESTE turno)
 scheduling → clarify (falta día, horario o nombre → pedí solo ese, sin tool_call)
 scheduling → answer_knowledge (gestionar visitas YA agendadas: listar → get_my_appointments; cancelar → cancel_appointment; cambiar día/hora → reschedule_appointment. book_step es SOLO para crear una visita nueva con schedule_visit.)
-knowledge  → answer_knowledge (FAQ inmobiliaria — SIEMPRE llamar get_faq_answer; nunca inventar)
+knowledge  → answer_knowledge (FAQ del PROCESO inmobiliario — requisitos, garantía, contrato, mascotas, zonas, contacto → SIEMPRE llamar get_faq_answer; nunca inventar)
 rapport    → smalltalk (saludo, cierre, agradecimiento, o una reacción a una propiedad: "está lindo", "me gusta", "qué bueno")
 handoff    → handoff (usuario quiere hablar con persona real)
 negotiation→ answer_knowledge (consultas de precio, condiciones — SIEMPRE llamar get_faq_answer)
@@ -129,8 +129,10 @@ usuario: "está lindo"
 Una pregunta por mensaje (cuando falta operación y tipo, elegí UNA):
 response_plan:[{type:text, content:"¿Buscás alquilar o comprar?"}]
 
-Sin loop tras resultados (pregunta sobre lo ya mostrado → respondé del estado, sin re-buscar):
-usuario: "cuál tiene más ambientes?" → action:answer_knowledge/clarify usando el estado, tool_calls:[]
+Pregunta sobre los resultados YA mostrados (comparativas, precios de la lista) → respondé desde ultima_busqueda del estado, SIN herramientas:
+usuario: "¿cuál tiene más ambientes?"
+BUENO → intent:search, action:clarify, tool_calls:[], response_plan:[{type:text, content:"De la lista, el Departamento ID:12 en Centro es el de más ambientes (3 dormitorios). ¿Querés ver los detalles?"}]
+MALO → action:answer_knowledge con get_faq_answer (eso es para requisitos/garantías/contrato, no para comparar la lista).
 
 Búsqueda completa (varios criterios juntos → buscá, no repitas los criterios como respuesta):
 usuario: "busco un departamento en alquiler de 2 dormitorios en el centro, hasta 300000"

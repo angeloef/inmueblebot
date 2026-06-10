@@ -28,7 +28,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 5 | P0 | Response quality | DONE | TBD | Extracted _fallback_confirmation helper; it appends `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` (from parsed start_datetime) so a real booking with no appointment object is treated as success, not discarded. 5 tests in tests/v3/test_fallback_confirmation_marker.py. |
 | 6 | P0 | Security/infra | DONE | bd85a9f | receive_webhook reads raw body bytes, verifies HMAC-SHA256 x-hub-signature-256 against new WHATSAPP_APP_SECRET; fail-closed 403 when secret set + bad/missing sig, skip when unset (legacy). verify_webhook_signature rewritten bytes-based. 8 tests in tests/v3/test_webhook_signature.py. |
 | 7 | P1 | Response quality | DONE | TBD | _synthesize_from_results now takes user_message; prompt carries "Pregunta del usuario" + recent history tail (new _recent_history_tail helper drops the trailing current-user line) so LLM Call 2 answers the asked question, not a generic FAQ. user_message threaded through _assemble_response. 7 tests in tests/v3/test_synthesis_grounding.py. |
-| 8 | P1 | Tool selection | TODO | | gate the 7b RAG safety-net when intent==search & last_search_context set (§3.2, §5.3) |
+| 8 | P1 | Tool selection | DONE | TBD | New _is_about_shown_results(turn, belief) predicate gates Step 7b: when intent==search & last_search_context set, the RAG safety-net is skipped so a "¿cuál es la más barata?" follow-up answers from ultima_busqueda, not injected FAQ chunks. Prompt §3.2 applied: knowledge taxonomy scoped to "proceso inmobiliario"; "sobre lo ya mostrado" few-shot rewritten to intent:search/action:clarify/tool_calls:[]. 4 tests in tests/v3/test_rag_safetynet_gate.py. |
 | 9 | P1 | Response quality | TODO | | concatenate multi-tool verbatim + synthesized remainder (§5.5) |
 | 10 | P1 | Conversation | TODO | | persist scheduling_day/time/name to belief on engine path (§4.2) |
 | 11 | P1 | Conversation | TODO | | FSM: bare `gracias` must not wipe scheduling state (§ backlog #11) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 1/12 done · P2: 0/7 done · **Total: 7/25** ✅ all P0 complete
+- P0: 6/6 done · P1: 2/12 done · P2: 0/7 done · **Total: 8/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -65,3 +65,4 @@ _(append-only; newest last — one line per completed item)_
 - #5 Response quality: schedule_visit fallback confirmation emits CONFIRMED marker (_fallback_confirmation) — 2026-06-10 TBD
 - #6 Security/infra: verify x-hub-signature-256 over raw body (WHATSAPP_APP_SECRET, fail-closed 403) — 2026-06-10 bd85a9f
 - #7 Response quality: ground synthesis (LLM Call 2) in user question + recent history tail — 2026-06-10 TBD
+- #8 Tool selection: gate Step 7b RAG safety-net on answer-about-shown-results + prompt §3.2 — 2026-06-10 TBD
