@@ -347,6 +347,46 @@ def _apply_new_search_reset(belief, turn) -> None:
         belief.scheduling_time = ""
 
 
+def _persist_schedule_args(belief, args: dict) -> None:
+    """Copy a schedule_visit call's day/time/name into belief.scheduling_* (plan #10).
+
+    Only overwrites a field when the call actually carried a non-empty value, so a
+    partial re-emission (e.g. property_id + dia only) never wipes a previously
+    captured horario/nombre.
+    """
+    dia = (args.get("dia") or "").strip()
+    horario = (args.get("horario") or "").strip()
+    nombre = (args.get("nombre") or "").strip()
+    if dia:
+        belief.scheduling_day = dia
+    if horario:
+        belief.scheduling_time = horario
+    if nombre:
+        belief.scheduling_name = nombre
+
+
+def _persist_scheduling_slots_from_message(belief, turn, message: str) -> None:
+    """On a scheduling turn, capture day/time the user just gave into the belief (plan #10).
+
+    The engine path never wrote slot VALUES (only `awaiting`), so a day given early in
+    a long booking flow was forgotten once it slid out of the history window. Running
+    the existing concrete-value extractors here persists them turn-by-turn. Only stores
+    a value when the extractor finds a concrete one; never clears on a miss.
+    """
+    if getattr(turn, "intent", None) != "scheduling" or not message:
+        return
+    try:
+        from app.core.state_transitioner import extract_scheduling_day, extract_scheduling_time
+        day = extract_scheduling_day(message)
+        if day:
+            belief.scheduling_day = day
+        clock = extract_scheduling_time(message)
+        if clock:
+            belief.scheduling_time = clock
+    except Exception:
+        pass
+
+
 async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool]:
     """Execute tool_calls from engine output deterministically.
 
@@ -376,6 +416,12 @@ async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool
         if not ok:
             logger.debug("[V3] Skipping tool {}: {}", tc.name, err)
             continue
+        # Persist the booking slots the LLM reconstructed (plan #10). The model's
+        # schedule_visit args are the best available day/time/name; storing them on
+        # the belief makes the NEXT turn independent of the history window and revives
+        # the FSM T-7 availability pre-check (which reads belief.scheduling_*).
+        if tc.name == "schedule_visit":
+            _persist_schedule_args(belief, args)
         try:
             call = CSStructuredToolCall(id=f"call_{i}", name=tc.name, arguments=args)
             result = await execute_tool(call)
@@ -1039,6 +1085,11 @@ async def run_turn(
     if turn.missing_slot is None and turn.action == "book_step":
         # Scheduling completed or no slot missing — clear awaiting
         belief.awaiting = None
+
+    # Persist concrete day/time the user gave THIS turn (plan #10) so a long booking
+    # flow doesn't forget a slot once it slides out of the history window. Runs only
+    # on scheduling turns; schedule_visit args are captured separately in _execute_tools.
+    _persist_scheduling_slots_from_message(belief, turn, user_message)
 
     belief.last_updated_at = time.time()
 
