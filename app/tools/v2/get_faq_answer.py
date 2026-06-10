@@ -92,11 +92,21 @@ async def get_faq_answer(pregunta: str = "") -> str:
     )
 
 
+# Combine-path guards (plan #23): the retrieval threshold (~0.50) admits weakly
+# related chunks, so the old combine-2 path could splice a 0.51-similarity chunk into
+# the answer. A second chunk is now only combined when it is BOTH strongly relevant on
+# its own (≥ 0.60) AND close to the top chunk (within 0.10) — otherwise the top chunk
+# answers alone.
+_COMBINE_MIN_SIMILARITY = 0.60
+_COMBINE_MAX_GAP = 0.10
+
+
 def _format_rag_answer(query: str, chunks: list[dict]) -> str:
     """Format retrieved knowledge chunks into a coherent answer.
 
     When a single chunk is highly relevant (similarity ≥ 0.75), return it directly.
-    When multiple chunks are moderately relevant, combine the most informative ones.
+    Otherwise return the top chunk and combine a second only if it clears the
+    relevance + closeness guards above (plan #23).
     """
     if not chunks:
         return ""
@@ -107,15 +117,19 @@ def _format_rag_answer(query: str, chunks: list[dict]) -> str:
     if top["similarity"] >= 0.75 or len(chunks) == 1:
         return top["text"]
 
-    # Moderate confidence: combine up to 2 chunks if they cover different sources
-    seen_ids = set()
-    parts: list[str] = []
-    for chunk in chunks[:3]:
+    # The top chunk always anchors the answer (it passed retrieval). Add at most one
+    # more chunk, and only a genuinely strong, close one — never a loosely-related tail.
+    seen_ids = {(top["source_type"], top["source_id"])}
+    parts: list[str] = [top["text"]]
+    for chunk in chunks[1:3]:
+        if chunk["similarity"] < _COMBINE_MIN_SIMILARITY:
+            continue
+        if chunk["similarity"] < top["similarity"] - _COMBINE_MAX_GAP:
+            continue
         key = (chunk["source_type"], chunk["source_id"])
         if key not in seen_ids:
             seen_ids.add(key)
             parts.append(chunk["text"])
-        if len(parts) >= 2:
             break
 
     return "\n\n".join(parts)
