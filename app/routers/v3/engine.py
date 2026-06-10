@@ -635,7 +635,7 @@ async def _assemble_response(
     fsm_plan: list | None = None,
     tools_used: list[str] | None = None,
     user_message: str = "",
-) -> tuple[str, dict]:
+) -> tuple[str, dict, str]:
     """Build response_text and rich_content from engine output + tool results.
 
     Priority (with FSM override and anti-hallucination guard):
@@ -649,7 +649,10 @@ async def _assemble_response(
     2. Synthesis — tools ran but engine has no plan (fallback to 0c's helper).
     3. Safe default — action in clarify/smalltalk/handoff with no plan.
 
-    Returns (response_text, rich_content).
+    Returns (response_text, rich_content, source) where source ∈
+    {"verbatim","synthesis","plan","fsm"} (plan #14). Deterministic, already-formatted
+    tool output is tagged "verbatim"; run_guard never regenerates a "verbatim" reply
+    (an LLM rewrite reintroduces the price/format drift the verbatim path prevents).
     Strips <!--CONFIRMED:…--> markers from all text before returning.
     """
     rich: dict = {
@@ -665,16 +668,16 @@ async def _assemble_response(
         # Render FSM plan directly (same segment logic as Path 1)
         text_segs = [p for p in fsm_plan if isinstance(p, dict) and p.get("type") == "text"]
         if len(text_segs) == 1:
-            return _strip_markers(text_segs[0].get("content", "")), rich
+            return _strip_markers(text_segs[0].get("content", "")), rich, "fsm"
         if text_segs:
             segments_out = [{"type": p.get("type", "text"), "content": p.get("content", "")} for p in fsm_plan]
             rich["response_plan"] = segments_out
             combined = " ".join(s.get("content", "") for s in text_segs)
-            return _strip_markers(combined), rich
+            return _strip_markers(combined), rich, "fsm"
         # Fallback: use first item if any
         if fsm_plan:
             first = fsm_plan[0]
-            return _strip_markers(first.get("content", _SAFE_CLARIFY_ES)), rich
+            return _strip_markers(first.get("content", _SAFE_CLARIFY_ES)), rich, "fsm"
 
     # ── Path 0b: Anti-hallucination guard ─────────────────────────────
     # If the engine planned a book_step confirmation but schedule_visit did NOT
@@ -692,7 +695,7 @@ async def _assemble_response(
     if tools_used and tool_results:
         for _name, _res in zip(tools_used, tool_results):
             if _name in _APPT_MGMT_TOOLS and _res and not _res.startswith("Error:"):
-                return _strip_markers(_res), rich
+                return _strip_markers(_res), rich, "verbatim"
 
     if action == "book_step" and not booking_succeeded:
         # Discard the engine's (possibly fabricated) confirmation response_plan. BUT
@@ -705,11 +708,11 @@ async def _assemble_response(
         if tools_used and tool_results:
             for _name, _res in zip(tools_used, tool_results):
                 if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
-                    return _strip_markers(_res), rich
+                    return _strip_markers(_res), rich, "verbatim"
         return (
             "Estoy recopilando los detalles para tu visita. "
             "¿Podés confirmarme el día y horario que preferís?"
-        ), rich
+        ), rich, "plan"
 
     # ── Path 0b-booked: surface the REAL confirmation on success ───────
     # Mirror of the failure guard above. When the booking SUCCEEDED, the
@@ -721,7 +724,7 @@ async def _assemble_response(
     if action == "book_step" and booking_succeeded and tools_used and tool_results:
         for _name, _res in zip(tools_used, tool_results):
             if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
-                return _strip_markers(_res), rich
+                return _strip_markers(_res), rich, "verbatim"
 
     # ── Path 0a2: requested-but-none-ran → targeted clarify ───────────
     # The engine asked for tools but EVERY one was skipped by validation (e.g. a
@@ -735,8 +738,8 @@ async def _assemble_response(
             return (
                 "¿De cuál propiedad querés que te muestre eso? "
                 'Decime el ID o la posición en la lista (por ejemplo, "la primera").'
-            ), rich
-        return _SAFE_CLARIFY_ES, rich
+            ), rich, "plan"
+        return _SAFE_CLARIFY_ES, rich, "plan"
 
     # ── Path 0b-photos: deterministic photo delivery ──────────────────
     # If get_property_images ran for a selected property, ALWAYS resolve and send the
@@ -748,7 +751,7 @@ async def _assemble_response(
         if photo_rich is not None:
             # Return the CTA as response_text so the assistant turn is recorded in
             # history (the next "sí" then has context); delivery uses response_plan.
-            return _PHOTO_CTA_ES, photo_rich
+            return _PHOTO_CTA_ES, photo_rich, "plan"
         # No images resolved → fall through to a normal text reply.
 
     # ── Path 0b2: deterministic render for already-formatted data tools ──
@@ -787,8 +790,8 @@ async def _assemble_response(
             if other_results:
                 tail = await _synthesize_from_results(belief, other_results, user_message)
                 if tail:
-                    return f"{verbatim_text}\n\n{tail}".strip(), rich
-            return verbatim_text, rich
+                    return f"{verbatim_text}\n\n{tail}".strip(), rich, "verbatim"
+            return verbatim_text, rich, "verbatim"
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
     # When a text-data tool produced results, the user must SEE those results —
@@ -807,7 +810,7 @@ async def _assemble_response(
     if must_surface:
         surfaced = await _synthesize_from_results(belief, tool_results, user_message)
         if surfaced:
-            return surfaced, rich
+            return surfaced, rich, "synthesis"
         # synthesis failed → fall through to the engine plan / safe default
 
     # ── Path 1: engine provided a response_plan ────────────────────────
@@ -823,11 +826,11 @@ async def _assemble_response(
             # caption) + a single visit CTA.
             photo_rich = await _build_photo_plan(belief, rich)
             if photo_rich is not None:
-                return _PHOTO_CTA_ES, photo_rich
+                return _PHOTO_CTA_ES, photo_rich, "plan"
 
         # Pure text plan
         if len(text_segs) == 1 and not image_segs:
-            return _strip_markers(text_segs[0].content), rich
+            return _strip_markers(text_segs[0].content), rich, "plan"
 
         # Multi-text plan — use response_plan for sequential delivery
         segments_out: list[dict] = [
@@ -835,16 +838,16 @@ async def _assemble_response(
         ]
         rich["response_plan"] = segments_out
         combined = " ".join(_strip_markers(s.content) for s in text_segs if s.content)
-        return combined, rich
+        return combined, rich, "plan"
 
     # ── Path 2: tools ran but no plan → synthesis (LLM Call 2) ──
     if any_ran and tool_results:
         text = await _synthesize_from_results(belief, tool_results, user_message)
         if text:
-            return text, rich
+            return text, rich, "synthesis"
 
     # ── Path 3: safe default for clarify/smalltalk/handoff ────────────
-    return _SAFE_CLARIFY_ES, rich
+    return _SAFE_CLARIFY_ES, rich, "plan"
 
 
 async def _build_photo_plan(belief, rich: dict) -> dict | None:
@@ -1194,7 +1197,7 @@ async def run_turn(
     _fsm_booking_succeeded = fsm_result.booking_succeeded if fsm_result else booking_succeeded
     _fsm_plan = (fsm_result.response_plan if (fsm_result and fsm_result.override) else None)
 
-    response_text, rich_content = await _assemble_response(
+    response_text, rich_content, response_source = await _assemble_response(
         turn,
         belief,
         tool_results,
@@ -1226,6 +1229,7 @@ async def run_turn(
                 state_json=json.dumps(_compact_state(belief), ensure_ascii=False),
                 tool_results=tool_results,
                 settings=settings,
+                source=response_source,
             )
             # Strip any booking markers the regeneration may have copied from tool_results.
             response_text = _strip_markers(guard_result.response_text)

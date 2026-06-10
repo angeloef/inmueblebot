@@ -58,7 +58,7 @@ async def test_photos_delivered_even_when_engine_emits_only_text(mock_resolve):
         "show_photos",
         plan=[ResponsePlanItem(type="text", content="Te muestro las fotos de la ID:45.")],
     )
-    text, rich = await engine._assemble_response(
+    text, rich, _source = await engine._assemble_response(
         turn, _belief(45), tool_results=["{...}"], any_ran=True,
         tenant_id=None, tools_used=["get_property_images"],
     )
@@ -74,7 +74,7 @@ async def test_photos_delivered_even_when_engine_emits_only_text(mock_resolve):
 async def test_photos_have_no_repeated_caption(mock_resolve):
     mock_resolve.return_value = _FAKE_IMAGES
     turn = _turn("show_photos", plan=[ResponsePlanItem(type="text", content="x")])
-    _text, rich = await engine._assemble_response(
+    _text, rich, _source = await engine._assemble_response(
         turn, _belief(45), tool_results=["{}"], any_ran=True,
         tenant_id=None, tools_used=["get_property_images"],
     )
@@ -87,7 +87,7 @@ async def test_photos_capped_at_max(mock_resolve):
     many = [f"http://x/{i}" for i in range(10)]
     mock_resolve.return_value = (many, "T")
     turn = _turn("show_photos", plan=[ResponsePlanItem(type="text", content="x")])
-    _text, rich = await engine._assemble_response(
+    _text, rich, _source = await engine._assemble_response(
         turn, _belief(45), tool_results=["{}"], any_ran=True,
         tenant_id=None, tools_used=["get_property_images"],
     )
@@ -103,7 +103,7 @@ async def test_falls_through_to_text_when_no_images_resolved(mock_resolve):
         "show_photos",
         plan=[ResponsePlanItem(type="text", content="No tengo fotos de esa.")],
     )
-    text, rich = await engine._assemble_response(
+    text, rich, _source = await engine._assemble_response(
         turn, _belief(45), tool_results=["{}"], any_ran=True,
         tenant_id=None, tools_used=["get_property_images"],
     )
@@ -120,7 +120,7 @@ async def test_engine_images_segment_also_routes_through_builder(mock_resolve):
         "show_photos",
         plan=[ResponsePlanItem(type="images", content="Fotos ID:45")],
     )
-    text, rich = await engine._assemble_response(
+    text, rich, _source = await engine._assemble_response(
         turn, _belief(45), tool_results=[], any_ran=False,
         tenant_id=None, tools_used=[],
     )

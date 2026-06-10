@@ -76,7 +76,7 @@ class TestRunGuard(unittest.TestCase):
             return text
         guard._regenerate = _r
 
-    def _call(self, *, action, confidence, text="Hola, tengo 3 opciones para vos."):
+    def _call(self, *, action, confidence, text="Hola, tengo 3 opciones para vos.", source=""):
         return _run(
             guard.run_guard(
                 action=action,
@@ -86,6 +86,7 @@ class TestRunGuard(unittest.TestCase):
                 state_json="{}",
                 tool_results=[],
                 settings=self.s,
+                source=source,
             )
         )
 
@@ -161,6 +162,32 @@ class TestRunGuard(unittest.TestCase):
 
         self.assertEqual(res.response_text, "")
         self.assertEqual(called, [], "image-only/empty turns are not judged")
+
+    # ── plan #14: verbatim source is scored but never regenerated ──────────────
+
+    def test_verbatim_fail_is_scored_but_not_regenerated(self):
+        verbatim = "ID:7 — Departamento en Centro — $200.000/mes"
+        self._stub_judge(guard.JudgeVerdict(score=0.3, passed=False, issue="formato"))
+        regen_called = []
+        self._stub_regen("REWRITTEN $200,000", regen_called)
+
+        res = self._call(action="search", confidence=0.4, text=verbatim, source="verbatim")
+
+        self.assertEqual(res.response_text, verbatim, "verbatim text must reach user byte-exact")
+        self.assertEqual(res.judge_score, 0.3, "judge still scores")
+        self.assertFalse(res.regenerated)
+        self.assertEqual(regen_called, [], "verbatim source must never be regenerated")
+
+    def test_non_verbatim_fail_still_regenerates(self):
+        """Control: the same failing verdict on a synthesis source DOES regenerate."""
+        self._stub_judge(guard.JudgeVerdict(score=0.3, passed=False, issue="formato"))
+        regen_called = []
+        self._stub_regen("Respuesta corregida.", regen_called)
+
+        res = self._call(action="search", confidence=0.4, text="algo", source="synthesis")
+
+        self.assertEqual(res.response_text, "Respuesta corregida.")
+        self.assertEqual(len(regen_called), 1)
 
 
 if __name__ == "__main__":

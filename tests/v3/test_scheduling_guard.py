@@ -56,7 +56,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
 
     def _call_assemble(self, turn, belief, booking_succeeded: bool, fsm_plan=None):
         from app.routers.v3.engine import _assemble_response
-        return _run(
+        text, rich, _source = _run(
             _assemble_response(
                 turn,
                 belief,
@@ -67,6 +67,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
                 fsm_plan=fsm_plan,
             )
         )
+        return text, rich
 
     def test_book_step_no_success_discards_confirmation_plan(self):
         """When action==book_step and booking_succeeded==False, no Cita Agendada text."""
@@ -115,7 +116,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
             "(lunes a viernes de 09:00 a 18:00 hs, sábado de 09:00 a 13:00 hs). ¿A qué hora preferís?"
         )
 
-        text, rich = _run(_assemble_response(
+        text, rich, _source = _run(_assemble_response(
             turn, belief,
             tool_results=[real_reason],
             any_ran=True,
@@ -187,7 +188,7 @@ class TestApptMgmtResultsSurfaced(unittest.TestCase):
         turn = _StubTurn(action=action, response_plan=[
             _StubResponsePlanItem("text", "Listo, agendo tu visita."),
         ])
-        return _run(_assemble_response(
+        text, rich, _source = _run(_assemble_response(
             turn, _StubBelief(),
             tool_results=tool_results,
             any_ran=True,
@@ -195,6 +196,7 @@ class TestApptMgmtResultsSurfaced(unittest.TestCase):
             booking_succeeded=booking_succeeded,
             tools_used=tools_used,
         ))
+        return text, rich
 
     def test_cancel_mislabeled_book_step_surfaces_real_result(self):
         """'cancelá mi visita del jueves' mislabeled book_step → cancellation text."""

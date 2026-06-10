@@ -48,7 +48,7 @@ def _assemble(turn, belief, tools_used, tool_results, user_message="", synth_ret
         return synth_return
 
     with patch.object(engine, "_synthesize_from_results", _fake_synth):
-        return _run(engine._assemble_response(
+        text, rich, _source = _run(engine._assemble_response(
             turn, belief,
             tool_results=tool_results,
             any_ran=True,
@@ -57,6 +57,7 @@ def _assemble(turn, belief, tools_used, tool_results, user_message="", synth_ret
             tools_used=tools_used,
             user_message=user_message,
         ))
+        return text, rich
 
 
 class TestMultiToolConcat(unittest.TestCase):

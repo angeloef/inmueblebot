@@ -49,7 +49,7 @@ def _run(coro):
 
 def _assemble(turn, belief):
     from app.routers.v3.engine import _assemble_response
-    return _run(_assemble_response(
+    text, rich, _source = _run(_assemble_response(
         turn, belief,
         tool_results=[],
         any_ran=False,
@@ -57,6 +57,7 @@ def _assemble(turn, belief):
         booking_succeeded=False,
         tools_used=[],
     ))
+    return text, rich
 
 
 class TestSkippedToolClarify(unittest.TestCase):
