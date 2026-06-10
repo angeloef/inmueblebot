@@ -20,7 +20,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text as _text
 
-from app.api.routes.admin import get_db, verify_admin_api_key, _get_sync_session
+from app.api.deps import get_current_account
+from app.api.routes.admin import get_db, _get_sync_session
 import app.api.routes.admin as _admin
 from app.core.tenancy import resolve_tenant_id
 from app.db.models import User, Property, Contract, Charge, ContractExpense, EconomicIndex
@@ -398,7 +399,7 @@ def _apply_contract_fields(c: Contract, data: dict) -> None:
 @router.get("/contracts")
 def list_contracts(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     as_of = bs.today_ar()
     index_map = _index_map(db)
@@ -413,7 +414,7 @@ def list_contracts(
 def create_contract(
     data: ContractCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = Contract(start_date=_parse_date(data.start_date) or bs.today_ar())
     _apply_contract_fields(c, data.model_dump())
@@ -432,7 +433,7 @@ def create_contract(
 def get_contract(
     contract_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -445,7 +446,7 @@ def update_contract(
     contract_id: str,
     data: ContractUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -460,7 +461,7 @@ def update_contract(
 def delete_contract(
     contract_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -476,7 +477,7 @@ def delete_contract(
 def generate_charges(
     contract_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Genera las cuotas faltantes hasta el mes actual (idempotente)."""
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
@@ -497,7 +498,7 @@ def generate_charges(
 def list_charges(
     contract_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -514,7 +515,7 @@ def update_charge(
     charge_id: str,
     data: ChargeUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     ch = db.query(Charge).filter(Charge.id == _as_uuid(charge_id, "charge_id")).first()
     if not ch:
@@ -539,7 +540,7 @@ def pay_charge(
     charge_id: str,
     data: ChargePay,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Marca un cobro como pagado, congelando gastos y punitorios al día de pago."""
     ch = db.query(Charge).filter(Charge.id == _as_uuid(charge_id, "charge_id")).first()
@@ -573,7 +574,7 @@ def pay_charge(
 @router.post("/charges/{charge_id}/remind")
 async def remind_charge(
     charge_id: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Envía un recordatorio de pago por WhatsApp al inquilino (manual)."""
     from app.integrations.whatsapp import send_whatsapp_message
@@ -626,7 +627,7 @@ async def remind_charge(
 def list_expenses(
     contract_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -639,7 +640,7 @@ def create_expense(
     contract_id: str,
     data: ExpenseCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()
     if not c:
@@ -665,7 +666,7 @@ def create_expense(
 def delete_expense(
     expense_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     e = db.query(ContractExpense).filter(ContractExpense.id == _as_uuid(expense_id, "expense_id")).first()
     if not e:
@@ -681,7 +682,7 @@ def delete_expense(
 def list_indices(
     code: str = "IPC",
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     rows = (
         db.query(EconomicIndex)
@@ -708,7 +709,7 @@ def list_indices(
 def upsert_index(
     data: IndexCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Carga (o actualiza) el valor de un índice para un mes (upsert por code+period)."""
     period = bs.month_start(_parse_date(data.period))
@@ -740,7 +741,7 @@ def upsert_index(
 @router.get("/cobranzas/summary")
 def cobranzas_summary(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """KPIs del panel: a cobrar, cobrado del mes, pendientes y vencidos."""
     as_of = bs.today_ar()
@@ -780,7 +781,7 @@ def liquidacion(
     contract_id: str,
     period: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Liquidación al propietario para un mes: cobrado − comisión − gastos."""
     c = db.query(Contract).filter(Contract.id == _as_uuid(contract_id, "contract_id")).first()

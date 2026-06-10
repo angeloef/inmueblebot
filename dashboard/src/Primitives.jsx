@@ -51,6 +51,7 @@ export function Icon({ name, size = 24, stroke = 2, style, className, 'aria-hidd
     sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></>,
     moon: <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>,
     menu: <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>,
+    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
     calendarCheck: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8.5 15.5l2.3 2.3 4.7-4.7"/></>,
     calendarRefresh: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8.6 16.2a3 3 0 0 1 5.1-1.6l1 .9"/><path d="M15 12.8v2.4h-2.4"/><path d="M15.4 16.2a3 3 0 0 1-5.1 1.6l-1-.9"/><path d="M9 19.6v-2.4h2.4"/></>,
     calendarX: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M14.5 13.8l-5 5M9.5 13.8l5 5"/></>,

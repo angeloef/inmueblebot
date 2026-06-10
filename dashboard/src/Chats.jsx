@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from './Primitives';
+import { useAuth } from './auth';
 import {
   useConversations,
   useConversation,
@@ -613,16 +614,16 @@ function ChatView({ conversationId, onBack }) {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // SSE connection for real-time updates
+  // SSE connection for real-time updates. Auth viaja por la cookie httpOnly de
+  // sesión (mismo origen vía /api): EventSource la envía con withCredentials.
   useEffect(() => {
     if (!conversationId) return;
     const baseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api';
-    const token = import.meta.env.VITE_API_TOKEN ?? '';
-    const url = `${baseUrl}/admin/conversations/${conversationId}/stream?token=${token}`;
+    const url = `${baseUrl}/admin/conversations/${conversationId}/stream`;
 
     let eventSource = null;
     try {
-      eventSource = new EventSource(url);
+      eventSource = new EventSource(url, { withCredentials: true });
 
       eventSource.onmessage = (event) => {
         try {
@@ -783,9 +784,63 @@ function ChatView({ conversationId, onBack }) {
   );
 }
 
+// ── WhatsApp no conectado (Fase 4.3) ──────────────────────────────────────────
+// Mientras el tenant no tenga phone_number_id, no hay chats que mostrar. El botón
+// real de conexión (Embedded Signup de Meta) llega en la Fase 5; acá va el
+// placeholder, ya posicionado para enchufarlo.
+
+function WhatsAppConnectCard() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', height: 'calc(100vh - 64px)', padding: 24,
+      background: 'var(--surface-base)', textAlign: 'center',
+    }}>
+      <div style={{
+        maxWidth: 440, background: 'var(--surface-raised)',
+        border: '1px solid var(--border-subtle)', borderRadius: 16,
+        padding: '36px 32px',
+        boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 12px 32px rgba(16,24,40,0.08)',
+      }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: '50%', margin: '0 auto 18px',
+          background: '#25D36618', color: '#25D366',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon name="whatsapp" size={34} />
+        </div>
+        <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg-primary)', margin: '0 0 8px' }}>
+          Conectá tu WhatsApp
+        </h2>
+        <p style={{ fontSize: 14, color: 'var(--fg-tertiary)', lineHeight: 1.5, margin: '0 0 22px' }}>
+          Conectá el WhatsApp de tu inmobiliaria para que el bot atienda a tus
+          clientes y veas todas las conversaciones acá.
+        </p>
+        <button
+          type="button"
+          disabled
+          title="Disponible próximamente"
+          style={{
+            padding: '11px 20px', borderRadius: 8, border: 'none',
+            background: '#25D366', color: '#fff', fontSize: 14, fontWeight: 600,
+            opacity: 0.55, cursor: 'not-allowed',
+          }}
+        >
+          Conectar WhatsApp (próximamente)
+        </button>
+        <div style={{ marginTop: 14, fontSize: 12, color: 'var(--fg-tertiary)' }}>
+          Estamos habilitando la conexión automática. Te avisamos apenas esté lista.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ──────────────────────────────────────────────────────────────
 
 export default function Chats() {
+  const { me } = useAuth();
+  const waConnected = me?.wa_connected ?? false;
   const { data, isLoading, isError } = useConversations();
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
@@ -821,6 +876,12 @@ export default function Chats() {
     setSelectedId(id);
     if (isMobile) setSidebarOpen(false);
   };
+
+  // Sin WhatsApp conectado no hay chats que mostrar → placeholder (Fase 4.3).
+  // El gate va después de todos los hooks para no violar las reglas de hooks.
+  if (!waConnected) {
+    return <WhatsAppConnectCard />;
+  }
 
   // On mobile without a selected conversation, show the list as full-screen view
   if (isMobile && !selectedId) {

@@ -2,7 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Primitives';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications } from './api';
 
-export function Sidebar({ active, onNav, isOpen, onClose }) {
+// Iniciales para el avatar a partir del nombre o el email.
+function initialsFrom(account) {
+  const name = account?.account?.full_name || account?.account?.email || '';
+  const parts = name.replace(/@.*/, '').split(/[.\s_-]+/).filter(Boolean);
+  const ini = (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '');
+  return (ini || name.slice(0, 2) || '?').toUpperCase();
+}
+
+export function Sidebar({ active, onNav, isOpen, onClose, account }) {
   const items = [
     { id: 'dashboard',  icon: 'home',     label: 'Inicio' },
     { id: 'calendar',   icon: 'calendar', label: 'Calendario' },
@@ -63,10 +71,10 @@ export function Sidebar({ active, onNav, isOpen, onClose }) {
           </button>
         </nav>
         <div className="sb-bottom">
-          <span className="av">MP</span>
+          <span className="av">{initialsFrom(account)}</span>
           <div className="who">
-            <b>María Pereyra</b>
-            <span>Inmobiliaria Norte</span>
+            <b>{account?.account?.full_name || account?.account?.email || 'Mi cuenta'}</b>
+            <span>{account?.tenant_slug || 'Inmobiliaria'}</span>
           </div>
         </div>
       </aside>
@@ -179,7 +187,7 @@ function NotificationPanel({ onClose, onAction }) {
   );
 }
 
-export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme }) {
+export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, account, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { data } = useNotifications();
@@ -229,7 +237,24 @@ export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme }) {
       <button type="button" className="tb-icon" title="Ayuda" aria-label="Ayuda">
         <Icon name="info" size={24} />
       </button>
-      <span className="tb-avatar" title="María Pereyra" aria-hidden="true">MP</span>
+      <span
+        className="tb-avatar"
+        title={account?.account?.email || 'Mi cuenta'}
+        aria-hidden="true"
+      >
+        {initialsFrom(account)}
+      </span>
+      {onLogout && (
+        <button
+          type="button"
+          className="tb-icon"
+          title="Cerrar sesión"
+          aria-label="Cerrar sesión"
+          onClick={onLogout}
+        >
+          <Icon name="logout" size={22} />
+        </button>
+      )}
     </header>
   );
 }

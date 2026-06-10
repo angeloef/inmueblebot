@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 
-from app.api.deps import get_current_account
+from app.api.deps import ACCESS_COOKIE_NAME, get_current_account
+from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_email_token,
@@ -21,6 +22,10 @@ from app.db.session import async_session_factory
 from app.services import auth_service, email_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Cookie httpOnly de refresh (par de ACCESS_COOKIE_NAME). El dashboard Vite, mismo
+# origen vía el proxy /api, las usa sin que el JWT toque JS.
+REFRESH_COOKIE_NAME = "vivienda_refresh"
 
 
 # ── Request schemas ──────────────────────────────────────────────────────────
@@ -79,6 +84,9 @@ class MeResponse(BaseModel):
     tenant_slug: str | None
     tenant_status: str | None
     subscription: SubscriptionResponse | None
+    # True cuando el tenant ya conectó su WhatsApp (tiene phone_number_id). El
+    # dashboard usa esto para mostrar el placeholder "Conectá tu WhatsApp" (Fase 4.3).
+    wa_connected: bool = False
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,11 +99,38 @@ def _token_response(account: TenantAccount) -> TokenResponse:
     )
 
 
+def _set_auth_cookies(response: Response, tokens: TokenResponse) -> None:
+    """Setea las cookies httpOnly de sesión para el dashboard (mismo origen vía /api).
+
+    No rompe el flujo Next.js (BFF server-side): ese lee los tokens del body JSON;
+    el Set-Cookie va al dominio de la API y el BFF lo ignora. ``Secure`` solo en
+    producción para no romper el dev en http. ``SameSite=Lax`` ya protege contra
+    CSRF en métodos no-seguros (no se envían cross-site).
+    """
+    settings = get_settings()
+    secure = settings.is_production
+    response.set_cookie(
+        ACCESS_COOKIE_NAME, tokens.access_token,
+        max_age=settings.ACCESS_TOKEN_TTL_MIN * 60,
+        httponly=True, secure=secure, samesite="lax", path="/",
+    )
+    response.set_cookie(
+        REFRESH_COOKIE_NAME, tokens.refresh_token,
+        max_age=settings.REFRESH_TOKEN_TTL_DAYS * 86400,
+        httponly=True, secure=secure, samesite="lax", path="/",
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(ACCESS_COOKIE_NAME, path="/")
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=TokenResponse)
-async def signup(req: SignupRequest) -> TokenResponse:
+async def signup(req: SignupRequest, response: Response) -> TokenResponse:
     try:
         account = await auth_service.signup(req.email, req.password, req.agency_name)
     except auth_service.EmailAlreadyRegistered as exc:
@@ -105,11 +140,13 @@ async def signup(req: SignupRequest) -> TokenResponse:
         ) from exc
     token = create_email_token(account.id, "verify")
     await email_service.send_verification_email(account.email, token)
-    return _token_response(account)
+    tokens = _token_response(account)
+    _set_auth_cookies(response, tokens)
+    return tokens
 
 
 @router.post("/login", status_code=status.HTTP_200_OK, response_model=TokenResponse)
-async def login(req: LoginRequest) -> TokenResponse:
+async def login(req: LoginRequest, response: Response) -> TokenResponse:
     try:
         account = await auth_service.authenticate(req.email, req.password)
     except auth_service.InvalidCredentials as exc:
@@ -122,13 +159,32 @@ async def login(req: LoginRequest) -> TokenResponse:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account suspended",
         ) from exc
-    return _token_response(account)
+    tokens = _token_response(account)
+    _set_auth_cookies(response, tokens)
+    return tokens
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(response: Response) -> dict[str, bool]:
+    """Cierra la sesión del dashboard borrando las cookies httpOnly."""
+    _clear_auth_cookies(response)
+    return {"ok": True}
 
 
 @router.post("/refresh", status_code=status.HTTP_200_OK, response_model=TokenResponse)
-async def refresh(req: RefreshRequest) -> TokenResponse:
+async def refresh(
+    response: Response,
+    req: RefreshRequest | None = None,
+    refresh_cookie: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),  # noqa: B008
+) -> TokenResponse:
+    # El token llega por body (Next.js BFF) o por la cookie httpOnly (dashboard Vite).
+    refresh_token = (req.refresh_token if req else None) or refresh_cookie
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token",
+        )
     try:
-        payload = decode_token(req.refresh_token)
+        payload = decode_token(refresh_token)
     except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -167,7 +223,9 @@ async def refresh(req: RefreshRequest) -> TokenResponse:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended",
             )
-    return _token_response(account)
+    tokens = _token_response(account)
+    _set_auth_cookies(response, tokens)
+    return tokens
 
 
 @router.get("/me", status_code=status.HTTP_200_OK, response_model=MeResponse)
@@ -193,6 +251,7 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
         tenant_slug=tenant.slug if tenant else None,
         tenant_status=tenant.status if tenant else None,
         subscription=sub_resp,
+        wa_connected=bool(tenant and getattr(tenant, "phone_number_id", None)),
     )
 
 

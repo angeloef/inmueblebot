@@ -3,35 +3,76 @@
  *
  * Conecta con la API del bot (inmueblebot-api) mediante los endpoints /admin/*.
  *
+ * Auth (Fase 4): JWT por cookie httpOnly (mismo origen vía el proxy /api). El
+ * browser nunca ve el token; se envía solo con `withCredentials`. Un 401 dispara
+ * un refresh transparente (single-flight) y reintenta; si el refresh falla, se
+ * emite el evento `auth:expired` para que el AuthProvider muestre el login.
+ *
  * Variables de entorno (.env):
- *   VITE_API_BASE_URL  — URL base (default: "/api" → proxy Vite → localhost:8000)
- *   VITE_API_TOKEN     — Admin API key (enviada como header x-api-key)
+ *   VITE_API_BASE_URL  — URL base (default: "/api" → proxy Vite/nginx → FastAPI)
  */
 
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
+
 // ─── Cliente HTTP ─────────────────────────────────────────────────────────────
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,   // envía/recibe las cookies httpOnly de sesión
 });
 
-// Interceptor: adjunta la admin API key como x-api-key
-http.interceptors.request.use((config) => {
-  const token = import.meta.env.VITE_API_TOKEN;
-  if (token) config.headers['x-api-key'] = token;
-  return config;
-});
+// Refresh single-flight: varios 401 concurrentes comparten un único POST /auth/refresh.
+let _refreshPromise = null;
+function refreshSession() {
+  if (!_refreshPromise) {
+    _refreshPromise = http.post('/auth/refresh').finally(() => { _refreshPromise = null; });
+  }
+  return _refreshPromise;
+}
 
-const API_BASE  = import.meta.env.VITE_API_BASE_URL ?? '/api';
-const API_TOKEN = import.meta.env.VITE_API_TOKEN;
+// Las rutas de auth no se reintentan (evita bucles si el refresh devuelve 401).
+function isAuthPath(url = '') {
+  return url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout');
+}
+
+http.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const { response, config } = error;
+    if (response?.status === 401 && config && !config._retried && !isAuthPath(config.url)) {
+      config._retried = true;
+      try {
+        await refreshSession();
+        return http(config);   // reintenta con la cookie ya rotada
+      } catch {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+        return Promise.reject(error);
+      }
+    }
+    if (response?.status === 401 && !isAuthPath(config?.url)) {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+    return Promise.reject(error);
+  },
+);
+
+// ─── Auth API (Fase 4) ────────────────────────────────────────────────────────
+
+export const authApi = {
+  me:     ()                 => http.get('/auth/me').then(r => r.data),
+  login:  (email, password)  => http.post('/auth/login', { email, password }).then(r => r.data),
+  logout: ()                 => http.post('/auth/logout').then(r => r.data),
+};
 
 /**
  * URL hacia el endpoint que sirve una imagen de propiedad como recurso HTTP
- * cacheable (no base64 inline). La key viaja como query param porque <img src>
- * no puede enviar headers. `ver` (image_ver del backend) busta la caché al editar.
+ * cacheable (no base64 inline). La auth viaja por la cookie httpOnly de sesión,
+ * que <img src> envía automáticamente al ser mismo origen. `ver` (image_ver del
+ * backend) busta la caché al editar.
  * @param {string|number} id  property id
  * @param {number} index      índice de la imagen (0 = portada)
  * @param {string|number} ver image_ver para cache-busting
@@ -39,7 +80,6 @@ const API_TOKEN = import.meta.env.VITE_API_TOKEN;
  */
 export function propertyImageUrl(id, index = 0, ver = '') {
   const params = new URLSearchParams();
-  if (API_TOKEN) params.set('key', API_TOKEN);
   if (ver) params.set('v', String(ver));
   const qs = params.toString();
   return `${API_BASE}/admin/properties/${id}/image/${index}${qs ? `?${qs}` : ''}`;

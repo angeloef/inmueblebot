@@ -1,0 +1,27 @@
+# Eval-only override: pgvector DB image + a one-off eval runner mounting the full repo.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.eval.yml up -d db redis
+#   docker compose -f docker-compose.yml -f docker-compose.eval.yml run --rm eval <cmd>
+services:
+  db:
+    image: pgvector/pgvector:pg16
+
+  eval:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/inmueblebot
+      - REDIS_URL=redis://redis:6379/0
+      - USE_LOCAL_REDIS=true
+      - MEMORY_REDIS_MAX_RETRIES=3
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-c", "print('eval runner ready')"]

@@ -21,6 +21,7 @@ PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
 import { Sidebar, Topbar } from './Shell';
+import { useAuth } from './auth';
 import { useTheme } from './useTheme';
 import { ToastStack, pushToast } from './Primitives';
 import { EventPopover } from './EventPopover';
@@ -41,6 +42,7 @@ const NOTIF_CLIENT_TYPES = new Set(['new_lead', 'lead_qualified', 'handoff_reque
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { me, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   const [active, setActive] = useState(
@@ -147,9 +149,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar active={active} onNav={navTo} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Sidebar active={active} onNav={navTo} isOpen={menuOpen} onClose={() => setMenuOpen(false)} account={me} />
       <div className="main">
-        <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} theme={theme} onToggleTheme={toggleTheme} />
+        <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} theme={theme} onToggleTheme={toggleTheme} account={me} onLogout={logout} />
         <div className="canvas">
 
           {active === 'dashboard' && (

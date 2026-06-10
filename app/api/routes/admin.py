@@ -4,6 +4,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from app.api.deps import get_current_account, require_superadmin
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
 import uuid as _uuid
@@ -481,7 +482,7 @@ def verify_admin_api_key(x_api_key: str = Header(None), x_admin_api_key: str = H
 
 @router.get("/debug/users")
 def debug_users(
-    _: bool = Depends(verify_admin_api_key),
+    _: object = Depends(require_superadmin),
 ):
     """Diagnóstico: ejecuta query de users y retorna info básica. Requiere auth."""
     try:
@@ -702,7 +703,7 @@ def _apt_to_dict(a):
 def list_leads(
     limit: int = 500,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import User
     from sqlalchemy import func as _func
@@ -718,7 +719,7 @@ def list_leads(
 def get_lead(
     lead_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import User
     try:
@@ -735,7 +736,7 @@ def get_lead(
 def create_lead(
     data: LeadCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import User
@@ -763,7 +764,7 @@ def update_lead(
     lead_id: str,
     data: LeadUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import User
     try:
@@ -795,7 +796,7 @@ def update_lead(
 def delete_lead(
     lead_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import User
     try:
@@ -813,7 +814,7 @@ def delete_lead(
 @router.post("/users/{phone}/reset")
 async def reset_user_context(
     phone: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Reset conversation context for a user by phone number.
     Clears Redis keys, in-memory fallback, and PostgreSQL preferences.
@@ -833,7 +834,7 @@ async def reset_user_context(
 @router.get("/properties")
 def list_properties(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Property
     props = db.query(Property).order_by(Property.created_at.desc().nullslast()).all()
@@ -867,7 +868,7 @@ def get_property_image(
     prop_id: int,
     index: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key_qp),
+    _: object = Depends(get_current_account),
 ):
     """Devuelve los bytes de una imagen (decodificada de base64) como recurso HTTP
     cacheable independiente. Permite que el navegador cargue las fotos en paralelo,
@@ -911,7 +912,7 @@ def get_property_image(
 def create_property(
     data: PropertyCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Property
@@ -998,7 +999,7 @@ def update_property(
     prop_id: int,
     data: PropertyCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Property
     prop = db.query(Property).filter(Property.id == prop_id).first()
@@ -1058,7 +1059,7 @@ def update_property(
 def delete_property(
     prop_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Property, Appointment
     prop = db.query(Property).filter(Property.id == prop_id).first()
@@ -1089,7 +1090,7 @@ def update_property_status(
     prop_id: int,
     data: PropertyStatusUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Quick status update without full property edit."""
     from app.db.models import Property
@@ -1111,7 +1112,7 @@ def relate_client_to_property(
     prop_id: int,
     data: PropertyRelateClient,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Link a client to a property with a relationship type. Optionally updates property status.
 
@@ -1201,7 +1202,7 @@ def toggle_client_property_interest(
     lead_id: str,
     data: ClientPropertyInterest,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Toggle a client's interest in a property."""
     from app.db.models import User
@@ -1245,7 +1246,7 @@ def list_appointments(
     status: Optional[str] = None,
     limit: int = 200,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Appointment
     query = db.query(Appointment)
@@ -1259,7 +1260,7 @@ def list_appointments(
 def get_appointment(
     apt_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Obtiene un appointment por UUID — usado por el dashboard para abrir el modal desde notificación."""
     from app.db.models import Appointment
@@ -1278,7 +1279,7 @@ def get_appointment(
 def create_appointment(
     data: AppointmentCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Appointment
@@ -1472,7 +1473,7 @@ def update_appointment(
     apt_id: str,
     data: AppointmentUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Appointment
     from datetime import datetime, timedelta
@@ -1542,7 +1543,7 @@ def update_appointment(
 def delete_appointment(
     apt_id: str,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.db.models import Appointment
     try:
@@ -1563,7 +1564,7 @@ def delete_appointment(
 
 @router.get("/calendar/status")
 def calendar_status(
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Return Google Calendar integration status and configured timezone."""
     try:
@@ -1582,7 +1583,7 @@ def calendar_status(
 def list_calendar_events(
     days_ahead: int = 30,
     max_results: int = 50,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Fetch upcoming events from Google Calendar for the dashboard."""
     import asyncio
@@ -1605,7 +1606,7 @@ def list_calendar_events(
 @router.get("/conversations/by-phone/{phone}")
 async def get_conversation_by_phone(
     phone: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """(Legacy) Look up conversation context by phone number.
     Prefer /admin/conversations/{id} for inbox integration."""
@@ -1630,7 +1631,7 @@ async def get_conversation_by_phone(
 async def handoff_to_agent(
     phone: str,
     request: HandoffRequest = HandoffRequest(),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.services.handoff_service import handoff_service
     try:
@@ -1659,7 +1660,7 @@ class SimulateRequest(BaseModel):
 @router.post("/simulate")
 async def simulate_conversation_turn(
     body: SimulateRequest,
-    _: bool = Depends(verify_admin_api_key),
+    _: object = Depends(require_superadmin),
 ):
     """
     Simula un turno de conversación SIN enviar a WhatsApp.
@@ -1752,7 +1753,7 @@ async def simulate_conversation_turn(
 async def agent_reply(
     phone: str,
     body: AgentReply,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.integrations.whatsapp import whatsapp_client
     from app.api.routes.webhook import format_phone_number
@@ -1766,7 +1767,7 @@ async def agent_reply(
 @router.post("/resume/{phone}")
 async def resume_bot(
     phone: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     from app.core.state_machine import state_machine, ConversationStateEnum
     from app.integrations.whatsapp import whatsapp_client
@@ -1821,7 +1822,7 @@ async def list_faqs(
     search: str = None,
     active: bool = None,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Lista todas las entradas FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1844,7 +1845,7 @@ async def list_faqs(
 async def get_faq(
     faq_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Obtiene una entrada FAQ por ID."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1858,7 +1859,7 @@ async def get_faq(
 async def create_faq(
     data: FAQCreate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Crea una nueva entrada FAQ."""
     from app.core.tenancy import resolve_tenant_id
@@ -1884,7 +1885,7 @@ async def update_faq(
     faq_id: int,
     data: FAQUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Actualiza una entrada FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1903,7 +1904,7 @@ async def update_faq(
 async def delete_faq(
     faq_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Elimina una entrada FAQ."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1918,7 +1919,7 @@ async def delete_faq(
 @router.get("/faqs/categories/list")
 async def list_faq_categories(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Lista todas las categorías de FAQ distintas."""
     from app.db.models.faq import FAQ as FAQModel
@@ -1952,7 +1953,7 @@ def list_notifications(
     unread: bool = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Lista notificaciones. ?unread=true filtra solo no leídas."""
     from sqlalchemy import text as _t
@@ -1977,7 +1978,7 @@ def list_notifications(
 def mark_notification_read(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Marca una notificación como leída."""
     from sqlalchemy import text as _t
@@ -1994,7 +1995,7 @@ def mark_notification_read(
 @router.post("/notifications/read-all")
 def mark_all_notifications_read(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Marca todas las notificaciones como leídas."""
     from sqlalchemy import text as _t
@@ -2007,7 +2008,7 @@ def mark_all_notifications_read(
 def delete_notification(
     notif_id: int,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Elimina una notificación."""
     from sqlalchemy import text as _t
@@ -2024,7 +2025,7 @@ def delete_notification(
 @router.post("/notifications/delete-read")
 def delete_read_notifications(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Elimina todas las notificaciones ya leídas."""
     from sqlalchemy import text as _t
@@ -2059,7 +2060,7 @@ class BotSettingsUpdate(BaseModel):
 @router.get("/settings")
 def get_bot_settings(
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Devuelve todos los bot_settings como un dict plano {key: value}."""
     from sqlalchemy import text as _t
@@ -2075,7 +2076,7 @@ def get_bot_settings(
 def update_bot_settings(
     data: BotSettingsUpdate,
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Actualiza uno o más bot_settings. Solo acepta campos de _ALLOWED_SETTINGS."""
     from sqlalchemy import text as _t
@@ -2149,7 +2150,7 @@ def _tenant_to_dict(t, *, active_router: str = "") -> dict:  # noqa: ANN001
 
 
 @router.get("/tenants")
-async def list_tenants(_: bool = Depends(verify_admin_api_key)) -> dict:
+async def list_tenants(_: object = Depends(require_superadmin)) -> dict:
     """List all provisioned tenants (inmobiliarias). Token never returned.
 
     Includes the per-tenant ``active_router`` setting (V3 Phase 2).
@@ -2183,7 +2184,7 @@ async def list_tenants(_: bool = Depends(verify_admin_api_key)) -> dict:
 
 
 @router.post("/tenants")
-async def create_tenant(data: TenantCreate, _: bool = Depends(verify_admin_api_key)) -> dict:
+async def create_tenant(data: TenantCreate, _: object = Depends(require_superadmin)) -> dict:
     """Provision a new tenant. wa_access_token is encrypted at rest."""
     from app.db.models.tenant import Tenant
     from app.core.crypto import encrypt_secret, encryption_available
@@ -2210,7 +2211,7 @@ async def create_tenant(data: TenantCreate, _: bool = Depends(verify_admin_api_k
 
 
 @router.patch("/tenants/{tenant_id}")
-async def update_tenant(tenant_id: str, data: TenantUpdate, _: bool = Depends(verify_admin_api_key)) -> dict:
+async def update_tenant(tenant_id: str, data: TenantUpdate, _: object = Depends(require_superadmin)) -> dict:
     """Update a tenant. Sending wa_access_token replaces the encrypted token."""
     from sqlalchemy import select
     from app.db.models.tenant import Tenant
@@ -2241,7 +2242,7 @@ async def update_tenant(tenant_id: str, data: TenantUpdate, _: bool = Depends(ve
 
 
 @router.delete("/tenants/{tenant_id}")
-async def delete_tenant(tenant_id: str, _: bool = Depends(verify_admin_api_key)) -> dict:
+async def delete_tenant(tenant_id: str, _: object = Depends(require_superadmin)) -> dict:
     """Delete a tenant. Refuses to delete the default tenant (would orphan V2 data)."""
     from sqlalchemy import select
     from app.db.models.tenant import Tenant
@@ -2276,7 +2277,7 @@ class TenantSettingsUpdate(BaseModel):
 
 
 @router.get("/tenants/{tenant_id}/settings")
-async def get_tenant_settings(tenant_id: str, _: bool = Depends(verify_admin_api_key)) -> dict:
+async def get_tenant_settings(tenant_id: str, _: object = Depends(require_superadmin)) -> dict:
     """Return per-tenant settings (currently: active_router).
 
     An empty ``active_router`` means the tenant inherits the global ``bot_settings`` value.
@@ -2302,7 +2303,7 @@ async def get_tenant_settings(tenant_id: str, _: bool = Depends(verify_admin_api
 async def update_tenant_settings(
     tenant_id: str,
     data: TenantSettingsUpdate,
-    _: bool = Depends(verify_admin_api_key),
+    _: object = Depends(require_superadmin),
 ) -> dict:
     """Update per-tenant settings (currently: active_router).
 
@@ -2371,7 +2372,7 @@ def _make_async_session():
 async def admin_list_conversations(
     limit: int = 50,
     offset: int = 0,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """List all conversations, sorted by last_message_at DESC."""
     from app.services.conversation_service import list_conversations as _list
@@ -2383,7 +2384,7 @@ async def admin_list_conversations(
 @router.get("/conversations/{conversation_id}")
 async def admin_get_conversation(
     conversation_id: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Get conversation detail with all messages."""
     from app.services.conversation_service import get_conversation as _get
@@ -2398,7 +2399,7 @@ async def admin_get_conversation(
 async def admin_reply_to_conversation(
     conversation_id: str,
     body: ConversationReply,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Admin replies to a conversation — sends WhatsApp message + persists."""
     from app.core.identity import set_current_contact
@@ -2452,7 +2453,7 @@ async def admin_reply_to_conversation(
 @router.patch("/conversations/{conversation_id}/toggle-bot")
 async def admin_toggle_bot(
     conversation_id: str,
-    _: bool = Depends(verify_admin_api_key),
+    _: bool = Depends(get_current_account),
 ):
     """Toggle bot_paused on a conversation."""
     from app.services.conversation_service import toggle_bot as _toggle
@@ -2467,21 +2468,15 @@ async def admin_toggle_bot(
 @router.get("/conversations/{conversation_id}/stream")
 async def admin_conversation_stream(
     conversation_id: str,
-    token: str = "",
-    x_api_key: str = Header(None, alias="x-api-key"),
+    _: object = Depends(get_current_account),
 ):
     """SSE stream for real-time conversation updates.
 
-    Accepts API key via ?token= query parameter (for EventSource compatibility
-    in the browser) or via x-api-key header.
+    Auth vía la cookie httpOnly ``vivienda_access`` (mismo origen): EventSource no
+    puede mandar headers custom pero sí envía cookies same-origin. ``get_current_account``
+    valida el JWT y deja el contexto de tenant activo durante el stream.
     """
     from app.services.conversation_service import subscribe, unsubscribe
-
-    # Validate API key — accept header OR query param
-    settings = get_settings()
-    api_key = x_api_key or token
-    if not api_key or api_key != settings.ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
 
     q = subscribe(conversation_id)
 
@@ -2524,7 +2519,7 @@ CLIENT_TABLES = [
 
 @router.post("/knowledge/reindex")
 async def reindex_knowledge(
-    _: bool = Depends(verify_admin_api_key),
+    _: object = Depends(require_superadmin),
 ):
     """Re-embed all FAQ entries and property descriptions for the default tenant.
 
@@ -2542,7 +2537,7 @@ async def reindex_knowledge(
 async def cleanup_clients(
     confirm: str = "",
     db: Session = Depends(get_db),
-    _: bool = Depends(verify_admin_api_key),
+    _: object = Depends(require_superadmin),
 ):
     """Delete ALL client data. Requires ?confirm=yes."""
     if confirm != "yes":
