@@ -690,28 +690,35 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                 except Exception as _bp_err:
                     logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
 
-            if active_router == "v3":
-                from app.core.tenancy import get_current_tenant
-                result = await _process_turn_v3_or_fallback(
-                    phone=phone,
-                    user_message=text,
-                    media_url=media_url,
-                    bsuid=msg.get("_bsuid"),
-                    tenant_id=get_current_tenant(),
-                )
-            elif active_router == "v2":
-                from app.routers.v2_adapter import process_turn_v2
-                result = await process_turn_v2(
-                    phone=phone,
-                    user_message=text,
-                    media_url=media_url,
-                    bsuid=msg.get("_bsuid"),
-                )
-            else:
-                result = await real_estate_agent.process_turn(
-                    phone=phone,
-                    user_message=text
-                )
+            # ── Serialise per-user turns (plan #4) ────────────────────────
+            # Two rapid messages from the same phone otherwise run concurrent
+            # turns whose belief read-modify-write races (3 saves/turn) and the
+            # last writer wins — slots/history are silently lost. V1 already
+            # guards this with get_user_lock; V3/V2 must too.
+            from app.core.session import get_user_lock
+            async with get_user_lock(phone):
+                if active_router == "v3":
+                    from app.core.tenancy import get_current_tenant
+                    result = await _process_turn_v3_or_fallback(
+                        phone=phone,
+                        user_message=text,
+                        media_url=media_url,
+                        bsuid=msg.get("_bsuid"),
+                        tenant_id=get_current_tenant(),
+                    )
+                elif active_router == "v2":
+                    from app.routers.v2_adapter import process_turn_v2
+                    result = await process_turn_v2(
+                        phone=phone,
+                        user_message=text,
+                        media_url=media_url,
+                        bsuid=msg.get("_bsuid"),
+                    )
+                else:
+                    result = await real_estate_agent.process_turn(
+                        phone=phone,
+                        user_message=text
+                    )
 
             turn_time = time.time() - start_time
             tools_used = result.get("tools_used", []) if result else []
