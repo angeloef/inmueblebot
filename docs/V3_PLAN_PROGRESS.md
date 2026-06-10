@@ -31,7 +31,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 8 | P1 | Tool selection | DONE | TBD | New _is_about_shown_results(turn, belief) predicate gates Step 7b: when intent==search & last_search_context set, the RAG safety-net is skipped so a "¿cuál es la más barata?" follow-up answers from ultima_busqueda, not injected FAQ chunks. Prompt §3.2 applied: knowledge taxonomy scoped to "proceso inmobiliario"; "sobre lo ya mostrado" few-shot rewritten to intent:search/action:clarify/tool_calls:[]. 4 tests in tests/v3/test_rag_safetynet_gate.py. |
 | 9 | P1 | Response quality | DONE | TBD | Path 0b2 now keeps the specificity-ordered verbatim block (detail > list) AND appends a synthesized tail from remaining non-verbatim _DATA_TOOLS (e.g. get_faq_answer) so a multi-intent "busco depto + ¿qué requisitos?" returns both list and requisitos. Errored remainders skipped; single-verbatim turns unchanged (no extra LLM call). 4 tests in tests/v3/test_multi_tool_concat.py. |
 | 10 | P1 | Conversation | DONE | TBD | Two persistence points: _execute_tools calls _persist_schedule_args on schedule_visit (copies dia/horario/nombre, never wipes on partial re-emit); run_turn step 6 calls _persist_scheduling_slots_from_message (scheduling turns only → real day/time extractors → belief.scheduling_*, never clears on miss). Slots now survive the history window + revive FSM T-7. 7 tests in tests/v3/test_scheduling_slot_persist.py. |
-| 11 | P1 | Conversation | TODO | | FSM: bare `gracias` must not wipe scheduling state (§ backlog #11) |
+| 11 | P1 | Conversation | DONE | TBD | FSM: removed bare `gracias` from _EXIT_CUES; added _THANKS_ONLY_RE (anchored ^…$) so "gracias" ends the flow only as a standalone thank-you. "sí, gracias, soy Juan" at NEED_NAME now preserves day/time/awaiting; strong cues (chau/no gracias/busco otra) still exit. 7 tests in tests/v3/test_gracias_midflow.py. |
 | 12 | P1 | Conversation | TODO | | offer-acceptance few-shot: "sí" after offer → re-run search minus failed filter (§3.3) |
 | 13 | P1 | Conversation | TODO | | clear stale scheduling `awaiting` on topic change (§4.3) |
 | 14 | P1 | Response quality | TODO | | verbatim-aware guard: never regenerate verbatim text (§5.7) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 4/12 done · P2: 0/7 done · **Total: 10/25** ✅ all P0 complete
+- P0: 6/6 done · P1: 5/12 done · P2: 0/7 done · **Total: 11/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -68,3 +68,4 @@ _(append-only; newest last — one line per completed item)_
 - #8 Tool selection: gate Step 7b RAG safety-net on answer-about-shown-results + prompt §3.2 — 2026-06-10 TBD
 - #9 Response quality: concatenate verbatim block + synthesized remainder for multi-intent turns — 2026-06-10 TBD
 - #10 Conversation: persist scheduling day/time/name to belief on the engine path — 2026-06-10 TBD
+- #11 Conversation: bare `gracias` no longer wipes scheduling state (thanks-only exit) — 2026-06-10 TBD

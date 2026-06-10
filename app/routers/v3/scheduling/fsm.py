@@ -56,13 +56,24 @@ class FSMResult:
 
 # ── Cue patterns ─────────────────────────────────────────────────────────────
 
+# Strong exit cues: unambiguous "I'm done / change topic" signals that always end
+# the scheduling flow. Bare "gracias" is deliberately NOT here — see _THANKS_ONLY_RE.
 _EXIT_CUES = [
-    r"\b(chau|gracias|bye|hasta luego|no gracias|no quiero|no me interesa)\b",
+    r"\b(chau|bye|hasta luego|no gracias|no quiero|no me interesa)\b",
     r"\bbusco\s+otra\b",
     r"\botra\s+propiedad\b",
     r"\bvolver\b",
     r"\bcambiar\s+de\s+tema\b",
 ]
+
+# Bare "gracias" only ends the flow when the WHOLE message is a thank-you (plan #11).
+# "sí, gracias, soy Juan" mid-booking carries a name/affirmation/slot and must NOT
+# wipe the scheduling state — the anchored ^…$ match fails whenever other content
+# (a name, "sí", a day/time) is present, so only standalone thanks qualifies.
+_THANKS_ONLY_RE = re.compile(
+    r"^\W*(muchas\s+|mil\s+|muy\s+amable[,\s]+)?gracias(\s+(por\s+todo|igual|che|totales?))?\W*$",
+    re.IGNORECASE,
+)
 
 _REJECT_CUES = [
     r"\bese\s+d[ií]a\s+no\s+(puedo|me\s+viene)\b",
@@ -87,7 +98,12 @@ _NAME_TOKEN_RE = re.compile(r"\b([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]{2,}(?:\s
 
 
 def _is_exit(msg: str) -> bool:
-    return bool(_EXIT_RE.search(msg or ""))
+    m = (msg or "").strip()
+    if _EXIT_RE.search(m):
+        return True
+    # Standalone "gracias" ends the flow; "gracias" embedded in a longer message
+    # that also gives a name/affirmation/slot does not (plan #11).
+    return bool(_THANKS_ONLY_RE.match(m))
 
 
 def _is_slot_rejection(msg: str) -> bool:
