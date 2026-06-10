@@ -40,8 +40,6 @@ CATÁLOGO DE HERRAMIENTAS:
 - cancel_appointment: cancela una visita. Parámetros opcionales: cual, motivo.
 - reschedule_appointment: reprograma una visita. Parámetros: dia, horario, cual (opcionales).
 - request_human_assistance: transfiere a un agente humano. Parámetros: reason, message.
-- echo: repite texto. Parámetros: text.
-- get_time: fecha y hora actual en Argentina (sin parámetros). NO usar para agendar — usá schedule_visit.
 
 TAXONOMÍA DE INTENTS Y ACCIONES:
 intent     → action (cuándo usarla)

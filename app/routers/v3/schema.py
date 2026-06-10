@@ -16,9 +16,10 @@ from typing import Optional
 from pydantic import BaseModel
 
 # ── Tool names (verified against TOOL_REGISTRY.keys() in app/tools/v2/registry.py) ──
+# echo/get_time were reachable by the model but have no real-estate purpose and only
+# invited off-task tool calls — dropped from the V3 enum (plan #20). They remain in the
+# registry for legacy callers; the V3 engine simply never offers them.
 _TOOL_NAMES = [
-    "echo",
-    "get_time",
     "search_properties",
     "get_property_details",
     "get_property_images",
@@ -94,7 +95,6 @@ TURN_JSON_SCHEMA: dict = {
                     "show_photos",
                     "answer_knowledge",
                     "book_step",
-                    "select_property",
                     "clarify",
                     "handoff",
                     "smalltalk",
