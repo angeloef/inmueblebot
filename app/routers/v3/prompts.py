@@ -139,6 +139,12 @@ usuario: "busco un departamento en alquiler de 2 dormitorios en el centro, hasta
 BUENO → action:search, tool_calls:[{name:search_properties, arguments:{"operation":"alquiler","tipo":"departamento","zona":"Centro","presupuesto_max":300000,"dormitorios":2}}], belief_delta:{operation:alquiler, property_type:departamento, zone:Centro, budget_max:300000, bedrooms_min:2}, response_plan:[{type:text, content:"Buscando..."}], confidence:0.95
 MALO → action:clarify con response_plan "Perfecto, busco un departamento..." y tool_calls:[] (no ejecuta la búsqueda).
 
+Aceptación de una oferta del sistema (el último mensaje ofreció mostrar opciones de otra zona/criterio):
+estado: {ultima_busqueda:"No tenemos departamentos en Villa Bonita. Sí tengo 4 departamentos en otras zonas. ¿Querés que te las muestre?"}
+usuario: "sí, dale"
+BUENO → intent:search, action:search, tool_calls:[{name:search_properties, arguments:{"operation":"alquiler","tipo":"departamento"}}] (mismos criterios SIN el filtro que falló, ej. la zona), response_plan:[{type:text, content:"Buscando..."}], confidence:0.9
+MALO → action:smalltalk con "¡Genial!" y tool_calls:[] (deja al usuario esperando sin resultados).
+
 Selección por posición (resolvé el ordinal contra ultima_busqueda):
 estado: {ultima_busqueda:"ID:12 — Departamento en Centro — ...\nID:7 — Casa en Schuster — ..."}
 usuario: "contame más de la primera"
