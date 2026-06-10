@@ -18,7 +18,12 @@ class TenantAccount(Base):
         nullable=False, index=True, comment="FK al tenant (inmobiliaria)",
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Nullable: las cuentas creadas solo con Google OAuth no tienen contraseña hasta
+    # que el dueño la establece (vía reset-password). Ver migración 0006.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Subject estable del id_token de Google (identidad OAuth). NULL en cuentas
+    # email-only. Unique parcial (solo filas no-NULL) en la DB.
+    google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     role: Mapped[str] = mapped_column(
         String(20), default="owner", server_default="owner", nullable=False,
