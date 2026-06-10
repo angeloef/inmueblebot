@@ -26,7 +26,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 3 | P0 | Conversation | DONE | TBD | _apply_new_search_reset helper: on search_properties this turn, clear selected_property_id + scheduling awaiting/day/time/pending (keep name), skip ordinal backstop. 6 tests in tests/v3/test_new_search_reset.py. |
 | 4 | P0 | Conversation/infra | DONE | TBD | webhook process_messages wraps the per-user turn dispatch (v3/v2/v1) in `async with get_user_lock(phone)` — fixes the cross-message belief race. 3 offline lock tests (tests/v3/test_concurrency_lock.py). DEFERRED (intentional): (a) save-consolidation left as-is — the 3 saves are defensive checkpoints, harmless once the turn is serialized; (b) the live "2 msgs 1.2s apart → both in history" integration test needs Redis+LLM. |
 | 5 | P0 | Response quality | DONE | TBD | Extracted _fallback_confirmation helper; it appends `<!--CONFIRMED:YYYY-MM-DD HH:MM-->` (from parsed start_datetime) so a real booking with no appointment object is treated as success, not discarded. 5 tests in tests/v3/test_fallback_confirmation_marker.py. |
-| 6 | P0 | Security/infra | TODO | | verify x-hub-signature-256 against raw body bytes (§ backlog #6) |
+| 6 | P0 | Security/infra | DONE | TBD | receive_webhook reads raw body bytes, verifies HMAC-SHA256 x-hub-signature-256 against new WHATSAPP_APP_SECRET; fail-closed 403 when secret set + bad/missing sig, skip when unset (legacy). verify_webhook_signature rewritten bytes-based. 8 tests in tests/v3/test_webhook_signature.py. |
 | 7 | P1 | Response quality | TODO | | ground _synthesize_from_results in user question + history tail (§5.4) |
 | 8 | P1 | Tool selection | TODO | | gate the 7b RAG safety-net when intent==search & last_search_context set (§3.2, §5.3) |
 | 9 | P1 | Response quality | TODO | | concatenate multi-tool verbatim + synthesized remainder (§5.5) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 5/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 5/25**
+- P0: 6/6 done · P1: 0/12 done · P2: 0/7 done · **Total: 6/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -63,3 +63,4 @@ _(append-only; newest last — one line per completed item)_
 - #3 Conversation: reset selected_property_id + scheduling slots on new search (_apply_new_search_reset) — 2026-06-10 TBD
 - #4 Conversation/infra: serialize per-user webhook dispatch with get_user_lock — 2026-06-10 TBD
 - #5 Response quality: schedule_visit fallback confirmation emits CONFIRMED marker (_fallback_confirmation) — 2026-06-10 TBD
+- #6 Security/infra: verify x-hub-signature-256 over raw body (WHATSAPP_APP_SECRET, fail-closed 403) — 2026-06-10 TBD
