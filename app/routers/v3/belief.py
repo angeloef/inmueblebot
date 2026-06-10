@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from loguru import logger
+
 from app.core.belief_state import ConversationBeliefState
 from app.core.config import get_settings
 from app.routers.v3.schema import BeliefDelta
@@ -261,15 +263,21 @@ async def load_belief_v5(session_id: str) -> BeliefStateV5:
                     from app.memory.working import _deserialize_belief
                     v4 = _deserialize_belief(raw, session_id)
                     return migrate_v4_to_v5(v4, session_id)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # A parse/migration failure here silently dropped the whole
+                    # conversation (plan #15) — surface it so a corrupted belief is
+                    # visible instead of presenting as a mysterious fresh start.
+                    logger.warning(
+                        "[V3] belief deserialize/migrate failed for {} — starting fresh: {}",
+                        session_id, str(exc),
+                    )
         else:
             # Redis unavailable — try v4 working_memory loader
             from app.memory.working import load_working_memory
             v4 = await load_working_memory(session_id)
             return migrate_v4_to_v5(v4, session_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[V3] load_belief_v5 failed for {} — starting fresh: {}", session_id, str(exc))
 
     return BeliefStateV5(session_id=session_id)
 
@@ -294,5 +302,7 @@ async def save_belief_v5(belief: BeliefStateV5) -> None:
             # Redis unavailable — fall back to in-memory store
             from app.core.belief_state import save_belief
             save_belief(belief)
-    except Exception:
-        pass
+    except Exception as exc:
+        # A save failure means the next turn loses this turn's slots/history (plan #15).
+        # Still non-fatal to the current reply, but it must be visible.
+        logger.warning("[V3] save_belief_v5 failed for {}: {}", belief.session_id, str(exc))

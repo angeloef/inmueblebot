@@ -35,7 +35,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 12 | P1 | Conversation | DONE | TBD | Prompt-only (§3.3): added "Aceptación de una oferta del sistema" few-shot — affirmation after a search fallback offer ("sí, dale") → intent:search/action:search re-running search_properties minus the failed filter, not smalltalk. R4 negative ratio re-verified under cap. 3 tests in tests/v3/test_offer_acceptance_prompt.py. |
 | 13 | P1 | Conversation | DONE | TBD | New _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent) in step 6: clears awaiting + pending_scheduling only when this turn AND the previous one are both non-scheduling and awaiting still startswith "scheduling_". prev_last_intent captured before last_intent overwrite. Single FAQ interruption (prev was scheduling) preserves the flow; scheduling_name untouched. 6 tests in tests/v3/test_stale_awaiting_clear.py. |
 | 14 | P1 | Response quality | DONE | TBD | _assemble_response now returns a 3rd value source ∈ {verbatim,synthesis,plan,fsm}; threaded into run_guard(source=...). When source=="verbatim" the judge still SCORES but never regenerates — deterministic search list / detail card / real confirmation reach the user byte-exact (no LLM price/format drift). Updated all 18 returns + run_turn caller + 5 test files' unpacking. 2 new tests in test_quality_guard.py (verbatim not-regenerated + synthesis control). |
-| 15 | P1 | Silent failure | TODO | | promote silent belief/history failures to logger.warning (§ backlog #15) |
+| 15 | P1 | Silent failure | DONE | TBD | belief.py: added loguru logger; load_belief_v5 deserialize/migrate failure + outer except now log WARNING (were `except: pass`); save_belief_v5 except logs WARNING. engine.py step 8c assistant-history append promoted debug→warning. All still non-fatal (graceful fresh belief / turn proceeds). 2 tests in tests/v3/test_silent_failure_logging.py (loguru sink capture). |
 | 16 | P1 | Booking integrity | TODO | | availability fail-open → log WARNING + metric (§ backlog #16) |
 | 17 | P1 | Response quality | TODO | | cancel/reschedule: generic Spanish error, no raw exception leak (§ backlog #17) |
 | 18 | P1 | Infra | TODO | | try/finally around Redis get/set to fix connection leak (§ backlog #18) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 8/12 done · P2: 0/7 done · **Total: 14/25** ✅ all P0 complete
+- P0: 6/6 done · P1: 9/12 done · P2: 0/7 done · **Total: 15/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -72,3 +72,4 @@ _(append-only; newest last — one line per completed item)_
 - #12 Conversation: offer-acceptance few-shot — "sí" after offer re-runs search minus failed filter — 2026-06-10 TBD
 - #13 Conversation: clear stale scheduling awaiting after two consecutive off-topic turns — 2026-06-10 TBD
 - #14 Response quality: verbatim-aware guard (source flag) never regenerates verbatim text — 2026-06-10 TBD
+- #15 Silent failure: promote belief load/save + assistant-history failures to logger.warning — 2026-06-10 TBD

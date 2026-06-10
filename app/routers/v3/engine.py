@@ -1247,7 +1247,9 @@ async def run_turn(
             belief.history = belief.history[-window:]
         await save_belief_v5(belief)
     except Exception as exc:
-        logger.debug("[V3] Failed to append assistant response to history: {}", str(exc))
+        # Promoted from debug (plan #15): losing the assistant turn means the next
+        # turn can't see what the bot just said — a real context hole, not noise.
+        logger.warning("[V3] Failed to append assistant response to history: {}", str(exc))
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v3::{turn.action}"
