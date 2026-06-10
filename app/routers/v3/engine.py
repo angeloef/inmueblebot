@@ -347,6 +347,26 @@ def _apply_new_search_reset(belief, turn) -> None:
         belief.scheduling_time = ""
 
 
+def _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent) -> None:
+    """Plan #13: drop a scheduling `awaiting` the user has clearly abandoned.
+
+    `awaiting` has no TTL. If the user started a booking ("esperando: scheduling_day")
+    then changed the subject, [ESTADO] keeps telling the LLM it's waiting for that slot.
+    Require TWO consecutive off-topic turns (this turn's intent and the previous one are
+    both non-scheduling) before clearing, so a single FAQ interruption mid-booking does
+    NOT reset the flow (#10/§3.6 keep that case alive). Never touches scheduling_name.
+    """
+    if getattr(turn, "intent", None) == "scheduling":
+        return
+    awaiting = getattr(belief, "awaiting", None)
+    if not (awaiting and str(awaiting).startswith("scheduling_")):
+        return
+    if prev_last_intent is None or prev_last_intent == "scheduling":
+        return
+    belief.awaiting = None
+    belief.pending_scheduling = False
+
+
 def _persist_schedule_args(belief, args: dict) -> None:
     """Copy a schedule_visit call's day/time/name into belief.scheduling_* (plan #10).
 
@@ -1053,7 +1073,9 @@ async def run_turn(
     if len(belief.history) > window:
         belief.history = belief.history[-window:]
 
-    # Engine-tracking fields
+    # Engine-tracking fields (capture the PRIOR intent first — plan #13 needs it to
+    # detect two consecutive off-topic turns before we overwrite it).
+    prev_last_intent = getattr(belief, "last_intent", None)
     belief.last_action = turn.action
     belief.last_intent = turn.intent
     belief.action_history.append(turn.action)
@@ -1090,6 +1112,12 @@ async def run_turn(
     # flow doesn't forget a slot once it slides out of the history window. Runs only
     # on scheduling turns; schedule_visit args are captured separately in _execute_tools.
     _persist_scheduling_slots_from_message(belief, turn, user_message)
+
+    # Clear a stale scheduling `awaiting` after the user moved on (plan #13): if this
+    # turn AND the previous one were both non-scheduling yet `awaiting` is still a
+    # scheduling slot, the [ESTADO] would keep telling the LLM it's waiting for a slot
+    # the user abandoned. Two consecutive off-topic turns is the signal to drop it.
+    _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent)
 
     belief.last_updated_at = time.time()
 

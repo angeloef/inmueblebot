@@ -33,7 +33,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 10 | P1 | Conversation | DONE | TBD | Two persistence points: _execute_tools calls _persist_schedule_args on schedule_visit (copies dia/horario/nombre, never wipes on partial re-emit); run_turn step 6 calls _persist_scheduling_slots_from_message (scheduling turns only → real day/time extractors → belief.scheduling_*, never clears on miss). Slots now survive the history window + revive FSM T-7. 7 tests in tests/v3/test_scheduling_slot_persist.py. |
 | 11 | P1 | Conversation | DONE | TBD | FSM: removed bare `gracias` from _EXIT_CUES; added _THANKS_ONLY_RE (anchored ^…$) so "gracias" ends the flow only as a standalone thank-you. "sí, gracias, soy Juan" at NEED_NAME now preserves day/time/awaiting; strong cues (chau/no gracias/busco otra) still exit. 7 tests in tests/v3/test_gracias_midflow.py. |
 | 12 | P1 | Conversation | DONE | TBD | Prompt-only (§3.3): added "Aceptación de una oferta del sistema" few-shot — affirmation after a search fallback offer ("sí, dale") → intent:search/action:search re-running search_properties minus the failed filter, not smalltalk. R4 negative ratio re-verified under cap. 3 tests in tests/v3/test_offer_acceptance_prompt.py. |
-| 13 | P1 | Conversation | TODO | | clear stale scheduling `awaiting` on topic change (§4.3) |
+| 13 | P1 | Conversation | DONE | TBD | New _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent) in step 6: clears awaiting + pending_scheduling only when this turn AND the previous one are both non-scheduling and awaiting still startswith "scheduling_". prev_last_intent captured before last_intent overwrite. Single FAQ interruption (prev was scheduling) preserves the flow; scheduling_name untouched. 6 tests in tests/v3/test_stale_awaiting_clear.py. |
 | 14 | P1 | Response quality | TODO | | verbatim-aware guard: never regenerate verbatim text (§5.7) |
 | 15 | P1 | Silent failure | TODO | | promote silent belief/history failures to logger.warning (§ backlog #15) |
 | 16 | P1 | Booking integrity | TODO | | availability fail-open → log WARNING + metric (§ backlog #16) |
@@ -48,7 +48,7 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 6/12 done · P2: 0/7 done · **Total: 12/25** ✅ all P0 complete
+- P0: 6/6 done · P1: 7/12 done · P2: 0/7 done · **Total: 13/25** ✅ all P0 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -70,3 +70,4 @@ _(append-only; newest last — one line per completed item)_
 - #10 Conversation: persist scheduling day/time/name to belief on the engine path — 2026-06-10 TBD
 - #11 Conversation: bare `gracias` no longer wipes scheduling state (thanks-only exit) — 2026-06-10 TBD
 - #12 Conversation: offer-acceptance few-shot — "sí" after offer re-runs search minus failed filter — 2026-06-10 TBD
+- #13 Conversation: clear stale scheduling awaiting after two consecutive off-topic turns — 2026-06-10 TBD
