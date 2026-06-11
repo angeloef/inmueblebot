@@ -1,5 +1,5 @@
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID as PyUUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -15,8 +15,8 @@ MEMBER_REVOKED = "revoked"
 class TenantMember(Base):
     __tablename__ = "tenant_members"
 
-    id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    tenant_id: Mapped[uuid4] = mapped_column(
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[PyUUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
@@ -35,7 +35,7 @@ class TenantMember(Base):
     invite_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
-    account_id: Mapped[uuid4 | None] = mapped_column(
+    account_id: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenant_accounts.id", ondelete="SET NULL"),
         nullable=True,
     )
