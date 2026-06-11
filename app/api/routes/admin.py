@@ -2578,34 +2578,3 @@ async def cleanup_clients(
         "status": "deleted",
         "tables": results,
     }
-
-
-# ── TEMPORARY: seed default tenant account ────────────────────────────────────
-# DELETE THIS ENDPOINT after use.
-@router.post("/seed-default-account", dependencies=[Depends(require_superadmin)])
-async def seed_default_account(email: str, password: str):
-    """One-time: crea un TenantAccount para el tenant default (pre-multitenant).
-    BORRAR después de usar."""
-    from uuid import uuid4
-    from app.core.security import hash_password
-    from app.db.session import async_session_factory
-    from sqlalchemy import select as _select
-
-    DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
-
-    async with async_session_factory() as session:
-        existing = await session.scalar(
-            _select(TenantAccount).where(TenantAccount.tenant_id == DEFAULT_TENANT_ID)
-        )
-        if existing:
-            return {"status": "already_exists", "email": existing.email}
-        acc = TenantAccount(
-            id=uuid4(),
-            tenant_id=DEFAULT_TENANT_ID,
-            email=email,
-            password_hash=hash_password(password),
-            role="owner",
-        )
-        session.add(acc)
-        await session.commit()
-        return {"status": "created", "email": email}
