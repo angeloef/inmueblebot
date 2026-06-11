@@ -159,7 +159,13 @@ def _compact_state(belief) -> dict:
     """
     state: dict = {}
     if belief.search_criteria:
-        state["criterios"] = belief.search_criteria
+        criterios = dict(belief.search_criteria)
+        # Surface bedroom range so a refinement re-search keeps it (#25).
+        if getattr(belief, "bedrooms_max", None) is not None:
+            criterios["dormitorios_máx"] = belief.bedrooms_max
+        if getattr(belief, "bedrooms_match", None):
+            criterios["dormitorios_modo"] = belief.bedrooms_match
+        state["criterios"] = criterios
     if belief.selected_property_id is not None:
         state["propiedad_seleccionada"] = belief.selected_property_id
     if belief.last_search_context:
@@ -264,6 +270,8 @@ def _apply_fallback(turn, belief, message: str):
                 zone=belief.zone,
                 budget_max=belief.budget_max,
                 bedrooms_min=belief.bedrooms_min,
+                bedrooms_max=getattr(belief, "bedrooms_max", None),
+                bedrooms_match=getattr(belief, "bedrooms_match", None),
             ),
             intent="search",
             action="clarify",

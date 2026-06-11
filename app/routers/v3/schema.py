@@ -70,8 +70,20 @@ TURN_JSON_SCHEMA: dict = {
                         "type": ["integer", "null"],
                         "description": "Min bedrooms or null",
                     },
+                    "bedrooms_max": {
+                        "type": ["integer", "null"],
+                        "description": "Max bedrooms for a range ('2 a 3 dormitorios' → 3), or null",
+                    },
+                    "bedrooms_match": {
+                        "type": ["string", "null"],
+                        "enum": ["exact", "at_least", "range", None],
+                        "description": "Bedroom match mode: 'exact' | 'at_least' | 'range' | null",
+                    },
                 },
-                "required": ["operation", "property_type", "zone", "budget_max", "bedrooms_min"],
+                "required": [
+                    "operation", "property_type", "zone", "budget_max",
+                    "bedrooms_min", "bedrooms_max", "bedrooms_match",
+                ],
                 "additionalProperties": False,
             },
             "intent": {
@@ -181,6 +193,11 @@ class BeliefDelta(BaseModel):
     zone: Optional[str] = None
     budget_max: Optional[float] = None
     bedrooms_min: Optional[int] = None
+    # Bedroom range support (#25): bedrooms_max is the upper bound for a range
+    # ("2 a 3 dormitorios" → min 2, max 3); bedrooms_match records the mode so a
+    # later refinement re-search preserves it instead of reverting to exact/min.
+    bedrooms_max: Optional[int] = None
+    bedrooms_match: Optional[str] = None  # "exact" | "at_least" | "range" (matches search_properties)
 
 
 class ToolCallSpec(BaseModel):

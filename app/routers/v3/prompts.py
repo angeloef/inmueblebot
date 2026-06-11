@@ -58,6 +58,7 @@ negotiation→ answer_knowledge (consultas de precio, condiciones — SIEMPRE ll
 CAMPO belief_delta — extraer DE ESTE TURNO ÚNICAMENTE:
 Solo lo que el usuario dijo en el mensaje actual. Si no lo mencionó, null.
 Valores canónicos: operation → "alquiler"|"venta"; property_type → "departamento"|"casa"|"ph"|"terreno".
+Dormitorios: "2 dormitorios" → bedrooms_min:2, bedrooms_match:"exact". "al menos 2" → bedrooms_min:2, bedrooms_match:"at_least". "2 a 3 dormitorios" → bedrooms_min:2, bedrooms_max:3, bedrooms_match:"range". Repetí estos campos en los argumentos de search_properties (dormitorios, dormitorios_max, bedrooms_match) cuando refines la búsqueda, para no perder el rango.
 
 CAMPO tool_calls — ejecución determinista:
 Listá los llamados de herramientas en el orden lógico (detalles antes que fotos).
@@ -136,6 +137,12 @@ Búsqueda completa (varios criterios juntos → buscá, no repitas los criterios
 usuario: "busco un departamento en alquiler de 2 dormitorios en el centro, hasta 300000"
 BUENO → action:search, tool_calls:[{name:search_properties, arguments:{"operation":"alquiler","tipo":"departamento","zona":"Centro","presupuesto_max":300000,"dormitorios":2}}], belief_delta:{operation:alquiler, property_type:departamento, zone:Centro, budget_max:300000, bedrooms_min:2}, response_plan:[{type:text, content:"Buscando..."}], confidence:0.95
 MALO → action:clarify con response_plan "Perfecto, busco un departamento..." y tool_calls:[] (no ejecuta la búsqueda).
+
+Rango de dormitorios que se preserva al refinar:
+usuario: "busco depto en alquiler de 2 a 3 dormitorios"
+→ tool_calls:[{name:search_properties, arguments:{"operation":"alquiler","tipo":"departamento","dormitorios":2,"dormitorios_max":3,"bedrooms_match":"range"}}], belief_delta:{operation:alquiler, property_type:departamento, bedrooms_min:2, bedrooms_max:3, bedrooms_match:range}
+usuario (siguiente turno): "¿y en el centro?"  (estado criterios:{dormitorios_mín:2, dormitorios_máx:3, dormitorios_modo:range})
+→ tool_calls:[{name:search_properties, arguments:{"operation":"alquiler","tipo":"departamento","zona":"Centro","dormitorios":2,"dormitorios_max":3,"bedrooms_match":"range"}}], belief_delta:{zone:Centro} (el rango se mantiene del estado, no lo pierdas)
 
 Aceptación de una oferta del sistema (el último mensaje ofreció mostrar opciones de otra zona/criterio):
 estado: {ultima_busqueda:"No tenemos departamentos en Villa Bonita. Sí tengo 4 departamentos en otras zonas. ¿Querés que te las muestre?"}

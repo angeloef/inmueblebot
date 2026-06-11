@@ -50,6 +50,11 @@ class BeliefStateV5(ConversationBeliefState):
     last_action: Optional[str] = None
     last_intent: Optional[str] = None
 
+    # Bedroom range support (#25): bedrooms_min is inherited; these add the upper
+    # bound + match mode so a refinement re-search preserves "2 a 3 dormitorios".
+    bedrooms_max: Optional[int] = None
+    bedrooms_match: Optional[str] = None  # "exact" | "at_least" | "range"
+
 
 # ── Delta application ────────────────────────────────────────────────────────
 
@@ -70,6 +75,10 @@ def apply_belief_delta(belief: BeliefStateV5, delta: BeliefDelta) -> BeliefState
         belief.budget_max = delta.budget_max
     if delta.bedrooms_min is not None:
         belief.bedrooms_min = delta.bedrooms_min
+    if delta.bedrooms_max is not None:
+        belief.bedrooms_max = delta.bedrooms_max
+    if delta.bedrooms_match is not None:
+        belief.bedrooms_match = delta.bedrooms_match
     return belief
 
 
@@ -123,6 +132,8 @@ def serialize_v5(belief: BeliefStateV5) -> str:
         "action_history": belief.action_history,
         "last_action": belief.last_action,
         "last_intent": belief.last_intent,
+        "bedrooms_max": belief.bedrooms_max,
+        "bedrooms_match": belief.bedrooms_match,
     }
     return json.dumps(data, ensure_ascii=False)
 
@@ -176,6 +187,8 @@ def deserialize_v5(data: str | bytes, session_id: str) -> BeliefStateV5:
         action_history=d.get("action_history", []),
         last_action=d.get("last_action"),
         last_intent=d.get("last_intent"),
+        bedrooms_max=d.get("bedrooms_max"),
+        bedrooms_match=d.get("bedrooms_match"),
     )
     return belief
 
@@ -227,6 +240,8 @@ def migrate_v4_to_v5(belief: ConversationBeliefState | None, session_id: str) ->
         action_history=[],
         last_action=None,
         last_intent=None,
+        bedrooms_max=getattr(belief, "bedrooms_max", None),
+        bedrooms_match=getattr(belief, "bedrooms_match", None),
     )
 
 
