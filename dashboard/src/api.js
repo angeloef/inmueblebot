@@ -275,6 +275,7 @@ function toProperty(p) {
     desc:      p.description ?? '',
     buyer_id:  p.buyer_id ?? null,
     tenant_id: p.tenant_id ?? null,
+    refs:      Array.isArray(p.reference_points) ? p.reference_points : [],
     _createdAt: p.created_at ?? null,
   };
 }
@@ -318,6 +319,7 @@ function fromProperty(d) {
     images:        Array.isArray(d.images) && d.images.length > 0
                      ? d.images.map(normalizeImgUrl)
                      : (d.images === null ? null : (d.photo ? [normalizeImgUrl(d.photo)] : [])),
+    reference_points: Array.isArray(d.refs) ? d.refs.filter(Boolean) : [],
   };
 }
 

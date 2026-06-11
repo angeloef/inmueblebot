@@ -434,6 +434,15 @@ def _run_startup_migration(engine):
             except Exception as e:
                 logger.warning(f"Migration Fix 26: {e}")
 
+            # ── Fix 27: Add reference_points JSONB column to properties ─────
+            try:
+                conn.execute(text(
+                    "ALTER TABLE properties ADD COLUMN IF NOT EXISTS reference_points JSONB"
+                ))
+                logger.info("Migration Fix 27: properties.reference_points added")
+            except Exception as e:
+                logger.warning(f"Migration Fix 27: {e}")
+
             # NOTE: Las tablas de Cobranzas se crean en una transacción AISLADA en
             # app/api/routes/cobranzas.py (ensure_cobranzas_schema), no acá: esta
             # migración corre como UNA sola transacción y, si una sentencia previa
@@ -527,6 +536,7 @@ class PropertyCreate(BaseModel):
     status: str = "available"             # 'available','reserved','sold','rented'
     images: Optional[List[str]] = None    # List of image URLs
     category: Optional[str] = None        # 'casa', 'departamento', 'ph', 'terreno' → Property.category
+    reference_points: Optional[List[str]] = None  # Puntos de referencia → Property.reference_points
 
 
 class AppointmentCreate(BaseModel):
@@ -667,6 +677,7 @@ def _prop_to_dict(p, include_images: bool = True):
         "currency": getattr(p, "currency", "ARS") or "ARS",
         "buyer_id": extra.get("buyer_id"),
         "tenant_id": extra.get("tenant_id"),
+        "reference_points": p.reference_points or [],
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -935,6 +946,7 @@ def create_property(
         category=data.category,
         extra_data=extra_data_dict,
         images=data.images,
+        reference_points=data.reference_points or [],
     )
     db.add(prop)
     db.commit()
@@ -1013,6 +1025,8 @@ def update_property(
         extra = dict(prop.extra_data or {})
         extra["zone"] = updates.pop("zone")
         prop.extra_data = extra
+    if "reference_points" in updates:
+        prop.reference_points = updates.pop("reference_points") or []
     if "currency" in updates:
         prop.currency = updates.pop("currency")
     if "images" in updates and updates["images"] is not None:

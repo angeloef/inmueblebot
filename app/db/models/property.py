@@ -145,6 +145,13 @@ class Property(Base):
         comment="Metadatos adicionales en formato JSON"
     )
 
+    # Puntos de referencia cercanos (ej: ['Hospital SAMIC', 'Terminal de omnibus'])
+    reference_points: Mapped[Optional[List[str]]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Puntos de referencia cercanos (ej: ['Hospital SAMIC', 'Terminal de omnibus'])",
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

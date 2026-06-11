@@ -82,7 +82,12 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                         },
                         "zona": {
                             "type": "string",
-                            "description": "Zona o barrio donde busca el usuario (según las zonas que opera la inmobiliaria, indicadas en la política del tenant).",
+                            "description": (
+                                "Zona, barrio, ciudad, o punto de referencia cercano donde busca el usuario "
+                                "(ej: 'Centro', 'Belgrano', 'Oberá', 'hospital', 'terminal', 'plaza'). "
+                                "Las variantes de escritura de ciudades se resuelven automáticamente. "
+                                "Incluir el término exacto que usó el usuario."
+                            ),
                         },
                         "presupuesto_max": {
                             "type": "number",

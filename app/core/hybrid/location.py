@@ -123,11 +123,11 @@ async def refresh_known_cities():
         from app.db.session import async_session_factory
 
         async with async_session_factory() as session:
-            # Query distinct locations from the properties table
+            # Query distinct clean city names from extra_data['city'] (e.g. "Oberá")
             result = await session.execute(
-                select(func.distinct(func.lower(Property.location)))
+                select(func.distinct(func.lower(Property.extra_data["city"].astext)))
             )
-            cities = {str(row[0]).strip().lower() for row in result if row[0]}
+            cities = {str(row[0]).strip().lower() for row in result if row[0] and str(row[0]).strip()}
             if cities:
                 _KNOWN_CITIES.clear()
                 _KNOWN_CITIES.update(cities)

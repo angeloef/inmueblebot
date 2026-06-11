@@ -2,11 +2,12 @@
 
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Text, func, or_, select
 
 from app.core.tenancy import resolve_tenant_id
 from app.db.session import async_session_factory
 from app.db.models.property import Property
+from app.tools.v2.city_resolver import resolve_city_variants
 
 # Accent folding done in SQL (no DB extension needed): translate() is built-in and
 # IMMUTABLE. We lower() first so accented uppercase (Á) folds via lower()→á→a.
@@ -57,6 +58,18 @@ def _zone_like(col, zona: str):
     return folded_col.like(f"%{_norm_accents(zona)}%")
 
 
+def _city_eq(city: str):
+    """Equality match of ``city`` against extra_data['city'] (accent/case-insensitive)."""
+    folded_col = func.translate(func.lower(Property.extra_data["city"].astext), _ACCENTED, _PLAIN)
+    return folded_col == _norm_accents(city)
+
+
+def _ref_points_like(term: str):
+    """Match ``term`` against any element of the JSONB reference_points array (accent/case-insensitive)."""
+    col = func.translate(func.lower(func.cast(Property.reference_points, Text)), _ACCENTED, _PLAIN)
+    return col.like(f"%{_norm_accents(term)}%")
+
+
 def _scoped_select():
     """``select(Property)`` filtered to the current tenant (app-layer wall over RLS)."""
     return select(Property).where(Property.tenant_id == resolve_tenant_id())
@@ -91,7 +104,7 @@ def _apply_bedrooms_filter(stmt, dormitorios: int, dormitorios_max: int, match_m
         return stmt.where(Property.bedrooms == dormitorios)
 
 
-def _build_zone_filters(zona: str) -> list:
+def _build_zone_filters(zona: str, city_variants: "list[str] | None" = None) -> list:
     """Build WHERE conditions for a zone/landmark search term.
 
     The zone name lives in the ``title`` ("Departamento en Centro, Oberá") and the
@@ -99,8 +112,21 @@ def _build_zone_filters(zona: str) -> list:
     user/LLM term like "centro" or "obera" hits "Centro" / "Oberá". (Previously this
     only matched ``location`` with a plain ILIKE, so every zone-scoped search — where
     the zone is only in the title, or sent without its accent — returned nothing.)
+
+    city_variants: resolved DB city spellings for ``zona`` (from resolve_city_variants).
+    When provided, also matches by exact extra_data['city'] equality and location substring
+    for each variant, and against reference_points for the original term.
     """
     filters = [_zone_like(Property.title, zona), _zone_like(Property.location, zona)]
+
+    # reference_points match for the original search term
+    filters.append(_ref_points_like(zona))
+
+    # City-variant filters: exact extra_data['city'] equality + location substring
+    if city_variants:
+        for cv in city_variants:
+            filters.append(_zone_like(Property.location, cv))
+            filters.append(_city_eq(cv))
 
     zona_lower = zona.strip().lower()
     if zona_lower in _LANDMARK_ALIASES:
@@ -145,6 +171,11 @@ async def search_properties(
         t.lower() for t in (_profile.city, _profile.region, _profile.country) if t
     )
 
+    # Resolve city spelling variants once (code + LLM) for the zona term.
+    city_variants: list[str] = []
+    if zona:
+        city_variants = await resolve_city_variants(zona)
+
     async with async_session_factory() as session:
         stmt = _scoped_select()
 
@@ -153,7 +184,7 @@ async def search_properties(
         if mapped_tipo:
             stmt = stmt.where(Property.category == mapped_tipo)
         if zona:
-            zone_filters = _build_zone_filters(zona)
+            zone_filters = _build_zone_filters(zona, city_variants)
             stmt = stmt.where(or_(*zone_filters))
         if presupuesto_max > 0:
             stmt = stmt.where(Property.price <= presupuesto_max)
@@ -176,7 +207,7 @@ async def search_properties(
             if operation:
                 fallback1 = fallback1.where(Property.type == operation.lower())
             if zona:
-                fallback1 = fallback1.where(or_(*_build_zone_filters(zona)))
+                fallback1 = fallback1.where(or_(*_build_zone_filters(zona, city_variants)))
 
             fb1_result = await session.execute(fallback1)
             nearby = fb1_result.scalars().all()

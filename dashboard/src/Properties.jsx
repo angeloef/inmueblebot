@@ -434,6 +434,44 @@ function formatPriceDisplay(raw, currency) {
   return currency === 'USD' ? n.toLocaleString('en-US') : n.toLocaleString('es-AR');
 }
 
+function RefsInput({ refs, onChange }) {
+  const [pending, setPending] = React.useState('');
+  const addRef = () => {
+    const val = pending.trim();
+    if (!val || refs.includes(val)) { setPending(''); return; }
+    onChange([...refs, val]);
+    setPending('');
+  };
+  const removeRef = (item) => onChange(refs.filter(r => r !== item));
+  const handleKey = (e) => {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addRef(); }
+  };
+  return (
+    <div className="field">
+      <label>Puntos de referencia</label>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: refs.length ? 6 : 0 }}>
+        {refs.map(r => (
+          <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'var(--primary-50, #eff6ff)', border: '1px solid var(--primary-200, #bfdbfe)',
+            borderRadius: 12, padding: '2px 8px', fontSize: 13 }}>
+            {r}
+            <button type="button" title="Eliminar" onClick={() => removeRef(r)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                lineHeight: 1, color: 'var(--neutral-500, #6b7280)', fontSize: 14 }}>×</button>
+          </span>
+        ))}
+      </div>
+      <input
+        placeholder="Ej: Hospital SAMIC, Terminal de ómnibus (Enter para agregar)"
+        value={pending}
+        onChange={e => setPending(e.target.value)}
+        onKeyDown={handleKey}
+        onBlur={addRef}
+      />
+    </div>
+  );
+}
+
 function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null, saving = false }) {
   const [form, setForm] = useState(() => {
     if (initialData) {
@@ -454,13 +492,14 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
         desc:      initialData.desc || initialData.notes || '',
         notes:     initialData.notes     || '',
         photos:    [],
+        refs:      initialData.refs || [],
       };
     }
     return {
       addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
       rooms: '2 amb', m2: '', baths: 1, parking: 0,
       price: '', currency: 'ARS', agent: 'M. Pereyra',
-      desc: '', notes: '', photos: [],
+      desc: '', notes: '', photos: [], refs: [],
     };
   });
   const [priceDisplay, setPriceDisplay] = useState(() =>
@@ -522,6 +561,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       notes:     form.desc || form.notes,
       photo,
       images: allImages,
+      refs:      form.refs,
     });
   };
   return (
@@ -558,6 +598,8 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
               <input placeholder="Se genera automáticamente" disabled />
             </div>
           </div>
+
+          <RefsInput refs={form.refs} onChange={v => set('refs', v)} />
 
           <div className="field-row">
             <div className="field">
