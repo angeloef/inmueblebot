@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from loguru import logger
+
 from app.core.belief_state import ConversationBeliefState
 from app.core.config import get_settings
 from app.routers.v3.schema import BeliefDelta
@@ -48,6 +50,11 @@ class BeliefStateV5(ConversationBeliefState):
     last_action: Optional[str] = None
     last_intent: Optional[str] = None
 
+    # Bedroom range support (#25): bedrooms_min is inherited; these add the upper
+    # bound + match mode so a refinement re-search preserves "2 a 3 dormitorios".
+    bedrooms_max: Optional[int] = None
+    bedrooms_match: Optional[str] = None  # "exact" | "at_least" | "range"
+
 
 # ── Delta application ────────────────────────────────────────────────────────
 
@@ -68,6 +75,10 @@ def apply_belief_delta(belief: BeliefStateV5, delta: BeliefDelta) -> BeliefState
         belief.budget_max = delta.budget_max
     if delta.bedrooms_min is not None:
         belief.bedrooms_min = delta.bedrooms_min
+    if delta.bedrooms_max is not None:
+        belief.bedrooms_max = delta.bedrooms_max
+    if delta.bedrooms_match is not None:
+        belief.bedrooms_match = delta.bedrooms_match
     return belief
 
 
@@ -121,6 +132,8 @@ def serialize_v5(belief: BeliefStateV5) -> str:
         "action_history": belief.action_history,
         "last_action": belief.last_action,
         "last_intent": belief.last_intent,
+        "bedrooms_max": belief.bedrooms_max,
+        "bedrooms_match": belief.bedrooms_match,
     }
     return json.dumps(data, ensure_ascii=False)
 
@@ -174,6 +187,8 @@ def deserialize_v5(data: str | bytes, session_id: str) -> BeliefStateV5:
         action_history=d.get("action_history", []),
         last_action=d.get("last_action"),
         last_intent=d.get("last_intent"),
+        bedrooms_max=d.get("bedrooms_max"),
+        bedrooms_match=d.get("bedrooms_match"),
     )
     return belief
 
@@ -225,6 +240,8 @@ def migrate_v4_to_v5(belief: ConversationBeliefState | None, session_id: str) ->
         action_history=[],
         last_action=None,
         last_intent=None,
+        bedrooms_max=getattr(belief, "bedrooms_max", None),
+        bedrooms_match=getattr(belief, "bedrooms_match", None),
     )
 
 
@@ -250,8 +267,12 @@ async def load_belief_v5(session_id: str) -> BeliefStateV5:
     try:
         redis = await _get_redis()
         if redis:
-            raw = await redis.get(key)
-            await redis.aclose()
+            # try/finally so the connection is always returned even if get() raises
+            # (plan #18): aclose() used to run only on the happy path → leak per error.
+            try:
+                raw = await redis.get(key)
+            finally:
+                await redis.aclose()
             if raw:
                 try:
                     d = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
@@ -261,15 +282,21 @@ async def load_belief_v5(session_id: str) -> BeliefStateV5:
                     from app.memory.working import _deserialize_belief
                     v4 = _deserialize_belief(raw, session_id)
                     return migrate_v4_to_v5(v4, session_id)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # A parse/migration failure here silently dropped the whole
+                    # conversation (plan #15) — surface it so a corrupted belief is
+                    # visible instead of presenting as a mysterious fresh start.
+                    logger.warning(
+                        "[V3] belief deserialize/migrate failed for {} — starting fresh: {}",
+                        session_id, str(exc),
+                    )
         else:
             # Redis unavailable — try v4 working_memory loader
             from app.memory.working import load_working_memory
             v4 = await load_working_memory(session_id)
             return migrate_v4_to_v5(v4, session_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[V3] load_belief_v5 failed for {} — starting fresh: {}", session_id, str(exc))
 
     return BeliefStateV5(session_id=session_id)
 
@@ -287,12 +314,18 @@ async def save_belief_v5(belief: BeliefStateV5) -> None:
     try:
         redis = await _get_redis()
         if redis:
-            data = serialize_v5(belief)
-            await redis.set(key, data, ex=settings.WORKING_MEMORY_TTL)
-            await redis.aclose()
+            # try/finally so the connection is always returned even if set() raises
+            # (plan #18): aclose() used to run only on the happy path → leak per error.
+            try:
+                data = serialize_v5(belief)
+                await redis.set(key, data, ex=settings.WORKING_MEMORY_TTL)
+            finally:
+                await redis.aclose()
         else:
             # Redis unavailable — fall back to in-memory store
             from app.core.belief_state import save_belief
             save_belief(belief)
-    except Exception:
-        pass
+    except Exception as exc:
+        # A save failure means the next turn loses this turn's slots/history (plan #15).
+        # Still non-fatal to the current reply, but it must be visible.
+        logger.warning("[V3] save_belief_v5 failed for {}: {}", belief.session_id, str(exc))

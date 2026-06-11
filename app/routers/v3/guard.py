@@ -225,6 +225,7 @@ async def run_guard(
     state_json: str,
     tool_results: list[str],
     settings,
+    source: str = "",
 ) -> GuardResult:
     """Gated judge + one targeted regeneration. Never raises.
 
@@ -232,6 +233,10 @@ async def run_guard(
     - If gated and the judge passes → returns original text + the score.
     - If gated and the judge fails → one regeneration; returns the regenerated
       text if produced (else original), with regenerated flagged.
+    - If source == "verbatim" (plan #14) → the judge may still SCORE, but the text
+      is NEVER regenerated. Deterministic, already-formatted output (search list,
+      detail card, real booking confirmation) must reach the user byte-exact; an LLM
+      rewrite reintroduces the price/format drift the verbatim path exists to prevent.
 
     The guard never touches rich_content (images/booking confirmations stay as the
     engine/FSM produced them); it only refines the prose of response_text. Empty
@@ -249,6 +254,15 @@ async def run_guard(
 
     pass_threshold = getattr(settings, "V3_JUDGE_PASS_THRESHOLD", 0.60)
     if verdict.passed and verdict.score >= pass_threshold:
+        return GuardResult(response_text=response_text, judge_score=verdict.score, regenerated=False)
+
+    # Verbatim output is deterministic and must never be rewritten (plan #14). Record
+    # the score so a low judge verdict is still visible, but keep the text byte-exact.
+    if source == "verbatim":
+        logger.info(
+            "[V3] Judge fail on verbatim source (score={:.2f}, issue={}) — NOT regenerating",
+            verdict.score, verdict.issue,
+        )
         return GuardResult(response_text=response_text, judge_score=verdict.score, regenerated=False)
 
     logger.info(

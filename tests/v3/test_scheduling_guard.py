@@ -56,7 +56,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
 
     def _call_assemble(self, turn, belief, booking_succeeded: bool, fsm_plan=None):
         from app.routers.v3.engine import _assemble_response
-        return _run(
+        text, rich, _source = _run(
             _assemble_response(
                 turn,
                 belief,
@@ -67,6 +67,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
                 fsm_plan=fsm_plan,
             )
         )
+        return text, rich
 
     def test_book_step_no_success_discards_confirmation_plan(self):
         """When action==book_step and booking_succeeded==False, no Cita Agendada text."""
@@ -115,7 +116,7 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
             "(lunes a viernes de 09:00 a 18:00 hs, sábado de 09:00 a 13:00 hs). ¿A qué hora preferís?"
         )
 
-        text, rich = _run(_assemble_response(
+        text, rich, _source = _run(_assemble_response(
             turn, belief,
             tool_results=[real_reason],
             any_ran=True,
@@ -171,6 +172,73 @@ class TestSchedulingGuardNoFakeConfirmation(unittest.TestCase):
 
         raw = "El departamento tiene 2 dormitorios."
         self.assertEqual(raw, _strip_markers(raw))
+
+
+class TestApptMgmtResultsSurfaced(unittest.TestCase):
+    """Plan #1: cancel/reschedule/get_my_appointments results must reach the user.
+
+    The model frequently labels appointment-management turns as ``book_step``.
+    Before the fix, Path 0b's anti-hallucination guard keyed on ``action`` alone
+    and replaced the real tool result with 'Estoy recopilando los detalles para
+    tu visita'. The fix surfaces these results verbatim BEFORE that guard.
+    """
+
+    def _assemble(self, *, action, tools_used, tool_results, booking_succeeded=False):
+        from app.routers.v3.engine import _assemble_response
+        turn = _StubTurn(action=action, response_plan=[
+            _StubResponsePlanItem("text", "Listo, agendo tu visita."),
+        ])
+        text, rich, _source = _run(_assemble_response(
+            turn, _StubBelief(),
+            tool_results=tool_results,
+            any_ran=True,
+            tenant_id=None,
+            booking_succeeded=booking_succeeded,
+            tools_used=tools_used,
+        ))
+        return text, rich
+
+    def test_cancel_mislabeled_book_step_surfaces_real_result(self):
+        """'cancelá mi visita del jueves' mislabeled book_step → cancellation text."""
+        cancel_text = "✅ Cancelé tu visita del jueves 16:00. ¿Querés agendar otra?"
+        text, _rich = self._assemble(
+            action="book_step",
+            tools_used=["cancel_appointment"],
+            tool_results=[cancel_text],
+        )
+        self.assertIn("Cancelé tu visita", text)
+        self.assertNotIn("recopilando los detalles", text)
+
+    def test_get_my_appointments_surfaces_listing(self):
+        listing = "Tenés 1 visita agendada:\n• Jueves 16:00 — Depto Centro (ID:7)"
+        text, _rich = self._assemble(
+            action="answer_knowledge",
+            tools_used=["get_my_appointments"],
+            tool_results=[listing],
+        )
+        self.assertIn("visita agendada", text)
+        self.assertNotIn("recopilando los detalles", text)
+
+    def test_reschedule_mislabeled_book_step_surfaces_real_result(self):
+        reschedule_text = "✅ Cambié tu visita al viernes 17:00."
+        text, _rich = self._assemble(
+            action="book_step",
+            tools_used=["reschedule_appointment"],
+            tool_results=[reschedule_text],
+        )
+        self.assertIn("Cambié tu visita", text)
+        self.assertNotIn("recopilando los detalles", text)
+
+    def test_appt_tool_error_does_not_surface_raw_error(self):
+        """An 'Error:' result must NOT be surfaced; book_step falls back to the guard."""
+        text, _rich = self._assemble(
+            action="book_step",
+            tools_used=["cancel_appointment"],
+            tool_results=["Error: appointment not found"],
+        )
+        self.assertNotIn("Error:", text)
+        # book_step + no usable result → the existing safe gather message
+        self.assertIn("recopilando los detalles", text)
 
 
 if __name__ == "__main__":

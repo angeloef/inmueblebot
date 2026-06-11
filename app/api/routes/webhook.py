@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import logging
 import hashlib
 import hmac
+import json
 import time
 import asyncio
 import traceback
@@ -186,18 +187,18 @@ def format_phone_number(phone: str) -> str:
     return phone
 
 
-def verify_webhook_signature(payload: str, signature: str, secret: str) -> bool:
-    """Verify that the request came from Meta."""
-    if not signature or not secret:
-        return True  # Skip if no signature
-    
-    expected = hmac.new(
-        secret.encode(),
-        payload.encode(),
-        hashlib.sha256
-    ).hexdigest()
-    
-    return hmac.compare_digest(f"sha256={expected}", signature)
+def verify_webhook_signature(raw_body: bytes, signature_256: str, app_secret: str) -> bool:
+    """Verify Meta's HMAC-SHA256 signature over the RAW request body (plan #6).
+
+    Meta signs the exact raw bytes it sent and delivers the digest in the
+    ``x-hub-signature-256`` header as ``sha256=<hexdigest>``. We MUST hash the same
+    raw bytes — re-serialising the parsed JSON would change whitespace/key order and
+    never match. Returns False on a missing/malformed header or any mismatch.
+    """
+    if not signature_256 or not signature_256.startswith("sha256=") or not app_secret:
+        return False
+    expected = hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature_256)
 
 
 @router.get("/whatsapp")
@@ -304,24 +305,32 @@ async def receive_webhook(request: Request):
     }
     """
     settings = get_settings()
-    
-    # Get request body
+
+    # Read the RAW body once — needed both for JSON parsing and for HMAC signature
+    # verification (the signature is computed over these exact bytes; re-serialising
+    # the parsed dict would not match).
+    raw_body = await request.body()
+
+    # Verify Meta's signature when an App Secret is configured (plan #6). Without
+    # this, anyone who knows the URL can forge user turns. Fail-closed: a configured
+    # secret + missing/invalid signature → 403. If no secret is set we skip (legacy
+    # behaviour) so existing deployments keep working until they configure it.
+    if settings.WHATSAPP_APP_SECRET:
+        signature = request.headers.get("x-hub-signature-256", "")
+        if not verify_webhook_signature(raw_body, signature, settings.WHATSAPP_APP_SECRET):
+            logger.warning("[Webhook] Rejected request with invalid/missing x-hub-signature-256")
+            raise HTTPException(status_code=403, detail="invalid signature")
+
+    # Parse the body from the raw bytes we already read.
     try:
-        body = await request.json()
+        body = json.loads(raw_body)
     except Exception as e:
         logger.error(f"Failed to parse webhook body: {e}")
         return {"status": "error"}
-    
+
     # Log incoming (truncated for privacy)
     logger.info(f"Incoming webhook: {str(body)[:200]}...")
-    
-    # Verify signature if configured
-    signature = request.headers.get("x-hub-signature", "")
-    if signature and settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN:
-        # Note: We'd need raw body for full verification
-        # For now, skip and trust Meta's network
-        pass
-    
+
     # Extract messages from entry
     entry = body.get("entry", [])
     if not entry:
@@ -690,28 +699,35 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                 except Exception as _bp_err:
                     logger.warning(f"[Webhook] Bot-paused check failed (non-fatal): {_bp_err}")
 
-            if active_router == "v3":
-                from app.core.tenancy import get_current_tenant
-                result = await _process_turn_v3_or_fallback(
-                    phone=phone,
-                    user_message=text,
-                    media_url=media_url,
-                    bsuid=msg.get("_bsuid"),
-                    tenant_id=get_current_tenant(),
-                )
-            elif active_router == "v2":
-                from app.routers.v2_adapter import process_turn_v2
-                result = await process_turn_v2(
-                    phone=phone,
-                    user_message=text,
-                    media_url=media_url,
-                    bsuid=msg.get("_bsuid"),
-                )
-            else:
-                result = await real_estate_agent.process_turn(
-                    phone=phone,
-                    user_message=text
-                )
+            # ── Serialise per-user turns (plan #4) ────────────────────────
+            # Two rapid messages from the same phone otherwise run concurrent
+            # turns whose belief read-modify-write races (3 saves/turn) and the
+            # last writer wins — slots/history are silently lost. V1 already
+            # guards this with get_user_lock; V3/V2 must too.
+            from app.core.session import get_user_lock
+            async with get_user_lock(phone):
+                if active_router == "v3":
+                    from app.core.tenancy import get_current_tenant
+                    result = await _process_turn_v3_or_fallback(
+                        phone=phone,
+                        user_message=text,
+                        media_url=media_url,
+                        bsuid=msg.get("_bsuid"),
+                        tenant_id=get_current_tenant(),
+                    )
+                elif active_router == "v2":
+                    from app.routers.v2_adapter import process_turn_v2
+                    result = await process_turn_v2(
+                        phone=phone,
+                        user_message=text,
+                        media_url=media_url,
+                        bsuid=msg.get("_bsuid"),
+                    )
+                else:
+                    result = await real_estate_agent.process_turn(
+                        phone=phone,
+                        user_message=text
+                    )
 
             turn_time = time.time() - start_time
             tools_used = result.get("tools_used", []) if result else []

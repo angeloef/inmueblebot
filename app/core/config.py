@@ -280,6 +280,13 @@ class Settings(BaseSettings):
         default="change-me",
         description="Token para verificar webhook de Meta"
     )
+    WHATSAPP_APP_SECRET: Optional[str] = Field(
+        default=None,
+        description="Meta App Secret usado para validar la firma HMAC 'x-hub-signature-256' "
+                    "de los webhooks entrantes. Si se define, las requests con firma inválida o "
+                    "ausente se rechazan con 403. Si queda en None, la validación se omite "
+                    "(comportamiento legacy — definilo en producción para evitar webhooks falsos).",
+    )
     AGENT_WHATSAPP_NUMBER: Optional[str] = Field(default=None, description="Número WhatsApp del agente humano para handoffs")
 
     # === Identidad del negocio ===

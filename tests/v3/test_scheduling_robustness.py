@@ -136,7 +136,7 @@ _CONFIRMATION = (
 async def test_booking_success_surfaces_real_confirmation_not_placeholder():
     """On a confirmed booking, the user must get the date/time/address confirmation
     from schedule_visit — NOT the engine's generic response_plan placeholder."""
-    text, _rich = await engine._assemble_response(
+    text, _rich, _source = await engine._assemble_response(
         _turn("book_step"),
         _belief(),
         tool_results=[_CONFIRMATION],
@@ -153,7 +153,7 @@ async def test_booking_success_surfaces_real_confirmation_not_placeholder():
 
 async def test_booking_failure_still_discards_fake_confirmation():
     """Regression guard: when booking did NOT succeed, never surface a confirmation."""
-    text, _rich = await engine._assemble_response(
+    text, _rich, _source = await engine._assemble_response(
         _turn("book_step"),
         _belief(),
         tool_results=["Ese horario ya está reservado. ¿Qué otro horario te conviene?"],

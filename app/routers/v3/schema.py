@@ -16,9 +16,10 @@ from typing import Optional
 from pydantic import BaseModel
 
 # ── Tool names (verified against TOOL_REGISTRY.keys() in app/tools/v2/registry.py) ──
+# echo/get_time were reachable by the model but have no real-estate purpose and only
+# invited off-task tool calls — dropped from the V3 enum (plan #20). They remain in the
+# registry for legacy callers; the V3 engine simply never offers them.
 _TOOL_NAMES = [
-    "echo",
-    "get_time",
     "search_properties",
     "get_property_details",
     "get_property_images",
@@ -69,8 +70,20 @@ TURN_JSON_SCHEMA: dict = {
                         "type": ["integer", "null"],
                         "description": "Min bedrooms or null",
                     },
+                    "bedrooms_max": {
+                        "type": ["integer", "null"],
+                        "description": "Max bedrooms for a range ('2 a 3 dormitorios' → 3), or null",
+                    },
+                    "bedrooms_match": {
+                        "type": ["string", "null"],
+                        "enum": ["exact", "at_least", "range", None],
+                        "description": "Bedroom match mode: 'exact' | 'at_least' | 'range' | null",
+                    },
                 },
-                "required": ["operation", "property_type", "zone", "budget_max", "bedrooms_min"],
+                "required": [
+                    "operation", "property_type", "zone", "budget_max",
+                    "bedrooms_min", "bedrooms_max", "bedrooms_match",
+                ],
                 "additionalProperties": False,
             },
             "intent": {
@@ -94,7 +107,6 @@ TURN_JSON_SCHEMA: dict = {
                     "show_photos",
                     "answer_knowledge",
                     "book_step",
-                    "select_property",
                     "clarify",
                     "handoff",
                     "smalltalk",
@@ -181,6 +193,11 @@ class BeliefDelta(BaseModel):
     zone: Optional[str] = None
     budget_max: Optional[float] = None
     bedrooms_min: Optional[int] = None
+    # Bedroom range support (#25): bedrooms_max is the upper bound for a range
+    # ("2 a 3 dormitorios" → min 2, max 3); bedrooms_match records the mode so a
+    # later refinement re-search preserves it instead of reverting to exact/min.
+    bedrooms_max: Optional[int] = None
+    bedrooms_match: Optional[str] = None  # "exact" | "at_least" | "range" (matches search_properties)
 
 
 class ToolCallSpec(BaseModel):

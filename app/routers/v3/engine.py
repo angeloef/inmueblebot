@@ -159,7 +159,13 @@ def _compact_state(belief) -> dict:
     """
     state: dict = {}
     if belief.search_criteria:
-        state["criterios"] = belief.search_criteria
+        criterios = dict(belief.search_criteria)
+        # Surface bedroom range so a refinement re-search keeps it (#25).
+        if getattr(belief, "bedrooms_max", None) is not None:
+            criterios["dormitorios_máx"] = belief.bedrooms_max
+        if getattr(belief, "bedrooms_match", None):
+            criterios["dormitorios_modo"] = belief.bedrooms_match
+        state["criterios"] = criterios
     if belief.selected_property_id is not None:
         state["propiedad_seleccionada"] = belief.selected_property_id
     if belief.last_search_context:
@@ -264,6 +270,8 @@ def _apply_fallback(turn, belief, message: str):
                 zone=belief.zone,
                 budget_max=belief.budget_max,
                 bedrooms_min=belief.bedrooms_min,
+                bedrooms_max=getattr(belief, "bedrooms_max", None),
+                bedrooms_match=getattr(belief, "bedrooms_match", None),
             ),
             intent="search",
             action="clarify",
@@ -326,6 +334,86 @@ _BOOKING_SUCCESS_MARKER = "<!--CONFIRMED:"
 # it from the resolved selection so a dropped id can't break details/photos/booking.
 _PROPERTY_ID_TOOLS = frozenset({"get_property_details", "get_property_images", "schedule_visit"})
 
+_SCHEDULING_AWAITING_SLOTS = ("scheduling_day", "scheduling_time", "scheduling_confirm")
+
+
+def _apply_new_search_reset(belief, turn) -> None:
+    """Plan #3: a fresh search clears the prior selection and in-flight scheduling slots.
+
+    Called from step 6 when the engine requests search_properties this turn. Without
+    it, a property-scoped follow-up ("mostrame fotos") backfills the OLD
+    selected_property_id and a half-finished booking leaks across searches — the user
+    can see or book the wrong unit. ``scheduling_name`` is preserved (the person's name
+    carries across searches). The ordinal backstop is intentionally NOT applied by the
+    caller on a new search (an ordinal like "la primera" refers to the new list).
+    """
+    belief.selected_property_id = turn.selected_property_id  # usually None → cleared
+    if getattr(belief, "awaiting", None) in _SCHEDULING_AWAITING_SLOTS:
+        belief.awaiting = None
+        belief.pending_scheduling = False
+        belief.scheduling_day = ""
+        belief.scheduling_time = ""
+
+
+def _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent) -> None:
+    """Plan #13: drop a scheduling `awaiting` the user has clearly abandoned.
+
+    `awaiting` has no TTL. If the user started a booking ("esperando: scheduling_day")
+    then changed the subject, [ESTADO] keeps telling the LLM it's waiting for that slot.
+    Require TWO consecutive off-topic turns (this turn's intent and the previous one are
+    both non-scheduling) before clearing, so a single FAQ interruption mid-booking does
+    NOT reset the flow (#10/§3.6 keep that case alive). Never touches scheduling_name.
+    """
+    if getattr(turn, "intent", None) == "scheduling":
+        return
+    awaiting = getattr(belief, "awaiting", None)
+    if not (awaiting and str(awaiting).startswith("scheduling_")):
+        return
+    if prev_last_intent is None or prev_last_intent == "scheduling":
+        return
+    belief.awaiting = None
+    belief.pending_scheduling = False
+
+
+def _persist_schedule_args(belief, args: dict) -> None:
+    """Copy a schedule_visit call's day/time/name into belief.scheduling_* (plan #10).
+
+    Only overwrites a field when the call actually carried a non-empty value, so a
+    partial re-emission (e.g. property_id + dia only) never wipes a previously
+    captured horario/nombre.
+    """
+    dia = (args.get("dia") or "").strip()
+    horario = (args.get("horario") or "").strip()
+    nombre = (args.get("nombre") or "").strip()
+    if dia:
+        belief.scheduling_day = dia
+    if horario:
+        belief.scheduling_time = horario
+    if nombre:
+        belief.scheduling_name = nombre
+
+
+def _persist_scheduling_slots_from_message(belief, turn, message: str) -> None:
+    """On a scheduling turn, capture day/time the user just gave into the belief (plan #10).
+
+    The engine path never wrote slot VALUES (only `awaiting`), so a day given early in
+    a long booking flow was forgotten once it slid out of the history window. Running
+    the existing concrete-value extractors here persists them turn-by-turn. Only stores
+    a value when the extractor finds a concrete one; never clears on a miss.
+    """
+    if getattr(turn, "intent", None) != "scheduling" or not message:
+        return
+    try:
+        from app.core.state_transitioner import extract_scheduling_day, extract_scheduling_time
+        day = extract_scheduling_day(message)
+        if day:
+            belief.scheduling_day = day
+        clock = extract_scheduling_time(message)
+        if clock:
+            belief.scheduling_time = clock
+    except Exception:
+        pass
+
 
 async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool]:
     """Execute tool_calls from engine output deterministically.
@@ -356,6 +444,12 @@ async def _execute_tools(turn, belief) -> tuple[list[str], list[str], bool, bool
         if not ok:
             logger.debug("[V3] Skipping tool {}: {}", tc.name, err)
             continue
+        # Persist the booking slots the LLM reconstructed (plan #10). The model's
+        # schedule_visit args are the best available day/time/name; storing them on
+        # the belief makes the NEXT turn independent of the history window and revives
+        # the FSM T-7 availability pre-check (which reads belief.scheduling_*).
+        if tc.name == "schedule_visit":
+            _persist_schedule_args(belief, args)
         try:
             call = CSStructuredToolCall(id=f"call_{i}", name=tc.name, arguments=args)
             result = await execute_tool(call)
@@ -390,6 +484,13 @@ _ORDINAL_PATTERNS: list[tuple] = [
 ]
 _LAST_ORDINAL_RE = re.compile(r"\b(últim[oa]|ultim[oa])\b", re.IGNORECASE)
 
+# Per-property header line from _format_properties_list: "  ID:12 — Departamento en
+# Centro — $250.000/mes". These compact lines (id + tipo + zona + precio) are the
+# clean comparative material for follow-ups; the secondary "2 dorm | …" spec lines and
+# any header/footer prose are dropped (plan #21). Cap the count to bound state size.
+_SEARCH_SUMMARY_LINE_RE = re.compile(r"^ID:\d+\s+—\s+.+—.+$")
+_MAX_SUMMARY_LINES = 12
+
 
 def _resolve_ordinal_to_id(message: str, last_search_ids: list) -> int | None:
     """Map a positional reference ("la primera", "el tercero", "la última") to a
@@ -407,6 +508,21 @@ def _resolve_ordinal_to_id(message: str, last_search_ids: list) -> int | None:
     return None
 
 
+def _compact_search_summary(res: str) -> str:
+    """Reduce a formatted search result to one compact line per property (plan #21).
+
+    Keeps the "ID:N — Tipo en Zona — $precio" header lines (whole, never truncated),
+    drops the secondary spec lines and any header/footer prose, and caps the count so
+    the stored state JSON stays small. Falls back to a char-capped prefix if the result
+    isn't in the expected format (e.g. a no-results or progressive-narrowing message).
+    """
+    lines = [ln.strip() for ln in (res or "").splitlines()]
+    summary = [ln for ln in lines if _SEARCH_SUMMARY_LINE_RE.match(ln)]
+    if summary:
+        return "\n".join(summary[:_MAX_SUMMARY_LINES])
+    return (res or "")[:1200]
+
+
 def _persist_search_context(belief, tools_used: list[str], tool_results: list[str]) -> None:
     """Store the latest search_properties result on the belief.
 
@@ -422,8 +538,10 @@ def _persist_search_context(belief, tools_used: list[str], tool_results: list[st
             ids = [int(m) for m in _SEARCH_ID_RE.findall(res)]
             belief.last_search_ids = ids
             belief.last_search_count = len(ids)
-            # Cap the stored context so it doesn't bloat the cached-tail state JSON.
-            belief.last_search_context = res[:1200]
+            # Store compact one-line-per-ID summaries instead of a char-truncated blob
+            # (plan #21): cheaper tokens, never cuts an entry mid-line, and gives the
+            # model clean material for comparative answers / descriptive selection.
+            belief.last_search_context = _compact_search_summary(res)
             break
     except Exception:
         pass
@@ -452,8 +570,37 @@ _DATA_TOOLS = frozenset({
 })
 
 
-async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
+def _is_about_shown_results(turn, belief) -> bool:
+    """True when the turn is a follow-up about the JUST-SHOWN search results (plan #8).
+
+    The model labels comparative/price questions about the visible list as
+    intent==search; when ``last_search_context`` is populated the answer lives in the
+    state, so the RAG safety-net must NOT inject FAQ/property chunks (they drown the
+    real answer). Used to gate Step 7b.
+    """
+    return getattr(turn, "intent", None) == "search" and bool(belief.last_search_context)
+
+
+def _recent_history_tail(belief, max_entries: int = 4) -> str:
+    """Last few conversation lines for synthesis context (plan #7).
+
+    ``belief.history`` already has the current ``user:`` message appended by run_turn
+    before assembly, so drop that trailing entry — it is passed separately as the
+    question. Returns the preceding ``max_entries`` lines joined, or "" if none.
+    """
+    history = list(belief.history or [])
+    if history and history[-1].startswith("user: "):
+        history = history[:-1]
+    tail = history[-max_entries:]
+    return "\n".join(tail)
+
+
+async def _synthesize_from_results(belief, tool_results: list[str], user_message: str = "") -> str:
     """Compose a Spanish reply grounded in real tool results (LLM Call 2).
+
+    Grounded in the user's actual question and the recent conversation tail (plan #7):
+    without them the synthesizer only saw the tool dump + state and could answer the
+    wrong question (e.g. a generic FAQ instead of the pet-policy that was asked).
 
     Returns "" on any failure so callers can fall back to the engine plan.
     """
@@ -465,6 +612,19 @@ async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
     try:
         compact = json.dumps(_compact_state(belief), ensure_ascii=False)
         tool_context = "\n".join(f"[{i+1}] {r}" for i, r in enumerate(tool_results))
+        history_tail = _recent_history_tail(belief)
+        question = (user_message or "").strip()
+        user_parts: list[str] = []
+        if question:
+            user_parts.append(f"Pregunta del usuario:\n{question}")
+        if history_tail:
+            user_parts.append(f"Conversación reciente:\n{history_tail}")
+        user_parts.append(f"Resultados de herramientas:\n{tool_context}")
+        user_parts.append(
+            "Respondé la pregunta del usuario basándote SOLO en estos resultados."
+            if question
+            else "Respondé al usuario basándote en estos resultados."
+        )
         synth_messages = [
             {
                 "role": "system",
@@ -476,13 +636,7 @@ async def _synthesize_from_results(belief, tool_results: list[str]) -> str:
                 ),
             },
             {"role": "system", "content": f"[ESTADO]\n{compact}"},
-            {
-                "role": "user",
-                "content": (
-                    f"Resultados de herramientas:\n{tool_context}\n\n"
-                    "Respondé al usuario basándote en estos resultados."
-                ),
-            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
         ]
         client = get_client(LLMRole.SYNTH)
         model = get_model(LLMRole.SYNTH)
@@ -512,7 +666,8 @@ async def _assemble_response(
     booking_succeeded: bool = False,
     fsm_plan: list | None = None,
     tools_used: list[str] | None = None,
-) -> tuple[str, dict]:
+    user_message: str = "",
+) -> tuple[str, dict, str]:
     """Build response_text and rich_content from engine output + tool results.
 
     Priority (with FSM override and anti-hallucination guard):
@@ -526,7 +681,10 @@ async def _assemble_response(
     2. Synthesis — tools ran but engine has no plan (fallback to 0c's helper).
     3. Safe default — action in clarify/smalltalk/handoff with no plan.
 
-    Returns (response_text, rich_content).
+    Returns (response_text, rich_content, source) where source ∈
+    {"verbatim","synthesis","plan","fsm"} (plan #14). Deterministic, already-formatted
+    tool output is tagged "verbatim"; run_guard never regenerates a "verbatim" reply
+    (an LLM rewrite reintroduces the price/format drift the verbatim path prevents).
     Strips <!--CONFIRMED:…--> markers from all text before returning.
     """
     rich: dict = {
@@ -542,22 +700,35 @@ async def _assemble_response(
         # Render FSM plan directly (same segment logic as Path 1)
         text_segs = [p for p in fsm_plan if isinstance(p, dict) and p.get("type") == "text"]
         if len(text_segs) == 1:
-            return _strip_markers(text_segs[0].get("content", "")), rich
+            return _strip_markers(text_segs[0].get("content", "")), rich, "fsm"
         if text_segs:
             segments_out = [{"type": p.get("type", "text"), "content": p.get("content", "")} for p in fsm_plan]
             rich["response_plan"] = segments_out
             combined = " ".join(s.get("content", "") for s in text_segs)
-            return _strip_markers(combined), rich
+            return _strip_markers(combined), rich, "fsm"
         # Fallback: use first item if any
         if fsm_plan:
             first = fsm_plan[0]
-            return _strip_markers(first.get("content", _SAFE_CLARIFY_ES)), rich
+            return _strip_markers(first.get("content", _SAFE_CLARIFY_ES)), rich, "fsm"
 
     # ── Path 0b: Anti-hallucination guard ─────────────────────────────
     # If the engine planned a book_step confirmation but schedule_visit did NOT
     # succeed (no <!--CONFIRMED: marker), STRUCTURALLY discard the confirmation
     # response_plan so no fake "Cita Agendada" reaches the user.
     action = getattr(turn, "action", None)
+
+    # ── Path 0a-appt: surface appointment-management results verbatim ──
+    # cancel/reschedule/get_my_appointments are NOT new bookings — their tool
+    # output is already a user-ready confirmation/listing. Surface it BEFORE the
+    # book_step anti-hallucination guard below: the model frequently mislabels
+    # these turns as book_step, and the guard would then discard the real result
+    # and reply "Estoy recopilando los detalles para tu visita" (plan #1).
+    _APPT_MGMT_TOOLS = ("get_my_appointments", "cancel_appointment", "reschedule_appointment")
+    if tools_used and tool_results:
+        for _name, _res in zip(tools_used, tool_results):
+            if _name in _APPT_MGMT_TOOLS and _res and not _res.startswith("Error:"):
+                return _strip_markers(_res), rich, "verbatim"
+
     if action == "book_step" and not booking_succeeded:
         # Discard the engine's (possibly fabricated) confirmation response_plan. BUT
         # surface the REAL schedule_visit result — it carries the actual reason the
@@ -569,11 +740,11 @@ async def _assemble_response(
         if tools_used and tool_results:
             for _name, _res in zip(tools_used, tool_results):
                 if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
-                    return _strip_markers(_res), rich
+                    return _strip_markers(_res), rich, "verbatim"
         return (
             "Estoy recopilando los detalles para tu visita. "
             "¿Podés confirmarme el día y horario que preferís?"
-        ), rich
+        ), rich, "plan"
 
     # ── Path 0b-booked: surface the REAL confirmation on success ───────
     # Mirror of the failure guard above. When the booking SUCCEEDED, the
@@ -585,7 +756,22 @@ async def _assemble_response(
     if action == "book_step" and booking_succeeded and tools_used and tool_results:
         for _name, _res in zip(tools_used, tool_results):
             if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
-                return _strip_markers(_res), rich
+                return _strip_markers(_res), rich, "verbatim"
+
+    # ── Path 0a2: requested-but-none-ran → targeted clarify ───────────
+    # The engine asked for tools but EVERY one was skipped by validation (e.g. a
+    # property-scoped tool with no property_id and no selection). any_ran is False
+    # and there are no results at all, so the only thing left to render would be the
+    # engine's ≤8-word placeholder ("Un momento, reviso eso.") — a dead end (plan #2).
+    # Replace it with a question that actually moves the conversation forward.
+    requested_names = {tc.name for tc in (turn.tool_calls or [])}
+    if requested_names and not any_ran and not tool_results:
+        if requested_names & _PROPERTY_ID_TOOLS and not getattr(belief, "selected_property_id", None):
+            return (
+                "¿De cuál propiedad querés que te muestre eso? "
+                'Decime el ID o la posición en la lista (por ejemplo, "la primera").'
+            ), rich, "plan"
+        return _SAFE_CLARIFY_ES, rich, "plan"
 
     # ── Path 0b-photos: deterministic photo delivery ──────────────────
     # If get_property_images ran for a selected property, ALWAYS resolve and send the
@@ -597,7 +783,7 @@ async def _assemble_response(
         if photo_rich is not None:
             # Return the CTA as response_text so the assistant turn is recorded in
             # history (the next "sí" then has context); delivery uses response_plan.
-            return _PHOTO_CTA_ES, photo_rich
+            return _PHOTO_CTA_ES, photo_rich, "plan"
         # No images resolved → fall through to a normal text reply.
 
     # ── Path 0b2: deterministic render for already-formatted data tools ──
@@ -613,11 +799,31 @@ async def _assemble_response(
         getattr(p, "type", None) == "images" for p in (turn.response_plan or [])
     )
     if tools_used and action != "book_step" and not _has_image:
+        verbatim_text = ""
         for _tool in _VERBATIM_TOOLS:
             if _tool in tools_used:
                 for _n, _r in zip(tools_used, tool_results):
                     if _n == _tool and _r and not _r.startswith("Error:"):
-                        return _strip_markers(_r), rich
+                        verbatim_text = _strip_markers(_r)
+                        break
+            if verbatim_text:
+                break
+        if verbatim_text:
+            # Multi-intent turn (plan #9): a verbatim tool ran alongside another data
+            # tool (e.g. "busco depto en el centro, ¿y qué requisitos piden?" →
+            # search_properties + get_faq_answer). Returning only the verbatim block
+            # silently drops the second answer. Synthesize the remaining non-verbatim
+            # data results and append them so both intents are answered.
+            other_results = [
+                _r for _n, _r in zip(tools_used, tool_results)
+                if _n in _DATA_TOOLS and _n not in _VERBATIM_TOOLS
+                and _r and not _r.startswith("Error:")
+            ]
+            if other_results:
+                tail = await _synthesize_from_results(belief, other_results, user_message)
+                if tail:
+                    return f"{verbatim_text}\n\n{tail}".strip(), rich, "verbatim"
+            return verbatim_text, rich, "verbatim"
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
     # When a text-data tool produced results, the user must SEE those results —
@@ -634,9 +840,9 @@ async def _assemble_response(
         and "get_property_images" not in requested
     )
     if must_surface:
-        surfaced = await _synthesize_from_results(belief, tool_results)
+        surfaced = await _synthesize_from_results(belief, tool_results, user_message)
         if surfaced:
-            return surfaced, rich
+            return surfaced, rich, "synthesis"
         # synthesis failed → fall through to the engine plan / safe default
 
     # ── Path 1: engine provided a response_plan ────────────────────────
@@ -652,11 +858,11 @@ async def _assemble_response(
             # caption) + a single visit CTA.
             photo_rich = await _build_photo_plan(belief, rich)
             if photo_rich is not None:
-                return _PHOTO_CTA_ES, photo_rich
+                return _PHOTO_CTA_ES, photo_rich, "plan"
 
         # Pure text plan
         if len(text_segs) == 1 and not image_segs:
-            return _strip_markers(text_segs[0].content), rich
+            return _strip_markers(text_segs[0].content), rich, "plan"
 
         # Multi-text plan — use response_plan for sequential delivery
         segments_out: list[dict] = [
@@ -664,16 +870,16 @@ async def _assemble_response(
         ]
         rich["response_plan"] = segments_out
         combined = " ".join(_strip_markers(s.content) for s in text_segs if s.content)
-        return combined, rich
+        return combined, rich, "plan"
 
     # ── Path 2: tools ran but no plan → synthesis (LLM Call 2) ──
     if any_ran and tool_results:
-        text = await _synthesize_from_results(belief, tool_results)
+        text = await _synthesize_from_results(belief, tool_results, user_message)
         if text:
-            return text, rich
+            return text, rich, "synthesis"
 
     # ── Path 3: safe default for clarify/smalltalk/handoff ────────────
-    return _SAFE_CLARIFY_ES, rich
+    return _SAFE_CLARIFY_ES, rich, "plan"
 
 
 async def _build_photo_plan(belief, rich: dict) -> dict | None:
@@ -716,6 +922,27 @@ async def _resolve_images(belief) -> tuple[list[str], str]:
 
 
 # ── Emergency tool helper ─────────────────────────────────────────────────────
+
+async def _record_gate_history(belief, user_message: str, response_text: str) -> None:
+    """Append a safety-gate turn to history + persist it (plan #24).
+
+    Emergency/human/out-of-scope gates return BEFORE the normal step-6/8c history
+    bookkeeping, so the next engine turn never saw them — e.g. after an out-of-scope
+    joke the bot would re-greet as if the conversation just started. Record both sides
+    and save. Fully defensive — never breaks the gate response.
+    """
+    try:
+        from app.routers.v3.belief import save_belief_v5
+        from app.core.config import get_settings
+        belief.history.append(f"user: {user_message}")
+        belief.history.append(f"assistant: {response_text}")
+        window = get_settings().HISTORY_WINDOW
+        if len(belief.history) > window:
+            belief.history = belief.history[-window:]
+        await save_belief_v5(belief)
+    except Exception as exc:
+        logger.warning("[V3] Failed to record gate turn in history: {}", str(exc))
+
 
 async def _call_human_assistance(reason: str, message: str) -> str:
     """Call request_human_assistance tool safely. Returns the response string."""
@@ -824,6 +1051,7 @@ async def run_turn(
         logger.info("[V3] Emergency handoff for {}: {}", session_id, user_message[:80])
         handoff_text = await _call_human_assistance("emergencia", user_message)
         _emit_gate("v3::emergency", ["request_human_assistance"], 1.0)
+        await _record_gate_history(belief, user_message, handoff_text)
         return _contract(
             handoff_text,
             ["request_human_assistance"],
@@ -837,6 +1065,7 @@ async def run_turn(
         logger.info("[V3] Human handoff for {}: {}", session_id, user_message[:80])
         handoff_text = await _call_human_assistance("user_requested", user_message)
         _emit_gate("v3::human-handoff", ["request_human_assistance"], 1.0)
+        await _record_gate_history(belief, user_message, handoff_text)
         return _contract(
             handoff_text,
             ["request_human_assistance"],
@@ -849,6 +1078,7 @@ async def run_turn(
     if _is_out_of_scope(user_message):
         logger.info("[V3] Out-of-scope blocked for {}: {}", session_id, user_message[:80])
         _emit_gate("v3::out-of-scope", [], 1.0)
+        await _record_gate_history(belief, user_message, _OUT_OF_SCOPE_RESPONSE)
         return _contract(
             _OUT_OF_SCOPE_RESPONSE,
             [],
@@ -902,15 +1132,26 @@ async def run_turn(
     if len(belief.history) > window:
         belief.history = belief.history[-window:]
 
-    # Engine-tracking fields
+    # Engine-tracking fields (capture the PRIOR intent first — plan #13 needs it to
+    # detect two consecutive off-topic turns before we overwrite it).
+    prev_last_intent = getattr(belief, "last_intent", None)
     belief.last_action = turn.action
     belief.last_intent = turn.intent
     belief.action_history.append(turn.action)
 
+    # Reset-on-new-search (plan #3): a fresh search invalidates the prior selection
+    # and any in-flight scheduling slots. Without this, "mostrame fotos" after a new
+    # search backfills the OLD selected_property_id (step 7 backfill / _build_photo_plan),
+    # and a half-finished booking leaks across — the user can see/book the wrong unit.
+    requested = {tc.name for tc in (turn.tool_calls or [])}
+    if "search_properties" in requested:
+        # Selection + scheduling slots reset; ordinal backstop intentionally skipped
+        # (an ordinal like "la primera" refers to the NEW list, resolved next turn).
+        _apply_new_search_reset(belief, turn)
     # selected_property_id — engine first, then a deterministic ordinal backstop
     # ("la primera"/"el tercero" → id from the previous search) so the model's
     # inconsistent ordinal resolution can't drop the selection.
-    if turn.selected_property_id is not None:
+    elif turn.selected_property_id is not None:
         belief.selected_property_id = turn.selected_property_id
     else:
         _ord_id = _resolve_ordinal_to_id(user_message, belief.last_search_ids)
@@ -926,6 +1167,17 @@ async def run_turn(
         # Scheduling completed or no slot missing — clear awaiting
         belief.awaiting = None
 
+    # Persist concrete day/time the user gave THIS turn (plan #10) so a long booking
+    # flow doesn't forget a slot once it slides out of the history window. Runs only
+    # on scheduling turns; schedule_visit args are captured separately in _execute_tools.
+    _persist_scheduling_slots_from_message(belief, turn, user_message)
+
+    # Clear a stale scheduling `awaiting` after the user moved on (plan #13): if this
+    # turn AND the previous one were both non-scheduling yet `awaiting` is still a
+    # scheduling slot, the [ESTADO] would keep telling the LLM it's waiting for a slot
+    # the user abandoned. Two consecutive off-topic turns is the signal to drop it.
+    _clear_stale_scheduling_awaiting(belief, turn, prev_last_intent)
+
     belief.last_updated_at = time.time()
 
     try:
@@ -940,7 +1192,13 @@ async def run_turn(
     # If engine chose answer_knowledge but didn't emit get_faq_answer in tool_calls,
     # proactively retrieve top-k knowledge chunks and inject into tool_results so
     # the synthesis step can ground the answer rather than hallucinate.
-    if turn.action == "answer_knowledge" and not any_ran:
+    #
+    # Gate (plan #8): when the user is asking about the JUST-SHOWN search results
+    # ("¿cuál es la más barata?", "¿cuál tiene más ambientes?") the model labels the
+    # turn intent==search but may pick answer_knowledge with no tool. Injecting FAQ/
+    # property chunks here drowns the answer in irrelevant material. Skip the net in
+    # that case and let the response plan answer from ultima_busqueda in the state.
+    if turn.action == "answer_knowledge" and not any_ran and not _is_about_shown_results(turn, belief):
         try:
             from app.routers.v3.knowledge.index import search_knowledge
             from app.core.config import get_settings as _get_settings
@@ -995,7 +1253,7 @@ async def run_turn(
     _fsm_booking_succeeded = fsm_result.booking_succeeded if fsm_result else booking_succeeded
     _fsm_plan = (fsm_result.response_plan if (fsm_result and fsm_result.override) else None)
 
-    response_text, rich_content = await _assemble_response(
+    response_text, rich_content, response_source = await _assemble_response(
         turn,
         belief,
         tool_results,
@@ -1004,6 +1262,7 @@ async def run_turn(
         booking_succeeded=_fsm_booking_succeeded,
         fsm_plan=_fsm_plan,
         tools_used=tools_used,
+        user_message=user_message,
     )
 
     # ── Step 8b: Quality guard — gated judge + one targeted regen (LLM Call 3) ─
@@ -1026,6 +1285,7 @@ async def run_turn(
                 state_json=json.dumps(_compact_state(belief), ensure_ascii=False),
                 tool_results=tool_results,
                 settings=settings,
+                source=response_source,
             )
             # Strip any booking markers the regeneration may have copied from tool_results.
             response_text = _strip_markers(guard_result.response_text)
@@ -1043,7 +1303,9 @@ async def run_turn(
             belief.history = belief.history[-window:]
         await save_belief_v5(belief)
     except Exception as exc:
-        logger.debug("[V3] Failed to append assistant response to history: {}", str(exc))
+        # Promoted from debug (plan #15): losing the assistant turn means the next
+        # turn can't see what the bot just said — a real context hole, not noise.
+        logger.warning("[V3] Failed to append assistant response to history: {}", str(exc))
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v3::{turn.action}"

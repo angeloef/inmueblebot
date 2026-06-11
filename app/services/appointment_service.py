@@ -15,6 +15,7 @@ from sqlalchemy import select, and_, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from app.core.tenancy import resolve_tenant_id
+from app.core.turn_metrics import emit_availability_failopen
 
 from app.services.calendar_service import calendar_service
 
@@ -538,9 +539,11 @@ class AppointmentService:
                         return {"available": False, "suggested_times": suggestions}
                 except Exception as e:
                     logger.warning(f"[check_slot_availability] calendar check failed (fail-open): {e}")
+                    emit_availability_failopen(stage="calendar", property_id=property_id, reason=str(e))
             return {"available": True, "suggested_times": []}
         except Exception as e:
             logger.warning(f"[check_slot_availability] failed (fail-open): {e}")
+            emit_availability_failopen(stage="db", property_id=property_id, reason=str(e))
             return {"available": True, "suggested_times": []}
         finally:
             await db.close()

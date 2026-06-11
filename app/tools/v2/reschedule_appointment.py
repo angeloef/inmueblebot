@@ -74,5 +74,6 @@ async def reschedule_appointment(dia: str = "", horario: str = "", cual: str = "
                 f"{format_datetime_argentina(new_appt.start_time)}.{address}\n"
                 f"Un agente te va a contactar para confirmar.")
     except Exception as e:
+        # Never leak the raw exception (asyncpg/SQL text) to the user (plan #17).
         logger.error(f"[reschedule_appointment] {e}")
-        return f"No pude reprogramar la visita: {e}"
+        return "Tuve un problema para reprogramar la visita. ¿Probamos de nuevo en un momento?"

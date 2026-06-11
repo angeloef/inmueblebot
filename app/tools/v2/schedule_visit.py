@@ -17,6 +17,53 @@ from app.services.appointment_service import appointment_service, format_appoint
 from app.utils.date_parser import format_datetime_argentina, get_argentina_now
 
 
+def _fallback_confirmation(
+    *,
+    property_id: int,
+    prop_title: str | None,
+    prop_address: str | None,
+    nombre: str,
+    dia: str,
+    horario: str,
+    consulta: str,
+    roll_note: str,
+    start_datetime,
+) -> str:
+    """Confirmation text for a booking that persisted but returned no appointment object.
+
+    Reached only when ``create_appointment`` returned ``{"success": True}`` without an
+    object. Emits the same ``<!--CONFIRMED:YYYY-MM-DD HH:MM-->`` structural marker as
+    format_appointment_confirmation (plan #5) so the engine's ``booking_succeeded`` is
+    True and Path 0b surfaces this confirmation instead of discarding it. The datetime
+    comes from the parsed ``start_datetime`` (authoritative), not the raw dia/horario.
+    """
+    lines: list[str] = []
+    if roll_note:
+        lines.extend([roll_note, ""])
+    lines.extend([
+        "✅ ¡Visita agendada!",
+        "",
+        f"🏠 Propiedad: {prop_title or f'#{property_id}'}",
+    ])
+    if prop_address:
+        lines.append(f"📍 Dirección: {prop_address}")
+    lines.append(f"👤 Nombre: {nombre}")
+    if dia:
+        lines.append(f"📅 Día: {dia}")
+    if horario:
+        lines.append(f"🕐 Horario: {horario}")
+    if consulta:
+        lines.append(f"💬 Consulta: {consulta}")
+    lines.append("")
+    lines.append(
+        "Te vamos a confirmar por WhatsApp en las próximas 24-48 hs "
+        "con el horario coordinado. ¡Gracias!"
+    )
+    lines.append("")
+    lines.append(f"<!--CONFIRMED:{start_datetime.strftime('%Y-%m-%d %H:%M')}-->")
+    return "\n".join(lines)
+
+
 async def schedule_visit(
     property_id: int = 0,
     nombre: str = "",
@@ -293,30 +340,21 @@ async def schedule_visit(
             note_prefix=roll_note,
         )
 
-    # ── Fallback confirmation (no appointment object) ───────────
-    lines = []
-    if roll_note:
-        lines.extend([roll_note, ""])
-    lines.extend([
-        "✅ ¡Visita agendada!",
-        "",
-        f"🏠 Propiedad: {prop_title or f'#{property_id}'}",
-    ])
-    if prop_address:
-        lines.append(f"📍 Dirección: {prop_address}")
-    lines.append(f"👤 Nombre: {nombre}")
-    if dia:
-        lines.append(f"📅 Día: {dia}")
-    if horario:
-        lines.append(f"🕐 Horario: {horario}")
-    if consulta:
-        lines.append(f"💬 Consulta: {consulta}")
-    lines.append("")
-    lines.append(
-        "Te vamos a confirmar por WhatsApp en las próximas 24-48 hs "
-        "con el horario coordinado. ¡Gracias!"
+    # ── Fallback confirmation (no appointment object, but success) ──────
+    # create_appointment returned success without an object. Emit the CONFIRMED
+    # marker (plan #5) so the engine treats this as a real booking instead of
+    # discarding it and telling the user "estoy recopilando los detalles".
+    return _fallback_confirmation(
+        property_id=property_id,
+        prop_title=prop_title,
+        prop_address=prop_address,
+        nombre=nombre,
+        dia=dia,
+        horario=horario,
+        consulta=consulta,
+        roll_note=roll_note,
+        start_datetime=start_datetime,
     )
-    return "\n".join(lines)
 
 
 async def _handoff_on_failure(property_id: int, nombre: str, dia: str, horario: str) -> str:
