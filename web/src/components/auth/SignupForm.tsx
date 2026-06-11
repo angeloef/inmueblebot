@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import FormField from '@/components/ui/FormField'
 import Alert from '@/components/ui/Alert'
+import GoogleButton from '@/components/auth/GoogleButton'
 import {
   validateEmail,
   validatePassword,
@@ -13,7 +14,7 @@ import {
 
 type Status = 'idle' | 'submitting' | 'error' | 'success'
 
-// TODO(Fase 4): redirect cross-domain al dashboard Vite — placeholder WA onboarding por ahora.
+// Fallback si el handoff no se pudo emitir: URL pública del dashboard.
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL ?? '/app'
 
 export default function SignupForm() {
@@ -25,6 +26,8 @@ export default function SignupForm() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [status, setStatus] = useState<Status>('idle')
   const [apiError, setApiError] = useState<string | null>(null)
+  // URL de handoff que abre la sesión en el dashboard (la setea el submit OK).
+  const [panelUrl, setPanelUrl] = useState<string>(DASHBOARD_URL)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -58,6 +61,10 @@ export default function SignupForm() {
         return
       }
 
+      // URL de handoff: abre la sesión en el dashboard (origen de la API) con un
+      // código de un solo uso. El botón "Continuar al panel" la usa.
+      const data = await res.json() as { ok: boolean; next?: string | null }
+      setPanelUrl(data.next || DASHBOARD_URL)
       setStatus('success')
     } catch {
       setApiError('Error del servidor. Probá de nuevo en unos minutos.')
@@ -95,7 +102,7 @@ export default function SignupForm() {
           variant="primary"
           size="lg"
           className="w-full"
-          onClick={() => { window.location.href = DASHBOARD_URL }}
+          onClick={() => { window.location.href = panelUrl }}
         >
           Continuar al panel
         </Button>
@@ -161,6 +168,8 @@ export default function SignupForm() {
       >
         Crear cuenta gratis
       </Button>
+
+      <GoogleButton disabled={status === 'submitting'} />
 
       <p className="text-center text-xs text-ink-500">
         Al registrarte aceptás los{' '}

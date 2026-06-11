@@ -206,7 +206,9 @@ async def _do_google_login(client: httpx.AsyncClient, email: str, sub: str, **kw
 
 
 @_db_skip
-async def test_google_signup_creates_account() -> None:
+async def test_google_new_email_redirects_to_signup_complete() -> None:
+    """Email sin cuenta → NO se crea nada; redirige al registro explícito con un
+    registration token (el usuario elegirá el nombre de la inmobiliaria)."""
     from app.main import app
 
     email = f"gsignup+{uuid4().hex[:8]}@example.com"
@@ -215,14 +217,64 @@ async def test_google_signup_creates_account() -> None:
     ) as client:
         cb = await _do_google_login(client, email, sub=f"sub-{uuid4().hex}")
         assert cb.status_code == 303, cb.text
-        # Sesión abierta: cookies de access/refresh seteadas en el redirect.
-        set_cookie = cb.headers.get("set-cookie", "")
-        assert "vivienda_access" in set_cookie
+        loc = cb.headers["location"]
+        assert "/signup/complete?gt=" in loc
+        # NO se abrió sesión todavía: nada de cookies de access.
+        assert "vivienda_access" not in cb.headers.get("set-cookie", "")
 
-        # /auth/me con esas cookies funciona y reporta auth_methods=["google"].
+
+@_db_skip
+async def test_google_complete_signup_creates_tenant() -> None:
+    """El paso 2 (con el registration token) crea tenant + trial + cuenta Google."""
+    from unittest.mock import AsyncMock
+
+    from app.core.security import create_google_signup_token
+    from app.main import app
+    from app.services import auth_service
+
+    email = f"gcomplete+{uuid4().hex[:8]}@example.com"
+    reg_token = create_google_signup_token(f"sub-{uuid4().hex}", email, "Test User")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # mark_jti_used necesita Redis; lo mockeamos a "primera vez" para testear lógica.
+        with patch.object(auth_service, "mark_jti_used", new=AsyncMock(return_value=True)):
+            r = await client.post(
+                "/auth/google/complete",
+                json={"token": reg_token, "agency_name": "Inmobiliaria Test"},
+            )
+        assert r.status_code == 200, r.text
+        assert "access_token" in r.json()
+
         me = await client.get("/auth/me")
-        assert me.status_code == 200, me.text
-        assert me.json()["auth_methods"] == ["google"]
+        assert me.status_code == 200
+        body = me.json()
+        assert body["auth_methods"] == ["google"]
+        assert body["subscription"]["status"] == "trial"
+
+
+@_db_skip
+async def test_google_complete_signup_rejects_replayed_token() -> None:
+    """Un registration token ya usado (mark_jti_used → False) devuelve 400."""
+    from unittest.mock import AsyncMock
+
+    from app.core.security import create_google_signup_token
+    from app.main import app
+    from app.services import auth_service
+
+    reg_token = create_google_signup_token(
+        f"sub-{uuid4().hex}", f"greplay+{uuid4().hex[:8]}@example.com", "X",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        with patch.object(auth_service, "mark_jti_used", new=AsyncMock(return_value=False)):
+            r = await client.post(
+                "/auth/google/complete",
+                json={"token": reg_token, "agency_name": "Inmobiliaria Test"},
+            )
+        assert r.status_code == 400
 
 
 @_db_skip
@@ -290,14 +342,17 @@ async def test_google_only_account_can_set_password_via_reset() -> None:
     from app.db.models import TenantAccount
     from app.db.session import async_session_factory
     from app.main import app
+    from app.services import auth_service
 
     email = f"grecover+{uuid4().hex[:8]}@example.com"
+    # Cuenta Google-only creada por el paso 2 del registro (sin password_hash).
+    await auth_service.complete_google_signup(
+        google_sub=f"sub-{uuid4().hex}", email=email, name="Recover User",
+        agency_name="Recover Co",
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        cb = await _do_google_login(client, email, sub=f"sub-{uuid4().hex}")
-        assert cb.status_code == 303
-
         # login con contraseña debe fallar (password_hash NULL) sin romper.
         bad = await client.post("/auth/login", json={"email": email, "password": "whatever123"})
         assert bad.status_code == 401

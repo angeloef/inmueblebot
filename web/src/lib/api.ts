@@ -19,11 +19,14 @@ export type ApiResult<T> =
 export async function apiPost<T>(
   path: string,
   body: unknown,
+  bearerToken?: string,
 ): Promise<ApiResult<T>> {
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       cache: 'no-store',
     })

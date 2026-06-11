@@ -97,6 +97,10 @@ export function AuthProvider({ children }) {
     try { await authApi.logout(); } catch { /* la sesión local se limpia igual */ }
     setMe(null);
     setStatus('anon');
+    // Login canónico en la landing: tras cerrar sesión volvemos allá (si está
+    // configurado). El guard anti-loop de main.jsx no aplica: esto es intencional.
+    const loginUrl = import.meta.env.VITE_LOGIN_URL || '';
+    if (loginUrl) window.location.assign(loginUrl);
   }, []);
 
   const value = { status, me, login, logout, reload: loadMe };

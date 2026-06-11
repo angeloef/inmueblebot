@@ -14,6 +14,8 @@ from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_email_token,
+    create_google_signup_token,
+    create_handoff_token,
     create_oauth_state_token,
     create_refresh_token,
     decode_token,
@@ -361,11 +363,28 @@ def _safe_success_path() -> str:
     return p
 
 
+def _safe_next_path(p: str | None) -> str:
+    """Valida un deep-link como path RELATIVO del dashboard (anti open-redirect).
+
+    Acepta solo paths que empiecen con '/' (y no '//' ni con backslash, que algunos
+    browsers normalizan a '//'). Cualquier otra cosa cae al root del dashboard.
+    """
+    if not p or not p.startswith("/") or p.startswith("//") or "\\" in p:
+        return "/"
+    return p
+
+
+def _landing_login_url() -> str:
+    """URL del login canónico (la landing). PUBLIC_APP_URL viene de config, nunca
+    de un parámetro del request → sin open-redirect."""
+    return get_settings().PUBLIC_APP_URL.rstrip("/") + "/login"
+
+
 def _oauth_error_redirect(reason: str = "oauth") -> RedirectResponse:
-    """Vuelve al dashboard con ?error=... (el front muestra un mensaje, no JSON crudo)."""
-    base = _safe_success_path()
-    sep = "&" if "?" in base else "?"
-    resp = RedirectResponse(f"{base}{sep}error={reason}", status_code=status.HTTP_303_SEE_OTHER)
+    """Vuelve al login de la landing con ?error=... (mensaje amigable, no JSON crudo)."""
+    resp = RedirectResponse(
+        f"{_landing_login_url()}?error={reason}", status_code=status.HTTP_303_SEE_OTHER,
+    )
     resp.delete_cookie(OAUTH_STATE_COOKIE_NAME, path="/")
     return resp
 
@@ -430,9 +449,10 @@ async def google_callback(
     except google_oauth.GoogleOAuthError:
         return _oauth_error_redirect("oauth")
 
-    # Resolución/creación de cuenta + apertura de sesión.
+    # Login/link de cuenta EXISTENTE. Si no existe, NO se crea acá: se redirige al
+    # paso de registro explícito en la landing (elegir nombre de inmobiliaria).
     try:
-        account = await auth_service.login_or_signup_google(claims)
+        account = await auth_service.login_google(claims)
     except auth_service.EmailNotVerified:
         return _oauth_error_redirect("email_unverified")
     except auth_service.AccountSuspended:
@@ -440,8 +460,142 @@ async def google_callback(
     except auth_service.InvalidCredentials:
         return _oauth_error_redirect("oauth")
 
+    if account is None:
+        reg_token = create_google_signup_token(
+            str(claims["sub"]),
+            str(claims["email"]).strip().lower(),
+            (claims.get("name") or "").strip(),
+        )
+        base = get_settings().PUBLIC_APP_URL.rstrip("/")
+        resp = RedirectResponse(
+            f"{base}/signup/complete?gt={reg_token}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        resp.delete_cookie(OAUTH_STATE_COOKIE_NAME, path="/")
+        return resp
+
     tokens = _token_response(account)
     resp = RedirectResponse(_safe_success_path(), status_code=status.HTTP_303_SEE_OTHER)
     _set_auth_cookies(resp, tokens)
     resp.delete_cookie(OAUTH_STATE_COOKIE_NAME, path="/")
+    return resp
+
+
+# ── Registro Google paso 2 (nombre de inmobiliaria) ──────────────────────────
+
+
+class GoogleCompleteRequest(BaseModel):
+    token: str
+    agency_name: str = Field(min_length=2, max_length=200)
+
+
+@router.post("/google/complete", response_model=TokenResponse)
+async def google_complete(req: GoogleCompleteRequest, response: Response) -> TokenResponse:
+    """Crea la cuenta Google-only con el nombre de inmobiliaria elegido.
+
+    El token es el registration token firmado que emitió el callback (identidad
+    Google ya verificada). Single-use vía Redis — un replay devuelve 400.
+    """
+    try:
+        payload = decode_token(req.token)
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token",
+        ) from exc
+    if payload.get("type") != "g_signup" or not payload.get("jti"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+
+    # 900s = el TTL del token; pasado ese tiempo la key de Redis ya no hace falta.
+    if not await auth_service.mark_jti_used("gsignup", payload["jti"], 900):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+
+    try:
+        account = await auth_service.complete_google_signup(
+            google_sub=str(payload.get("gsub") or ""),
+            email=str(payload.get("email") or ""),
+            name=str(payload.get("name") or ""),
+            agency_name=req.agency_name,
+        )
+    except auth_service.EmailAlreadyRegistered as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered",
+        ) from exc
+    except auth_service.InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token",
+        ) from exc
+
+    tokens = _token_response(account)
+    _set_auth_cookies(response, tokens)
+    return tokens
+
+
+# ── Handoff de sesión landing → dashboard ─────────────────────────────────────
+
+
+class HandoffCodeRequest(BaseModel):
+    # Deep-link opcional dentro del dashboard (ej: "/dashboard/clientes").
+    next: str | None = None
+
+
+@router.post("/handoff-code")
+async def handoff_code(
+    req: HandoffCodeRequest | None = None,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict[str, str]:
+    """Emite un código de un solo uso (60s) para abrir la sesión en el dashboard.
+
+    Lo llama el BFF de la landing con el access token recién emitido. El browser
+    luego navega a GET /auth/handoff?code=... que setea las cookies del dashboard.
+    """
+    next_path = _safe_next_path(req.next if req else None)
+    return {"code": create_handoff_token(account.id, account.tenant_id, account.role, next_path)}
+
+
+@router.get("/handoff", include_in_schema=False)
+async def handoff(code: str | None = Query(default=None)) -> RedirectResponse:
+    """Canjea el código de handoff: setea cookies en el origen del dashboard.
+
+    Single-use (Redis SETNX, fail-closed) + recarga la cuenta fresca de la DB
+    (estado/rol actuales, no los del claim). Cualquier fallo → login de la landing
+    con ?error=handoff — nunca un loop contra el dashboard.
+    """
+    def _fail() -> RedirectResponse:
+        return RedirectResponse(
+            f"{_landing_login_url()}?error=handoff", status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    if not code:
+        return _fail()
+    try:
+        payload = decode_token(code)
+    except jwt.InvalidTokenError:
+        return _fail()
+    if payload.get("type") != "handoff" or not payload.get("jti"):
+        return _fail()
+
+    # Single-use: 90s > TTL del token (60s); pasado eso la key expira sola.
+    if not await auth_service.mark_jti_used("handoff", payload["jti"], 90):
+        return _fail()
+
+    try:
+        account_id = UUID(payload["sub"])
+    except (KeyError, ValueError, TypeError):
+        return _fail()
+
+    async with async_session_factory() as session:
+        account = await session.scalar(
+            select(TenantAccount).where(TenantAccount.id == account_id)
+        )
+        if account is None:
+            return _fail()
+        tenant = await session.get(Tenant, account.tenant_id)
+        if tenant is not None and tenant.status == "suspended":
+            return _fail()
+
+    tokens = _token_response(account)
+    resp = RedirectResponse(
+        _safe_next_path(payload.get("next")), status_code=status.HTTP_303_SEE_OTHER,
+    )
+    _set_auth_cookies(resp, tokens)
     return resp

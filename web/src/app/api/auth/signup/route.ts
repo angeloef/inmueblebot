@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiPost } from '@/lib/api'
-import { setAuthCookies } from '@/lib/auth'
+import { buildHandoffUrl, setAuthCookies } from '@/lib/auth'
 import { mapAuthError } from '@/lib/errors'
 
 interface SignupResponse {
@@ -15,7 +15,11 @@ export async function POST(req: NextRequest) {
     password: string
     agency_name: string
   }
-  const result = await apiPost<SignupResponse>('/auth/signup', body)
+  const result = await apiPost<SignupResponse>('/auth/signup', {
+    email: body.email,
+    password: body.password,
+    agency_name: body.agency_name,
+  })
 
   if (!result.ok) {
     return NextResponse.json(
@@ -25,5 +29,8 @@ export async function POST(req: NextRequest) {
   }
 
   await setAuthCookies(result.data.access_token, result.data.refresh_token)
-  return NextResponse.json({ ok: true })
+
+  // Handoff: el botón "Continuar al panel" navega directo con sesión abierta.
+  const next = await buildHandoffUrl(result.data.access_token, null)
+  return NextResponse.json({ ok: true, next })
 }

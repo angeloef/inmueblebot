@@ -11,6 +11,7 @@
  *   middleware's job), so it stays valid in a render context.
  */
 import { cookies } from 'next/headers'
+import { apiPost } from './api'
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
@@ -22,6 +23,31 @@ const API_BASE =
   process.env.API_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
   'http://localhost:8000'
+
+// URL que navega el BROWSER (no el server): siempre la pública.
+const PUBLIC_API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.API_URL ??
+  'http://localhost:8000'
+
+/**
+ * Pide un código de handoff (un solo uso, 60s) y arma la URL que abre la sesión
+ * en el dashboard (origen de la API). `next` es un deep-link relativo del
+ * dashboard (ej. "/dashboard/clientes") — el backend lo valida igual.
+ * Devuelve null si el backend no lo pudo emitir (el caller cae al redirect viejo).
+ */
+export async function buildHandoffUrl(
+  accessToken: string,
+  next?: string | null,
+): Promise<string | null> {
+  const result = await apiPost<{ code: string }>(
+    '/auth/handoff-code',
+    { next: next ?? null },
+    accessToken,
+  )
+  if (!result.ok || !result.data?.code) return null
+  return `${PUBLIC_API_BASE}/auth/handoff?code=${encodeURIComponent(result.data.code)}`
+}
 
 function cookieBase() {
   return {

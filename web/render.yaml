@@ -14,6 +14,6 @@ services:
       - key: API_URL
         value: https://inmueblebot-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
-        value: http://localhost:5173   # PLACEHOLDER Fase 4 (dashboard Vite)
+        value: https://inmueblebot-api.onrender.com/dashboard   # fallback si el handoff no se emite
       - key: NEXT_PUBLIC_SITE_URL
         sync: false                      # setear a la URL pública del web tras el 1er deploy

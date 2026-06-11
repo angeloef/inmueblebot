@@ -17,6 +17,11 @@ RUN cd dashboard && npm install
 COPY dashboard/ ./dashboard/
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Login canónico (la landing): usuarios anónimos del dashboard se redirigen acá.
+# Default = landing de producción; overridable por env var en Render. En dev local
+# (npm run dev, sin la env) el dashboard muestra su form de login propio.
+ARG VITE_LOGIN_URL="https://viviendapp-web.onrender.com/login"
+ENV VITE_LOGIN_URL=$VITE_LOGIN_URL
 RUN cd dashboard && npm run build
 # Result: dashboard/dist/
 

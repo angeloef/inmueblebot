@@ -74,6 +74,33 @@ def create_email_token(account_id: UUID, token_type: str, token_version: int | N
 # TTL del state OAuth: el usuario tiene 10 min para completar el flujo en Google.
 _OAUTH_STATE_TTL = timedelta(minutes=10)
 
+# Handoff de sesión landing→dashboard: ventana mínima (un redirect inmediato).
+_HANDOFF_TTL = timedelta(seconds=60)
+
+# Registro Google pendiente: tiempo para tipear el nombre de la inmobiliaria.
+_GOOGLE_SIGNUP_TTL = timedelta(minutes=15)
+
+
+def create_handoff_token(
+    account_id: UUID, tenant_id: UUID, role: str, next_path: str = "/"
+) -> str:
+    """Token de un solo uso que cruza la sesión de la landing al dashboard.
+
+    60s de vida, single-use (jti marcado en Redis al canje). Nunca transporta el
+    refresh token: el canje re-emite cookies frescas en el origen de la API.
+    ``next_path`` es un path relativo ya validado (deep-link del dashboard).
+    """
+    claims = {**_base_claims(account_id, tenant_id, role), "next": next_path}
+    return _encode(claims, _HANDOFF_TTL, "handoff")
+
+
+def create_google_signup_token(google_sub: str, email: str, name: str) -> str:
+    """Registro Google pendiente: identidad ya verificada, falta el nombre de la
+    inmobiliaria. Solo permite CREAR una cuenta (no abre sesión de existentes).
+    Single-use vía jti + Redis en /auth/google/complete."""
+    claims = {"gsub": google_sub, "email": email, "name": name, "jti": uuid4().hex}
+    return _encode(claims, _GOOGLE_SIGNUP_TTL, "g_signup")
+
 
 def create_oauth_state_token(state: str, nonce: str) -> str:
     """Firma un state OAuth (anti-CSRF) que embebe el nonce (anti-replay del id_token).
