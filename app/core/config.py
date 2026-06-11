@@ -84,8 +84,31 @@ class Settings(BaseSettings):
     # === Auth / JWT ===
     JWT_ALGORITHM: str = Field(default="HS256", description="Algoritmo de firma JWT")
     ACCESS_TOKEN_TTL_MIN: int = Field(default=60, description="TTL del access token en minutos")
-    REFRESH_TOKEN_TTL_DAYS: int = Field(default=7, description="TTL del refresh token en días")
+    # 30 días: con la rotación del refresh en cada /auth/refresh, un usuario activo
+    # nunca vuelve a ver el login; uno inactivo 30 días, sí (ventana deslizante).
+    REFRESH_TOKEN_TTL_DAYS: int = Field(default=30, description="TTL del refresh token en días")
     TRIAL_DAYS: int = Field(default=14, description="Días de trial gratis al hacer signup")
+
+    # === Google OAuth (login/registro con Google) ===
+    # Credenciales de un OAuth Client tipo "Web application" en Google Cloud Console,
+    # DISTINTAS de las de Google Calendar. Si quedan vacías, los endpoints /auth/google/*
+    # devuelven 501 y el dashboard no muestra el botón (feature flag implícito).
+    GOOGLE_OAUTH_CLIENT_ID: str = Field(
+        default="", description="OAuth 2.0 Client ID (login con Google)"
+    )
+    GOOGLE_OAUTH_CLIENT_SECRET: str = Field(
+        default="", description="OAuth 2.0 Client Secret (login con Google)"
+    )
+    # Redirect URI absoluta registrada en Google Console. Si queda vacía se deriva de
+    # PUBLIC_API_URL + /api/auth/google/callback. Debe coincidir EXACTO con la consola.
+    GOOGLE_OAUTH_REDIRECT_URI: str = Field(
+        default="", description="Redirect URI del callback OAuth (absoluta)"
+    )
+    # Path relativo (mismo origen) al que se redirige tras un login OAuth exitoso.
+    # Relativo a propósito: evita open-redirect. El SPA del dashboard vive en '/'.
+    GOOGLE_OAUTH_SUCCESS_PATH: str = Field(
+        default="/", description="Path relativo de redirección tras login Google OK"
+    )
     RESEND_API_KEY: Optional[str] = Field(
         default=None,
         description="API key de Resend (email). Si falta, el envío se degrada a no-op.",

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 
@@ -13,19 +14,24 @@ from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_email_token,
+    create_oauth_state_token,
     create_refresh_token,
     decode_token,
     hash_password,
 )
 from app.db.models import Tenant, TenantAccount
 from app.db.session import async_session_factory
-from app.services import auth_service, email_service
+from app.services import auth_service, email_service, google_oauth
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Cookie httpOnly de refresh (par de ACCESS_COOKIE_NAME). El dashboard Vite, mismo
 # origen vía el proxy /api, las usa sin que el JWT toque JS.
 REFRESH_COOKIE_NAME = "vivienda_refresh"
+
+# Cookie httpOnly de corta vida que ata el state OAuth al browser (double-submit
+# anti-CSRF). Solo vive durante el handshake con Google; se borra en el callback.
+OAUTH_STATE_COOKIE_NAME = "vivienda_oauth_state"
 
 
 # ── Request schemas ──────────────────────────────────────────────────────────
@@ -87,6 +93,9 @@ class MeResponse(BaseModel):
     # True cuando el tenant ya conectó su WhatsApp (tiene phone_number_id). El
     # dashboard usa esto para mostrar el placeholder "Conectá tu WhatsApp" (Fase 4.3).
     wa_connected: bool = False
+    # Métodos de login activos en la cuenta: "password" y/o "google". El dashboard lo
+    # usa para sugerir agregar el método faltante (recuperación cruzada).
+    auth_methods: list[str] = []
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,6 +133,16 @@ def _set_auth_cookies(response: Response, tokens: TokenResponse) -> None:
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(ACCESS_COOKIE_NAME, path="/")
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
+
+
+def _auth_methods(account: TenantAccount) -> list[str]:
+    """Métodos de login activos en la cuenta (para recuperación cruzada en el front)."""
+    methods: list[str] = []
+    if account.password_hash:
+        methods.append("password")
+    if account.google_sub:
+        methods.append("google")
+    return methods
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -252,6 +271,7 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
         tenant_status=tenant.status if tenant else None,
         subscription=sub_resp,
         wa_connected=bool(tenant and getattr(tenant, "phone_number_id", None)),
+        auth_methods=_auth_methods(account),
     )
 
 
@@ -328,3 +348,100 @@ async def verify_email(token: str = Query(...)) -> dict[str, bool]:
             account.email_verified_at = datetime.now(timezone.utc)  # noqa: UP017
             await session.commit()
     return {"verified": True}
+
+
+# ── Google OAuth (login/registro con Google) ──────────────────────────────────
+
+
+def _safe_success_path() -> str:
+    """Path relativo de redirect tras OAuth. Relativo y sin '//' → no open-redirect."""
+    p = get_settings().GOOGLE_OAUTH_SUCCESS_PATH or "/"
+    if not p.startswith("/") or p.startswith("//"):
+        return "/"
+    return p
+
+
+def _oauth_error_redirect(reason: str = "oauth") -> RedirectResponse:
+    """Vuelve al dashboard con ?error=... (el front muestra un mensaje, no JSON crudo)."""
+    base = _safe_success_path()
+    sep = "&" if "?" in base else "?"
+    resp = RedirectResponse(f"{base}{sep}error={reason}", status_code=status.HTTP_303_SEE_OTHER)
+    resp.delete_cookie(OAUTH_STATE_COOKIE_NAME, path="/")
+    return resp
+
+
+@router.get("/google/login", include_in_schema=False)
+async def google_login() -> RedirectResponse:
+    """Inicia el flujo OAuth: setea la cookie de state y redirige a Google."""
+    if not google_oauth.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Google login no está configurado",
+        )
+    settings = get_settings()
+    state = uuid4().hex
+    nonce = uuid4().hex
+    state_token = create_oauth_state_token(state, nonce)
+    url = google_oauth.build_authorization_url(state_token)
+
+    resp = RedirectResponse(url, status_code=status.HTTP_302_FOUND)
+    # SameSite=lax: el callback es una navegación top-level GET desde Google, así que
+    # la cookie viaja de vuelta. httpOnly: el JS nunca la ve.
+    resp.set_cookie(
+        OAUTH_STATE_COOKIE_NAME, state_token,
+        max_age=600, httponly=True, secure=settings.is_production,
+        samesite="lax", path="/",
+    )
+    return resp
+
+
+@router.get("/google/callback", include_in_schema=False)
+async def google_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    state_cookie: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE_NAME),  # noqa: B008
+) -> RedirectResponse:
+    """Callback de Google: valida state, canjea code, verifica id_token, abre sesión."""
+    if not google_oauth.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Google login no está configurado",
+        )
+    # El usuario canceló el consentimiento, o faltan parámetros.
+    if error or not code or not state:
+        return _oauth_error_redirect("oauth")
+
+    # Double-submit anti-CSRF: el state de la query debe igualar la cookie del browser.
+    if not state_cookie or state_cookie != state:
+        return _oauth_error_redirect("state")
+    try:
+        payload = decode_token(state_cookie)
+    except jwt.InvalidTokenError:
+        return _oauth_error_redirect("state")
+    if payload.get("type") != "oauth_state":
+        return _oauth_error_redirect("state")
+    nonce = payload.get("nonce", "")
+
+    # Canje del code + verificación del id_token contra las JWKS de Google.
+    try:
+        raw_id_token = await google_oauth.exchange_code(code)
+        claims = google_oauth.verify_id_token(raw_id_token, nonce)
+    except google_oauth.GoogleOAuthError:
+        return _oauth_error_redirect("oauth")
+
+    # Resolución/creación de cuenta + apertura de sesión.
+    try:
+        account = await auth_service.login_or_signup_google(claims)
+    except auth_service.EmailNotVerified:
+        return _oauth_error_redirect("email_unverified")
+    except auth_service.AccountSuspended:
+        return _oauth_error_redirect("suspended")
+    except auth_service.InvalidCredentials:
+        return _oauth_error_redirect("oauth")
+
+    tokens = _token_response(account)
+    resp = RedirectResponse(_safe_success_path(), status_code=status.HTTP_303_SEE_OTHER)
+    _set_auth_cookies(resp, tokens)
+    resp.delete_cookie(OAUTH_STATE_COOKIE_NAME, path="/")
+    return resp

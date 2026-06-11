@@ -71,6 +71,20 @@ def create_email_token(account_id: UUID, token_type: str, token_version: int | N
     return _encode(claims, timedelta(hours=24), token_type)
 
 
+# TTL del state OAuth: el usuario tiene 10 min para completar el flujo en Google.
+_OAUTH_STATE_TTL = timedelta(minutes=10)
+
+
+def create_oauth_state_token(state: str, nonce: str) -> str:
+    """Firma un state OAuth (anti-CSRF) que embebe el nonce (anti-replay del id_token).
+
+    Se envía como parámetro ``state`` a Google y, en paralelo, se setea como cookie
+    httpOnly. En el callback se exige que ambos coincidan (double-submit) y que la
+    firma + exp sean válidos, antes de comparar el nonce contra el id_token.
+    """
+    return _encode({"st": state, "nonce": nonce}, _OAUTH_STATE_TTL, "oauth_state")
+
+
 def decode_token(token: str) -> dict[str, Any]:
     """Decodifica y valida firma+exp. Lanza jwt.ExpiredSignatureError / jwt.InvalidTokenError."""
     settings = get_settings()

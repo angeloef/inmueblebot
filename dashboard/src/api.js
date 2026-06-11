@@ -63,9 +63,13 @@ http.interceptors.response.use(
 // ─── Auth API (Fase 4) ────────────────────────────────────────────────────────
 
 export const authApi = {
-  me:     ()                 => http.get('/auth/me').then(r => r.data),
-  login:  (email, password)  => http.post('/auth/login', { email, password }).then(r => r.data),
-  logout: ()                 => http.post('/auth/logout').then(r => r.data),
+  me:      ()                 => http.get('/auth/me').then(r => r.data),
+  login:   (email, password)  => http.post('/auth/login', { email, password }).then(r => r.data),
+  logout:  ()                 => http.post('/auth/logout').then(r => r.data),
+  refresh: ()                 => http.post('/auth/refresh').then(r => r.data),
+  // Login con Google: navegación top-level (no XHR) hacia el endpoint que redirige
+  // a la pantalla de consentimiento. El callback vuelve con las cookies ya seteadas.
+  googleLoginUrl: ()          => `${API_BASE}/auth/google/login`,
 };
 
 /**
