@@ -7,7 +7,7 @@ const VIVIENDAPP_ARS = 66000
 
 const REASONS = [
   { t: 'Solo 1 de cada 10 es un cliente real',   d: 'Pero igual abrís el WhatsApp, buscás fotos, armás el mensaje y lo mandás. Para cada uno. Todo el día. ViviendApp hace eso solo.' },
-  { t: 'Oportunidades perdidas',                  d: 'Si tardás más de 5 minutos en responder, el cliente se va a la competencia. Y si escribe a las 11 de la noche o el domingo, directamente no hay respuesta. ViviendApp atiende las 24 hs.' },
+  { t: 'Oportunidades perdidas',                  d: 'Si tardás más de 5 minutos en responder, el cliente se va a la competencia. Y si escribe a las 11 de la noche o el domingo, directamente no hay respuesta. ViviendApp atiende las 24 hs, lo unico que tenés que hacer es cargar tus propiedades en el panel y listo.' },
   { t: 'Caos administrativo',                     d: 'Notitas en la pared, paneles desactualizados y visitas perdidas. El seguimiento manual es insostenible.' },
   { t: 'Interrupciones constantes',               d: 'Cada WhatsApp te corta el ritmo de trabajo. Tardás 15 minutos en recuperar la concentración.' },
 ]
