@@ -526,6 +526,10 @@ app.include_router(auth_router)
 from app.api.routes.billing import router as billing_router
 app.include_router(billing_router)
 
+# Team / Seats (invitar usuarios a una inmobiliaria)
+from app.api.routes.team import router as team_router
+app.include_router(team_router)
+
 # Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
 # on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
 # FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
@@ -536,6 +540,7 @@ _api_compat.include_router(admin_router)
 _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(auth_router)
 _api_compat.include_router(billing_router)
+_api_compat.include_router(team_router)
 app.include_router(_api_compat)
 
 # Serve dashboard SPA index.html for root and /dashboard/*

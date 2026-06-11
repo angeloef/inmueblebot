@@ -52,3 +52,19 @@ async def send_password_reset(email: str, token: str) -> bool:
         "Restablecé tu contraseña",
         f'<p>Restablecé tu contraseña: <a href="{url}">{url}</a></p>',
     )
+
+
+async def send_invite_email(to_email: str, agency_name: str, invite_url: str) -> bool:
+    html = (
+        f'<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">'
+        f'<h2 style="color:#155f6f">Te invitaron a {agency_name}</h2>'
+        f'<p>Fuiste invitado/a a unirte al equipo de <b>{agency_name}</b> en ViviendApp.</p>'
+        f'<p>Hacé clic para crear tu cuenta y empezar:</p>'
+        f'<p><a href="{invite_url}" '
+        f'style="display:inline-block;background:#155f6f;color:#fff;padding:12px 24px;'
+        f'border-radius:8px;text-decoration:none;font-weight:600">Aceptar invitación</a></p>'
+        f'<p style="color:#6b7280;font-size:13px">Si no esperabas esta invitación, '
+        f'podés ignorar este email. El enlace vence en 7 días.</p>'
+        f'</div>'
+    )
+    return await _send(to_email, f"Te invitaron a {agency_name} en ViviendApp", html)

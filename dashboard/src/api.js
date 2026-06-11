@@ -1085,3 +1085,45 @@ export const useUpsertIndex = () => {
     },
   });
 };
+
+// ─── Team / Seats ─────────────────────────────────────────────────────────────
+
+const teamApi = {
+  list:   ()              => http.get('/team/members').then(r => r.data),
+  invite: (data)          => http.post('/team/members', data).then(r => r.data),
+  remove: (memberId)      => http.delete(`/team/members/${memberId}`).then(r => r.data),
+};
+
+export const useTeamMembers = () =>
+  useQuery({
+    queryKey: ['team', 'members'],
+    queryFn:  teamApi.list,
+    staleTime: 30_000,
+  });
+
+export const useInviteMember = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: teamApi.invite,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['team', 'members'] }),
+  });
+};
+
+export const useRemoveMember = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: teamApi.remove,
+    onMutate: async (memberId) => {
+      await qc.cancelQueries({ queryKey: ['team', 'members'] });
+      const prev = qc.getQueryData(['team', 'members']);
+      qc.setQueryData(['team', 'members'], (old) =>
+        old ? old.filter(m => String(m.id) !== String(memberId)) : old
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['team', 'members'], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['team', 'members'] }),
+  });
+};

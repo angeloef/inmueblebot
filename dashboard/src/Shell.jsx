@@ -65,6 +65,12 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
             </button>
           ))}
           <div className="sb-section">Sistema</div>
+          {(account?.account?.role === 'owner' || account?.account?.role === 'admin' || account?.account?.role === 'superadmin') && (
+            <button type="button" className={`sb-item ${active === 'equipos' ? 'active' : ''}`} title="Equipos" aria-current={active === 'equipos' ? 'page' : undefined} onClick={() => handleNav('equipos')}>
+              <Icon name="users" size={16} />
+              <span>Equipos</span>
+            </button>
+          )}
           <button type="button" className={`sb-item ${active === 'settings' ? 'active' : ''}`} title="Configuración" aria-current={active === 'settings' ? 'page' : undefined} onClick={() => handleNav('settings')}>
             <Icon name="settings" size={16} />
             <span>Configuración</span>

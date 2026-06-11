@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     # 30 días: con la rotación del refresh en cada /auth/refresh, un usuario activo
     # nunca vuelve a ver el login; uno inactivo 30 días, sí (ventana deslizante).
     REFRESH_TOKEN_TTL_DAYS: int = Field(default=30, description="TTL del refresh token en días")
+    INVITE_TOKEN_TTL_DAYS: int = Field(default=7, description="TTL del token de invitación de equipo en días")
     TRIAL_DAYS: int = Field(default=14, description="Días de trial gratis al hacer signup")
 
     # === Google OAuth (login/registro con Google) ===
