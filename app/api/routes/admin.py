@@ -2592,7 +2592,12 @@ def seed_default_subscription(
         {"tid": DEFAULT_TENANT_ID},
     ).fetchone()
     if existing:
-        return {"status": "already_exists", "id": str(existing[0])}
+        db.execute(
+            text("UPDATE subscriptions SET status = 'active' WHERE tenant_id = :tid"),
+            {"tid": DEFAULT_TENANT_ID},
+        )
+        db.commit()
+        return {"status": "activated", "id": str(existing[0])}
     new_id = str(_uuid.uuid4())
     db.execute(
         text(
