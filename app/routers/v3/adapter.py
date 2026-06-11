@@ -178,12 +178,17 @@ async def _handle_handoff_v3(*, phone: str, bsuid: str | None, result: dict) -> 
     label = result.get("router_label") or ""
     is_handoff = (
         "request_human_assistance" in tools
-        or label in ("v3::emergency", "v3::human-handoff")
+        or label in ("v3::emergency", "v3::human-handoff", "v3::limit-daily", "v3::limit-abuse")
     )
     if not is_handoff:
         return
 
-    reason = "emergencia" if label == "v3::emergency" else "user_requested"
+    reason = {
+        "v3::emergency": "emergencia",
+        "v3::limit-daily": "límite diario de mensajes alcanzado",
+        "v3::limit-abuse": "mensajes fuera de tema/abusivos reiterados",
+        "v3::human-handoff": "user_requested",
+    }.get(label, "user_requested")
     try:
         from app.services.notification_service import notification_service
         await notification_service.handoff_requested(phone=phone, reason=reason)

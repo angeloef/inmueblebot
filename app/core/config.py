@@ -272,6 +272,20 @@ class Settings(BaseSettings):
         description="Minimum judge score (0–1) to accept a response. Below this triggers ONE targeted regeneration.",
     )
 
+    # === V3 Client-side abuse / cost limits ===
+    USER_DAILY_MESSAGE_CAP: int = Field(
+        default=40,
+        description="Max messages a single WhatsApp identity may send per calendar day "
+                    "(tenant timezone) before the bot hands off to a human and pauses. "
+                    "0 disables the daily cap.",
+    )
+    OFFTOPIC_ABUSE_HANDOFF_THRESHOLD: int = Field(
+        default=5,
+        description="Cumulative off-topic + abusive messages from one identity before the "
+                    "bot stops redirecting and escalates to a human (pause + notify). "
+                    "0 disables the abuse-escalation gate.",
+    )
+
     # === Modular Prompts (Feature Flag) ===
     USE_MODULAR_PROMPTS: bool = Field(
         default=True,

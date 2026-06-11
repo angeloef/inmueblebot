@@ -95,6 +95,29 @@ _PHOTO_CTA_ES = (
     "o si preferís te muestro otra opción de la lista. ¿Cómo seguimos?"
 )
 
+# Firm-but-polite nudge for an abusive message that is still UNDER the escalation
+# threshold (a plain off-topic message gets _OUT_OF_SCOPE_RESPONSE instead).
+_ABUSE_REDIRECT_ES = (
+    "Entiendo que puedas estar molesto, pero te pido que mantengamos el respeto. "
+    "Con gusto te ayudo con tu búsqueda: ¿qué tipo de propiedad estás buscando?"
+)
+
+# One-time message when the 5-strike off-topic/abuse escalation fires (bot pauses).
+_ABUSE_HANDOFF_ES = (
+    "Para poder ayudarte mejor, voy a derivar tu consulta a uno de nuestros asesores, "
+    "que se va a comunicar con vos a la brevedad. ¡Gracias por tu comprensión!"
+)
+
+
+def _daily_cap_message(agency: str) -> str:
+    """One-time professional notice when a user hits the daily message cap."""
+    de_agencia = f" de {agency}" if agency else ""
+    return (
+        "Por hoy alcanzaste el límite de mensajes de este asistente automático. "
+        f"Un asesor{de_agencia} va a revisar tu conversación y se va a comunicar con vos "
+        "a la brevedad para ayudarte personalmente. ¡Gracias por tu paciencia! 🙌"
+    )
+
 # Max photos to deliver per request (WhatsApp sends one image per message).
 _MAX_PHOTOS = 4
 
@@ -1060,6 +1083,48 @@ async def run_turn(
             1.0, "v3::emergency", start,
         )
 
+    # Tenant profile (cached) — timezone for the daily cap, agency name for the
+    # limit message. Fetched once here; the emergency path above bypasses it.
+    from app.core.config import get_settings as _get_settings
+    _cfg = _get_settings()
+    try:
+        from app.routers.v3.tenant_profile import load_tenant_profile
+        _profile = await load_tenant_profile(tenant_id)
+        _tz_name = getattr(_profile, "timezone", None) or "America/Argentina/Buenos_Aires"
+        _agency = getattr(_profile, "agency_name", "") or ""
+    except Exception:
+        _tz_name = "America/Argentina/Buenos_Aires"
+        _agency = ""
+
+    # ── Daily message cap (cost-drain protection) ────────────────────────────
+    # Count every processed turn for this identity per calendar day (tenant tz).
+    # Over the cap → one professional handoff message; the adapter pauses the bot
+    # (request_human_assistance / limit label) until the tenant resumes it. The
+    # emergency gate above is intentionally exempt so a safety message is never
+    # throttled. Redis-backed with an in-process floor (survives a Redis outage).
+    _daily_cap = getattr(_cfg, "USER_DAILY_MESSAGE_CAP", 40)
+    if _daily_cap and _daily_cap > 0:
+        try:
+            from app.core.usage_limits import incr_daily_count
+            _count = await incr_daily_count(session_id, _tz_name)
+        except Exception:
+            _count = 0
+        if _count > _daily_cap:
+            logger.info(
+                "[V3] Daily cap hit for {} ({} > {}) — handoff + pause",
+                session_id, _count, _daily_cap,
+            )
+            _cap_msg = _daily_cap_message(_agency)
+            _emit_gate("v3::limit-daily", ["request_human_assistance"], 1.0)
+            await _record_gate_history(belief, user_message, _cap_msg)
+            return _contract(
+                _cap_msg,
+                ["request_human_assistance"],
+                {"images": [], "caption": "", "selected_property_id": belief.selected_property_id,
+                 "search_criteria": belief.search_criteria, "active_intents": list(belief.active_intents)},
+                1.0, "v3::limit-daily", start,
+            )
+
     # Human handoff
     if _is_human_request(user_message):
         logger.info("[V3] Human handoff for {}: {}", session_id, user_message[:80])
@@ -1074,17 +1139,46 @@ async def run_turn(
             1.0, "v3::human-handoff", start,
         )
 
-    # Out of scope
-    if _is_out_of_scope(user_message):
-        logger.info("[V3] Out-of-scope blocked for {}: {}", session_id, user_message[:80])
-        _emit_gate("v3::out-of-scope", [], 1.0)
-        await _record_gate_history(belief, user_message, _OUT_OF_SCOPE_RESPONSE)
+    # ── Off-topic + abuse gate (with N-strike human escalation) ──────────────
+    # Abuse is detected independently of scope (a message can mention "casa" and
+    # still be abusive). Both off-topic and abusive messages increment a cumulative,
+    # lifetime counter (never reset on a valid message — reset only when a tenant
+    # resumes the bot). At the threshold → escalate to a human and pause; under it →
+    # redirect (a firm-but-polite nudge for abuse, the scope reminder otherwise).
+    try:
+        from app.routers.v3.abuse import is_abusive
+        _abusive = is_abusive(user_message)
+    except Exception:
+        _abusive = False
+    _oos = _is_out_of_scope(user_message)
+    if _abusive or _oos:
+        belief.offtopic_abuse_count = getattr(belief, "offtopic_abuse_count", 0) + 1
+        _threshold = getattr(_cfg, "OFFTOPIC_ABUSE_HANDOFF_THRESHOLD", 5)
+        if _threshold and belief.offtopic_abuse_count >= _threshold:
+            logger.info(
+                "[V3] Off-topic/abuse escalation for {} (count={}) — handoff + pause",
+                session_id, belief.offtopic_abuse_count,
+            )
+            _emit_gate("v3::limit-abuse", ["request_human_assistance"], 1.0)
+            await _record_gate_history(belief, user_message, _ABUSE_HANDOFF_ES)
+            return _contract(
+                _ABUSE_HANDOFF_ES,
+                ["request_human_assistance"],
+                {"images": [], "caption": "", "selected_property_id": belief.selected_property_id,
+                 "search_criteria": belief.search_criteria, "active_intents": list(belief.active_intents)},
+                1.0, "v3::limit-abuse", start,
+            )
+        _redirect = _ABUSE_REDIRECT_ES if _abusive else _OUT_OF_SCOPE_RESPONSE
+        _label = "v3::abuse" if _abusive else "v3::out-of-scope"
+        logger.info("[V3] {} for {}: {}", _label, session_id, user_message[:80])
+        _emit_gate(_label, [], 1.0)
+        await _record_gate_history(belief, user_message, _redirect)
         return _contract(
-            _OUT_OF_SCOPE_RESPONSE,
+            _redirect,
             [],
             {"images": [], "caption": "", "selected_property_id": belief.selected_property_id,
              "search_criteria": belief.search_criteria, "active_intents": list(belief.active_intents)},
-            1.0, "v3::out-of-scope", start,
+            1.0, _label, start,
         )
 
     # ── Step 3: Build messages ────────────────────────────────────────────────
@@ -1309,6 +1403,18 @@ async def run_turn(
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v3::{turn.action}"
+    # Scheduling-loop escalation: the FSM gave up coordinating the visit (T-6) and
+    # routed to a human. Re-label as a handoff and surface request_human_assistance so
+    # the adapter pauses the bot + notifies the agency — previously this message was
+    # sent to the user but the bot kept answering (a real escalation gap).
+    try:
+        from app.routers.v3.scheduling.fsm import SchedulingState as _SchedState
+        if fsm_result and getattr(fsm_result, "next_state", None) == _SchedState.HANDOFF:
+            router_label = "v3::human-handoff"
+            if "request_human_assistance" not in tools_used:
+                tools_used.append("request_human_assistance")
+    except Exception:
+        pass
     latency_ms = (time.perf_counter() - start) * 1000
 
     try:

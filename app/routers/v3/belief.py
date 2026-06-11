@@ -55,6 +55,11 @@ class BeliefStateV5(ConversationBeliefState):
     bedrooms_max: Optional[int] = None
     bedrooms_match: Optional[str] = None  # "exact" | "at_least" | "range"
 
+    # Cumulative count of off-topic + abusive messages this session. Drives the
+    # 5-strike human-escalation gate. Never reset on a valid message (lifetime per
+    # the abuse policy); reset to 0 only when a tenant resumes the bot.
+    offtopic_abuse_count: int = 0
+
 
 # ── Delta application ────────────────────────────────────────────────────────
 
@@ -134,6 +139,7 @@ def serialize_v5(belief: BeliefStateV5) -> str:
         "last_intent": belief.last_intent,
         "bedrooms_max": belief.bedrooms_max,
         "bedrooms_match": belief.bedrooms_match,
+        "offtopic_abuse_count": belief.offtopic_abuse_count,
     }
     return json.dumps(data, ensure_ascii=False)
 
@@ -189,6 +195,7 @@ def deserialize_v5(data: str | bytes, session_id: str) -> BeliefStateV5:
         last_intent=d.get("last_intent"),
         bedrooms_max=d.get("bedrooms_max"),
         bedrooms_match=d.get("bedrooms_match"),
+        offtopic_abuse_count=d.get("offtopic_abuse_count", 0),
     )
     return belief
 
@@ -242,6 +249,7 @@ def migrate_v4_to_v5(belief: ConversationBeliefState | None, session_id: str) ->
         last_intent=None,
         bedrooms_max=getattr(belief, "bedrooms_max", None),
         bedrooms_match=getattr(belief, "bedrooms_match", None),
+        offtopic_abuse_count=getattr(belief, "offtopic_abuse_count", 0),
     )
 
 

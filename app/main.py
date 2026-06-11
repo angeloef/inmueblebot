@@ -20,6 +20,16 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info("Starting up")
 
+    # Security guard: without an App Secret the webhook can't verify Meta's HMAC, so
+    # anyone who learns the URL can forge user turns (free LLM spend + DB writes under
+    # any phone). receive_webhook fails OPEN in that case — surface it loudly so it
+    # isn't silently left unprotected in production.
+    if not settings.WHATSAPP_APP_SECRET:
+        logger.warning(
+            "[Security] WHATSAPP_APP_SECRET is NOT set — incoming webhook signatures "
+            "are NOT verified. Set it in the environment to reject forged requests."
+        )
+
     # Table creation is owned by Alembic now (Phase 0a). create_tables() is a no-op;
     # `alembic upgrade head` (Render release command) creates/migrates the schema.
     try:

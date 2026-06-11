@@ -2435,6 +2435,37 @@ async def admin_reply_to_conversation(
     return result
 
 
+async def _reset_user_limits_on_resume(db, conversation_id: _uuid.UUID) -> None:
+    """Clear a user's daily message cap + off-topic/abuse strikes when a tenant
+    resumes the bot, so a previously-capped user gets a fresh allotment immediately
+    instead of being re-paused on their next message. Best-effort, never raises."""
+    from app.db.models import Conversation
+    conv = await db.get(Conversation, conversation_id)
+    session_id = getattr(conv, "session_id", None) if conv else None
+    if not session_id:
+        return
+    try:
+        from app.routers.v3.tenant_profile import load_tenant_profile
+        from app.core.tenancy import resolve_tenant_id
+        prof = await load_tenant_profile(resolve_tenant_id())
+        tz_name = getattr(prof, "timezone", None) or "America/Argentina/Buenos_Aires"
+    except Exception:
+        tz_name = "America/Argentina/Buenos_Aires"
+    try:
+        from app.core.usage_limits import reset_daily
+        await reset_daily(session_id, tz_name)
+    except Exception:
+        pass
+    try:
+        from app.routers.v3.belief import load_belief_v5, save_belief_v5
+        belief = await load_belief_v5(session_id)
+        if getattr(belief, "offtopic_abuse_count", 0):
+            belief.offtopic_abuse_count = 0
+            await save_belief_v5(belief)
+    except Exception:
+        pass
+
+
 @router.patch("/conversations/{conversation_id}/toggle-bot")
 async def admin_toggle_bot(
     conversation_id: str,
@@ -2447,6 +2478,9 @@ async def admin_toggle_bot(
             result = await _toggle(db, _uuid.UUID(conversation_id))
         except ValueError:
             raise HTTPException(status_code=404, detail="Conversation not found")
+        # Resumed (unpaused) → reset the user's client-side limits for a clean restart.
+        if not result.get("bot_paused"):
+            await _reset_user_limits_on_resume(db, _uuid.UUID(conversation_id))
     return result
 
 
