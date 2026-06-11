@@ -44,11 +44,11 @@ it `DONE` here with date + commit hash. Edit ONLY the status table and the log.
 | 21 | P2 | Conversation | DONE | TBD | _persist_search_context now stores _compact_search_summary(res): one "ID:N — Tipo en Zona — $precio" line per property (whole, never char-truncated), spec/prose lines dropped, capped at _MAX_SUMMARY_LINES=12. Falls back to res[:1200] for non-list messages (no-results/progressive-narrowing). Cheaper tokens + clean comparative material. 6 tests in tests/v3/test_compact_search_summary.py. |
 | 22 | P2 | Conversation | DONE | TBD | T-7 availability pre-check is live now that #10 persists scheduling_day/time. Test-only item: 3 tests in tests/v3/test_fsm_availability_precheck.py — taken slot → override + re-ask time (scheduling_time cleared, awaiting=scheduling_time), free slot → no override (slot untouched), already-booked → check skipped. No production change. |
 | 23 | P2 | Quality | DONE | TBD | _format_rag_answer combine-2 path: the top chunk always anchors; a second chunk is combined only if its similarity ≥ _COMBINE_MIN_SIMILARITY (0.60) AND within _COMBINE_MAX_GAP (0.10) of the top — no more splicing a 0.51 tail. Same-source dedupe kept; ≤2 chunks. 6 tests in tests/v3/test_rag_combine_threshold.py. |
-| 24 | P2 | Conversation | TODO | | record safety-gate turns in history (§ backlog #24) |
+| 24 | P2 | Conversation | DONE | TBD | New `_record_gate_history(belief, user_msg, response)` appends `user:`/`assistant:` to belief.history (window-trimmed) + saves, wired into the emergency / human-handoff / out-of-scope gates which return before step-6/8c bookkeeping. Fully defensive (never breaks the gate). reset gate excluded (memory just cleared). 4 tests in tests/v3/test_gate_history_record.py incl. OOS end-to-end through run_turn. |
 | 25 | P2 | Belief | TODO | | add bedrooms_match/bedrooms_max to BeliefDelta + criterios (§4.5) |
 
 ## Counts
-- P0: 6/6 done · P1: 12/12 done · P2: 5/7 done · **Total: 23/25** ✅ all P0+P1 complete
+- P0: 6/6 done · P1: 12/12 done · P2: 6/7 done · **Total: 24/25** ✅ all P0+P1 complete
 
 ## In-progress notes
 _(If a run stops mid-item, record here exactly what was done and what remains, so the next run resumes precisely.)_
@@ -81,3 +81,4 @@ _(append-only; newest last — one line per completed item)_
 - #21 Conversation: compact per-ID search summary lines instead of 1200-char blob — 2026-06-10 TBD
 - #22 Conversation: unit coverage for live FSM T-7 availability pre-check (post-#10) — 2026-06-10 TBD
 - #23 Quality: RAG combine path requires second chunk ≥0.60 and within 0.10 of top — 2026-06-10 TBD
+- #24 Conversation: record emergency/human/OOS gate turns in history (_record_gate_history) — 2026-06-11 TBD

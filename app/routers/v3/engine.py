@@ -915,6 +915,27 @@ async def _resolve_images(belief) -> tuple[list[str], str]:
 
 # ── Emergency tool helper ─────────────────────────────────────────────────────
 
+async def _record_gate_history(belief, user_message: str, response_text: str) -> None:
+    """Append a safety-gate turn to history + persist it (plan #24).
+
+    Emergency/human/out-of-scope gates return BEFORE the normal step-6/8c history
+    bookkeeping, so the next engine turn never saw them — e.g. after an out-of-scope
+    joke the bot would re-greet as if the conversation just started. Record both sides
+    and save. Fully defensive — never breaks the gate response.
+    """
+    try:
+        from app.routers.v3.belief import save_belief_v5
+        from app.core.config import get_settings
+        belief.history.append(f"user: {user_message}")
+        belief.history.append(f"assistant: {response_text}")
+        window = get_settings().HISTORY_WINDOW
+        if len(belief.history) > window:
+            belief.history = belief.history[-window:]
+        await save_belief_v5(belief)
+    except Exception as exc:
+        logger.warning("[V3] Failed to record gate turn in history: {}", str(exc))
+
+
 async def _call_human_assistance(reason: str, message: str) -> str:
     """Call request_human_assistance tool safely. Returns the response string."""
     try:
@@ -1022,6 +1043,7 @@ async def run_turn(
         logger.info("[V3] Emergency handoff for {}: {}", session_id, user_message[:80])
         handoff_text = await _call_human_assistance("emergencia", user_message)
         _emit_gate("v3::emergency", ["request_human_assistance"], 1.0)
+        await _record_gate_history(belief, user_message, handoff_text)
         return _contract(
             handoff_text,
             ["request_human_assistance"],
@@ -1035,6 +1057,7 @@ async def run_turn(
         logger.info("[V3] Human handoff for {}: {}", session_id, user_message[:80])
         handoff_text = await _call_human_assistance("user_requested", user_message)
         _emit_gate("v3::human-handoff", ["request_human_assistance"], 1.0)
+        await _record_gate_history(belief, user_message, handoff_text)
         return _contract(
             handoff_text,
             ["request_human_assistance"],
@@ -1047,6 +1070,7 @@ async def run_turn(
     if _is_out_of_scope(user_message):
         logger.info("[V3] Out-of-scope blocked for {}: {}", session_id, user_message[:80])
         _emit_gate("v3::out-of-scope", [], 1.0)
+        await _record_gate_history(belief, user_message, _OUT_OF_SCOPE_RESPONSE)
         return _contract(
             _OUT_OF_SCOPE_RESPONSE,
             [],
