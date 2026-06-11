@@ -2578,33 +2578,3 @@ async def cleanup_clients(
         "status": "deleted",
         "tables": results,
     }
-
-
-@router.post("/seed-default-subscription")
-def seed_default_subscription(
-    _: object = Depends(require_superadmin),
-    db: Session = Depends(get_db),
-):
-    """Crea suscripción activa para el tenant default (legacy pre-multitenant)."""
-    DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
-    existing = db.execute(
-        text("SELECT id FROM subscriptions WHERE tenant_id = :tid"),
-        {"tid": DEFAULT_TENANT_ID},
-    ).fetchone()
-    if existing:
-        db.execute(
-            text("UPDATE subscriptions SET status = 'active' WHERE tenant_id = :tid"),
-            {"tid": DEFAULT_TENANT_ID},
-        )
-        db.commit()
-        return {"status": "activated", "id": str(existing[0])}
-    new_id = str(_uuid.uuid4())
-    db.execute(
-        text(
-            "INSERT INTO subscriptions (id, tenant_id, provider, status, plan, currency)"
-            " VALUES (:id, :tid, 'manual', 'active', 'legacy', 'ARS')"
-        ),
-        {"id": new_id, "tid": DEFAULT_TENANT_ID},
-    )
-    db.commit()
-    return {"status": "created", "id": new_id}
