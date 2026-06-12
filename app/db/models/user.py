@@ -114,6 +114,14 @@ class User(Base):
         nullable=True
     )
 
+    # Cuándo se envió/encoló el último re-engagement de lead frío (job cold_leads).
+    # Idempotencia one-shot por enfriamiento: solo se re-engancha si last_interaction
+    # avanzó por encima de esta marca (el lead respondió y volvió a enfriarse).
+    cold_reengaged_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     # Relationships
     conversations: Mapped[List["Conversation"]] = relationship(
         back_populates="user",

@@ -348,6 +348,24 @@ class Settings(BaseSettings):
         description="Clave Fernet (base64 urlsafe, 32 bytes) para cifrar wa_access_token. Solo desde secret de Render.",
     )
 
+    # === Scheduler / Jobs engine (Profesional notifications) ===
+    # In-process APScheduler that fires the proactive-notification jobs (visit reminder,
+    # payment due, contracts expiring, weekly report, cold leads). On Render free the web
+    # service sleeps on inactivity and APScheduler will NOT fire while asleep — the
+    # catch-up pass on startup (idempotent, date-based jobs) covers the missed window.
+    ENABLE_SCHEDULER: bool = Field(
+        default=True,
+        description="Arranca el scheduler in-process (APScheduler) en el lifespan. Apagar en tests.",
+    )
+    SCHEDULER_CATCHUP_ON_START: bool = Field(
+        default=True,
+        description="Al arrancar, corre una pasada catch-up de todos los jobs due (cubre el sleep de Render free).",
+    )
+    JOBS_SECRET: Optional[str] = Field(
+        default=None,
+        description="Secret para POST /jobs/run (trigger manual + fallback de cron externo). Si None, el endpoint queda deshabilitado.",
+    )
+
     # === v2.0 Router Feature Flags (ChatbotSerio merge) ===
     USE_V2_ROUTER: bool = Field(default=False, description="Usar el nuevo router S1+S2 de ChatbotSerio. False = router v1.x")
     S1_CONFIDENCE_THRESHOLD: float = Field(default=0.70, description="Umbral de confianza para aceptar match de S1 (regex)")

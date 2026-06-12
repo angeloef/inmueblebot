@@ -10,6 +10,11 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.db.tenant_session import install_tenant_guc_listener
 
+# Module-level handle to the async engine backing ``async_session_factory`` (set by
+# ``get_async_session_factory``). Exposed so tests can dispose the connection pool between
+# event loops — asyncpg connections are bound to the loop that created them.
+async_engine = None
+
 
 def get_async_session_factory():
     """
@@ -18,6 +23,7 @@ def get_async_session_factory():
     Pool config (Phase 1): ``pool_pre_ping`` recycles dead connections; ``pool_reset_on_return``
     rolls back on return so no transaction-local tenant GUC can leak to the next checkout.
     """
+    global async_engine
     settings = get_settings()
     db_url = settings.resolved_database_url
     engine = create_async_engine(
@@ -26,6 +32,7 @@ def get_async_session_factory():
         pool_pre_ping=True,
         pool_reset_on_return="rollback",
     )
+    async_engine = engine
     return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

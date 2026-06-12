@@ -8,6 +8,7 @@ const VIEW_TO_PATH = {
   properties: '/dashboard/propiedades',
   clients:    '/dashboard/clientes',
   cobranzas:  '/dashboard/cobranzas',
+  website:    '/dashboard/sitio-web',
   faqs:       '/dashboard/faqs',
   chats:      '/dashboard/chats',
   documents:  '/dashboard/documentos',
@@ -36,6 +37,7 @@ import FAQs from './FAQs';
 import Chats from './Chats';
 import Config from './Config'
 import Equipos from './Equipos';
+import Website from './Website';
 
 // ── Notification type → destination ─────────────────────────────────────────
 const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
@@ -184,6 +186,8 @@ export default function App() {
           )}
 
           {active === 'cobranzas' && <Cobranzas />}
+
+          {active === 'website' && <Website />}
 
           {active === 'faqs' && <FAQs />}
 

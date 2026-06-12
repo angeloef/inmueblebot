@@ -184,9 +184,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("refresh_known_cities failed: %s", e)
 
+    # ── Scheduler / jobs engine (Profesional proactive notifications) ──
+    # In-process APScheduler + startup catch-up pass. Gated by ENABLE_SCHEDULER.
+    try:
+        from app.workers.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        logger.warning("Scheduler start failed: %s", e)
+
     yield
 
     logger.info("Shutting down")
+    try:
+        from app.workers.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+    except Exception as e:
+        logger.warning("Scheduler shutdown failed: %s", e)
 
 
 from fastapi import FastAPI
@@ -530,6 +543,12 @@ app.include_router(billing_router)
 from app.api.routes.team import router as team_router
 app.include_router(team_router)
 
+from app.api.routes.jobs import router as jobs_router
+app.include_router(jobs_router)
+
+from app.api.routes.site_brief import router as site_brief_router
+app.include_router(site_brief_router)
+
 # Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
 # on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
 # FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
@@ -541,6 +560,8 @@ _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(auth_router)
 _api_compat.include_router(billing_router)
 _api_compat.include_router(team_router)
+_api_compat.include_router(jobs_router)
+_api_compat.include_router(site_brief_router)
 app.include_router(_api_compat)
 
 # Serve dashboard SPA index.html for root and /dashboard/*

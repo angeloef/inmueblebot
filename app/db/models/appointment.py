@@ -92,6 +92,14 @@ class Appointment(Base):
         comment="Notas adicionales de la cita"
     )
 
+    # Marca de cuándo se envió/encoló el recordatorio de visita (24h antes) — idempotencia
+    # del job visit_reminder. NULL = pendiente de recordar.
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Cuándo se envió/encoló el recordatorio de visita 24h (idempotencia del job)"
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

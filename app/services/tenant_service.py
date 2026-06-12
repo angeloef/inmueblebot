@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from app.core.crypto import decrypt_secret, encryption_available
 from app.core.tenancy import default_tenant_id
-from app.db.models.tenant import Tenant
+from app.db.models.tenant import Tenant, TenantSettings
 
 # phone_number_id -> (tenant_id, ts). Short TTL: provisioning is rare, but we don't want a
 # new number to be unroutable for long.
@@ -72,6 +72,62 @@ async def get_tenant(tenant_id: UUID) -> Tenant | None:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(f"[Tenancy] get_tenant failed for {tenant_id}: {exc}")
         return None
+
+
+async def list_active_tenant_ids() -> list[UUID]:
+    """Return ids of every tenant a scheduled job should process.
+
+    A tenant counts as active unless explicitly ``status='disabled'`` (NULL status =
+    legacy/active). The ``tenants`` table is not tenant-scoped, so this reads it directly.
+    """
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            rows = await session.execute(
+                select(Tenant.id).where(
+                    (Tenant.status.is_(None)) | (Tenant.status != "disabled")
+                )
+            )
+            return [r[0] for r in rows.all()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] list_active_tenant_ids failed: {exc}")
+        return []
+
+
+async def get_tenant_setting(tenant_id: UUID, key: str, default: str | None = None) -> str | None:
+    """Read a per-tenant key/value setting (``tenant_settings`` table)."""
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            row = await session.execute(
+                select(TenantSettings.value).where(
+                    TenantSettings.tenant_id == tenant_id,
+                    TenantSettings.key == key,
+                )
+            )
+            value = row.scalar_one_or_none()
+            return value if value is not None else default
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] get_tenant_setting({key}) failed for {tenant_id}: {exc}")
+        return default
+
+
+async def set_tenant_setting(tenant_id: UUID, key: str, value: str | None) -> None:
+    """Upsert a per-tenant key/value setting (``tenant_settings`` table)."""
+    from app.db.session import async_session_factory
+    async with async_session_factory() as session:
+        existing = await session.execute(
+            select(TenantSettings).where(
+                TenantSettings.tenant_id == tenant_id,
+                TenantSettings.key == key,
+            )
+        )
+        row = existing.scalar_one_or_none()
+        if row is None:
+            session.add(TenantSettings(tenant_id=tenant_id, key=key, value=value))
+        else:
+            row.value = value
+        await session.commit()
 
 
 async def get_tenant_access_token(tenant_id: UUID) -> str | None:

@@ -14,8 +14,10 @@ from app.db.models.user_episode import UserEpisode, ZoneStat, SearchFailure
 from app.db.models.tenant_account import TenantAccount
 from app.db.models.tenant_member import TenantMember
 from app.db.models.subscription import Subscription
+from app.db.models.site_brief import SiteBrief
 
 __all__ = [
+    "SiteBrief",
     "Tenant",
     "TenantSettings",
     "User",

@@ -2268,11 +2268,30 @@ async def delete_tenant(tenant_id: str, _: object = Depends(require_superadmin))
 _ALLOWED_TENANT_SETTINGS: dict[str, str] = {
     "active_router": "Router activo para esta inmobiliaria: '' | 'v1' | 'v2' | 'v3'. "
                      "Vacío = usar el valor global de bot_settings.",
+    # Notificaciones automáticas (motor de jobs — planes Profesional).
+    "owner_phone": "WhatsApp del dueño de la inmobiliaria (E.164 sin +). Destino de las "
+                   "alertas operativas: contratos por vencer, ajuste IPC y reporte semanal. "
+                   "Vacío = esas alertas quedan solo en el dashboard.",
+    # Nombres de plantillas HSM aprobadas por evento. Vacío = la notificación se encola al
+    # dashboard pero NO se envía por WhatsApp (gate template-ready). Ver notification_dispatch.
+    "wa_tpl_visit_reminder": "Nombre de la plantilla HSM aprobada para el recordatorio de visita 24h.",
+    "wa_tpl_payment_due": "Nombre de la plantilla HSM aprobada para el recordatorio de pago.",
+    "wa_tpl_contract_expiry": "Nombre de la plantilla HSM aprobada para 'contrato por vencer'.",
+    "wa_tpl_ipc_adjustment": "Nombre de la plantilla HSM aprobada para 'próximo ajuste IPC'.",
+    "wa_tpl_weekly_report": "Nombre de la plantilla HSM aprobada para el reporte semanal.",
+    "wa_tpl_cold_lead": "Nombre de la plantilla HSM aprobada para el re-engagement de leads fríos.",
 }
 
 
 class TenantSettingsUpdate(BaseModel):
     active_router: Optional[str] = None  # "v1" | "v2" | "v3" | "" (inherit global)
+    owner_phone: Optional[str] = None    # WhatsApp del dueño (alertas operativas + reporte)
+    wa_tpl_visit_reminder: Optional[str] = None
+    wa_tpl_payment_due: Optional[str] = None
+    wa_tpl_contract_expiry: Optional[str] = None
+    wa_tpl_ipc_adjustment: Optional[str] = None
+    wa_tpl_weekly_report: Optional[str] = None
+    wa_tpl_cold_lead: Optional[str] = None
 
 
 @router.get("/tenants/{tenant_id}/settings")

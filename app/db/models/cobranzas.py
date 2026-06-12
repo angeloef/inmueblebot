@@ -17,7 +17,7 @@ from sqlalchemy import (
     String, Integer, Float, Date, DateTime, Boolean,
     ForeignKey, Index, UniqueConstraint, func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -106,6 +106,19 @@ class Contract(Base):
         comment="Token del portal público del inquilino (Fase 2)",
     )
 
+    # Idempotencia de alertas operativas (job contract_alerts):
+    # - expiry_alert_sent_at: cuándo se avisó (30 días antes) que el contrato vence. NULL = no avisado.
+    # - ipc_alert_for: período (1er día del mes) del último ajuste IPC para el que se avisó. Evita
+    #   re-avisar el mismo ciclo; al cambiar el próximo ajuste vuelve a disparar.
+    expiry_alert_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Cuándo se envió/encoló el aviso de contrato por vencer (idempotencia)",
+    )
+    ipc_alert_for: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True,
+        comment="Período del ajuste IPC para el que ya se avisó (idempotencia por ciclo)",
+    )
+
     notes: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -189,6 +202,12 @@ class Charge(Base):
     )
     payment_method: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Etapas de recordatorio de pago ya enviadas (job payment_due): subconjunto de
+    # {"pre","due","overdue"}. Idempotencia por etapa — cada cobro recibe cada aviso una vez.
+    reminder_stages: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True,
+        comment="Etapas de recordatorio enviadas: pre | due | overdue (idempotencia por etapa)",
+    )
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

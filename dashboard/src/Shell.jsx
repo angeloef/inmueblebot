@@ -17,6 +17,7 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
     { id: 'properties', icon: 'building', label: 'Propiedades' },
     { id: 'clients',    icon: 'users',    label: 'Clientes' },
     { id: 'cobranzas',  icon: 'money',    label: 'Cobranzas' },
+    { id: 'website',    icon: 'grid',     label: 'Mi sitio web' },
     { id: 'faqs',       icon: 'msg',      label: 'FAQ' },
     { id: 'chats',      icon: 'whatsapp', label: 'Chats' },
   ];

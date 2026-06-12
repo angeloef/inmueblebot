@@ -63,6 +63,7 @@ TENANT_SCOPED_TABLES: frozenset[str] = frozenset({
     "contracts",
     "charges",
     "contract_expenses",
+    "tenant_site_briefs",
 })
 
 
@@ -100,6 +101,34 @@ def resolve_tenant_id() -> UUID:
     an unscoped path always resolves to the existing inmobiliaria.
     """
     return _current_tenant.get() or default_tenant_id()
+
+
+class tenant_scope:
+    """Context manager that pins the current tenant for the enclosed block.
+
+    Used by background jobs that iterate over tenants: each tenant gets its own
+    scoped block so every DB session opened inside is filtered by that tenant's RLS
+    (the GUC listener reads ``resolve_tenant_id()``). Restores the previous tenant on
+    exit so nested/sequential scopes don't leak.
+
+        with tenant_scope(tid):
+            async with async_session_factory() as s: ...
+    """
+
+    __slots__ = ("_tenant_id", "_token")
+
+    def __init__(self, tenant_id: UUID | None) -> None:
+        self._tenant_id = tenant_id
+        self._token: Token | None = None
+
+    def __enter__(self) -> "tenant_scope":
+        self._token = set_current_tenant(self._tenant_id)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._token is not None:
+            reset_current_tenant(self._token)
+            self._token = None
 
 
 def tenant_redis_key(*parts: str) -> str:
