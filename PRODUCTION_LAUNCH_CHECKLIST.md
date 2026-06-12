@@ -61,6 +61,18 @@
 - [ ] Quitar cualquier `MERCADOPAGO_ACCESS_TOKEN` `TEST-`/`APP_USR-` del `.env` **local** (quedó de las pruebas).
 - [ ] `RENDER_KEY` del `.env` local: rotarla/quitarla si ya no se usa.
 
+### 3.1 Límites client-side del bot V3 (ya en `main`, falta config en Render)
+> El código de límites por usuario (anti cost-drain + anti abuso) ya está vivo en `main`.
+> Lo único pendiente es **acción de config en Render** (no código).
+- [ ] **`WHATSAPP_APP_SECRET`** seteado en Render → el webhook verifica la firma HMAC de Meta y
+      **rechaza requests forjados**. Sin este secret el webhook **falla abierto** (cualquiera que
+      conozca la URL puede inyectar turnos falsos = gasto de LLM + escrituras en DB bajo cualquier
+      teléfono). Al arrancar, la app loguea un warning si está vacío.
+- [ ] (Opcional) `USER_DAILY_MESSAGE_CAP` — tope de mensajes por usuario/día antes de handoff a
+      humano + pausa del bot. Default `40`. Setear solo si querés otro valor (`0` lo desactiva).
+- [ ] (Opcional) `OFFTOPIC_ABUSE_HANDOFF_THRESHOLD` — mensajes off-topic/abusivos acumulados antes
+      de escalar a humano + pausa. Default `5`. Setear solo si querés otro valor (`0` lo desactiva).
+
 ---
 
 ## 4. Pendiente de fases siguientes (no bloquean cobrar, sí el producto completo)
@@ -103,6 +115,9 @@ EMAIL_FROM="ViviendApp <no-reply@tudominio.com>"
 PUBLIC_API_URL=https://inmueblebot-api.onrender.com
 PUBLIC_APP_URL=https://viviendapp-web.onrender.com   # o dominio propio
 SECRET_KEY=<fuerte, ya rotado>
+WHATSAPP_APP_SECRET=<app secret de Meta>     # webhook fail-closed (rechaza forjados)
+USER_DAILY_MESSAGE_CAP=40                     # opcional (default 40; 0 = off)
+OFFTOPIC_ABUSE_HANDOFF_THRESHOLD=5            # opcional (default 5; 0 = off)
 
 # Web (Render)
 NEXT_PUBLIC_PLAN_PRICE_ARS=15000
