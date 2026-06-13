@@ -156,7 +156,7 @@ async def _dispatch(tenant_id, user, message) -> DispatchResult:
         Dispatch(
             event=EventType.COLD_LEAD,
             recipient_phone=user.whatsapp_phone or user.bsuid,
-            dashboard_title="Lead frío — re-engagement",
+            dashboard_title="Interesado frío — re-engagement",
             dashboard_body=f"{user.name or user.whatsapp_phone}: sin actividad hace +{COLD_AFTER_DAYS} días",
             wa_text=message,
             dashboard_type="cold_lead",

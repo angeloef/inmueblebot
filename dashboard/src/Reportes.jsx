@@ -56,12 +56,12 @@ function MetricGroups({ m, prev }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <GroupCard title="Embudo y conversión">
-        <Stat label="Leads" value={f.leads} cur={f.leads} prev={pf?.leads} />
+        <Stat label="Interesados" value={f.leads} cur={f.leads} prev={pf?.leads} />
         <Stat label="Visitas agendadas" value={f.visits_scheduled} cur={f.visits_scheduled} prev={pf?.visits_scheduled} />
         <Stat label="Visitas realizadas" value={f.visits_done} cur={f.visits_done} prev={pf?.visits_done} />
         <Stat label="No-show" value={f.no_show} cur={f.no_show} prev={pf?.no_show} inverse />
         <Stat label="Cierres" value={f.closings} cur={f.closings} prev={pf?.closings} />
-        <Stat label="Conv. lead→visita" value={`${f.rates.lead_to_visit}%`} cur={f.rates.lead_to_visit} prev={pf?.rates?.lead_to_visit} suffix="%" />
+        <Stat label="Conv. interesado→visita" value={`${f.rates.lead_to_visit}%`} cur={f.rates.lead_to_visit} prev={pf?.rates?.lead_to_visit} suffix="%" />
         <Stat label="Asistencia" value={`${f.rates.show_rate}%`} cur={f.rates.show_rate} prev={pf?.rates?.show_rate} suffix="%" />
         <Stat label="Cierre/visita" value={`${f.rates.visit_to_close}%`} cur={f.rates.visit_to_close} prev={pf?.rates?.visit_to_close} suffix="%" />
       </GroupCard>
@@ -121,7 +121,7 @@ function BranchComparison({ branches }) {
         <thead>
           <tr style={{ textAlign: 'left', color: 'var(--muted, #6b7280)', fontSize: 12 }}>
             <th style={{ padding: '6px 8px' }}>Sucursal</th>
-            <th style={{ padding: '6px 8px' }}>Leads</th>
+            <th style={{ padding: '6px 8px' }}>Interesados</th>
             <th style={{ padding: '6px 8px' }}>Visitas</th>
             <th style={{ padding: '6px 8px' }}>Cierres</th>
             <th style={{ padding: '6px 8px' }}>% cobrado</th>

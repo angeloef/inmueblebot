@@ -82,7 +82,7 @@ async def export_leads(
     async with async_session_factory() as s:
         rows = (await s.execute(text(sql), params)).all()
 
-    header = ["Sucursal", "Nombre", "WhatsApp", "Email", "Rol", "Lead score",
+    header = ["Sucursal", "Nombre", "WhatsApp", "Email", "Rol", "Puntaje",
               "Presupuesto min", "Presupuesto max", "Fecha alta", "Última actividad"]
     return _csv_response("leads.csv", header, [list(r) for r in rows])
 

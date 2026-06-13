@@ -43,7 +43,7 @@ function buildActivityFeed(events, clients, properties) {
         key: `client-${c.id}`,
         icon: 'users',
         color: 'var(--info-500)',
-        text: <><b>Nuevo lead</b> · {c.name}{c.notes ? ` — ${c.notes.slice(0, 40)}` : ''}</>,
+        text: <><b>Nuevo interesado</b> · {c.name}{c.notes ? ` — ${c.notes.slice(0, 40)}` : ''}</>,
         ts: c._createdAt,
       });
     }
@@ -198,7 +198,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
         <div className="kpi-grid">
           <KpiCard
             primary
-            label="Nuevos leads hoy"
+            label="Nuevos interesados hoy"
             value={newLeads.today}
             delta={leadsDeltaText}
             trend={leadsTrend}
@@ -316,7 +316,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
                 : (
                     <div className="activity-row">
                       <span className="icon"><Icon name="calendar" size={14} style={{ color: 'var(--fg-tertiary)' }} /></span>
-                      <div className="text" style={{ color: 'var(--fg-tertiary)' }}>Sin actividad reciente. Cargá propiedades, leads o citas para ver el historial aquí.</div>
+                      <div className="text" style={{ color: 'var(--fg-tertiary)' }}>Sin actividad reciente. Cargá propiedades, interesados o citas para ver el historial aquí.</div>
                     </div>
                   )
               }
@@ -369,7 +369,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
             </div>
 
             <div className="section-h">
-              <h2>Embudo de leads</h2>
+              <h2>Embudo de interesados</h2>
             </div>
             <div className="surface" style={{ padding: 14 }}>
               {funnel.length > 0
@@ -384,13 +384,13 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
                       </div>
                     </div>
                   ))
-                : <div style={{ color: 'var(--fg-tertiary)', fontSize: 13 }}>Sin leads cargados.</div>
+                : <div style={{ color: 'var(--fg-tertiary)', fontSize: 13 }}>Sin interesados cargados.</div>
               }
               {clients.length > 0 && <ConversionRate converted={convertedCount} total={clients.length} />}
             </div>
 
             <div className="section-h">
-              <h2>Leads recientes</h2>
+              <h2>Interesados recientes</h2>
               <div className="actions">
                 <Button kind="ghost" size="sm" onClick={() => onNav('clients')}>Ver todos →</Button>
               </div>
@@ -421,7 +421,7 @@ export default function Dashboard({ onNav, onOpenEvent, onOpenClient }) {
               }
               {clients.length === 0 && (
                 <div style={{ padding: '16px', color: 'var(--fg-tertiary)', fontSize: 13, textAlign: 'center' }}>
-                  Sin leads cargados.
+                  Sin interesados cargados.
                 </div>
               )}
             </div>

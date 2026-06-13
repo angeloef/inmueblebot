@@ -134,7 +134,7 @@ class NotificationService:
         client = name if name else (f"...{phone[-8:]}" if phone else "?")
         await self.create(
             type=NotifType.LEAD_QUALIFIED,
-            title="Lead calificado",
+            title="Interesado calificado",
             body=f"{client} · score {score}",
             phone=phone,
             metadata={"score": score},
