@@ -966,7 +966,9 @@ def create_property(
         extra_data_dict["place_id"] = data.place_id
 
     prop = Property(
-        id=_next_property_id(db),
+        # id is assigned by the global Postgres sequence (server_default, migration
+        # 0013). Do NOT compute it in Python: a SELECT max(id)+1 runs under RLS and
+        # only sees the current tenant, so it collided on the global PK for new tenants.
         # Tenant scoping: set tenant_id EXPLICITLY to match the GUC the RLS WITH CHECK
         # policy enforces. The model has no server_default, so the ORM would insert
         # tenant_id=NULL otherwise — which RLS rejects ("new row violates row-level
@@ -995,14 +997,6 @@ def create_property(
     _schedule_property_embed(prop.id, getattr(prop, "tenant_id", None), prop.title, prop.description or "")
 
     return _prop_to_dict(prop)
-
-
-def _next_property_id(db: Session) -> int:
-    """Property uses manual integer PK (autoincrement=False). Find the next free ID."""
-    from app.db.models import Property
-    from sqlalchemy import func
-    max_id = db.query(func.max(Property.id)).scalar() or 0
-    return max_id + 1
 
 
 def _schedule_property_embed(prop_id: int, tenant_id, title: str, description: str) -> None:

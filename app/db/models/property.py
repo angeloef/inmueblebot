@@ -5,7 +5,7 @@ Representa inmobiliarias disponibles (venta/alquiler).
 from datetime import datetime
 from typing import Optional, List, Dict
 from uuid import uuid4
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint, func, Text
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint, func, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -18,7 +18,18 @@ class Property(Base):
     __tablename__ = "properties"
 
     # Integer primary key (seeded IDs from JSON data)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, comment="Primary key (seeded integer)")
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=False,
+        # Global sequence (migration 0013) assigns the PK server-side. Sequences
+        # are NOT RLS-scoped, so this is multi-tenant safe — unlike the old
+        # Python SELECT max(id)+1, which only saw the current tenant and collided
+        # on the global PK. With a server_default, SQLAlchemy omits id on INSERT
+        # and fetches the assigned value via RETURNING.
+        server_default=text("nextval('properties_id_seq'::regclass)"),
+        comment="Primary key (global sequence properties_id_seq)",
+    )
 
     # Agency (inmobiliaria) that owns this listing. Nullable during Phase 1 backfill.
     tenant_id: Mapped[Optional[uuid4]] = mapped_column(
