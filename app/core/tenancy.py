@@ -64,6 +64,8 @@ TENANT_SCOPED_TABLES: frozenset[str] = frozenset({
     "charges",
     "contract_expenses",
     "tenant_site_briefs",
+    "documents",
+    "metric_snapshots",
 })
 
 

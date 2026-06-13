@@ -9,6 +9,7 @@ for V3, decision D6) are not blocked: ``plan``/``status`` columns exist now, nul
 """
 
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, func
@@ -26,6 +27,16 @@ class Tenant(Base):
     id: Mapped[uuid4] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid4,
         comment="Primary key UUID (tenant/inmobiliaria id)",
+    )
+
+    # Multi-sucursal (Enterprise): jerarquía de tenants. NULL = tenant raíz (org Enterprise
+    # o inmobiliaria standalone Profesional). Si está seteado, este tenant es una SUCURSAL
+    # cuyo "dueño/org" es parent_tenant_id. La org padre no tiene número Meta propio; cada
+    # sucursal hija sí. RLS org-aware: el GUC=org ve/escribe filas de todas sus hijas.
+    parent_tenant_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=True, index=True,
+        comment="FK al tenant padre (org Enterprise). NULL = tenant raíz/standalone.",
     )
 
     slug: Mapped[str] = mapped_column(

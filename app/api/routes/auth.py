@@ -21,7 +21,7 @@ from app.core.security import (
     decode_token,
     hash_password,
 )
-from app.db.models import Tenant, TenantAccount
+from app.db.models import Subscription, Tenant, TenantAccount
 from app.db.session import async_session_factory
 from app.services import auth_service, email_service, google_oauth
 
@@ -86,6 +86,14 @@ class SubscriptionResponse(BaseModel):
     trial_ends_at: str | None
 
 
+class BranchSummary(BaseModel):
+    """Una sucursal (tenant hijo) para el selector del dueño Enterprise."""
+    id: str
+    name: str
+    slug: str | None = None
+    wa_connected: bool = False
+
+
 class MeResponse(BaseModel):
     account: AccountResponse
     tenant_id: str
@@ -98,6 +106,15 @@ class MeResponse(BaseModel):
     # Métodos de login activos en la cuenta: "password" y/o "google". El dashboard lo
     # usa para sugerir agregar el método faltante (recuperación cruzada).
     auth_methods: list[str] = []
+    # ── Multi-sucursal (Enterprise) ──────────────────────────────────────────
+    # scope: "org" (dueño Enterprise con sucursales), "branch" (gerente de sucursal) o
+    # "single" (inmobiliaria standalone / Profesional). El dashboard lo usa para mostrar el
+    # selector de sucursal + la pestaña Sucursales solo a la org.
+    scope: str = "single"
+    plan: str | None = None                  # plan de la org (raíz de facturación)
+    branches: list[BranchSummary] = []       # poblado solo para scope="org"
+    # Nombre de la sucursal/org para el header (gerente: su sucursal; dueño: su org).
+    org_name: str | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -253,13 +270,46 @@ async def refresh(
 async def me(account: TenantAccount = Depends(get_current_account)) -> MeResponse:  # noqa: B008
     _, tenant, sub = await auth_service.get_account_with_subscription(account.id)
     email_verified = account.email_verified_at is not None
+
+    # ── Multi-sucursal scope (attrs set by get_current_account) ──────────────
+    is_org = bool(getattr(account, "is_org", False))
+    parent_tenant_id = getattr(account, "parent_tenant_id", None)
+    billing_tenant_id = getattr(account, "billing_tenant_id", account.tenant_id)
+    if is_org:
+        scope = "org"
+    elif parent_tenant_id is not None:
+        scope = "branch"
+    else:
+        scope = "single"
+
+    # La suscripción/plan SIEMPRE viven en la raíz de facturación (la org). Para un gerente
+    # de sucursal hay que leer la suscripción del padre, no la de la sucursal (que no tiene).
+    if billing_tenant_id != account.tenant_id:
+        async with async_session_factory() as session:
+            sub = await session.scalar(
+                select(Subscription).where(Subscription.tenant_id == billing_tenant_id)
+            )
+
     sub_resp: SubscriptionResponse | None = None
+    plan: str | None = None
     if sub is not None:
+        plan = sub.plan
         sub_resp = SubscriptionResponse(
             status=sub.status,
             plan=sub.plan,
             trial_ends_at=str(sub.trial_ends_at) if sub.trial_ends_at else None,
         )
+
+    branches: list[BranchSummary] = []
+    if is_org:
+        from app.services.tenant_service import list_branches
+
+        for b in await list_branches(account.tenant_id):
+            branches.append(BranchSummary(
+                id=str(b.id), name=b.display_name, slug=b.slug,
+                wa_connected=bool(getattr(b, "phone_number_id", None)),
+            ))
+
     return MeResponse(
         account=AccountResponse(
             id=str(account.id),
@@ -274,6 +324,10 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
         subscription=sub_resp,
         wa_connected=bool(tenant and getattr(tenant, "phone_number_id", None)),
         auth_methods=_auth_methods(account),
+        scope=scope,
+        plan=plan,
+        branches=branches,
+        org_name=tenant.display_name if tenant else None,
     )
 
 

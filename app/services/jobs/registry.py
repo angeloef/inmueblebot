@@ -10,6 +10,8 @@ from __future__ import annotations
 from app.services.jobs import (
     cold_leads,
     contract_alerts,
+    monthly_report,
+    monthly_snapshot,
     payment_due,
     visit_reminder,
     weekly_report,
@@ -48,6 +50,18 @@ JOBS: list[JobDef] = [
         handler=weekly_report.run,
         cron={"hour": 12, "minute": 45},  # daily; self-dedupes per ISO week (lunes)
         description="Reporte semanal al dueño (leads/visitas/top propiedades/cobranzas).",
+    ),
+    JobDef(
+        name=monthly_snapshot.JOB_NAME,
+        handler=monthly_snapshot.run,
+        cron={"hour": 11, "minute": 30},  # daily; upserts last month's snapshot per sucursal
+        description="Snapshot mensual de KPIs por sucursal (reportes ejecutivos Enterprise).",
+    ),
+    JobDef(
+        name=monthly_report.JOB_NAME,
+        handler=monthly_report.run,
+        cron={"hour": 12, "minute": 55},  # daily; self-dedupes per month (mes anterior)
+        description="Reporte ejecutivo mensual al dueño (consolidado por org).",
     ),
 ]
 

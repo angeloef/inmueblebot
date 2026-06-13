@@ -94,6 +94,86 @@ async def list_active_tenant_ids() -> list[UUID]:
         return []
 
 
+async def list_operational_tenant_ids() -> list[UUID]:
+    """Active tenants that actually OPERATE (leaf tenants) — for per-tenant scheduled jobs.
+
+    Excludes Enterprise org parents (tenants that have ≥1 child sucursal). An org parent has
+    no Meta number nor data of its own, and under org-aware RLS its GUC would expose ALL its
+    branches' rows — so iterating it in a per-tenant job would double-process every child
+    (duplicate reminders). Branches (have a parent) and standalone tenants (no parent, no
+    children) are included.
+    """
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            # Ids that ARE a parent of some other tenant (= org parents to exclude).
+            parents_subq = (
+                select(Tenant.parent_tenant_id)
+                .where(Tenant.parent_tenant_id.is_not(None))
+                .distinct()
+            )
+            rows = await session.execute(
+                select(Tenant.id).where(
+                    ((Tenant.status.is_(None)) | (Tenant.status != "disabled"))
+                    & (Tenant.id.not_in(parents_subq))
+                )
+            )
+            return [r[0] for r in rows.all()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] list_operational_tenant_ids failed: {exc}")
+        return []
+
+
+async def list_root_tenant_ids() -> list[UUID]:
+    """Active ROOT tenants (parent_tenant_id IS NULL) = Enterprise orgs + standalones.
+
+    Used by org-level jobs (e.g. the monthly executive report): a sucursal (child) rolls its
+    data into its org, so only roots get a consolidated report.
+    """
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            rows = await session.execute(
+                select(Tenant.id).where(
+                    Tenant.parent_tenant_id.is_(None)
+                    & ((Tenant.status.is_(None)) | (Tenant.status != "disabled"))
+                )
+            )
+            return [r[0] for r in rows.all()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] list_root_tenant_ids failed: {exc}")
+        return []
+
+
+async def get_child_tenant_ids(parent_id: UUID) -> list[UUID]:
+    """Return the ids of every sucursal (child tenant) under an Enterprise org."""
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            rows = await session.execute(
+                select(Tenant.id).where(Tenant.parent_tenant_id == parent_id)
+            )
+            return [r[0] for r in rows.all()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] get_child_tenant_ids failed for {parent_id}: {exc}")
+        return []
+
+
+async def list_branches(parent_id: UUID) -> list[Tenant]:
+    """Return the full Tenant rows for every sucursal under an org (for selector/CRUD)."""
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            rows = await session.execute(
+                select(Tenant).where(Tenant.parent_tenant_id == parent_id)
+                .order_by(Tenant.display_name)
+            )
+            return list(rows.scalars().all())
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] list_branches failed for {parent_id}: {exc}")
+        return []
+
+
 async def get_tenant_setting(tenant_id: UUID, key: str, default: str | None = None) -> str | None:
     """Read a per-tenant key/value setting (``tenant_settings`` table)."""
     try:

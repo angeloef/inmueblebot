@@ -12,6 +12,8 @@ const VIEW_TO_PATH = {
   faqs:       '/dashboard/faqs',
   chats:      '/dashboard/chats',
   documents:  '/dashboard/documentos',
+  sucursales: '/dashboard/sucursales',
+  reportes:   '/dashboard/reportes',
   equipos:    '/dashboard/equipos',
   settings:   '/dashboard/configuracion',
 };
@@ -38,6 +40,10 @@ import Chats from './Chats';
 import Config from './Config'
 import Equipos from './Equipos';
 import Website from './Website';
+import Sucursales from './Sucursales';
+import Consolidated from './Consolidated';
+import DocumentsView from './DocumentsView';
+import Reportes from './Reportes';
 
 // ── Notification type → destination ─────────────────────────────────────────
 const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
@@ -46,8 +52,12 @@ const NOTIF_CLIENT_TYPES = new Set(['new_lead', 'lead_qualified', 'handoff_reque
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { me, logout } = useAuth();
+  const { me, logout, activeBranch } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  // Dueño de org en modo "Todas las sucursales" (sin sucursal activa) → la Inicio
+  // muestra el consolidado en vez del dashboard de una sola inmobiliaria.
+  const showConsolidated = me?.scope === 'org' && !activeBranch;
 
   const [active, setActive] = useState(
     () => PATH_TO_VIEW[location.pathname] ?? 'dashboard'
@@ -159,7 +169,9 @@ export default function App() {
         <div className="canvas">
 
           {active === 'dashboard' && (
-            <Dashboard onNav={navTo} onOpenEvent={openEvent} onOpenClient={openClient} />
+            showConsolidated
+              ? <Consolidated onNav={navTo} />
+              : <Dashboard onNav={navTo} onOpenEvent={openEvent} onOpenClient={openClient} />
           )}
 
           {active === 'calendar' && (
@@ -193,14 +205,11 @@ export default function App() {
 
           {active === 'chats' && <Chats />}
 
-          {active === 'documents' && (
-            <div className="page-view">
-              <div className="page-h">
-                <h1>Documentos</h1>
-                <div className="sub">Próximamente</div>
-              </div>
-            </div>
-          )}
+          {active === 'documents' && <DocumentsView />}
+
+          {active === 'sucursales' && <Sucursales />}
+
+          {active === 'reportes' && <Reportes />}
 
           {active === 'equipos' && <Equipos />}
 
