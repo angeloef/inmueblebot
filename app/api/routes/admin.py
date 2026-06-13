@@ -2369,6 +2369,7 @@ _ALLOWED_TENANT_SETTINGS: dict[str, str] = {
     "wa_tpl_ipc_adjustment": "Nombre de la plantilla HSM aprobada para 'próximo ajuste IPC'.",
     "wa_tpl_weekly_report": "Nombre de la plantilla HSM aprobada para el reporte semanal.",
     "wa_tpl_cold_lead": "Nombre de la plantilla HSM aprobada para el re-engagement de leads fríos.",
+    "wa_tpl_monthly_report": "Nombre de la plantilla HSM aprobada para el reporte ejecutivo mensual.",
 }
 
 
@@ -2381,6 +2382,7 @@ class TenantSettingsUpdate(BaseModel):
     wa_tpl_ipc_adjustment: Optional[str] = None
     wa_tpl_weekly_report: Optional[str] = None
     wa_tpl_cold_lead: Optional[str] = None
+    wa_tpl_monthly_report: Optional[str] = None
 
 
 @router.get("/tenants/{tenant_id}/settings")

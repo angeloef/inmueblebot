@@ -124,6 +124,27 @@ async def list_operational_tenant_ids() -> list[UUID]:
         return []
 
 
+async def list_root_tenant_ids() -> list[UUID]:
+    """Active ROOT tenants (parent_tenant_id IS NULL) = Enterprise orgs + standalones.
+
+    Used by org-level jobs (e.g. the monthly executive report): a sucursal (child) rolls its
+    data into its org, so only roots get a consolidated report.
+    """
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            rows = await session.execute(
+                select(Tenant.id).where(
+                    Tenant.parent_tenant_id.is_(None)
+                    & ((Tenant.status.is_(None)) | (Tenant.status != "disabled"))
+                )
+            )
+            return [r[0] for r in rows.all()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[Tenancy] list_root_tenant_ids failed: {exc}")
+        return []
+
+
 async def get_child_tenant_ids(parent_id: UUID) -> list[UUID]:
     """Return the ids of every sucursal (child tenant) under an Enterprise org."""
     try:

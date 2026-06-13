@@ -34,6 +34,7 @@ class EventType(str, Enum):
     IPC_ADJUSTMENT = "ipc_adjustment"
     WEEKLY_REPORT = "weekly_report"
     COLD_LEAD = "cold_lead"
+    MONTHLY_REPORT = "monthly_report"
 
 
 class DispatchResult(str, Enum):

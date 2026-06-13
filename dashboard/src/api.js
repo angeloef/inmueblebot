@@ -1265,3 +1265,16 @@ export const useDeleteDocument = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
   });
 };
+
+// ─── Reportes ejecutivos (Enterprise — métricas mensuales) ────────────────────
+
+export const reportsApi = {
+  get:     (period) => http.get('/reports', { params: period ? { period } : {} }).then(r => r.data),
+  periods: ()       => http.get('/reports/periods').then(r => r.data),
+};
+
+export const useReport = (period) =>
+  useQuery({ queryKey: ['reports', period || 'current'], queryFn: () => reportsApi.get(period), staleTime: 60_000 });
+
+export const useReportPeriods = () =>
+  useQuery({ queryKey: ['reports', 'periods'], queryFn: reportsApi.periods, staleTime: 5 * 60_000 });
