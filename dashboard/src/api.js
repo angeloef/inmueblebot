@@ -276,6 +276,7 @@ function toProperty(p) {
     buyer_id:  p.buyer_id ?? null,
     tenant_id: p.tenant_id ?? null,
     refs:      Array.isArray(p.reference_points) ? p.reference_points : [],
+    place_id:  p.place_id ?? '',
     _createdAt: p.created_at ?? null,
   };
 }
@@ -320,6 +321,7 @@ function fromProperty(d) {
                      ? d.images.map(normalizeImgUrl)
                      : (d.images === null ? null : (d.photo ? [normalizeImgUrl(d.photo)] : [])),
     reference_points: Array.isArray(d.refs) ? d.refs.filter(Boolean) : [],
+    place_id: d.place_id || '',
   };
 }
 
@@ -407,12 +409,16 @@ function fromEvent(d) {
 
 // ─── Propiedades ──────────────────────────────────────────────────────────────
 
-const propertyApi = {
+export const propertyApi = {
   list:   ()         => http.get('/admin/properties').then(r => (r.data.properties ?? r.data).map(toProperty)),
   get:    (id)       => http.get(`/admin/properties/${id}`).then(r => toProperty(r.data)),
   create: (data)     => http.post('/admin/properties', fromProperty(data)).then(r => r.data),
   update: (id, data) => http.patch(`/admin/properties/${id}`, fromProperty(data)).then(r => r.data),
   remove: (id)       => http.delete(`/admin/properties/${id}`).then(r => r.data),
+  autocompleteCity: (q) =>
+    http.get('/admin/properties/city-autocomplete', { params: { q } })
+        .then(r => r.data.suggestions ?? [])
+        .catch(() => []),
 };
 
 export const useProperties = () =>

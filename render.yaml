@@ -56,3 +56,7 @@ services:
         sync: false
       - key: GOOGLE_CREDENTIALS_JSON
         sync: false
+      # Google Places (New) — autocompletado de ciudad en el dashboard. Solo server-side.
+      # sync:false ⇒ el valor se pega a mano en el dashboard de Render (placeholder).
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false

@@ -413,6 +413,16 @@ class Settings(BaseSettings):
         description="Google client secrets as JSON string (Render secret file or env var)"
     )
 
+    # === Google Places API (city autocomplete en el dashboard) ===
+    # Server-side ONLY. NUNCA llega al browser: el dashboard llama a nuestro endpoint
+    # /admin/properties/city-autocomplete y la API consulta a Google con esta key.
+    # Si queda None, el endpoint devuelve lista vacía (HTTP 200) y la ciudad sigue
+    # siendo texto libre (degradación elegante, feature aditiva).
+    GOOGLE_PLACES_API_KEY: Optional[str] = Field(
+        default=None,
+        description="API key de Google Places (New). Solo server-side. Sin esto, el autocompletado de ciudad se degrada a texto libre.",
+    )
+
     @property
     def is_production(self) -> bool:
         """Indica si estamos en entorno de producción"""

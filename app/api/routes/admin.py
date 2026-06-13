@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, Response, RedirectResponse
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from app.api.deps import get_current_account, require_active_subscription, require_superadmin
@@ -537,6 +537,16 @@ class PropertyCreate(BaseModel):
     images: Optional[List[str]] = None    # List of image URLs
     category: Optional[str] = None        # 'casa', 'departamento', 'ph', 'terreno' → Property.category
     reference_points: Optional[List[str]] = None  # Puntos de referencia → Property.reference_points
+    place_id: Optional[str] = Field(default=None, max_length=500)  # Google Places place_id → Property.extra_data['place_id']
+
+
+class CityAutocompleteSuggestion(BaseModel):
+    place_id: str
+    description: str
+
+
+class CityAutocompleteResponse(BaseModel):
+    suggestions: List[CityAutocompleteSuggestion] = []
 
 
 class AppointmentCreate(BaseModel):
@@ -678,6 +688,7 @@ def _prop_to_dict(p, include_images: bool = True):
         "buyer_id": extra.get("buyer_id"),
         "tenant_id": extra.get("tenant_id"),
         "reference_points": p.reference_points or [],
+        "place_id": extra.get("place_id") or None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -849,6 +860,31 @@ def list_properties(
     }
 
 
+@router.get("/properties/city-autocomplete", response_model=CityAutocompleteResponse)
+async def city_autocomplete(
+    q: str = Query(default="", max_length=100),
+    _: bool = Depends(require_active_subscription),
+):
+    """Proxy server-side a Google Places (New). La key NUNCA llega al browser.
+
+    Degrada a lista vacía (HTTP 200) si la key no está seteada, q es muy corto,
+    o Google falla — la ciudad sigue siendo texto libre en el dashboard.
+
+    Rate-limit por tenant (60/min) para acotar el gasto de la API de Google:
+    un cliente autenticado no puede dispararla sin límite. Degrada abierto si
+    Redis no está disponible (igual que el resto de los rate limits).
+    """
+    from app.integrations.google_places import autocomplete_cities
+    from app.core.tenancy import resolve_tenant_id
+    from app.core.rate_limiter import rate_limiter
+
+    if not await rate_limiter.check_key(f"places_autocomplete:{resolve_tenant_id()}", 60, 60):
+        return {"suggestions": []}
+
+    suggestions = await autocomplete_cities(q)
+    return {"suggestions": suggestions}
+
+
 @router.get("/properties/{prop_id}/image/{index}")
 def get_property_image(
     prop_id: int,
@@ -925,6 +961,9 @@ def create_property(
         _loc_parts = location.split(", ", 1)
         if len(_loc_parts) > 1 and _loc_parts[1].strip():
             extra_data_dict["zone"] = _loc_parts[1].strip()
+
+    if data.place_id:
+        extra_data_dict["place_id"] = data.place_id
 
     prop = Property(
         id=_next_property_id(db),
@@ -1020,6 +1059,14 @@ def update_property(
     if "city" in updates:
         extra = dict(prop.extra_data or {})
         extra["city"] = updates.pop("city")
+        prop.extra_data = extra
+    if "place_id" in updates:
+        extra = dict(prop.extra_data or {})
+        pid = updates.pop("place_id")
+        if pid:
+            extra["place_id"] = pid
+        else:
+            extra.pop("place_id", None)  # texto libre re-tipeado limpia el place_id viejo
         prop.extra_data = extra
     if "zone" in updates:
         extra = dict(prop.extra_data or {})
