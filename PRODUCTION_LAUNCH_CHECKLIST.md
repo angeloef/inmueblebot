@@ -14,6 +14,9 @@
 - ✅ App MercadoPago "ViviendApp" creada; webhook `subscription_preapproval` apuntando a
   `https://inmueblebot-api.onrender.com/webhooks/mercadopago` (configurado vía MCP).
 - ✅ Validado en sandbox: preapproval `authorized`, cobro recurrente mensual, sin dinero real.
+- ✅ **Notificaciones programadas del plan Profesional** (motor de jobs + 5 recordatorios) y
+  **Sitio web Fase A** (brief + pestaña "Mi sitio web") en `main`. Migraciones 0009→0012 corren
+  solas en el deploy (`preDeployCommand: alembic upgrade head`). Ver §7 para la config de Render.
 
 ---
 
@@ -104,6 +107,51 @@
 
 ---
 
+## 7. Notificaciones programadas del plan Profesional (motor de jobs) ⏰
+> Código en `main`. El motor (APScheduler in-process) arranca con la app. Lo proactivo por
+> WhatsApp está **template-gated**: hasta tener plantillas HSM aprobadas, cada recordatorio
+> **se encola como notificación en el dashboard** y NO se envía por WhatsApp (no rompe nada).
+
+### 7.1 Config en Render (no código)
+- [ ] **Migraciones**: confirmar en los logs del deploy que `alembic upgrade head` aplicó
+      `0009`→`0012` (columnas `reminder_sent_at`, `reminder_stages`, alertas de contrato,
+      `cold_reengaged_at` + tabla `tenant_site_briefs`). Aditivas y seguras (prod ya tiene `notifications`).
+- [ ] **`ENABLE_SCHEDULER`** (default `True`): deja el scheduler corriendo dentro del web service.
+      Ponelo en `False` solo si querés apagar todos los jobs.
+- [ ] **`JOBS_SECRET`**: setealo para habilitar el trigger manual / cron externo
+      (`POST /jobs/run?name=<job>` con header `X-Jobs-Secret`). Sin esta var el endpoint
+      responde **503** (queda deshabilitado, no expuesto).
+- [ ] (Opcional) **`SCHEDULER_CATCHUP_ON_START`** (default `True`): al bootear corre una pasada
+      catch-up de los jobs idempotentes — cubre la ventana que el web service de Render free
+      pierde mientras está dormido.
+
+### 7.2 Caveat Render free (importante para que los recordatorios salgan a tiempo)
+- [ ] El web service de Render **free se duerme** tras ~15 min de inactividad → APScheduler
+      **no dispara dormido**. El catch-up al despertar lo mitiga (jobs idempotentes y por fecha),
+      pero para envíos puntuales (p. ej. el reporte de los lunes) considerá **una de estas**:
+      (a) plan que no duerma, o (b) un **cron externo gratis** (cron-job.org / GitHub Actions)
+      que pegue `POST /jobs/run` cada X min con el `JOBS_SECRET`.
+
+### 7.3 Para que los recordatorios SALGAN por WhatsApp de verdad (no solo dashboard)
+> Requiere plantillas HSM aprobadas por Meta. Hasta entonces, todo queda en el dashboard.
+- [ ] Aprobar en Meta las **plantillas HSM** (una por evento): visita 24h, vencimiento de pago,
+      contrato por vencer, ajuste IPC, reporte semanal, leads fríos.
+- [ ] Por cada inmobiliaria, cargar vía `PATCH /admin/tenants/{id}/settings`:
+      - `wa_tpl_visit_reminder`, `wa_tpl_payment_due`, `wa_tpl_contract_expiry`,
+        `wa_tpl_ipc_adjustment`, `wa_tpl_weekly_report`, `wa_tpl_cold_lead` = nombre de la plantilla aprobada.
+      - **`owner_phone`** = WhatsApp del dueño (E.164 sin `+`): destino de las alertas de contrato/IPC
+        y del reporte semanal. Vacío = esas alertas quedan solo en el dashboard.
+
+### 7.4 Smoke test (post-deploy)
+- [ ] Tras el deploy, revisar la **campana de notificaciones** del dashboard: si hay datos que
+      matcheen (visita en <24h, cobro por vencer, etc.) deberían aparecer recordatorios encolados.
+- [ ] Con `JOBS_SECRET` seteado: `POST /jobs/run?name=payment_due` (header `X-Jobs-Secret`) →
+      responde `200` con el resumen por tenant (`due/queued/sent/…`).
+- [ ] Pestaña **"Mi sitio web"**: completar el brief, "Guardar borrador" y "Enviar al equipo"
+      → status pasa a `submitted` y llega notificación al equipo.
+
+---
+
 ### Variables de entorno — resumen de cambios sandbox → prod
 ```
 # Backend (Render) — PRODUCCIÓN
@@ -118,6 +166,9 @@ SECRET_KEY=<fuerte, ya rotado>
 WHATSAPP_APP_SECRET=<app secret de Meta>     # webhook fail-closed (rechaza forjados)
 USER_DAILY_MESSAGE_CAP=40                     # opcional (default 40; 0 = off)
 OFFTOPIC_ABUSE_HANDOFF_THRESHOLD=5            # opcional (default 5; 0 = off)
+ENABLE_SCHEDULER=true                         # motor de jobs (default true)
+SCHEDULER_CATCHUP_ON_START=true               # catch-up al boot (default true)
+JOBS_SECRET=<secret fuerte>                   # habilita POST /jobs/run (sin esto = 503)
 
 # Web (Render)
 NEXT_PUBLIC_PLAN_PRICE_ARS=15000
