@@ -4,6 +4,7 @@ import { fmtCurrency, fmtTime12 } from './data';
 import { useClients, useProperties, useEvents, useCreateClient, useUpdateClient, useDeleteClient } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
+import DocumentsPanel from './DocumentsPanel';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -163,7 +164,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
           </div>
         </div>
         <div className="tabs" role="tablist" aria-label="Secciones del cliente">
-          {[['overview','Resumen'],['interest','Intereses'],['activity','Actividad']].map(([k,l]) => (
+          {[['overview','Resumen'],['interest','Intereses'],['activity','Actividad'],['docs','Documentos']].map(([k,l]) => (
             <button key={k} role="tab" id={`client-tab-${k}`} aria-controls={`client-tabpanel-${k}`}
                     aria-selected={tab===k} tabIndex={tab===k ? 0 : -1}
                     className={tab===k?'active':''} onClick={()=>setTab(k)}>{l}</button>
@@ -233,6 +234,9 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
               </>
             }
           </div>}
+          {tab === 'docs' && (
+            <DocumentsPanel clientId={client.id} title="Documentos del cliente" />
+          )}
           {tab === 'activity' && <div className="detail-block">
             <h3>Historial ({events.length})</h3>
             {events.length === 0 ? <div className="muted" style={{fontSize:12}}>Sin actividad registrada.</div> : events.map(e => (

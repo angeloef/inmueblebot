@@ -15,8 +15,10 @@ from app.db.models.tenant_account import TenantAccount
 from app.db.models.tenant_member import TenantMember
 from app.db.models.subscription import Subscription
 from app.db.models.site_brief import SiteBrief
+from app.db.models.document import Document
 
 __all__ = [
+    "Document",
     "SiteBrief",
     "Tenant",
     "TenantSettings",

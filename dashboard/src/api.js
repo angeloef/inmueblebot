@@ -1224,3 +1224,44 @@ export const useReassignLead = () => {
     },
   });
 };
+
+// ─── Documentos (Enterprise — adjuntos a clientes/contratos) ──────────────────
+
+export const documentsApi = {
+  list:   (params)  => http.get('/documents', { params }).then(r => r.data),
+  upload: (data)    => http.post('/documents', data).then(r => r.data),
+  remove: (id)      => http.delete(`/documents/${id}`).then(r => r.data),
+  // URL de descarga/visualización (mismo origen, cookie httpOnly se envía sola).
+  downloadUrl: (id) => `${API_BASE}/documents/${id}/download`,
+};
+
+export const useDocuments = ({ clientId, contractId } = {}) =>
+  useQuery({
+    queryKey: ['documents', clientId || null, contractId || null],
+    queryFn: () => documentsApi.list({
+      ...(clientId ? { client_id: clientId } : {}),
+      ...(contractId ? { contract_id: contractId } : {}),
+    }),
+    staleTime: 30_000,
+    enabled: !!(clientId || contractId),
+  });
+
+// Lista global (sin filtro) → todos los documentos del tenant/sucursal vía RLS.
+export const useAllDocuments = () =>
+  useQuery({ queryKey: ['documents', 'all'], queryFn: () => documentsApi.list(), staleTime: 30_000 });
+
+export const useUploadDocument = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: documentsApi.upload,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+};
+
+export const useDeleteDocument = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: documentsApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+};

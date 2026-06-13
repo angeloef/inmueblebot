@@ -41,6 +41,7 @@ import Equipos from './Equipos';
 import Website from './Website';
 import Sucursales from './Sucursales';
 import Consolidated from './Consolidated';
+import DocumentsView from './DocumentsView';
 
 // ── Notification type → destination ─────────────────────────────────────────
 const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
@@ -202,14 +203,7 @@ export default function App() {
 
           {active === 'chats' && <Chats />}
 
-          {active === 'documents' && (
-            <div className="page-view">
-              <div className="page-h">
-                <h1>Documentos</h1>
-                <div className="sub">Próximamente</div>
-              </div>
-            </div>
-          )}
+          {active === 'documents' && <DocumentsView />}
 
           {active === 'sucursales' && <Sucursales />}
 

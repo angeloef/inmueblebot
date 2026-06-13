@@ -8,6 +8,7 @@ import {
   useCreateExpense, useDeleteExpense, useIndices, useUpsertIndex,
 } from './api';
 import { useFocusTrap } from './useFocusTrap';
+import DocumentsPanel from './DocumentsPanel';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -435,6 +436,8 @@ function ContractDrawer({ contractId, onClose, onEdit, onDelete }) {
                   <Button kind="secondary" size="sm" icon="plus" onClick={handleAddExpense} disabled={createExpenseMut.isPending}>Agregar</Button>
                 </div>
               </div>
+
+              <DocumentsPanel contractId={contract.id} title="Documentos del contrato" />
             </Fragment>
           )}
         </div>

@@ -552,6 +552,9 @@ app.include_router(site_brief_router)
 from app.api.routes.org import router as org_router
 app.include_router(org_router)
 
+from app.api.routes.documents import router as documents_router
+app.include_router(documents_router)
+
 # Also expose admin routes at /api/admin/* so the compiled dashboard bundle works
 # on Render (no Nginx proxy). In Docker, Nginx strips /api/ before forwarding to
 # FastAPI; on Render the Python app serves the dashboard directly, so /api/ must
@@ -566,6 +569,7 @@ _api_compat.include_router(team_router)
 _api_compat.include_router(jobs_router)
 _api_compat.include_router(site_brief_router)
 _api_compat.include_router(org_router)
+_api_compat.include_router(documents_router)
 app.include_router(_api_compat)
 
 # Serve dashboard SPA index.html for root and /dashboard/*
