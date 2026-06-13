@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty } from './api';
+import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, propertyApi } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import { useAuth } from './auth';
@@ -509,6 +509,85 @@ function RefsInput({ refs, onChange }) {
   );
 }
 
+function CityAutocomplete({ city, placeId, onChange }) {
+  const [open, setOpen]       = useState(false);
+  const [suggestions, setSug] = useState([]);
+  const [active, setActive]   = useState(-1);
+  const boxRef = React.useRef(null);
+  const debounceRef = React.useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const queryRemote = (text) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!text || text.trim().length < 2) { setSug([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      const res = await propertyApi.autocompleteCity(text.trim());
+      setSug(res);
+      setOpen(res.length > 0);
+      setActive(-1);
+    }, 300);
+  };
+
+  const handleInput = (e) => {
+    const v = e.target.value;
+    onChange(v, '');
+    queryRemote(v);
+  };
+
+  const pick = (s) => {
+    onChange(s.description, s.place_id);
+    setOpen(false);
+    setSug([]);
+  };
+
+  const handleKey = (e) => {
+    if (!open || suggestions.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') { if (active >= 0) { e.preventDefault(); pick(suggestions[active]); } }
+    else if (e.key === 'Escape') { setOpen(false); }
+  };
+
+  return (
+    <div className="field" ref={boxRef} style={{ position: 'relative' }}>
+      <label>Ciudad</label>
+      <input
+        placeholder="Oberá"
+        value={city}
+        onChange={handleInput}
+        onKeyDown={handleKey}
+        onFocus={() => { if (suggestions.length) setOpen(true); }}
+        autoComplete="off"
+      />
+      {open && suggestions.length > 0 && (
+        <ul style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30,
+          margin: '2px 0 0', padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto',
+          background: 'var(--surface, #fff)', border: '1px solid var(--neutral-200, #e5e7eb)',
+          borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.12)',
+        }}>
+          {suggestions.map((s, i) => (
+            <li key={s.place_id}
+              onMouseDown={(e) => { e.preventDefault(); pick(s); }}
+              onMouseEnter={() => setActive(i)}
+              style={{
+                padding: '8px 10px', cursor: 'pointer', fontSize: 14,
+                background: i === active ? 'var(--primary-50, #eff6ff)' : 'transparent',
+              }}>
+              {s.description}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null, saving = false }) {
   const [form, setForm] = useState(() => {
     if (initialData) {
@@ -530,13 +609,14 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
         notes:     initialData.notes     || '',
         photos:    [],
         refs:      initialData.refs || [],
+        place_id:  initialData.place_id || '',
       };
     }
     return {
       addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
       rooms: '2 amb', m2: '', baths: 1, parking: 0,
       price: '', currency: 'ARS', agent: 'M. Pereyra',
-      desc: '', notes: '', photos: [], refs: [],
+      desc: '', notes: '', photos: [], refs: [], place_id: '',
     };
   });
   const [priceDisplay, setPriceDisplay] = useState(() =>
@@ -599,6 +679,7 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       photo,
       images: allImages,
       refs:      form.refs,
+      place_id:  form.place_id,
     });
   };
   return (
@@ -626,10 +707,11 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
               <label>Barrio / zona</label>
               <input placeholder="Belgrano" value={form.neigh} onChange={e => set('neigh', e.target.value)} />
             </div>
-            <div className="field">
-              <label>Ciudad</label>
-              <input placeholder="Oberá" value={form.city} onChange={e => set('city', e.target.value)} />
-            </div>
+            <CityAutocomplete
+              city={form.city}
+              placeId={form.place_id}
+              onChange={(city, placeId) => setForm(f => ({ ...f, city, place_id: placeId }))}
+            />
             <div className="field">
               <label>Código interno</label>
               <input placeholder="Se genera automáticamente" disabled />
