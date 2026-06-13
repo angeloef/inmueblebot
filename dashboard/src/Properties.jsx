@@ -513,8 +513,21 @@ function CityAutocomplete({ city, placeId, onChange }) {
   const [open, setOpen]       = useState(false);
   const [suggestions, setSug] = useState([]);
   const [active, setActive]   = useState(-1);
-  const boxRef = React.useRef(null);
+  const [loading, setLoading] = useState(false);
+  // Coordenadas para el dropdown en position:fixed — escapa el overflow del
+  // .modal-body (que antes lo recortaba y no dejaba ver/scrollear la lista).
+  const [pos, setPos]         = useState(null);
+  const boxRef      = React.useRef(null);
+  const inputRef    = React.useRef(null);
   const debounceRef = React.useRef(null);
+  const reqIdRef    = React.useRef(0);
+
+  const computePos = React.useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ top: r.bottom + 2, left: r.left, width: r.width });
+  }, []);
 
   useEffect(() => {
     const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
@@ -522,15 +535,36 @@ function CityAutocomplete({ city, placeId, onChange }) {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  // Mientras está abierto, reposiciona el dropdown fixed si el modal scrollea o
+  // cambia el tamaño de la ventana (capture:true atrapa el scroll del modal-body).
+  useEffect(() => {
+    if (!open) return;
+    computePos();
+    const onMove = () => computePos();
+    window.addEventListener('resize', onMove);
+    window.addEventListener('scroll', onMove, true);
+    return () => {
+      window.removeEventListener('resize', onMove);
+      window.removeEventListener('scroll', onMove, true);
+    };
+  }, [open, computePos]);
+
   const queryRemote = (text) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!text || text.trim().length < 2) { setSug([]); setOpen(false); return; }
+    const q = (text || '').trim();
+    if (q.length < 2) { setSug([]); setOpen(false); setLoading(false); return; }
+    // Abre el dropdown ya con estado de carga: el backend puede tardar (cold
+    // start de Render + ida a Google), así que la espera tiene que ser visible.
+    setOpen(true);
+    setLoading(true);
+    setActive(-1);
+    const reqId = ++reqIdRef.current;
     debounceRef.current = setTimeout(async () => {
-      const res = await propertyApi.autocompleteCity(text.trim());
+      const res = await propertyApi.autocompleteCity(q);
+      if (reqId !== reqIdRef.current) return;  // respuesta vieja (out-of-order) → ignorar
       setSug(res);
-      setOpen(res.length > 0);
-      setActive(-1);
-    }, 300);
+      setLoading(false);
+    }, 250);
   };
 
   const handleInput = (e) => {
@@ -553,25 +587,33 @@ function CityAutocomplete({ city, placeId, onChange }) {
     else if (e.key === 'Escape') { setOpen(false); }
   };
 
+  const dropdownStyle = {
+    position: 'fixed',
+    top: pos ? pos.top : 0, left: pos ? pos.left : 0, width: pos ? pos.width : 'auto',
+    zIndex: 1000,
+    margin: 0, padding: 0, listStyle: 'none', maxHeight: 240, overflowY: 'auto',
+    background: 'var(--surface, #fff)', border: '1px solid var(--neutral-200, #e5e7eb)',
+    borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.12)',
+  };
+  const hintStyle = { padding: '8px 10px', fontSize: 14, color: 'var(--gray-500, #6b7280)' };
+
   return (
     <div className="field" ref={boxRef} style={{ position: 'relative' }}>
       <label>Ciudad</label>
       <input
+        ref={inputRef}
         placeholder="Oberá"
         value={city}
         onChange={handleInput}
         onKeyDown={handleKey}
-        onFocus={() => { if (suggestions.length) setOpen(true); }}
+        onFocus={() => { if (suggestions.length || loading) setOpen(true); }}
         autoComplete="off"
       />
-      {open && suggestions.length > 0 && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30,
-          margin: '2px 0 0', padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto',
-          background: 'var(--surface, #fff)', border: '1px solid var(--neutral-200, #e5e7eb)',
-          borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.12)',
-        }}>
-          {suggestions.map((s, i) => (
+      {open && pos && (
+        <ul style={dropdownStyle}>
+          {loading && <li style={hintStyle}>Buscando…</li>}
+          {!loading && suggestions.length === 0 && <li style={hintStyle}>Sin resultados</li>}
+          {!loading && suggestions.map((s, i) => (
             <li key={s.place_id}
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
               onMouseEnter={() => setActive(i)}
