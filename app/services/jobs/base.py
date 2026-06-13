@@ -59,10 +59,12 @@ async def for_each_tenant(job_name: str, per_tenant: TenantHandler) -> JobSummar
 
     Errors are isolated per tenant: one inmobiliaria failing never aborts the batch.
     """
-    from app.services.tenant_service import list_active_tenant_ids
+    from app.services.tenant_service import list_operational_tenant_ids
 
     summary = JobSummary(job=job_name)
-    tenant_ids = await list_active_tenant_ids()
+    # Leaf tenants only (sucursales + standalone). Excludes Enterprise org parents so
+    # org-aware RLS doesn't make a parent re-process every child's rows (duplicate sends).
+    tenant_ids = await list_operational_tenant_ids()
     for tid in tenant_ids:
         try:
             with tenant_scope(tid):

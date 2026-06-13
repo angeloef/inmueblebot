@@ -1,9 +1,44 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty } from './api';
+import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
+import { useAuth } from './auth';
+
+/** Bloque "Sucursal" del drawer: solo para el dueño de una org en vista consolidada
+ *  (Todas las sucursales). Permite mover la propiedad a otra sucursal. */
+function ReassignBranchBlock({ propertyId }) {
+  const { me, activeBranch } = useAuth();
+  const isOrgConsolidated = me?.scope === 'org' && !activeBranch;
+  const { data: branches = [] } = useBranches(isOrgConsolidated);
+  const reassign = useReassignProperty();
+  const [target, setTarget] = useState('');
+  if (!isOrgConsolidated || branches.length === 0) return null;
+
+  const move = () => {
+    if (!target) return;
+    reassign.mutate({ propId: propertyId, branchId: target }, {
+      onSuccess: () => { pushToast({ text: 'Propiedad reasignada.', kind: 'success' }); setTarget(''); },
+      onError: (e) => pushToast({ text: e?.response?.data?.detail || 'Error al reasignar.', kind: 'danger' }),
+    });
+  };
+
+  return (
+    <div className="detail-block">
+      <h3>Sucursal</h3>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ flex: 1, minWidth: 180 }}>
+          <option value="">Mover a sucursal…</option>
+          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <Button kind="secondary" size="sm" disabled={!target || reassign.isPending} onClick={move}>
+          {reassign.isPending ? 'Moviendo…' : 'Mover'}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** Devuelve true si el string es una URL de imagen (base64 o http) */
 const isImg = (s) => s && (
@@ -138,6 +173,8 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
               <dt>Código interno</dt><dd className="tabular">IB-{property.id.toUpperCase()}</dd>
             </dl>
           </div>
+
+          <ReassignBranchBlock propertyId={property.id} />
 
           <div className="detail-block">
             <h3>Clientes interesados ({interestedClients.length})</h3>

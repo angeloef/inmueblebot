@@ -25,6 +25,30 @@ export const http = axios.create({
   withCredentials: true,   // envía/recibe las cookies httpOnly de sesión
 });
 
+// ─── Sucursal activa (Enterprise multi-sucursal) ──────────────────────────────
+// El dueño de una org elige "entrar" a una sucursal: ese id viaja en el header
+// X-Branch-Id y el backend scopea TODO el dashboard a ese tenant hijo. Sin sucursal
+// seleccionada (null) → vista consolidada de la org. Persistido en localStorage para
+// sobrevivir recargas. Para gerentes/standalone se ignora (el backend lo descarta).
+const ACTIVE_BRANCH_KEY = 'vivienda_active_branch';
+let _activeBranchId = null;
+try { _activeBranchId = localStorage.getItem(ACTIVE_BRANCH_KEY) || null; } catch { /* SSR/denied */ }
+
+export function getActiveBranchId() { return _activeBranchId; }
+
+export function setActiveBranchId(id) {
+  _activeBranchId = id || null;
+  try {
+    if (_activeBranchId) localStorage.setItem(ACTIVE_BRANCH_KEY, _activeBranchId);
+    else localStorage.removeItem(ACTIVE_BRANCH_KEY);
+  } catch { /* ignore */ }
+}
+
+http.interceptors.request.use((config) => {
+  if (_activeBranchId) config.headers['X-Branch-Id'] = _activeBranchId;
+  return config;
+});
+
 // Refresh single-flight: varios 401 concurrentes comparten un único POST /auth/refresh.
 let _refreshPromise = null;
 function refreshSession() {
@@ -1127,5 +1151,76 @@ export const useRemoveMember = () => {
       if (ctx?.prev) qc.setQueryData(['team', 'members'], ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['team', 'members'] }),
+  });
+};
+
+// ─── Org / Sucursales (Enterprise multi-sucursal) ─────────────────────────────
+
+export const orgApi = {
+  branches:    ()        => http.get('/org/branches').then(r => r.data),
+  summary:     ()        => http.get('/org/summary').then(r => r.data),
+  createBranch:(data)    => http.post('/org/branches', data).then(r => r.data),
+  updateBranch:({ id, ...d }) => http.patch(`/org/branches/${id}`, d).then(r => r.data),
+  createManager:({ branchId, ...d }) => http.post(`/org/branches/${branchId}/manager`, d).then(r => r.data),
+  reassignProperty:({ propId, branchId }) => http.post(`/admin/properties/${propId}/reassign`, { branch_id: branchId }).then(r => r.data),
+  reassignLead:({ leadId, branchId }) => http.post(`/admin/leads/${leadId}/reassign`, { branch_id: branchId }).then(r => r.data),
+};
+
+export const useBranches = (enabled = true) =>
+  useQuery({ queryKey: ['org', 'branches'], queryFn: orgApi.branches, staleTime: 60_000, enabled });
+
+export const useConsolidatedSummary = (enabled = true) =>
+  useQuery({ queryKey: ['org', 'summary'], queryFn: orgApi.summary, staleTime: 30_000, enabled });
+
+export const useCreateBranch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: orgApi.createBranch,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['org', 'branches'] });
+      qc.invalidateQueries({ queryKey: ['org', 'summary'] });
+      qc.invalidateQueries({ queryKey: ['auth', 'me'] });
+    },
+  });
+};
+
+export const useUpdateBranch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: orgApi.updateBranch,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['org', 'branches'] });
+      qc.invalidateQueries({ queryKey: ['auth', 'me'] });
+    },
+  });
+};
+
+export const useCreateManager = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: orgApi.createManager,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['org', 'branches'] }),
+  });
+};
+
+export const useReassignProperty = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: orgApi.reassignProperty,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys?.properties ?? ['properties'] });
+      qc.invalidateQueries({ queryKey: ['org', 'summary'] });
+    },
+  });
+};
+
+export const useReassignLead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: orgApi.reassignLead,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys?.clients ?? ['clients'] });
+      qc.invalidateQueries({ queryKey: ['org', 'summary'] });
+    },
   });
 };

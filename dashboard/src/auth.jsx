@@ -11,7 +11,8 @@
  * 401 no se pudo refrescar, para volver al login sin recargar la página.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { authApi } from './api';
+import { useQueryClient } from '@tanstack/react-query';
+import { authApi, getActiveBranchId, setActiveBranchId } from './api';
 
 // Refresh proactivo: el access token vive 60 min; refrescamos a los 50 para que el
 // usuario nunca tope un 401 visible mientras la pestaña está abierta.
@@ -30,6 +31,10 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [status, setStatus] = useState('loading');
   const [me, setMe] = useState(null);
+  // Sucursal activa (Enterprise): id del tenant hijo al que "entró" el dueño, o null
+  // (vista consolidada). Espejo en React del módulo de api.js (que lo manda en el header).
+  const [activeBranch, setActiveBranch] = useState(() => getActiveBranchId());
+  const queryClient = useQueryClient();
 
   const reconnectTimer = useRef(null);
 
@@ -67,6 +72,26 @@ export function AuthProvider({ children }) {
     return () => { if (reconnectTimer.current) clearTimeout(reconnectTimer.current); };
   }, [loadMe]);
 
+  // Cambiar de sucursal (o volver a "Todas"): persiste el id (header X-Branch-Id en
+  // api.js) y limpia la caché de React Query para que TODO el dashboard se recargue
+  // scopeado al nuevo tenant. id=null → vista consolidada de la org.
+  const selectBranch = useCallback((id) => {
+    setActiveBranchId(id);
+    setActiveBranch(id || null);
+    queryClient.clear();
+  }, [queryClient]);
+
+  // Reconciliación: solo una org puede tener sucursal activa. Si el usuario no es org, o
+  // la sucursal guardada ya no existe, se vuelve a consolidado.
+  useEffect(() => {
+    if (status !== 'authed' || !me) return;
+    const ids = (me.scope === 'org' ? (me.branches || []) : []).map(b => b.id);
+    if (activeBranch && !ids.includes(activeBranch)) {
+      setActiveBranchId(null);
+      setActiveBranch(null);
+    }
+  }, [status, me, activeBranch]);
+
   // El refresh falló (sesión realmente expirada) → volver al login.
   useEffect(() => {
     const onExpired = () => { setMe(null); setStatus('anon'); };
@@ -95,6 +120,8 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try { await authApi.logout(); } catch { /* la sesión local se limpia igual */ }
+    setActiveBranchId(null);
+    setActiveBranch(null);
     setMe(null);
     setStatus('anon');
     // Login canónico en la landing: tras cerrar sesión volvemos allá (si está
@@ -103,6 +130,6 @@ export function AuthProvider({ children }) {
     if (loginUrl) window.location.assign(loginUrl);
   }, []);
 
-  const value = { status, me, login, logout, reload: loadMe };
+  const value = { status, me, login, logout, reload: loadMe, activeBranch, selectBranch };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

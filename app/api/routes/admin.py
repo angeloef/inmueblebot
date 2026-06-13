@@ -4,7 +4,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from app.api.deps import get_current_account, require_active_subscription, require_superadmin
+from app.api.deps import get_current_account, require_active_subscription, require_org, require_superadmin
 from app.db.models import TenantAccount
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
@@ -1094,6 +1094,94 @@ def update_property_status(
     return {"status": "updated", "property_id": prop_id, "new_status": prop.status}
 
 
+# ── Reasignación cross-sucursal (Enterprise multi-sucursal) ─────────────────────
+# El dueño de una org mueve una propiedad/lead de una sucursal a otra. Corre bajo el scope
+# de la ORG (tenant_scope(org_id)); la política RLS org-aware permite ver/escribir filas de
+# cualquier sucursal hija, así que el UPDATE de tenant_id cruza de la sucursal A a la B.
+
+class _ReassignIn(BaseModel):
+    branch_id: str  # destino: id del tenant sucursal (hijo de la org)
+
+
+def _validate_target_branch(account, branch_id: str) -> _uuid.UUID:
+    try:
+        target = _uuid.UUID(branch_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Invalid branch id")
+    if target not in getattr(account, "branch_ids", []):
+        raise HTTPException(status_code=404, detail="Branch not in your org")
+    return target
+
+
+@router.post("/properties/{prop_id}/reassign")
+async def reassign_property(
+    prop_id: int,
+    data: _ReassignIn,
+    account: object = Depends(require_org),
+):
+    """Mueve una propiedad (y sus visitas) a otra sucursal de la misma org."""
+    from sqlalchemy import text as _t
+    from app.core.tenancy import tenant_scope
+
+    target = _validate_target_branch(account, data.branch_id)
+    with tenant_scope(account.org_id):  # GUC=org → RLS org-aware ve/escribe todas las hijas
+        async with _make_async_session() as s:
+            res = await s.execute(
+                _t("UPDATE properties SET tenant_id = :t WHERE id = :id"),
+                {"t": str(target), "id": prop_id},
+            )
+            if res.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Property not found")
+            # Las visitas siguen a la propiedad para no perder visibilidad cruzada.
+            await s.execute(
+                _t("UPDATE appointments SET tenant_id = :t WHERE property_id = :id"),
+                {"t": str(target), "id": prop_id},
+            )
+            await s.commit()
+    return {"status": "reassigned", "property_id": prop_id, "branch_id": str(target)}
+
+
+@router.post("/leads/{lead_id}/reassign")
+async def reassign_lead(
+    lead_id: str,
+    data: _ReassignIn,
+    account: object = Depends(require_org),
+):
+    """Mueve un lead/cliente (con sus conversaciones, mensajes y visitas) a otra sucursal."""
+    from sqlalchemy import text as _t
+    from app.core.tenancy import tenant_scope
+
+    target = _validate_target_branch(account, data.branch_id)
+    try:
+        uid = _uuid.UUID(lead_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Invalid lead id")
+
+    with tenant_scope(account.org_id):
+        async with _make_async_session() as s:
+            res = await s.execute(
+                _t("UPDATE users SET tenant_id = :t WHERE id = :id"),
+                {"t": str(target), "id": str(uid)},
+            )
+            if res.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Lead not found")
+            await s.execute(
+                _t("UPDATE messages SET tenant_id = :t WHERE conversation_id IN "
+                   "(SELECT id FROM conversations WHERE user_id = :id)"),
+                {"t": str(target), "id": str(uid)},
+            )
+            await s.execute(
+                _t("UPDATE conversations SET tenant_id = :t WHERE user_id = :id"),
+                {"t": str(target), "id": str(uid)},
+            )
+            await s.execute(
+                _t("UPDATE appointments SET tenant_id = :t WHERE user_id = :id"),
+                {"t": str(target), "id": str(uid)},
+            )
+            await s.commit()
+    return {"status": "reassigned", "lead_id": str(uid), "branch_id": str(target)}
+
+
 # ── Client-Property Relationship ────────────────────────────────────────────────
 
 @router.post("/properties/{prop_id}/relate-client")
@@ -1944,11 +2032,15 @@ def list_notifications(
     db: Session = Depends(get_db),
     account: TenantAccount = Depends(require_active_subscription),
 ):
-    """Lista notificaciones. ?unread=true filtra solo no leídas."""
+    """Lista notificaciones. ?unread=true filtra solo no leídas.
+
+    El scoping por tenant lo hace RLS sobre el tenant EFECTIVO (la sucursal cuando el
+    dueño 'entra', o el feed agregado de todas las sucursales en modo consolidado vía la
+    política org-aware). Por eso no se filtra ``tenant_id`` explícitamente acá.
+    """
     from sqlalchemy import text as _t
-    tid = str(account.tenant_id)
-    query = "SELECT * FROM notifications WHERE tenant_id = :tid"
-    params = {"tid": tid}
+    query = "SELECT * FROM notifications WHERE 1=1"
+    params: dict = {}
     if unread is True:
         query += " AND read = FALSE"
     elif unread is False:
@@ -1957,8 +2049,7 @@ def list_notifications(
     params["limit"] = limit
     rows = db.execute(_t(query), params).fetchall()
     unread_count = db.execute(
-        _t("SELECT COUNT(*) FROM notifications WHERE read = FALSE AND tenant_id = :tid"),
-        {"tid": tid},
+        _t("SELECT COUNT(*) FROM notifications WHERE read = FALSE"),
     ).scalar()
     return {
         "notifications": [_notif_to_dict(r) for r in rows],
@@ -1976,8 +2067,8 @@ def mark_notification_read(
     """Marca una notificación como leída."""
     from sqlalchemy import text as _t
     result = db.execute(
-        _t("UPDATE notifications SET read = TRUE WHERE id = :id AND tenant_id = :tid"),
-        {"id": notif_id, "tid": str(account.tenant_id)},
+        _t("UPDATE notifications SET read = TRUE WHERE id = :id"),
+        {"id": notif_id},
     )
     db.commit()
     if result.rowcount == 0:
@@ -1993,8 +2084,7 @@ def mark_all_notifications_read(
     """Marca todas las notificaciones como leídas."""
     from sqlalchemy import text as _t
     db.execute(
-        _t("UPDATE notifications SET read = TRUE WHERE tenant_id = :tid AND read = FALSE"),
-        {"tid": str(account.tenant_id)},
+        _t("UPDATE notifications SET read = TRUE WHERE read = FALSE"),
     )
     db.commit()
     return {"status": "ok"}
@@ -2009,8 +2099,8 @@ def delete_notification(
     """Elimina una notificación."""
     from sqlalchemy import text as _t
     result = db.execute(
-        _t("DELETE FROM notifications WHERE id = :id AND tenant_id = :tid"),
-        {"id": notif_id, "tid": str(account.tenant_id)},
+        _t("DELETE FROM notifications WHERE id = :id"),
+        {"id": notif_id},
     )
     db.commit()
     if result.rowcount == 0:
@@ -2026,8 +2116,7 @@ def delete_read_notifications(
     """Elimina todas las notificaciones ya leídas."""
     from sqlalchemy import text as _t
     result = db.execute(
-        _t("DELETE FROM notifications WHERE tenant_id = :tid AND read = TRUE"),
-        {"tid": str(account.tenant_id)},
+        _t("DELETE FROM notifications WHERE read = TRUE"),
     )
     db.commit()
     return {"status": "deleted", "count": result.rowcount}

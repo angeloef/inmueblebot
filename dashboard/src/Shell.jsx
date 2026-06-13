@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Primitives';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications } from './api';
+import { useAuth } from './auth';
 
 // Iniciales para el avatar a partir del nombre o el email.
 function initialsFrom(account) {
@@ -66,6 +67,12 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
             </button>
           ))}
           <div className="sb-section">Sistema</div>
+          {account?.scope === 'org' && (
+            <button type="button" className={`sb-item ${active === 'sucursales' ? 'active' : ''}`} title="Sucursales" aria-current={active === 'sucursales' ? 'page' : undefined} onClick={() => handleNav('sucursales')}>
+              <Icon name="building" size={16} />
+              <span>Sucursales</span>
+            </button>
+          )}
           {(account?.account?.role === 'owner' || account?.account?.role === 'admin' || account?.account?.role === 'superadmin') && (
             <button type="button" className={`sb-item ${active === 'equipos' ? 'active' : ''}`} title="Equipos" aria-current={active === 'equipos' ? 'page' : undefined} onClick={() => handleNav('equipos')}>
               <Icon name="users" size={16} />
@@ -194,6 +201,80 @@ function NotificationPanel({ onClose, onAction }) {
   );
 }
 
+// ── Selector de sucursal (solo dueño de org Enterprise) ───────────────────────
+function BranchSelector() {
+  const { me, activeBranch, selectBranch } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  if (me?.scope !== 'org') return null;
+  const branches = me.branches || [];
+  const current = activeBranch ? branches.find(b => b.id === activeBranch) : null;
+  const label = current ? current.name : 'Todas las sucursales';
+
+  const choose = (id) => { selectBranch(id); setOpen(false); };
+
+  return (
+    <div className="branch-selector" ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, maxWidth: 220 }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        title="Cambiar de sucursal"
+      >
+        <Icon name="building" size={16} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <Icon name="chevronDown" size={14} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="notif-panel"
+          style={{ left: 0, right: 'auto', minWidth: 240, padding: 6 }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={`sb-item ${!activeBranch ? 'active' : ''}`}
+            style={{ width: '100%' }}
+            onClick={() => choose(null)}
+          >
+            <Icon name="grid" size={16} />
+            <span>Todas las sucursales</span>
+          </button>
+          {branches.map(b => (
+            <button
+              key={b.id}
+              type="button"
+              className={`sb-item ${activeBranch === b.id ? 'active' : ''}`}
+              style={{ width: '100%' }}
+              onClick={() => choose(b.id)}
+            >
+              <Icon name="building" size={16} />
+              <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+              <span
+                title={b.wa_connected ? 'WhatsApp conectado' : 'Sin WhatsApp'}
+                style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                         background: b.wa_connected ? 'var(--success-500, #16a34a)' : 'var(--border-300, #d0d5dd)' }}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, account, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -213,6 +294,7 @@ export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, acco
       <button className="tb-menu-btn btn btn-ghost btn-icon" onClick={onMenuToggle} aria-label="Menú">
         <Icon name="menu" size={16} />
       </button>
+      <BranchSelector />
       <div className="tb-spacer" />
       {onToggleTheme && (
         <button
