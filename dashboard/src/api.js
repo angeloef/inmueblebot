@@ -1278,3 +1278,21 @@ export const useReport = (period) =>
 
 export const useReportPeriods = () =>
   useQuery({ queryKey: ['reports', 'periods'], queryFn: reportsApi.periods, staleTime: 5 * 60_000 });
+
+// ─── Exportación CSV (Enterprise) ─────────────────────────────────────────────
+// Descarga vía axios (no <a href>) para que viaje el header X-Branch-Id y el CSV
+// respete el scope de sucursal (consolidado vs. sucursal entrada).
+export async function downloadCsv(dataset, { from, to } = {}) {
+  const params = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const res = await http.get(`/exports/${dataset}.csv`, { params, responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${dataset}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -5,6 +5,7 @@ import { useClients, useProperties, useEvents, useCreateClient, useUpdateClient,
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
+import ExportCsv from './ExportCsv';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -334,7 +335,7 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
           <div className="sub">{clients.length} contactos · {counts.prospect} prospectos activos · {counts.tenant} inquilinos</div>
         </div>
         <div className="page-h-actions">
-          <Button kind="secondary" icon="download" >Exportar</Button>
+          <ExportCsv dataset="leads" label="Exportar" />
           <Button kind="primary" icon="plus" onClick={() => setEditor({ mode: 'create' })}>Nuevo cliente</Button>
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
 } from './api';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
+import ExportCsv from './ExportCsv';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -567,6 +568,7 @@ export default function Cobranzas() {
           <div className="sub">{counts.active} contratos activos · {counts.overdue} con cobros vencidos</div>
         </div>
         <div className="page-h-actions">
+          <ExportCsv dataset="cobranzas" label="Exportar" />
           <Button kind="secondary" icon="activity" onClick={() => setShowIndices(true)}>Índices IPC</Button>
           <Button kind="primary" icon="plus" onClick={() => setEditor({ mode: 'create' })}>Nuevo contrato</Button>
         </div>
