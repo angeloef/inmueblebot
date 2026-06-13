@@ -147,18 +147,24 @@ function TenantForm({ initial, onSubmit, onCancel, busy, isEdit }) {
       <Field label="Nombre visible">
         <input type="text" value={form.display_name} onChange={set('display_name')} placeholder="Inmobiliaria Oberá" maxLength={200} />
       </Field>
-      <Field label="Phone Number ID (Meta)" hint="Clave de ruteo del webhook. Único por inmobiliaria.">
-        <input type="text" value={form.phone_number_id} onChange={set('phone_number_id')} placeholder="1120063544518404" maxLength={64} />
-      </Field>
-      <Field label="WABA ID (Meta)">
-        <input type="text" value={form.waba_id} onChange={set('waba_id')} placeholder="WhatsApp Business Account id" maxLength={64} />
-      </Field>
-      <Field
-        label={isEdit ? 'WhatsApp access token (dejar vacío para no cambiar)' : 'WhatsApp access token'}
-        hint="Se guarda cifrado (Fernet). Nunca se muestra de vuelta."
-      >
-        <input type="password" value={form.wa_access_token} onChange={set('wa_access_token')} placeholder="EAAG…" autoComplete="off" />
-      </Field>
+      {/* Datos de WhatsApp/Meta: solo al EDITAR. Al crear la inmobiliaria no se
+          piden — la conexión de WhatsApp se hace después (p. ej. Embedded Signup). */}
+      {isEdit && (
+        <>
+          <Field label="Phone Number ID (Meta)" hint="Clave de ruteo del webhook. Único por inmobiliaria.">
+            <input type="text" value={form.phone_number_id} onChange={set('phone_number_id')} placeholder="1120063544518404" maxLength={64} />
+          </Field>
+          <Field label="WABA ID (Meta)">
+            <input type="text" value={form.waba_id} onChange={set('waba_id')} placeholder="WhatsApp Business Account id" maxLength={64} />
+          </Field>
+          <Field
+            label="WhatsApp access token (dejar vacío para no cambiar)"
+            hint="Se guarda cifrado (Fernet). Nunca se muestra de vuelta."
+          >
+            <input type="password" value={form.wa_access_token} onChange={set('wa_access_token')} placeholder="EAAG…" autoComplete="off" />
+          </Field>
+        </>
+      )}
       <Field label="Horario de atención">
         <input type="text" value={form.business_hours} onChange={set('business_hours')} placeholder="Lunes a sábado de 9 a 18hs" maxLength={300} />
       </Field>
