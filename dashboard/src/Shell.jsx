@@ -11,6 +11,110 @@ function initialsFrom(account) {
   return (ini || name.slice(0, 2) || '?').toUpperCase();
 }
 
+function roleLabelFromScope(scope) {
+  if (scope === 'org')    return 'Dueño';
+  if (scope === 'branch') return 'Gerente';
+  return 'Titular';
+}
+
+function planLabel(me) {
+  const raw = me?.plan || me?.subscription?.plan || '';
+  if (!raw) return 'Gratis';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function contextLine(me, activeBranch) {
+  const orgName = me?.org_name || me?.tenant_slug || 'Inmobiliaria';
+  const scope = me?.scope;
+  if (scope === 'org') {
+    if (activeBranch) {
+      const b = (me?.branches || []).find(x => x.id === activeBranch);
+      return `Dueño · viendo ${b ? b.name : 'sucursal'}`;
+    }
+    return `Dueño · ${orgName}`;
+  }
+  if (scope === 'branch') return `Gerente · ${orgName}`;
+  return orgName;
+}
+
+function AccountMenu({ onNav }) {
+  const { me, logout, activeBranch, selectBranch } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const account = me;
+  const name = account?.account?.full_name || account?.account?.email || 'Mi cuenta';
+  const email = account?.account?.email || '';
+  const showBackToConsolidated = account?.scope === 'org' && !!activeBranch;
+
+  const goSettings = () => { onNav('settings'); setOpen(false); };
+  const backToConsolidated = () => { selectBranch(null); setOpen(false); };
+  const doLogout = () => { setOpen(false); logout(); };
+
+  return (
+    <div className="acct-wrap" ref={ref}>
+      {open && (
+        <div className="acct-pop" role="dialog" aria-label="Cuenta" onClick={e => e.stopPropagation()}>
+          <div className="acct-pop-head">
+            <span className="av acct-pop-av">{initialsFrom(account)}</span>
+            <div className="acct-pop-id">
+              <b>{name}</b>
+              {email && <span>{email}</span>}
+            </div>
+          </div>
+          <div className="acct-chips">
+            <span className="acct-chip acct-chip-role">{roleLabelFromScope(account?.scope)}</span>
+            <span className="acct-chip acct-chip-plan">{planLabel(account)}</span>
+          </div>
+          <div className="acct-actions">
+            {showBackToConsolidated && (
+              <button type="button" className="sb-item" onClick={backToConsolidated}>
+                <Icon name="chevronLeft" size={16} />
+                <span>Volver al consolidado</span>
+              </button>
+            )}
+            <button type="button" className="sb-item" onClick={goSettings}>
+              <Icon name="settings" size={16} />
+              <span>Configuración</span>
+            </button>
+            <button type="button" className="sb-item" onClick={doLogout}>
+              <Icon name="logout" size={16} />
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        className="sb-bottom acct-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open ? 'true' : 'false'}
+        onClick={() => setOpen(v => !v)}
+        title="Mi cuenta"
+      >
+        <span className="av">{initialsFrom(account)}</span>
+        <div className="who">
+          <b>{name}</b>
+          <span>{contextLine(account, activeBranch)}</span>
+        </div>
+        <Icon name="chevronDown" size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar({ active, onNav, isOpen, onClose, account }) {
   const items = [
     { id: 'dashboard',  icon: 'home',     label: 'Inicio' },
@@ -90,13 +194,7 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
             <span>Configuración</span>
           </button>
         </nav>
-        <div className="sb-bottom">
-          <span className="av">{initialsFrom(account)}</span>
-          <div className="who">
-            <b>{account?.account?.full_name || account?.account?.email || 'Mi cuenta'}</b>
-            <span>{account?.tenant_slug || 'Inmobiliaria'}</span>
-          </div>
-        </div>
+        <AccountMenu onNav={onNav} />
       </aside>
     </>
   );
