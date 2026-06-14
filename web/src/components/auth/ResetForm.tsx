@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import Button from '@/components/ui/Button'
-import Input from '@/components/ui/Input'
+import PasswordInput from '@/components/ui/PasswordInput'
 import FormField from '@/components/ui/FormField'
 import Alert from '@/components/ui/Alert'
 import { validatePassword } from '@/lib/validation'
@@ -77,9 +77,8 @@ export default function ResetForm({ token }: ResetFormProps) {
         htmlFor="password"
         error={passwordError}
       >
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="new-password"
           placeholder="Mínimo 8 caracteres"
           value={password}

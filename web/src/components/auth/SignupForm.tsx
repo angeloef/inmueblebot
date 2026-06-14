@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+import PasswordInput from '@/components/ui/PasswordInput'
 import FormField from '@/components/ui/FormField'
 import Alert from '@/components/ui/Alert'
 import GoogleButton from '@/components/auth/GoogleButton'
@@ -147,9 +148,8 @@ export default function SignupForm() {
       </FormField>
 
       <FormField label="Contraseña" htmlFor="password" error={passwordError}>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="new-password"
           placeholder="Mínimo 8 caracteres"
           value={password}
