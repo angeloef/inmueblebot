@@ -18,6 +18,25 @@ function getInitials(name, email) {
     : source.slice(0, 2).toUpperCase();
 }
 
+const ROLE_LABELS = {
+  owner:      'Propietario',
+  superadmin: 'Propietario',
+  admin:      'Administrador',
+};
+
+function RoleBadge({ role }) {
+  const label = ROLE_LABELS[role];
+  if (!label) return null;
+  return (
+    <span style={{
+      background: '#e0e7ff', color: '#3730a3', borderRadius: 12,
+      padding: '2px 10px', fontSize: 12, fontWeight: 600,
+    }}>
+      {label}
+    </span>
+  );
+}
+
 function StatusBadge({ status }) {
   const map = {
     accepted: { label: 'Activo',    bg: '#d1fae5', color: '#065f46' },
@@ -161,7 +180,8 @@ export default function Equipos() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {members.map((member) => {
             const isMe = member.email === myEmail;
-            const canDelete = !isMe;
+            const isPrivileged = member.role === 'owner' || member.role === 'superadmin';
+            const canDelete = !isMe && !isPrivileged;
             return (
               <div
                 key={member.id}
@@ -195,6 +215,7 @@ export default function Equipos() {
                     {member.email}
                   </div>
                 </div>
+                <RoleBadge role={member.role} />
                 <StatusBadge status={member.status} />
                 {canDelete && (
                   <button

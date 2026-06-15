@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -97,14 +98,48 @@ async def invite_member(
     return member
 
 
-async def list_members(tenant_id: object) -> list[TenantMember]:
+async def list_members(tenant_id: object) -> list[object]:
+    """Miembros del equipo: cuentas reales del tenant (owner/admins) + invitaciones.
+
+    La pestaña Equipos muestra filas de ``TenantMember``, pero el owner (y cualquier
+    ``TenantAccount`` creada fuera del flujo de invitación) no tiene fila de miembro.
+    Sintetizamos una entrada por cada cuenta sin ``TenantMember`` asociado para que
+    aparezcan en el listado con su rol e información.
+    """
     async with async_session_factory() as session:
         res = await session.execute(
             select(TenantMember)
             .where(TenantMember.tenant_id == tenant_id)
             .order_by(TenantMember.created_at.desc())
         )
-        return list(res.scalars().all())
+        members = list(res.scalars().all())
+        linked_account_ids = {m.account_id for m in members if m.account_id is not None}
+
+        acc_res = await session.execute(
+            select(TenantAccount)
+            .where(TenantAccount.tenant_id == tenant_id)
+            .order_by(TenantAccount.created_at.asc())
+        )
+        accounts = list(acc_res.scalars().all())
+
+        synthetic = [
+            SimpleNamespace(
+                id=acc.id,
+                email=acc.email,
+                name=acc.full_name,
+                avatar_color=None,
+                photo_url=None,
+                is_admin=acc.role in ("owner", "admin", "superadmin"),
+                status=MEMBER_ACCEPTED,
+                role=acc.role,
+                created_at=acc.created_at,
+            )
+            for acc in accounts
+            if acc.id not in linked_account_ids
+        ]
+
+        # Cuentas reales primero (owner arriba), luego invitaciones más recientes.
+        return synthetic + members
 
 
 async def remove_member(tenant_id: object, member_id: object, requesting_account_id: object | None = None) -> None:
