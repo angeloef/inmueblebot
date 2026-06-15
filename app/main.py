@@ -584,6 +584,13 @@ app.include_router(_api_compat)
 from fastapi.responses import FileResponse
 import os
 
+# index.html NUNCA debe cachearse: referencia los chunks con hash de /assets/* (que
+# sí son inmutables y se cachean). Si el browser sirve un index.html viejo, apunta a
+# bundles viejos y la pestaña queda "congelada" en una versión anterior hasta un
+# hard-reload. no-store fuerza revalidar siempre y tomar el deploy nuevo al recargar.
+_NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
+
 @app.get("/", include_in_schema=False)
 @app.head("/", include_in_schema=False)
 @app.get("/dashboard", include_in_schema=False)
@@ -591,8 +598,30 @@ import os
 async def serve_dashboard(full_path: str = ""):
     dashboard_index = os.path.join(dashboard_dir, "index.html")
     if os.path.isfile(dashboard_index):
-        return FileResponse(dashboard_index)
+        return FileResponse(dashboard_index, headers=_NO_CACHE)
     return JSONResponse(status_code=404, content={"detail": "Dashboard not built"})
+
+
+# Marca de build derivada del contenido de index.html (cambia en cada deploy porque
+# cambian los hashes de los assets que referencia). Determinística entre réplicas:
+# mismo build → mismo hash. El dashboard la consulta para detectar deploys nuevos y
+# recargarse solo, sin que el usuario tenga que apretar F5.
+_build_version_cache: str | None = None
+
+
+@app.get("/version", include_in_schema=False)
+async def app_version() -> JSONResponse:
+    global _build_version_cache
+    if _build_version_cache is None:
+        import hashlib
+
+        dashboard_index = os.path.join(dashboard_dir, "index.html")
+        try:
+            with open(dashboard_index, "rb") as f:
+                _build_version_cache = hashlib.sha1(f.read()).hexdigest()[:12]  # noqa: S324
+        except OSError:
+            _build_version_cache = "unknown"
+    return JSONResponse({"build": _build_version_cache}, headers=_NO_CACHE)
 
 if __name__ == "__main__":
     import uvicorn
