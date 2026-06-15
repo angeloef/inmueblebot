@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from './auth';
 import { useTeamMembers, useInviteMember, useRemoveMember } from './api';
+import { Button } from './Primitives';
 
 const AVATAR_PALETTE = ['#155f6f', '#3a5fa8', '#6b4d99', '#3d8b4f', '#b07d12'];
 
@@ -83,9 +84,11 @@ export default function Equipos() {
           </p>
         </div>
         {!showForm && (
-          <button className="btn btn-primary" type="button" onClick={() => setShowForm(true)}>
-            + Nuevo usuario
-          </button>
+          <div className="page-h-actions">
+            <Button kind="primary" icon="plus" type="button" onClick={() => setShowForm(true)}>
+              Nuevo usuario
+            </Button>
+          </div>
         )}
       </div>
 
