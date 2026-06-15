@@ -46,6 +46,8 @@ class TeamMemberOut(BaseModel):
     avatar_color: str | None = None
     photo_url: HttpUrl | None = None
     created_at: str
+    phone: str | None = None
+    last_active_at: str | None = None
 
     @classmethod
     def from_member(cls, m: object) -> "TeamMemberOut":
@@ -60,6 +62,8 @@ class TeamMemberOut(BaseModel):
             avatar_color=m.avatar_color,
             photo_url=m.photo_url,
             created_at=str(m.created_at),
+            phone=getattr(m, "phone", None),
+            last_active_at=(str(m.last_active_at) if getattr(m, "last_active_at", None) else None),
         )
 
 

@@ -69,28 +69,78 @@ class BranchOut(BaseModel):
     address: str | None
     wa_connected: bool
     managers: list[str]
+    manager_name: str | None = None
+    phone: str | None = None
+    properties_count: int | None = None
+    active_leads: int | None = None
+    agents_count: int | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-async def _managers_by_branch(branch_ids: list[UUID]) -> dict[UUID, list[str]]:
-    """email list of the login accounts pinned to each branch tenant."""
+async def _managers_by_branch(
+    branch_ids: list[UUID],
+) -> tuple[dict[UUID, list[str]], dict[UUID, str | None]]:
     if not branch_ids:
-        return {}
+        return {}, {}
     async with async_session_factory() as session:
         rows = await session.execute(
-            select(TenantAccount.tenant_id, TenantAccount.email).where(
-                TenantAccount.tenant_id.in_(branch_ids)
+            select(
+                TenantAccount.tenant_id,
+                TenantAccount.email,
+                TenantAccount.full_name,
             )
+            .where(TenantAccount.tenant_id.in_(branch_ids))
+            .order_by(TenantAccount.created_at.asc())
         )
-    out: dict[UUID, list[str]] = {}
-    for tid, email in rows:
-        out.setdefault(tid, []).append(email)
-    return out
+    emails: dict[UUID, list[str]] = {}
+    names: dict[UUID, str | None] = {}
+    for tid, email, full_name in rows:
+        emails.setdefault(tid, []).append(email)
+        if tid not in names and full_name:
+            names[tid] = full_name
+    return emails, names
 
 
-def _branch_out(t: Tenant, managers: list[str]) -> BranchOut:
+async def _branch_stats(branch_id: UUID) -> dict[str, int | None]:
+    stats: dict[str, int | None] = {
+        "properties_count": None,
+        "active_leads": None,
+        "agents_count": None,
+    }
+    try:
+        async with async_session_factory() as s:
+            result = await s.execute(
+                text("SELECT count(*) FROM tenant_accounts WHERE tenant_id = :bid"),
+                {"bid": str(branch_id)},
+            )
+            stats["agents_count"] = result.scalar() or 0
+    except Exception:
+        pass
+    try:
+        with tenant_scope(branch_id):
+            async with async_session_factory() as s:
+                r1 = await s.execute(
+                    text("SELECT count(*) FROM properties WHERE status NOT IN ('sold','rented')")
+                )
+                stats["properties_count"] = r1.scalar() or 0
+                r2 = await s.execute(
+                    text("SELECT count(DISTINCT user_id) FROM conversations WHERE state <> 'closed'")
+                )
+                stats["active_leads"] = r2.scalar() or 0
+    except Exception:
+        pass
+    return stats
+
+
+def _branch_out(
+    t: Tenant,
+    managers: list[str],
+    manager_name: str | None = None,
+    stats: dict | None = None,
+) -> BranchOut:
+    stats = stats or {}
     return BranchOut(
         id=str(t.id),
         name=t.display_name,
@@ -98,8 +148,13 @@ def _branch_out(t: Tenant, managers: list[str]) -> BranchOut:
         timezone=t.timezone,
         business_hours=t.business_hours,
         address=(t.branding or {}).get("address") if t.branding else None,
+        phone=(t.branding or {}).get("phone") if t.branding else None,
         wa_connected=bool(t.phone_number_id),
         managers=managers,
+        manager_name=manager_name,
+        properties_count=stats.get("properties_count"),
+        active_leads=stats.get("active_leads"),
+        agents_count=stats.get("agents_count"),
     )
 
 
@@ -111,8 +166,12 @@ async def list_branches(account: TenantAccount = Depends(require_org)) -> list[B
     from app.services.tenant_service import list_branches as _list
 
     branches = await _list(account.tenant_id)
-    managers = await _managers_by_branch([b.id for b in branches])
-    return [_branch_out(b, managers.get(b.id, [])) for b in branches]
+    emails, names = await _managers_by_branch([b.id for b in branches])
+    result = []
+    for b in branches:
+        stats = await _branch_stats(b.id)
+        result.append(_branch_out(b, emails.get(b.id, []), names.get(b.id), stats))
+    return result
 
 
 @router.post("/branches", response_model=BranchOut, status_code=status.HTTP_201_CREATED)
@@ -172,8 +231,8 @@ async def update_branch(
     except branch_service.BranchError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    managers = (await _managers_by_branch([branch.id])).get(branch.id, [])
-    return _branch_out(branch, managers)
+    emails, names = await _managers_by_branch([branch.id])
+    return _branch_out(branch, emails.get(branch.id, []), names.get(branch.id))
 
 
 @router.post("/branches/{branch_id}/manager", status_code=status.HTTP_201_CREATED)

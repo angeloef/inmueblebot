@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from './auth';
-import { Icon } from './Primitives';
+import { Icon, Button } from './Primitives';
 import { useBranches, useCreateBranch, useCreateManager } from './api';
 
 const FIELD_LABEL = { fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 4 };
@@ -182,41 +182,133 @@ export default function Sucursales() {
           Todavía no tenés sucursales. Creá la primera con "+ Nueva sucursal".
         </p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
-          {branches.map(b => (
-            <div key={b.id} style={CARD}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--surface-2, #f3f4f6)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="building" size={18} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+          {branches.map(b => {
+            const managerName = b.manager_name || b.managers?.[0] || 'Sin gerente asignado';
+            const hasStats = b.properties_count != null || b.active_leads != null || b.agents_count != null;
+            return (
+              <div
+                key={b.id}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-3px)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                  e.currentTarget.style.borderColor = 'var(--accent-100)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                  e.currentTarget.style.borderColor = 'var(--border-default)';
+                }}
+                style={{
+                  background: 'var(--surface-raised)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-xl)',
+                  padding: 18,
+                  boxShadow: 'var(--shadow-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 14,
+                  transition: 'transform 180ms cubic-bezier(.2,.7,.2,1), box-shadow 180ms cubic-bezier(.2,.7,.2,1), border-color 180ms cubic-bezier(.2,.7,.2,1)',
+                }}
+              >
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                  <div style={{
+                    width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+                    background: 'var(--accent-50)', border: '1px solid var(--accent-100)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Icon name="building" size={20} style={{ color: 'var(--accent-600)' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontWeight: 700, fontSize: 16, color: 'var(--fg-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{b.name}</div>
+                  </div>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                    borderRadius: 'var(--radius-pill)', padding: '2px 8px',
+                    fontSize: 11, fontWeight: 600,
+                    background: b.wa_connected ? 'var(--state-success-bg)' : 'var(--state-neutral-bg)',
+                    color: b.wa_connected ? 'var(--state-success-fg)' : 'var(--state-neutral-fg)',
+                    border: `1px solid ${b.wa_connected ? 'var(--state-success-border)' : 'var(--state-neutral-border)'}`,
+                  }}>
+                    <Icon name="whatsapp" size={12} />
+                    {b.wa_connected ? 'Conectado' : 'Sin WhatsApp'}
+                  </span>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</div>
-                  {b.address && <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)' }}>{b.address}</div>}
+
+                {/* Metadata list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13, color: 'var(--fg-secondary)' }}>
+                  {b.address && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon name="mapPin" size={15} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.address}</span>
+                    </div>
+                  )}
+                  {b.business_hours && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon name="clock" size={15} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                      <span>{b.business_hours}</span>
+                    </div>
+                  )}
+                  {b.phone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon name="phone" size={15} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{b.phone}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="user" size={15} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      Gerente: <strong style={{ color: 'var(--fg-primary)', fontWeight: 500 }}>{managerName}</strong>
+                    </span>
+                  </div>
                 </div>
-                <span title={b.wa_connected ? 'WhatsApp conectado' : 'Sin WhatsApp'}
-                      style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
-                               background: b.wa_connected ? '#d1fae5' : '#f3f4f6',
-                               color: b.wa_connected ? '#065f46' : '#6b7280' }}>
-                  {b.wa_connected ? 'WhatsApp OK' : 'Sin WhatsApp'}
-                </span>
+
+                {/* Stats row (only when data available) */}
+                {hasStats && (
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+                    borderTop: '1px solid var(--border-subtle)', paddingTop: 12,
+                  }}>
+                    {[
+                      { n: b.properties_count, label: 'Propiedades', accent: false },
+                      { n: b.active_leads, label: 'Leads activos', accent: true },
+                      { n: b.agents_count, label: 'Agentes', accent: false },
+                    ].map((s, i) => (
+                      <div key={i} style={{ textAlign: 'center' }}>
+                        <div style={{
+                          fontSize: 19, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                          color: s.accent ? 'var(--accent-600)' : 'var(--fg-primary)',
+                        }}>{s.n ?? 0}</div>
+                        <div style={{
+                          fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase',
+                          letterSpacing: '0.04em', color: 'var(--fg-tertiary)', marginTop: 2,
+                        }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                  <Button
+                    kind="primary"
+                    style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => selectBranch(b.id)}
+                  >
+                    Entrar
+                    <Icon name="arrowRight" size={14} style={{ marginLeft: 6 }} />
+                  </Button>
+                  <Button kind="secondary" icon="userPlus" onClick={() => handleAddManager(b)}>
+                    Gerente
+                  </Button>
+                </div>
               </div>
-              {b.business_hours && (
-                <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginBottom: 6 }}>🕑 {b.business_hours}</div>
-              )}
-              <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginBottom: 12 }}>
-                {b.managers?.length ? `Gerentes: ${b.managers.join(', ')}` : 'Sin gerente asignado'}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" style={{ flex: 1 }} onClick={() => selectBranch(b.id)}>
-                  Entrar
-                </button>
-                <button className="btn btn-secondary" type="button" onClick={() => handleAddManager(b)}>
-                  + Gerente
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
