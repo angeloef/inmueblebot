@@ -22,6 +22,7 @@ const ROLE_LABELS = {
   owner:      'Propietario',
   superadmin: 'Propietario',
   admin:      'Administrador',
+  manager:    'Gerente',
 };
 
 function RoleBadge({ role }) {
@@ -181,7 +182,8 @@ export default function Equipos() {
           {members.map((member) => {
             const isMe = member.email === myEmail;
             const isPrivileged = member.role === 'owner' || member.role === 'superadmin';
-            const canDelete = !isMe && !isPrivileged;
+            // Los gerentes de sucursal (branch_name) se administran en la pestaña Sucursales.
+            const canDelete = !isMe && !isPrivileged && !member.branch_name;
             return (
               <div
                 key={member.id}
@@ -213,6 +215,7 @@ export default function Equipos() {
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {member.email}
+                    {member.branch_name && ` · ${member.branch_name}`}
                   </div>
                 </div>
                 <RoleBadge role={member.role} />

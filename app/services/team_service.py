@@ -98,14 +98,33 @@ async def invite_member(
     return member
 
 
+def _account_member(acc: TenantAccount, *, role: str, branch_name: str | None) -> SimpleNamespace:
+    """Adaptar una TenantAccount a la forma que consume TeamMemberOut.from_member."""
+    return SimpleNamespace(
+        id=acc.id,
+        email=acc.email,
+        name=acc.full_name,
+        avatar_color=None,
+        photo_url=None,
+        is_admin=True,
+        status=MEMBER_ACCEPTED,
+        role=role,
+        branch_name=branch_name,
+        created_at=acc.created_at,
+    )
+
+
 async def list_members(tenant_id: object) -> list[object]:
-    """Miembros del equipo: cuentas reales del tenant (owner/admins) + invitaciones.
+    """Miembros del equipo: cuentas del org (owner/admins) + gerentes de sucursal + invitaciones.
 
     La pestaña Equipos muestra filas de ``TenantMember``, pero el owner (y cualquier
     ``TenantAccount`` creada fuera del flujo de invitación) no tiene fila de miembro.
-    Sintetizamos una entrada por cada cuenta sin ``TenantMember`` asociado para que
-    aparezcan en el listado con su rol e información.
+    Además, los gerentes de sucursal son cuentas de los tenants hijos (``parent_tenant_id``
+    == este org), por lo que tampoco están en ``tenant_members``. Sintetizamos una entrada
+    por cada una para que todas aparezcan en el listado con su rol e información.
     """
+    from app.services.tenant_service import list_branches  # local import: evita ciclo
+
     async with async_session_factory() as session:
         res = await session.execute(
             select(TenantMember)
@@ -115,31 +134,41 @@ async def list_members(tenant_id: object) -> list[object]:
         members = list(res.scalars().all())
         linked_account_ids = {m.account_id for m in members if m.account_id is not None}
 
+        # Cuentas reales del org (owner/admins) sin fila de miembro.
         acc_res = await session.execute(
             select(TenantAccount)
             .where(TenantAccount.tenant_id == tenant_id)
             .order_by(TenantAccount.created_at.asc())
         )
-        accounts = list(acc_res.scalars().all())
-
-        synthetic = [
-            SimpleNamespace(
-                id=acc.id,
-                email=acc.email,
-                name=acc.full_name,
-                avatar_color=None,
-                photo_url=None,
-                is_admin=acc.role in ("owner", "admin", "superadmin"),
-                status=MEMBER_ACCEPTED,
-                role=acc.role,
-                created_at=acc.created_at,
-            )
-            for acc in accounts
+        org_members = [
+            _account_member(acc, role=acc.role, branch_name=None)
+            for acc in acc_res.scalars().all()
             if acc.id not in linked_account_ids
         ]
 
-        # Cuentas reales primero (owner arriba), luego invitaciones más recientes.
-        return synthetic + members
+    # Gerentes de sucursal: cuentas de los tenants hijos (solo si este tenant es un org raíz;
+    # para una sucursal, list_branches devuelve []). TenantAccount es global (sin RLS).
+    branches = await list_branches(tenant_id)
+    branch_by_id = {b.id: b for b in branches}
+    branch_members: list[object] = []
+    if branch_by_id:
+        async with async_session_factory() as session:
+            b_res = await session.execute(
+                select(TenantAccount)
+                .where(TenantAccount.tenant_id.in_(list(branch_by_id.keys())))
+                .order_by(TenantAccount.created_at.asc())
+            )
+            for acc in b_res.scalars().all():
+                branch = branch_by_id.get(acc.tenant_id)
+                branch_members.append(
+                    _account_member(
+                        acc, role="manager",
+                        branch_name=branch.display_name if branch else None,
+                    )
+                )
+
+    # Orden: org (owner arriba) → gerentes de sucursal → invitaciones más recientes.
+    return org_members + branch_members + members
 
 
 async def remove_member(tenant_id: object, member_id: object, requesting_account_id: object | None = None) -> None:

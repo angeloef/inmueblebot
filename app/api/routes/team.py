@@ -42,6 +42,7 @@ class TeamMemberOut(BaseModel):
     is_admin: bool
     status: str
     role: str | None = None
+    branch_name: str | None = None
     avatar_color: str | None = None
     photo_url: HttpUrl | None = None
     created_at: str
@@ -55,6 +56,7 @@ class TeamMemberOut(BaseModel):
             is_admin=m.is_admin,
             status=m.status,
             role=getattr(m, "role", None),
+            branch_name=getattr(m, "branch_name", None),
             avatar_color=m.avatar_color,
             photo_url=m.photo_url,
             created_at=str(m.created_at),
