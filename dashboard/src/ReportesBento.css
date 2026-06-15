@@ -1,0 +1,304 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bento Reportes — estilos específicos de la vista ejecutiva modular.
+   Depende de tokens.css y styles.css (que el dashboard ya carga).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overrides de page-h para el header del bento ── */
+.bento-page.page-view { overflow-y: auto; }
+.bento-page .page-h { align-items: flex-start; margin-bottom: 20px; }
+.bento-page .page-h h1 { font-size: 25px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* ── Eyebrow ── */
+.eyebrow {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--fg-tertiary); margin-bottom: 10px;
+}
+
+/* ── Delta ── */
+.delta {
+  display: inline-flex; align-items: center; gap: 1px;
+  font-size: 11.5px; font-weight: 700; padding: 1px 5px 1px 3px; border-radius: 99px;
+}
+.delta.up   { color: var(--success-700, #15803d); background: var(--state-success-bg); }
+.delta.down { color: var(--danger-700,  #b91c1c); background: var(--state-danger-bg);  }
+.delta.flat { color: var(--fg-muted); }
+
+/* ── Pill tone variants (complementan los colores del dashboard) ── */
+.pill.warning { background: var(--state-warning-bg); color: var(--state-warning-fg); border: 1px solid var(--state-warning-border); }
+.pill.danger  { background: var(--state-danger-bg);  color: var(--state-danger-fg);  border: 1px solid var(--state-danger-border);  }
+.pill.info    { background: var(--state-info-bg);    color: var(--state-info-fg);    border: 1px solid var(--state-info-border);    }
+
+/* ── Segmented control ── */
+.seg {
+  display: inline-flex; background: var(--bg-subtle); border-radius: var(--radius-md);
+  padding: 3px; gap: 2px; border: 1px solid var(--border-subtle);
+}
+.seg-btn {
+  padding: 5px 11px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600;
+  color: var(--fg-tertiary); white-space: nowrap; cursor: pointer;
+  transition: all var(--dur-fast, 120ms);
+  border: none; background: none; font-family: inherit;
+}
+.seg-btn:hover { color: var(--fg-secondary); }
+.seg-btn.on { background: var(--surface-raised); color: var(--accent-600); box-shadow: var(--shadow-xs); }
+.seg.sm .seg-btn { padding: 4px 9px; font-size: 11.5px; }
+
+/* ── Period picker ── */
+.period-wrap {
+  display: flex; align-items: center; gap: 7px; padding: 0 11px; height: 36px;
+  border-radius: var(--radius-md); border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+}
+.period {
+  border: none; background: none; font-size: 13px; font-weight: 600;
+  color: var(--fg-primary); outline: none; font-family: inherit; cursor: pointer;
+}
+
+/* ═══ Bento grid ═══════════════════════════════════════════════════════════ */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 168px;
+  gap: 14px;
+}
+
+/* ── Tile base ── */
+.tile {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.tile-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 4px;
+}
+.tile-title {
+  font-size: 12.5px; font-weight: 700; color: var(--fg-secondary); letter-spacing: -0.01em;
+}
+.tile-count {
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--danger-500); color: #fff;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.tile-total {
+  font-size: 12px; font-weight: 600; color: var(--fg-tertiary); font-variant-numeric: tabular-nums;
+}
+
+/* ── Trend tile ── */
+.trend-body { margin-top: 8px; flex: 1; display: flex; align-items: center; }
+.trend-body > div { width: 100%; }
+
+/* ── Cartera tile ── */
+.cartera-body { flex: 1; display: flex; align-items: center; margin-top: 8px; }
+.cartera-layout {
+  display: flex; align-items: center;
+  gap: clamp(16px, 4%, 40px); width: 100%;
+}
+.cartera-donut { position: relative; flex-shrink: 0; }
+.cartera-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.cartera-center-big {
+  font-size: 30px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--fg-primary); line-height: 1; transition: color .18s;
+}
+.cartera-center-sub {
+  font-size: 11.5px; color: var(--fg-tertiary); margin-top: 4px;
+  text-transform: capitalize; max-width: 96px; text-align: center; line-height: 1.2;
+}
+.cartera-legend {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+}
+.cartera-leg-row {
+  display: grid;
+  grid-template-columns: 12px minmax(72px, auto) 1fr auto auto;
+  align-items: center; gap: 10px;
+  width: 100%; padding: 7px 9px;
+  border: 0; background: transparent; border-radius: 8px;
+  cursor: pointer; text-align: left; font: inherit;
+  transition: background .15s;
+}
+.cartera-leg-row:hover,
+.cartera-leg-row.on { background: var(--bg-subtle); }
+.cartera-leg-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.cartera-leg-label {
+  font-size: 12.5px; font-weight: 600; color: var(--fg-secondary); white-space: nowrap;
+}
+.cartera-leg-bar {
+  height: 6px; border-radius: 99px; background: var(--bg-subtle); overflow: hidden; min-width: 24px;
+}
+.cartera-leg-row:hover .cartera-leg-bar,
+.cartera-leg-row.on .cartera-leg-bar { background: var(--border-subtle); }
+.cartera-leg-fill { display: block; height: 100%; border-radius: 99px; transition: width .6s var(--ease-out, ease); }
+.cartera-leg-val {
+  font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--fg-primary); min-width: 26px; text-align: right;
+}
+.cartera-leg-pct {
+  font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--fg-tertiary); min-width: 34px; text-align: right;
+}
+.cartera-cta {
+  display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 10px;
+  padding: 9px 12px; border: 1px solid var(--border-default); border-radius: 10px;
+  background: var(--bg-subtle); cursor: pointer; font: inherit; color: var(--fg-primary);
+  transition: background .15s, border-color .15s;
+}
+.cartera-cta:hover { background: var(--surface-raised); border-color: var(--accent-400); }
+.cartera-cta-dot { width: 9px; height: 9px; border-radius: 99px; flex-shrink: 0; }
+.cartera-cta-txt { flex: 1; text-align: left; font-size: 13px; font-weight: 600; }
+
+/* ── KPI tiles ── */
+.kpi-tile { justify-content: space-between; }
+.kpi-tile-top { display: flex; align-items: center; justify-content: space-between; }
+.kpi-tile-ic {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+}
+.kpi-tile-val {
+  font-size: 27px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--fg-primary); line-height: 1;
+}
+.kpi-tile-foot {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
+}
+.kpi-tile-label { font-size: 12.5px; font-weight: 600; color: var(--fg-secondary); }
+.kpi-tile-sub {
+  font-size: 11px; color: var(--fg-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Semáforo por área ── */
+.sem-list {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px; flex: 1; justify-content: center;
+}
+.sem-row {
+  display: grid; grid-template-columns: auto 1fr auto auto;
+  align-items: center; gap: 11px; padding: 10px 13px;
+  border-radius: 10px; background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle); border-left: 3px solid var(--border-strong);
+}
+.sem-row.good { border-left-color: var(--success-500); }
+.sem-row.warn { border-left-color: var(--warning-500); }
+.sem-row.bad  { border-left-color: var(--danger-500);  }
+.sem-row.none { border-left-color: var(--border-strong); }
+.sem-ic { display: flex; color: var(--fg-tertiary); }
+.sem-row.good .sem-ic { color: var(--success-500); }
+.sem-row.warn .sem-ic { color: var(--warning-500); }
+.sem-row.bad  .sem-ic { color: var(--danger-500);  }
+.sem-mid { min-width: 0; }
+.sem-label { font-size: 13.5px; font-weight: 600; color: var(--fg-primary); }
+.sem-note { font-size: 11px; color: var(--fg-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sem-val { font-size: 17px; font-weight: 700; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.sem-tag { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 99px; white-space: nowrap; }
+.sem-tag.good { background: var(--state-success-bg); color: var(--state-success-fg); }
+.sem-tag.warn { background: var(--state-warning-bg); color: var(--state-warning-fg); }
+.sem-tag.bad  { background: var(--state-danger-bg);  color: var(--state-danger-fg);  }
+.sem-tag.none { background: var(--bg-subtle); color: var(--fg-secondary); border: 1px solid var(--border-default); }
+
+/* ── Alertas ── */
+.tile-alerts-list {
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; flex: 1; margin: 0 -4px; padding: 0 4px;
+}
+.empty-tile {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; font-size: 12.5px; color: var(--fg-muted);
+}
+/* alert-card ya existe en styles.css; solo variante mini e info */
+.alert-card.mini { padding: 11px 12px; }
+.alert-card.mini .alert-ic { width: 30px; height: 30px; }
+.alert-card.info { border-left-color: var(--info-500); }
+.alert-card.info .alert-ic { background: var(--state-info-bg); color: var(--state-info-fg); }
+
+/* ── Ranking sucursales ── */
+.rank-list { display: flex; flex-direction: column; gap: 13px; margin-top: 12px; flex: 1; justify-content: center; }
+.rank-row { display: flex; align-items: center; gap: 12px; }
+.rank-name {
+  width: 168px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--fg-primary);
+}
+.rank-pos {
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--bg-subtle); color: var(--fg-tertiary);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.rank-track {
+  flex: 1; height: 24px; background: var(--bg-subtle); border-radius: 5px; overflow: hidden;
+}
+.rank-fill { height: 100%; border-radius: 5px; transition: width .6s var(--ease-out, ease); }
+.rank-val {
+  width: 70px; text-align: right; font-size: 14px; font-weight: 700;
+  color: var(--fg-primary); font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+
+/* ── Demanda ── */
+.demand-grid { display: grid; gap: 22px; }
+.demand-col { min-width: 0; }
+.demand-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle);
+}
+.demand-head.accent  { color: var(--accent-600, var(--accent-500)); }
+.demand-head.warning { color: var(--warning-500); }
+.demand-head.danger  { color: var(--danger-500);  }
+.demand-row.simple {
+  display: flex; justify-content: space-between; gap: 10px;
+  border-bottom: 1px solid var(--border-subtle); padding: 4px 0;
+}
+.demand-k {
+  font-size: 12.5px; font-weight: 500; color: var(--fg-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.demand-v {
+  font-size: 13px; font-weight: 700; color: var(--fg-primary);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.empty-mini { font-size: 13px; color: var(--fg-muted); padding: 18px 0; text-align: center; }
+
+/* ═══ Responsive ════════════════════════════════════════════════════════════ */
+@media (max-width: 1180px) {
+  .bento-grid { grid-template-columns: repeat(2, 1fr); }
+  .tile-semaforo,
+  .tile-alerts,
+  .tile-trend,
+  .tile-cartera,
+  .tile-rank,
+  .tile-demand { grid-column: span 2 !important; }
+}
+
+@media (max-width: 760px) {
+  .bento-page .page-h { flex-wrap: wrap; }
+}
+
+@media (max-width: 600px) {
+  .bento-grid { grid-template-columns: 1fr; grid-auto-rows: auto; }
+  .bento-grid .tile { grid-column: auto !important; grid-row: auto !important; }
+  .tile-semaforo, .tile-alerts, .tile-trend, .tile-rank, .tile-demand, .tile-cartera { min-height: 210px; }
+  .cartera-layout { flex-direction: column; gap: 16px; align-items: stretch; }
+  .cartera-donut  { align-self: center; }
+}
+
+/* ═══ Animaciones de entrada (aditivas — base siempre visible) ══════════════ */
+@keyframes bentoFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bento-grid .tile { animation: bentoFadeUp .5s var(--ease-out, ease) both; }
+  .bento-grid .tile:nth-child(n+3)  { animation-delay: .06s; }
+  .bento-grid .tile:nth-child(n+7)  { animation-delay: .12s; }
+  .bento-grid .tile:nth-child(n+10) { animation-delay: .18s; }
+}
