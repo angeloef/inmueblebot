@@ -602,26 +602,8 @@ async def serve_dashboard(full_path: str = ""):
     return JSONResponse(status_code=404, content={"detail": "Dashboard not built"})
 
 
-# Marca de build derivada del contenido de index.html (cambia en cada deploy porque
-# cambian los hashes de los assets que referencia). Determinística entre réplicas:
-# mismo build → mismo hash. El dashboard la consulta para detectar deploys nuevos y
-# recargarse solo, sin que el usuario tenga que apretar F5.
-_build_version_cache: str | None = None
-
-
-@app.get("/version", include_in_schema=False)
-async def app_version() -> JSONResponse:
-    global _build_version_cache
-    if _build_version_cache is None:
-        import hashlib
-
-        dashboard_index = os.path.join(dashboard_dir, "index.html")
-        try:
-            with open(dashboard_index, "rb") as f:
-                _build_version_cache = hashlib.sha1(f.read()).hexdigest()[:12]  # noqa: S324
-        except OSError:
-            _build_version_cache = "unknown"
-    return JSONResponse({"build": _build_version_cache}, headers=_NO_CACHE)
+# Nota: el endpoint GET /version ya existe arriba (devuelve {"commit": RENDER_GIT_COMMIT})
+# y es el que consume el watcher del dashboard para detectar deploys nuevos.
 
 if __name__ == "__main__":
     import uvicorn

@@ -15,7 +15,10 @@ async function fetchBuild() {
     const res = await fetch('/version', { cache: 'no-store' });
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.build ?? null;
+    // El backend expone { commit: RENDER_GIT_COMMIT }. 'build' es fallback por si
+    // cambia el shape. 'dev' (sin RENDER_GIT_COMMIT en local) se trata como "sin versión".
+    const v = data?.commit ?? data?.build ?? null;
+    return v && v !== 'dev' ? v : null;
   } catch {
     return null; // offline / cold start: reintentamos en el próximo ciclo
   }
@@ -36,6 +39,13 @@ async function check() {
 }
 
 export async function startVersionWatcher() {
+  // Guard de bfcache: si el browser restaura la pestaña desde el back/forward cache
+  // (navegación atrás/adelante, o volver tras el login), recarga para tomar el bundle
+  // vigente en vez de mostrar un snapshot viejo en memoria.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) window.location.reload();
+  });
+
   bootBuild = await fetchBuild();
   if (!bootBuild || bootBuild === 'unknown') return; // sin endpoint: no hacemos nada
 
