@@ -37,6 +37,10 @@ export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
 
   const reconnectTimer = useRef(null);
+  // Identidad de la última sesión cargada (account.id). Sirve para detectar un
+  // cambio de usuario (logout → login con otra cuenta) y purgar el estado viejo
+  // ANTES de que las queries del nuevo usuario rendericen. null = primera carga.
+  const lastAccountId = useRef(null);
 
   // Distingue "no autenticado" (401, tras fallar el refresh) de "no hay red"
   // (cold-start de Render / 5xx / timeout). Solo el primero manda al login; el
@@ -44,6 +48,33 @@ export function AuthProvider({ children }) {
   const loadMe = useCallback(async (attempt = 0) => {
     try {
       const data = await authApi.me();
+
+      // ── Guard de cambio de sesión ────────────────────────────────────────
+      // Si la identidad cargada difiere de la anterior conocida (y había una
+      // real, no la primera carga), purgamos TODA la caché de React Query para
+      // que no se vea data del usuario previo mientras refrescan las queries.
+      const newAccountId = data?.account?.id ?? null;
+      const prevAccountId = lastAccountId.current;
+      if (prevAccountId !== null && newAccountId !== prevAccountId) {
+        queryClient.clear();
+      }
+      lastAccountId.current = newAccountId;
+
+      // ── Reconciliación de sucursal activa ────────────────────────────────
+      // Solo una org puede tener sucursal activa, y solo entre las suyas. Si la
+      // sucursal persistida (header X-Branch-Id) no es válida para ESTA sesión,
+      // la limpiamos ANTES de renderizar para no scopear queries a un tenant ajeno.
+      const persistedBranch = getActiveBranchId();
+      if (persistedBranch) {
+        const validIds = data?.scope === 'org'
+          ? (data.branches || []).map(b => b.id)
+          : [];
+        if (!validIds.includes(persistedBranch)) {
+          setActiveBranchId(null);   // limpia módulo api.js + localStorage
+          setActiveBranch(null);     // espejo en React
+        }
+      }
+
       setMe(data);
       setStatus('authed');
     } catch (err) {
@@ -65,7 +96,7 @@ export function AuthProvider({ children }) {
         setStatus('anon');
       }
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     loadMe();
@@ -80,17 +111,6 @@ export function AuthProvider({ children }) {
     setActiveBranch(id || null);
     queryClient.clear();
   }, [queryClient]);
-
-  // Reconciliación: solo una org puede tener sucursal activa. Si el usuario no es org, o
-  // la sucursal guardada ya no existe, se vuelve a consolidado.
-  useEffect(() => {
-    if (status !== 'authed' || !me) return;
-    const ids = (me.scope === 'org' ? (me.branches || []) : []).map(b => b.id);
-    if (activeBranch && !ids.includes(activeBranch)) {
-      setActiveBranchId(null);
-      setActiveBranch(null);
-    }
-  }, [status, me, activeBranch]);
 
   // El refresh falló (sesión realmente expirada) → volver al login.
   useEffect(() => {
@@ -124,11 +144,13 @@ export function AuthProvider({ children }) {
     setActiveBranch(null);
     setMe(null);
     setStatus('anon');
+    lastAccountId.current = null;   // próxima carga = "primera", no dispara clear espurio
+    queryClient.clear();            // purga la caché del usuario que se va
     // Login canónico en la landing: tras cerrar sesión volvemos allá (si está
     // configurado). El guard anti-loop de main.jsx no aplica: esto es intencional.
     const loginUrl = import.meta.env.VITE_LOGIN_URL || '';
     if (loginUrl) window.location.assign(loginUrl);
-  }, []);
+  }, [queryClient]);
 
   const value = { status, me, login, logout, reload: loadMe, activeBranch, selectBranch };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
