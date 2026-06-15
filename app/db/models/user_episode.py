@@ -85,3 +85,7 @@ class SearchFailure(Base):
     last_failed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
+
+    __table_args__ = (
+        Index("uq_search_failures_combo", "tenant_id", "operation", "property_type", "zone", unique=True),
+    )

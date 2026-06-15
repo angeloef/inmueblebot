@@ -24,6 +24,21 @@ router = APIRouter(prefix="/reports", tags=["reports", "metrics"])
 PERIODS_BACK = 12
 
 
+def _series_point(period_d: date, metrics: dict) -> dict:
+    f = metrics.get("funnel", {})
+    c = metrics.get("cobranzas", {})
+    billed = c.get("billed", 0) or 0
+    morosidad = c.get("morosidad_amount", 0) or 0
+    return {
+        "month": f"{period_d.year:04d}-{period_d.month:02d}",
+        "leads": int(f.get("leads", 0) or 0),
+        "paid": int(c.get("paid", 0) or 0),
+        "closings": int(f.get("closings", 0) or 0),
+        # morosidad_pct is computed as-of today for all months (status snapshot, not month-end)
+        "morosidad_pct": round((morosidad / billed) * 100, 1) if billed else 0.0,
+    }
+
+
 def _parse_period(period: str | None, today: date) -> date:
     """'YYYY-MM' → primer día del mes. Default: mes en curso."""
     if not period:
@@ -91,3 +106,31 @@ async def get_report(
         "metrics": await compute_metrics(tid, cur_start, cur_end, today),
         "prev": await compute_metrics(tid, prev_start, prev_end, today),
     }
+
+
+@router.get("/trend")
+async def get_trend(
+    account: TenantAccount = Depends(require_active_subscription),
+) -> dict:
+    today = bs.today_ar()
+    cur_start = bs.month_start(today)
+    months = [bs.add_months(cur_start, -i) for i in range(PERIODS_BACK - 1, -1, -1)]
+    period_str = f"{cur_start.year:04d}-{cur_start.month:02d}"
+
+    is_org = bool(getattr(account, "is_org", False))
+    active_branch = getattr(account, "active_branch_id", None)
+
+    if is_org and active_branch is None:
+        org_id = account.tenant_id
+        series = [
+            _series_point(m, await compute_metrics(org_id, m, bs.add_months(m, 1), today))
+            for m in months
+        ]
+        return {"period": period_str, "scope": "org", "series": series}
+
+    tid = getattr(account, "effective_tenant_id", account.tenant_id)
+    series = [
+        _series_point(m, await compute_metrics(tid, m, bs.add_months(m, 1), today))
+        for m in months
+    ]
+    return {"period": period_str, "scope": "branch", "series": series}

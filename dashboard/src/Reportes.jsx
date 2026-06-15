@@ -537,6 +537,29 @@ export default function Reportes() {
           inverse spark={trend2.morosidad} color="var(--danger-500)"
         />
 
+        {/* Detalle del embudo */}
+        <Tile c={2} r={1}>
+          <TileHead icon={Filter} title="Detalle del embudo" />
+          <div className="demand-grid" style={{ marginTop: 10, gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <DemandList
+              title="Conversión"
+              tone="accent"
+              rows={[
+                { k: 'Visitas realizadas', v: num(f.visits_done) },
+                { k: 'Lead → visita', v: pct(f.rates?.lead_to_visit) },
+              ]}
+            />
+            <DemandList
+              title="Calidad"
+              tone="accent"
+              rows={[
+                { k: 'Presentación', v: pct(f.rates?.show_rate) },
+                { k: 'Facturado', v: moneyShort(c.billed) },
+              ]}
+            />
+          </div>
+        </Tile>
+
         {/* Fila 3 — Semáforo (2×2) */}
         <Tile c={2} r={2} className="tile-semaforo">
           <div className="eyebrow">

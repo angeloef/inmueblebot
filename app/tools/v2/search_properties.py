@@ -1,12 +1,15 @@
 """Search properties by criteria -- filters: operation, type, zone, budget, bedrooms."""
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Text, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.tenancy import resolve_tenant_id
 from app.db.session import async_session_factory
 from app.db.models.property import Property
+from app.db.models.user_episode import ZoneStat, SearchFailure
 from app.tools.v2.city_resolver import resolve_city_variants
 
 # Accent folding done in SQL (no DB extension needed): translate() is built-in and
@@ -136,6 +139,54 @@ def _build_zone_filters(zona: str, city_variants: "list[str] | None" = None) -> 
     return filters
 
 
+async def _record_search_telemetry(
+    operation: str,
+    tipo: str,
+    zona: str,
+    presupuesto_max: float,
+    result_count: int,
+) -> None:
+    tid = resolve_tenant_id()
+    try:
+        async with async_session_factory() as session:
+            if zona:
+                zs = pg_insert(ZoneStat).values(
+                    tenant_id=tid, zone_name=zona[:50],
+                    search_count=1, property_count=result_count,
+                ).on_conflict_do_update(
+                    index_elements=["tenant_id", "zone_name"],
+                    set_={
+                        "search_count": ZoneStat.search_count + 1,
+                        "property_count": result_count,
+                    },
+                )
+                await session.execute(zs)
+
+            if result_count == 0:
+                now = datetime.now(timezone.utc)
+                sf = pg_insert(SearchFailure).values(
+                    tenant_id=tid,
+                    operation=(operation or "")[:20],
+                    property_type=(tipo or "")[:30],
+                    zone=(zona or "")[:50],
+                    budget_max=int(presupuesto_max) if presupuesto_max else None,
+                    fail_count=1, last_failed_at=now,
+                ).on_conflict_do_update(
+                    index_elements=["tenant_id", "operation", "property_type", "zone"],
+                    set_={
+                        "fail_count": SearchFailure.fail_count + 1,
+                        "last_failed_at": now,
+                        "budget_max": int(presupuesto_max) if presupuesto_max else None,
+                    },
+                )
+                await session.execute(sf)
+
+            await session.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("search telemetry write failed", exc_info=True)
+
+
 async def search_properties(
     operation: str = "",
     tipo: str = "",
@@ -192,6 +243,8 @@ async def search_properties(
 
         result = await session.execute(stmt)
         properties = result.scalars().all()
+
+        await _record_search_telemetry(operation, tipo, zona, presupuesto_max or 0, len(properties))
 
         filters_desc = _describe_filters(operation, tipo, zona, presupuesto_max, dormitorios)
 
