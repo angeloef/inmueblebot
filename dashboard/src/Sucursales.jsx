@@ -4,10 +4,6 @@ import { Icon, Button } from './Primitives';
 import { useBranches, useCreateBranch, useCreateManager } from './api';
 
 const FIELD_LABEL = { fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 4 };
-const CARD = {
-  background: 'var(--surface)', border: '1px solid var(--border)',
-  borderRadius: 10, padding: 16,
-};
 
 function Field({ label, children, hint }) {
   return (
@@ -90,87 +86,130 @@ export default function Sucursales() {
             consolidado y podés entrar a gestionar cada una.
           </p>
         </div>
-        {!showForm && (
-          <button className="btn btn-primary" type="button" onClick={() => setShowForm(true)}>
-            + Nueva sucursal
-          </button>
-        )}
+        <div className="page-h-actions">
+          {!showForm && (
+            <Button kind="primary" icon="plus" onClick={() => setShowForm(true)}>
+              Nueva sucursal
+            </Button>
+          )}
+        </div>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} style={{ ...CARD, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <strong>Nueva sucursal</strong>
-          {error && <p style={{ color: 'var(--danger-600, #dc2626)', fontSize: 13, margin: 0 }}>{error}</p>}
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Field label="Nombre de la sucursal *">
-              <input value={form.display_name} onChange={set('display_name')} placeholder="Ej: Sucursal Centro"
-                     required style={{ width: '100%', boxSizing: 'border-box' }} />
-            </Field>
-            <Field label="Dirección">
-              <input value={form.address} onChange={set('address')} placeholder="Calle 123, Ciudad"
-                     style={{ width: '100%', boxSizing: 'border-box' }} />
-            </Field>
-          </div>
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Field label="Horario de atención">
-              <input value={form.business_hours} onChange={set('business_hours')}
-                     placeholder="Lun a Vie 9 a 18hs" style={{ width: '100%', boxSizing: 'border-box' }} />
-            </Field>
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <strong style={{ fontSize: 13 }}>WhatsApp de la sucursal</strong>
-            <p style={{ fontSize: 12, color: 'var(--muted, #6b7280)', margin: '4px 0 10px' }}>
-              Cada sucursal usa su propio número de Meta. Pegá el Phone Number ID, el WABA ID y el token de acceso.
-            </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Field label="Phone Number ID">
-                <input value={form.phone_number_id} onChange={set('phone_number_id')}
-                       placeholder="1234567890" style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
-              <Field label="WABA ID">
-                <input value={form.waba_id} onChange={set('waba_id')}
-                       placeholder="9876543210" style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
-            </div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
-              <Field label="Access Token de Meta" hint="Se guarda cifrado.">
-                <input value={form.wa_access_token} onChange={set('wa_access_token')} type="password"
-                       placeholder="EAAG..." style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
+        <form
+          onSubmit={handleCreate}
+          style={{
+            background: 'var(--surface-raised)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-xl)',
+            boxShadow: 'var(--shadow-sm)',
+            marginBottom: 24,
+            overflow: 'hidden',
+          }}
+        >
+          {/* Form header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 9,
+                background: 'var(--accent-50)', border: '1px solid var(--accent-100)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon name="building" size={17} style={{ color: 'var(--accent-600)' }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-primary)' }}>Nueva sucursal</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-tertiary)', marginTop: 1 }}>Completá los datos básicos para empezar.</div>
+              </div>
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <strong style={{ fontSize: 13 }}>Gerente de la sucursal (opcional)</strong>
-            <p style={{ fontSize: 12, color: 'var(--muted, #6b7280)', margin: '4px 0 10px' }}>
-              Le crea un login que ve y gestiona solo esta sucursal. Podés agregarlo después también.
-            </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Field label="Email del gerente">
-                <input value={form.manager_email} onChange={set('manager_email')} type="email"
-                       placeholder="gerente@ejemplo.com" style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
-              <Field label="Contraseña inicial">
-                <input value={form.manager_password} onChange={set('manager_password')} type="text"
-                       placeholder="mín. 6 caracteres" style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
-              <Field label="Nombre (opcional)">
-                <input value={form.manager_name} onChange={set('manager_name')}
-                       placeholder="Nombre del gerente" style={{ width: '100%', boxSizing: 'border-box' }} />
-              </Field>
+          {/* Form body */}
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {error && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--state-danger-bg, #fef2f2)',
+                border: '1px solid var(--state-danger-border, #fecaca)',
+                borderRadius: 'var(--radius-md)', padding: '10px 14px',
+                fontSize: 13, color: 'var(--danger-500)',
+              }}>
+                <Icon name="alert" size={14} style={{ flexShrink: 0 }} />
+                {error}
+              </div>
+            )}
+
+            {/* Datos básicos */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-tertiary)', marginBottom: 12 }}>
+                Datos básicos
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <Field label="Nombre de la sucursal *">
+                  <input value={form.display_name} onChange={set('display_name')}
+                    placeholder="Ej: Sucursal Centro" required
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+                <Field label="Dirección">
+                  <input value={form.address} onChange={set('address')}
+                    placeholder="Calle 123, Ciudad"
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+                <Field label="Horario de atención">
+                  <input value={form.business_hours} onChange={set('business_hours')}
+                    placeholder="Lun a Vie 9 a 18hs"
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+              </div>
+            </div>
+
+            {/* Gerente */}
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-tertiary)' }}>
+                  Gerente de la sucursal <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>(opcional)</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--fg-tertiary)', marginTop: 4 }}>
+                  Le crea un login que ve y gestiona solo esta sucursal. Podés agregarlo después también.
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <Field label="Email del gerente">
+                  <input value={form.manager_email} onChange={set('manager_email')} type="email"
+                    placeholder="gerente@ejemplo.com"
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+                <Field label="Contraseña inicial">
+                  <input value={form.manager_password} onChange={set('manager_password')} type="text"
+                    placeholder="mín. 6 caracteres"
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+                <Field label="Nombre del gerente">
+                  <input value={form.manager_name} onChange={set('manager_name')}
+                    placeholder="Nombre completo"
+                    style={{ width: '100%', boxSizing: 'border-box' }} />
+                </Field>
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" type="submit" disabled={createBranch.isPending}>
-              {createBranch.isPending ? 'Creando…' : 'Crear sucursal'}
-            </button>
-            <button className="btn btn-secondary" type="button" onClick={() => { setShowForm(false); setError(''); }}>
+          {/* Form footer */}
+          <div style={{
+            display: 'flex', gap: 8, justifyContent: 'flex-end',
+            padding: '14px 20px',
+            borderTop: '1px solid var(--border-subtle)',
+            background: 'var(--bg-subtle)',
+          }}>
+            <Button kind="secondary" type="button" onClick={() => { setShowForm(false); setError(''); }}>
               Cancelar
-            </button>
+            </Button>
+            <Button kind="primary" type="submit" disabled={createBranch.isPending}>
+              {createBranch.isPending ? 'Creando…' : 'Crear sucursal'}
+            </Button>
           </div>
         </form>
       )}
