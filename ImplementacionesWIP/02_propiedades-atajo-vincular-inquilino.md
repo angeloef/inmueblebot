@@ -1,7 +1,7 @@
 ---
 id: 02
 title: "Propiedades — atajo 'Vincular inquilino' en el encabezado del drawer"
-status: pending
+status: completed
 priority: medium
 area: frontend
 files:
@@ -61,3 +61,9 @@ Agregar un botón **atajo** en el encabezado del drawer de propiedad (junto a El
 
 ## 7. Bitácora (append-only)
 - 2026-06-16 — Plan creado. Pendiente de ejecución.
+- 2026-06-16 — Implementado (implementador-loop).
+  - Botón **"Vincular inquilino"** (icon `user-plus`) en el header del `PropertyDrawer`, junto a Eliminar/Editar/Agendar.
+  - `handleLinkTenant`: sin cliente vinculado → `setAssignRelation('tenant')` + `setAssignOpen(true)` y scroll diferido al bloque (vía `useEffect([assignOpen])` + `pendingScrollRef`, para caer sobre el form ya expandido). Con comprador/inquilino existente → solo `scrollIntoView` a la tarjeta (no permite doble inquilino).
+  - `aria-label` dinámico ("Ver cliente vinculado" / "Vincular inquilino"); `ref={assignBlockRef}` en el `detail-block` de asignación.
+  - **Decisión de alcance:** NO se reemplazó el bloque inline por `LinkClientProperty` (Plan 01); el bloque de Properties es más rico (tarjeta con menú editar/cambiar/desvincular) y migrarlo regresaría funcionalidad. El componente compartido queda disponible para el lado cliente. Solo se tocó `Properties.jsx` (no hizo falta `api.js`).
+  - **Gates:** `npm run build` (vite) verde; no hay script `lint`/tests de frontend. Review **react-reviewer**: aplicados los 2 HIGH (eliminar forward-reference de `buyerClient/tenantClient` moviendo `handleLinkTenant` debajo de sus declaraciones; scroll diferido por effect en vez de rAF que corría contra el re-render) + tweak a11y del label. Gate UX-Chrome no ejecutado (requiere backend+auth+DB, fuera de budget).

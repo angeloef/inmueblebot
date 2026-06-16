@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
 import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, propertyApi } from './api';
@@ -91,6 +91,16 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   const [assignRelation, setAssignRelation] = useState(freshProperty.operation === 'rent' ? 'tenant' : 'buyer');
   const [linkEditOpen, setLinkEditOpen] = useState(null);
   const trapRef = useFocusTrap(onClose);
+  const assignBlockRef = useRef(null);
+  const pendingScrollRef = useRef(false);
+  // Desplazar al bloque de asignación recién cuando el alta se abrió y re-renderizó,
+  // así el scroll cae sobre el formulario ya expandido (no antes del re-render).
+  useEffect(() => {
+    if (assignOpen && pendingScrollRef.current) {
+      pendingScrollRef.current = false;
+      assignBlockRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [assignOpen]);
   if (!property) return null;
 
   // Interested clients: from property_relations (new) and legacy interest array
@@ -104,6 +114,22 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   // Buyer/tenant from property_relations
   const buyerClient = clients.find(c => (c.property_relations || []).some(r => String(r.prop_id) === String(property.id) && r.relation === 'buyer'));
   const tenantClient = clients.find(c => (c.property_relations || []).some(r => String(r.prop_id) === String(property.id) && r.relation === 'tenant'));
+
+  // Atajo del header: si no hay cliente vinculado, abre el alta preseleccionada en
+  // "Inquilino" y luego desplaza (vía el effect de arriba); si ya hay comprador o
+  // inquilino, solo desplaza a la tarjeta existente (evita doble inquilino). Plan 02.
+  const handleLinkTenant = () => {
+    if (!buyerClient && !tenantClient) {
+      setAssignRelation('tenant');
+      pendingScrollRef.current = true;
+      setAssignOpen(true);
+    } else {
+      requestAnimationFrame(() => {
+        assignBlockRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
+
   const events = allEvents.filter(e => String(e.propId) === String(property.id));
   /** true si la propiedad es para alquiler (muestra /mes en precio) */
   const isRent = property.operation === 'rent' && property.status !== 'sale';
@@ -136,6 +162,9 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
             {isRent && <span className="muted" style={{fontSize:12}}>/ mes</span>}
             <span style={{marginLeft:'auto',display:'flex',gap:6}}>
               <Button kind="danger" size="sm" icon="trash" onClick={() => onDelete && onDelete(property)}>Eliminar</Button>
+              <Button kind="secondary" size="sm" icon="user-plus"
+                      aria-label={(buyerClient || tenantClient) ? 'Ver cliente vinculado' : 'Vincular inquilino'}
+                      onClick={handleLinkTenant}>Vincular inquilino</Button>
               <Button kind="secondary" size="sm" icon="edit" onClick={() => onEdit && onEdit(property)}>Editar</Button>
               <Button kind="primary" size="sm" icon="calendar" onClick={() => onAgenda(property)}>Agendar visita</Button>
             </span>
@@ -192,7 +221,7 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
             ))}
           </div>
 
-          <div className="detail-block">
+          <div className="detail-block" ref={assignBlockRef}>
             <h3>Asignar comprador / inquilino</h3>
             <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:4}}>
               {(() => {
