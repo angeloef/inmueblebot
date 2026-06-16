@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDocuments, useUploadDocument, useDeleteDocument, documentsApi } from './api';
 
 const CATEGORIES = [
@@ -24,6 +24,70 @@ function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Dropdown custom que reemplaza el <select> nativo para matchear el design
+ * system (la lista nativa del SO no es estilable). El trigger imita un
+ * `.field` input y el menú reutiliza las clases `.status-dropdown-*`.
+ * @param {{ value: string, options: {value:string,label:string}[], onChange: (v:string)=>void }} props
+ */
+function DocTypeSelect({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const current = options.find(o => o.value === value) ?? options[0];
+
+  const triggerStyle = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    width: '100%', boxSizing: 'border-box', fontSize: 13, fontFamily: 'inherit',
+    padding: '7px 10px', borderRadius: 7, cursor: 'pointer', textAlign: 'left',
+    color: 'var(--fg-primary)',
+    border: `1px solid ${open ? 'var(--accent-400)' : 'var(--border-default)'}`,
+    background: open ? 'var(--surface-raised)' : 'var(--gray-25)',
+    boxShadow: open ? 'var(--shadow-focus)' : 'none',
+  };
+
+  return (
+    <span ref={ref} className={`status-dropdown ${open ? 'open' : ''}`} style={{ position: 'relative', display: 'block' }}>
+      <button
+        type="button"
+        style={triggerStyle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+      >
+        {current?.label}
+        <svg width="9" height="9" viewBox="0 0 8 8" style={{ opacity: 0.5, flexShrink: 0 }} aria-hidden="true">
+          <path d="M2 3l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="status-dropdown-menu" role="menu" style={{ left: 0, right: 0, minWidth: 0 }}>
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={opt.value === value}
+              className={`status-dropdown-item ${opt.value === value ? 'active' : ''}`}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -90,9 +154,7 @@ export default function DocumentsPanel({ clientId, contractId, title = 'Document
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
         <div className="field" style={{ marginBottom: 0, minWidth: 150 }}>
           <label>Tipo de documento</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          <DocTypeSelect value={category} options={CATEGORIES} onChange={setCategory} />
         </div>
         <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 140 }}>
           <label>Nota opcional</label>
