@@ -419,18 +419,13 @@ def _run_startup_migration(engine):
                     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
                     "conversation_id UUID"
                 ))
-                # Ensure auto-increment sequence on messages.id
-                conn.execute(text(
-                    "CREATE SEQUENCE IF NOT EXISTS messages_id_seq"
-                ))
-                conn.execute(text(
-                    "ALTER TABLE messages ALTER COLUMN id "
-                    "SET DEFAULT nextval('messages_id_seq')"
-                ))
-                conn.execute(text(
-                    "SELECT setval('messages_id_seq', "
-                    "COALESCE((SELECT MAX(id) FROM messages), 1))"
-                ))
+                # NOTA: messages.id es UUID (no integer). El intento previo de
+                # darle un default de secuencia bigint —ALTER COLUMN id SET DEFAULT
+                # nextval('messages_id_seq')— SIEMPRE fallaba ("column id is of type
+                # uuid but default expression is of type bigint") y, como toda esta
+                # migración corre en UNA transacción, abortaba todo lo posterior
+                # (Fix 27 reference_points y Fix 28 activity_log nunca se creaban).
+                # Un PK UUID no necesita secuencia: se elimina por completo.
                 logger.info("Migration Fix 26: messages core columns ensured")
             except Exception as e:
                 logger.warning(f"Migration Fix 26: {e}")
