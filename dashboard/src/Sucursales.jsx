@@ -3,14 +3,12 @@ import { useAuth } from './auth';
 import { Icon, Button } from './Primitives';
 import { useBranches, useCreateBranch, useCreateManager } from './api';
 
-const FIELD_LABEL = { fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 4 };
-
 function Field({ label, children, hint }) {
   return (
-    <div style={{ flex: 1, minWidth: 200 }}>
-      <label style={FIELD_LABEL}>{label}</label>
+    <div className="field" style={{ flex: 1, minWidth: 200 }}>
+      <label>{label}</label>
       {children}
-      {hint && <div style={{ fontSize: 11, color: 'var(--muted, #6b7280)', marginTop: 3 }}>{hint}</div>}
+      {hint && <div className="field-error" style={{ color: 'var(--fg-tertiary)' }}>{hint}</div>}
     </div>
   );
 }
