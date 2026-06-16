@@ -39,6 +39,7 @@ export default function DocumentsPanel({ clientId, contractId, title = 'Document
   const [category, setCategory] = useState('dni');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  const [deleteDocTarget, setDeleteDocTarget] = useState(null);
 
   async function handleFile(e) {
     setError('');
@@ -67,12 +68,18 @@ export default function DocumentsPanel({ clientId, contractId, title = 'Document
     }
   }
 
-  async function handleDelete(doc) {
-    if (!window.confirm(`¿Eliminar "${doc.filename}"?`)) return;
+  function handleDelete(doc) {
+    setDeleteDocTarget(doc);
+  }
+
+  async function confirmDelete() {
+    if (!deleteDocTarget) return;
     try {
-      await remove.mutateAsync(doc.id);
+      await remove.mutateAsync(deleteDocTarget.id);
+      setDeleteDocTarget(null);
     } catch (err) {
-      alert(err?.response?.data?.detail || 'No se pudo eliminar.');
+      setError(err?.response?.data?.detail || 'No se pudo eliminar.');
+      setDeleteDocTarget(null);
     }
   }
 
@@ -80,18 +87,23 @@ export default function DocumentsPanel({ clientId, contractId, title = 'Document
     <div className="detail-block">
       <h3>{title}</h3>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ minWidth: 150 }}>
-          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <input
-          type="text"
-          placeholder="Nota (opcional)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          style={{ flex: 1, minWidth: 140 }}
-        />
-        <label className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div className="field" style={{ marginBottom: 0, minWidth: 150 }}>
+          <label>Tipo de documento</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 140 }}>
+          <label>Nota opcional</label>
+          <input
+            type="text"
+            placeholder="p. ej. Enero 2025"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+        <label className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0, flexShrink: 0 }}>
           {upload.isPending ? 'Subiendo…' : '+ Subir archivo'}
           <input
             ref={fileRef}
@@ -149,6 +161,33 @@ export default function DocumentsPanel({ clientId, contractId, title = 'Document
               </button>
             </div>
           ))}
+        </div>
+      )}
+      {deleteDocTarget && (
+        <div className="modal-backdrop" onClick={() => setDeleteDocTarget(null)} aria-hidden="true">
+          <div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Eliminar documento</h3>
+              <button className="btn btn-ghost btn-sm close" type="button" onClick={() => setDeleteDocTarget(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: 0 }}>¿Eliminar <b>{deleteDocTarget.filename}</b>?</p>
+              <p style={{ fontSize: 12, color: 'var(--fg-tertiary)', margin: '6px 0 0' }}>Esta acción no se puede deshacer.</p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setDeleteDocTarget(null)}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-danger btn-sm"
+                type="button"
+                disabled={remove.isPending}
+                onClick={confirmDelete}
+              >
+                {remove.isPending ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
