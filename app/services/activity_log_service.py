@@ -53,17 +53,21 @@ def log_activity(
     try:
         from app.db.models import ActivityLog
 
-        db.add(
-            ActivityLog(
-                tenant_id=str(tenant_id) if tenant_id else None,
-                entity_type=entity_type,
-                entity_id=str(entity_id),
-                action=action,
-                actor=actor,
-                payload=payload or {},
+        # SAVEPOINT: si el INSERT falla (tabla ausente, drift de schema, RLS), el
+        # rollback queda acotado al savepoint y la transacción de negocio sigue sana.
+        # Sin esto, un flush fallido envenena la sesión y el commit del endpoint
+        # revienta — convirtiendo un log best-effort en un 500.
+        with db.begin_nested():
+            db.add(
+                ActivityLog(
+                    tenant_id=str(tenant_id) if tenant_id else None,
+                    entity_type=entity_type,
+                    entity_id=str(entity_id),
+                    action=action,
+                    actor=actor,
+                    payload=payload or {},
+                )
             )
-        )
-        db.flush()
     except Exception as exc:  # noqa: BLE001 — el log jamás debe abortar la operación
         logger.warning(
             "log_activity falló (entity=%s:%s action=%s): %s", entity_type, entity_id, action, exc
@@ -90,22 +94,25 @@ async def log_activity_async(
     import json
 
     try:
-        await session.execute(
-            text(
-                "INSERT INTO activity_log "
-                "(id, tenant_id, entity_type, entity_id, action, actor, payload, created_at) "
-                "VALUES (gen_random_uuid(), :tenant_id, :entity_type, :entity_id, "
-                ":action, :actor, CAST(:payload AS JSONB), NOW())"
-            ),
-            {
-                "tenant_id": str(tenant_id) if tenant_id else None,
-                "entity_type": entity_type,
-                "entity_id": str(entity_id),
-                "action": action,
-                "actor": actor,
-                "payload": json.dumps(payload or {}),
-            },
-        )
+        # SAVEPOINT: aísla un INSERT fallido (tabla ausente, drift, RLS) para que no
+        # envenene la transacción de negocio del endpoint (ver log_activity sync).
+        async with session.begin_nested():
+            await session.execute(
+                text(
+                    "INSERT INTO activity_log "
+                    "(id, tenant_id, entity_type, entity_id, action, actor, payload, created_at) "
+                    "VALUES (gen_random_uuid(), :tenant_id, :entity_type, :entity_id, "
+                    ":action, :actor, CAST(:payload AS JSONB), NOW())"
+                ),
+                {
+                    "tenant_id": str(tenant_id) if tenant_id else None,
+                    "entity_type": entity_type,
+                    "entity_id": str(entity_id),
+                    "action": action,
+                    "actor": actor,
+                    "payload": json.dumps(payload or {}),
+                },
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "log_activity_async falló (entity=%s:%s action=%s): %s",
