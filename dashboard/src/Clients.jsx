@@ -1,12 +1,13 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useClients, useProperties, useEvents, useCreateClient, useUpdateClient, useDeleteClient } from './api';
+import { useClients, useProperties, useEvents, useActivity, useCreateClient, useUpdateClient, useDeleteClient } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
 import ExportCsv from './ExportCsv';
 import LinkClientProperty from './LinkClientProperty';
+import Timeline from './Timeline';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -114,6 +115,7 @@ function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
 function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpenEvent, onAgenda }) {
   const { data: properties = [] } = useProperties();
   const { data: allEvents = [] }  = useEvents();
+  const { data: activity = [] }   = useActivity('client', client?.id);
   if (!client) return null;
   const [tab, setTab] = useState('overview');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -247,19 +249,9 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
             <DocumentsPanel clientId={client.id} title="Documentos del cliente" />
           )}
           {tab === 'activity' && <div className="detail-block">
-            <h3>Historial ({events.length})</h3>
-            {events.length === 0 ? <div className="muted" style={{fontSize:12}}>Sin actividad registrada.</div> : events.map(e => (
-              <div key={e.id} style={{display:'flex',gap:10,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:13,alignItems:'flex-start'}}>
-                <span style={{width:24,height:24,borderRadius:6,background:'var(--gray-50)',display:'inline-flex',alignItems:'center',justifyContent:'center',color:KIND_META[e.kind]?.color || 'var(--gray-400)',flexShrink:0}}>
-                  <Icon name={e.kind === 'visit' ? 'mapPin' : e.kind === 'call' ? 'phone' : e.kind === 'sign' ? 'contract' : 'calendar'} size={13} />
-                </span>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:500}}>{e.title.replace(/^[^·]+·\s*/,'')}</div>
-                  <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{e.date} · {fmtTime12(e.start)} · {e.agent}</div>
-                </div>
-                {e.status === 'cancelled' ? <Pill kind="cancelled">Cancelada</Pill> : e.status === 'pending' ? <Pill kind="pending">Pendiente</Pill> : <Pill kind="paid">OK</Pill>}
-              </div>
-            ))}
+            <h3>Historial ({events.length + activity.length})</h3>
+            <Timeline events={events} activity={activity}
+                      emptyText="Sin actividad registrada." />
           </div>}
         </div>
       </div>

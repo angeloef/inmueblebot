@@ -17,8 +17,10 @@ from app.db.models.subscription import Subscription
 from app.db.models.site_brief import SiteBrief
 from app.db.models.document import Document
 from app.db.models.metric_snapshot import MetricSnapshot
+from app.db.models.activity_log import ActivityLog
 
 __all__ = [
+    "ActivityLog",
     "MetricSnapshot",
     "Document",
     "SiteBrief",

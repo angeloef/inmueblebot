@@ -133,6 +133,7 @@ export const keys = {
   indices:         (code) => ['indices', code],
   tenants:         ['tenants'],
   tenantSettings:  (id) => ['tenant-settings', id],
+  activity:        (entityType, id) => ['activity', entityType, String(id)],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -500,7 +501,10 @@ export const useUpdateProperty = () => {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.properties });
+      qc.invalidateQueries({ queryKey: ['activity'] });
+    },
   });
 };
 
@@ -542,7 +546,10 @@ export const useUpdatePropertyStatus = () => {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(keys.properties, ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.properties }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.properties });
+      qc.invalidateQueries({ queryKey: ['activity'] });
+    },
   });
 };
 
@@ -576,6 +583,7 @@ export const useRelateClientToProperty = () => {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: keys.properties });
       qc.invalidateQueries({ queryKey: keys.clients });
+      qc.invalidateQueries({ queryKey: ['activity'] });
     },
   });
 };
@@ -648,6 +656,16 @@ export const useEvents = (params) =>
     queryKey: keys.events,
     queryFn: () => eventApi.list(params),
     refetchInterval: 30_000,   // poll every 30s — catches WhatsApp-created appointments
+  });
+
+// ── Activity log (timeline unificado: vínculos, estado, ediciones, reasignaciones) ──
+export const useActivity = (entityType, id) =>
+  useQuery({
+    queryKey: keys.activity(entityType, id),
+    queryFn: () => http
+      .get('/admin/activity', { params: { entity_type: entityType, entity_id: id } })
+      .then(r => r.data.activity ?? []),
+    enabled: !!entityType && !!id,
   });
 
 export const useEvent = (id) =>

@@ -10,7 +10,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 |---|---------|------|--------|------------|
 | 01 | [`01_clientes-acciones-y-pestana-propiedades.md`](./01_clientes-acciones-y-pestana-propiedades.md) | Frontend (Clients.jsx) | `completed` | — |
 | 02 | [`02_propiedades-atajo-vincular-inquilino.md`](./02_propiedades-atajo-vincular-inquilino.md) | Frontend (Properties.jsx) | `completed` | comparte flujo de vínculo con 01 |
-| 03 | [`03_log-actividad-unificado.md`](./03_log-actividad-unificado.md) | Backend + Frontend | `pending` | 01/02 emiten eventos que 03 persiste |
+| 03 | [`03_log-actividad-unificado.md`](./03_log-actividad-unificado.md) | Backend + Frontend | `completed` | 01/02 emiten eventos que 03 persiste |
 
 ### Ejecución automatizada
 Estos planes los procesa el skill **`loop-skill/`** (implementador-loop, patrón Ralph):

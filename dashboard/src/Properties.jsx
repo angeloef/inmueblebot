@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, propertyApi } from './api';
+import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, useActivity, propertyApi } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import { useAuth } from './auth';
+import Timeline from './Timeline';
 
 /** Bloque "Sucursal" del drawer: solo para el dueño de una org en vista consolidada
  *  (Todas las sucursales). Permite mover la propiedad a otra sucursal. */
@@ -83,6 +84,7 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
   const { data: allEvents = [] } = useEvents();
   const updateStatus     = useUpdatePropertyStatus();
   const relateClient     = useRelateClientToProperty();
+  const { data: activity = [] } = useActivity('property', property?.id);
   // Use fresh data from the cache so drawer reflects mutation updates immediately
   const freshProperty = properties.find(p => String(p.id) === String(property.id)) || property;
   property = freshProperty;
@@ -306,20 +308,9 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
           </div>
 
           <div className="detail-block">
-            <h3>Visitas y actividad ({events.length})</h3>
-            {events.length === 0 ? (
-              <div className="muted" style={{fontSize:12}}>Sin eventos programados.</div>
-            ) : events.slice(0,5).map(e => {
-              const c = clients.find(x => x.id === e.clientId);
-              return (
-                <div key={e.id} style={{display:'flex',gap:10,padding:'8px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:13,alignItems:'center'}}>
-                  <span style={{width:6,height:6,borderRadius:'50%',background:KIND_META[e.kind].color,flexShrink:0}}></span>
-                  <span className="tabular muted" style={{minWidth:78}}>{e.date.slice(8)}/{e.date.slice(5,7)} {fmtTime12(e.start)}</span>
-                  <span style={{flex:1}}>{c ? c.name : e.title}</span>
-                  {e.status === 'cancelled' ? <Pill kind="cancelled">Cancelada</Pill> : e.status === 'pending' ? <Pill kind="pending">Por confirmar</Pill> : <Pill kind="paid">Confirmada</Pill>}
-                </div>
-              );
-            })}
+            <h3>Visitas y actividad ({events.length + activity.length})</h3>
+            <Timeline events={events} activity={activity} limit={12}
+                      emptyText="Sin actividad registrada todavía." />
           </div>
         </div>
       </div>

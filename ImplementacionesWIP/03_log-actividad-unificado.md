@@ -1,7 +1,7 @@
 ---
 id: 03
 title: "Log de actividad unificado (Visitas y actividad sólida)"
-status: pending
+status: completed
 priority: high
 area: backend+frontend
 files:
@@ -87,3 +87,43 @@ Decisión de diseño sugerida: el `activity_log` registra *eventos*; los *datos 
 
 ## 7. Bitácora (append-only)
 - 2026-06-16 — Plan creado. Pendiente. Confirmar disponibilidad de identidad de agente en requests del dashboard (afecta campo `actor`).
+- 2026-06-16 — Implementado (implementador-loop).
+  - **Decisión de diseño (DDL):** la tabla `activity_log` se crea con DDL idempotente
+    (`CREATE TABLE IF NOT EXISTS`, "Fix 28") dentro de `_run_startup_migration` en
+    `admin.py` — **no** vía Alembic. Es la convención real del repo para tablas de
+    admin (faq_entries, bot_settings, notifications); Alembic está gateado
+    (`RUN_LEGACY_STARTUP_MIGRATION`) y correr una migración nueva contra la DB local
+    (que apunta a prod) era riesgoso. Idempotente = prod-safe en el auto-deploy.
+  - **Modelo** `app/db/models/activity_log.py` (registrado en `__init__.py`) para
+    lecturas/escrituras tipadas: id, tenant_id, entity_type, entity_id, action, actor,
+    actor_user_id (nullable, futuro), payload JSONB, created_at; índice
+    `(tenant_id, entity_type, entity_id, created_at)`.
+  - **Helper** `app/services/activity_log_service.py`: `log_activity` (sync) +
+    `log_activity_async` (raw INSERT parametrizado). **Nunca aborta la operación**:
+    el `db.flush()` interno fuerza el INSERT temprano dentro del try/except, de modo
+    que un log roto se captura acá y no explota en el `db.commit()` del endpoint.
+    Guard `VALID_ACTIONS` (defense-in-depth, sec-review LOW).
+  - **Emisión** en los 4 endpoints: `update_property` (property_edited con diff de
+    campos clave: price/currency/status/location/title, no dumpea todo),
+    `update_property_status` (status_changed {from,to}), `relate_client_to_property`
+    (relation_linked/changed/unlinked, fila por propiedad **y** por cliente),
+    `reassign_property` (reassigned, async raw insert con sucursal origen/destino).
+  - **Endpoint** `GET /admin/activity?entity_type=&entity_id=`, tenant-scoped por
+    `resolve_tenant_id()`, paginado (limit/offset), orden desc.
+  - **Frontend:** hook `useActivity(entityType, id)` + `keys.activity`; invalidación
+    en update/status/relate. Componente compartido `Timeline.jsx` + formateador
+    `activityFormat.js` (textos en español: "Estado: Disponible → Alquilada",
+    "Vinculado como inquilino: …", "Precio: …"). Mergea appointments + activity_log
+    ordenado desc en `Properties.jsx` ("Visitas y actividad") y en el tab Actividad de
+    `Clients.jsx`.
+  - **`actor`:** no hay identidad de agente por request en el path sync (deps devuelven
+    bool) → `actor='dashboard'`, `actor_user_id` NULL para evolución futura (confirmado).
+  - **Gates:** ruff `app/` limpio en archivos nuevos; **pytest 3/3** (incl. la propiedad
+    crítica: fallo del log no propaga, sync y async); **smoke test en Docker** contra
+    Postgres real (DDL + INSERT ORM + round-trip JSONB OK); build vite del dashboard
+    verde. **security-reviewer**: 0 CRITICAL; SQLi CLEAR (parametrizado); HIGH de
+    tenant-scoping evaluado y mantenido por consistencia con el resto de `admin.py`
+    (todos usan `resolve_tenant_id()`); sin RLS en la tabla = misma postura que
+    `notifications` (scoping a nivel app); PII limitada a nombre/dirección (audit log).
+    Guard VALID_ACTIONS agregado. Gate UX-Chrome no ejecutado (requiere stack completo
+    con auth, fuera de budget).

@@ -8,6 +8,7 @@ from app.api.deps import get_current_account, require_active_subscription, requi
 from app.db.models import TenantAccount
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
+from app.services.activity_log_service import log_activity, log_activity_async
 import uuid as _uuid
 import logging
 
@@ -442,6 +443,27 @@ def _run_startup_migration(engine):
                 logger.info("Migration Fix 27: properties.reference_points added")
             except Exception as e:
                 logger.warning(f"Migration Fix 27: {e}")
+
+            # ── Fix 28: Create activity_log table (timeline unificado) ────
+            # Eventos auditables de propiedades/clientes (vínculos, estado, ediciones,
+            # reasignaciones). Idempotente, igual que faq_entries/notifications.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id   UUID,
+                    entity_type VARCHAR(20)  NOT NULL,
+                    entity_id   VARCHAR(64)  NOT NULL,
+                    action      VARCHAR(40)  NOT NULL,
+                    actor       VARCHAR(60)  NOT NULL DEFAULT 'dashboard',
+                    actor_user_id UUID,
+                    payload     JSONB        NOT NULL DEFAULT '{}'::jsonb,
+                    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_activity_log_entity "
+                "ON activity_log (tenant_id, entity_type, entity_id, created_at DESC)"
+            ))
 
             # NOTE: Las tablas de Cobranzas se crean en una transacción AISLADA en
             # app/api/routes/cobranzas.py (ensure_cobranzas_schema), no acá: esta
@@ -1026,6 +1048,12 @@ def update_property(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    # Snapshot de campos clave para el diff del log (antes de aplicar cambios).
+    _before = {
+        "price": prop.price, "currency": prop.currency,
+        "status": prop.status, "location": prop.location, "title": prop.title,
+    }
+
     updates = data.model_dump(exclude_unset=True)
     if "operation" in updates:
         op = updates.pop("operation")
@@ -1076,6 +1104,20 @@ def update_property(
     for k, v in updates.items():
         if hasattr(prop, k):
             setattr(prop, k, v)
+
+    # Diff de campos clave para el timeline (no dumpear todo el objeto).
+    _after = {
+        "price": prop.price, "currency": prop.currency,
+        "status": prop.status, "location": prop.location, "title": prop.title,
+    }
+    _diff = {k: {"from": _before[k], "to": _after[k]}
+             for k in _before if _before[k] != _after[k]}
+    if _diff:
+        log_activity(
+            db, tenant_id=getattr(prop, "tenant_id", None),
+            entity_type="property", entity_id=prop.id,
+            action="property_edited", payload={"changes": _diff},
+        )
 
     db.commit()
 
@@ -1130,7 +1172,15 @@ def update_property_status(
     valid = ("available", "reserved", "sold", "rented")
     if data.status not in valid:
         raise HTTPException(status_code=422, detail=f"Invalid status. Must be one of {valid}")
+    _old_status = prop.status
     prop.status = data.status
+    if _old_status != prop.status:
+        log_activity(
+            db, tenant_id=getattr(prop, "tenant_id", None),
+            entity_type="property", entity_id=prop.id,
+            action="status_changed",
+            payload={"from": _old_status, "to": prop.status},
+        )
     db.commit()
     return {"status": "updated", "property_id": prop_id, "new_status": prop.status}
 
@@ -1167,6 +1217,10 @@ async def reassign_property(
     target = _validate_target_branch(account, data.branch_id)
     with tenant_scope(account.org_id):  # GUC=org → RLS org-aware ve/escribe todas las hijas
         async with _make_async_session() as s:
+            _src = (await s.execute(
+                _t("SELECT tenant_id FROM properties WHERE id = :id"),
+                {"id": prop_id},
+            )).scalar_one_or_none()
             res = await s.execute(
                 _t("UPDATE properties SET tenant_id = :t WHERE id = :id"),
                 {"t": str(target), "id": prop_id},
@@ -1177,6 +1231,12 @@ async def reassign_property(
             await s.execute(
                 _t("UPDATE appointments SET tenant_id = :t WHERE property_id = :id"),
                 {"t": str(target), "id": prop_id},
+            )
+            await log_activity_async(
+                s, tenant_id=target, entity_type="property", entity_id=prop_id,
+                action="reassigned",
+                payload={"from_branch": str(_src) if _src else None,
+                         "to_branch": str(target)},
             )
             await s.commit()
     return {"status": "reassigned", "property_id": prop_id, "branch_id": str(target)}
@@ -1221,6 +1281,50 @@ async def reassign_lead(
             )
             await s.commit()
     return {"status": "reassigned", "lead_id": str(uid), "branch_id": str(target)}
+
+
+# ── Activity log (timeline unificado) ───────────────────────────────────────────
+
+@router.get("/activity")
+def get_activity(
+    entity_type: str = Query(..., pattern="^(property|client)$"),
+    entity_id: str = Query(..., min_length=1),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_active_subscription),
+):
+    """Eventos de actividad de una propiedad o cliente, tenant-scoped, orden desc."""
+    from app.db.models import ActivityLog
+    from app.core.tenancy import resolve_tenant_id
+
+    tid = str(resolve_tenant_id())
+    rows = (
+        db.query(ActivityLog)
+        .filter(
+            ActivityLog.entity_type == entity_type,
+            ActivityLog.entity_id == str(entity_id),
+            ActivityLog.tenant_id == tid,
+        )
+        .order_by(ActivityLog.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    return {
+        "activity": [
+            {
+                "id": str(r.id),
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "action": r.action,
+                "actor": r.actor,
+                "payload": r.payload or {},
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
 
 
 # ── Client-Property Relationship ────────────────────────────────────────────────
@@ -1277,6 +1381,8 @@ def relate_client_to_property(
     # Update user extra_data with property_relations
     uextra = _parse_extra(getattr(user, 'extra_data', None))
     relations = uextra.get("property_relations", [])
+    # Relación previa para distinguir linked / changed / unlinked en el log.
+    _prior_rel = next((r for r in relations if r.get("prop_id") == prop_id), None)
 
     if data.relation == "none":
         # Unlink: remove relation, reset role to prospect if no other relations
@@ -1304,6 +1410,26 @@ def relate_client_to_property(
         user.extra_data = uextra
     except AttributeError:
         pass
+
+    # Log del vínculo: visible tanto en el timeline de la propiedad como del cliente.
+    if data.relation == "none":
+        _action = "relation_unlinked"
+    elif _prior_rel:
+        _action = "relation_changed"
+    else:
+        _action = "relation_linked"
+    _rel_payload = {
+        "client_id": data.client_id,
+        "client_name": getattr(user, "name", None),
+        "relation": data.relation,
+        "from_relation": _prior_rel.get("relation") if _prior_rel else None,
+        "property_addr": getattr(prop, "location", None),
+    }
+    _tid = getattr(prop, "tenant_id", None)
+    log_activity(db, tenant_id=_tid, entity_type="property", entity_id=prop.id,
+                 action=_action, payload=_rel_payload)
+    log_activity(db, tenant_id=_tid, entity_type="client", entity_id=data.client_id,
+                 action=_action, payload=_rel_payload)
 
     db.commit()
     return {
