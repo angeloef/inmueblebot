@@ -430,7 +430,7 @@ function TimeGrid({ days, events, onEventClick, today, view, onSlotInteract, onM
   );
 }
 
-export default function Calendar({ onOpenClient, onOpenProperty, initialEventId, initialDate }) {
+export default function Calendar({ onOpenClient, onOpenProperty, initialEventId, initialDate, initialNewEventClientId }) {
   const { data: events = [] }                 = useEvents();
   const createEventMut                        = useCreateEvent();
   const updateEventMut                        = useUpdateEvent();
@@ -527,6 +527,21 @@ export default function Calendar({ onOpenClient, onOpenProperty, initialEventId,
     setView('day');
     setPopover({ event: target, anchor: null });
   }, [initialEventId, events, fetchedEvent, notifEventHandled]);
+
+  // "Agendar" desde el perfil de un cliente: abre el editor de evento nuevo con el
+  // cliente precargado (una sola vez, al montar con la navegación).
+  const [agendaHandled, setAgendaHandled] = React.useState(false);
+  React.useEffect(() => {
+    if (!initialNewEventClientId || agendaHandled) return;
+    setAgendaHandled(true);
+    setEditor({
+      mode: 'create',
+      event: {
+        title: 'Visita · ', kind: 'visit', date: today, start: '10:00', end: '11:00',
+        clientId: initialNewEventClientId, propId: '', agent: 'M. Pereyra', status: 'pending', notes: '',
+      },
+    });
+  }, [initialNewEventClientId, agendaHandled, today]);
 
   const handleEdit = (e) => { setPopover(null); setEditor({ event: e, mode: 'edit' }); };
   const handleReschedule = (e) => { setPopover(null); setEditor({ event: e, mode: 'reschedule' }); };

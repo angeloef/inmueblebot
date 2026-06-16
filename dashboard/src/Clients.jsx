@@ -6,6 +6,7 @@ import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
 import ExportCsv from './ExportCsv';
+import LinkClientProperty from './LinkClientProperty';
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -110,7 +111,7 @@ function ClientEditor({ client, mode, onClose, onSave, saving = false }) {
   );
 }
 
-function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpenEvent }) {
+function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpenEvent, onAgenda }) {
   const { data: properties = [] } = useProperties();
   const { data: allEvents = [] }  = useEvents();
   if (!client) return null;
@@ -156,16 +157,20 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
                 <span><Icon name="mail" size={12} style={{verticalAlign:'middle',marginRight:4,color:'var(--fg-tertiary)'}}/> <a href={`mailto:${client.email}`}>{client.email}</a></span>
               </div>
               <div className="quick">
-                <Button kind="primary" size="sm" icon="phone">Llamar</Button>
-                <Button kind="secondary" size="sm" icon="whatsapp">WhatsApp</Button>
-                <Button kind="secondary" size="sm" icon="mail">Correo</Button>
-                <Button kind="secondary" size="sm" icon="calendar">Agendar</Button>
+                <Button kind="primary" size="sm" icon="phone" disabled={!client.phone}
+                        onClick={() => client.phone && window.open(`tel:${client.phone}`)}>Llamar</Button>
+                <Button kind="secondary" size="sm" icon="whatsapp" disabled={!client.phone}
+                        onClick={() => client.phone && window.open(`https://wa.me/${client.phone.replace(/[^\d]/g, '')}`, '_blank', 'noopener,noreferrer')}>WhatsApp</Button>
+                <Button kind="secondary" size="sm" icon="mail" disabled={!client.email}
+                        onClick={() => client.email && window.open(`mailto:${client.email}`)}>Correo</Button>
+                <Button kind="secondary" size="sm" icon="calendar" disabled={!onAgenda}
+                        onClick={() => onAgenda && onAgenda(client)}>Agendar</Button>
               </div>
             </div>
           </div>
         </div>
         <div className="tabs" role="tablist" aria-label="Secciones del cliente">
-          {[['overview','Resumen'],['interest','Intereses'],['activity','Actividad'],['docs','Documentos']].map(([k,l]) => (
+          {[['overview','Resumen'],['interest','Propiedades'],['activity','Actividad'],['docs','Documentos']].map(([k,l]) => (
             <button key={k} role="tab" id={`client-tab-${k}`} aria-controls={`client-tabpanel-${k}`}
                     aria-selected={tab===k} tabIndex={tab===k ? 0 : -1}
                     className={tab===k?'active':''} onClick={()=>setTab(k)}>{l}</button>
@@ -205,6 +210,9 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
           </Fragment>}
           {tab === 'interest' && <div className="detail-block">
             <h3>Propiedades vinculadas ({interestProps.length + linkedProps.length})</h3>
+            <div style={{marginBottom:10}}>
+              <LinkClientProperty side="client" client={client} />
+            </div>
             {interestProps.length === 0 && linkedProps.length === 0
               ? <div className="muted" style={{fontSize:12}}>Sin propiedades asignadas.</div>
               : <>
@@ -259,7 +267,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
   );
 }
 
-export default function Clients({ initialClient, initialPhone, onOpenProperty, onOpenEvent }) {
+export default function Clients({ initialClient, initialPhone, onOpenProperty, onOpenEvent, onAgenda }) {
   const { data: clients = [] } = useClients();
   const createClientMut = useCreateClient();
   const updateClientMut = useUpdateClient();
@@ -396,6 +404,7 @@ export default function Clients({ initialClient, initialPhone, onOpenProperty, o
           onDelete={handleDelete}
           onOpenProperty={onOpenProperty}
           onOpenEvent={onOpenEvent}
+          onAgenda={onAgenda ? (c) => { setOpen(null); onAgenda(c); } : undefined}
         />
       )}
       {editor && (

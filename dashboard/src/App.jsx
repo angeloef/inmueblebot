@@ -73,6 +73,10 @@ export default function App() {
   const [calEventId, setCalEventId] = useState(null);
   const [clientPhone, setClientPhone] = useState(null);
 
+  // "Agendar" desde el perfil de un cliente → abre el Calendario con un evento
+  // nuevo y el cliente precargado.
+  const [agendaClientId, setAgendaClientId] = useState(null);
+
   const updateEventMut = useUpdateEvent();
   const deleteEventMut = useDeleteEvent();
 
@@ -96,8 +100,17 @@ export default function App() {
     setPropertyToOpen(null);
     setCalEventId(null);
     setClientPhone(null);
+    setAgendaClientId(null);
     setActive(view);
     const path = VIEW_TO_PATH[view];
+    if (path && location.pathname !== path) navigate(path);
+  };
+
+  const openAgenda = (client) => {
+    setCalEventId(null);
+    setAgendaClientId(client?.id ?? null);
+    setActive('calendar');
+    const path = VIEW_TO_PATH['calendar'];
     if (path && location.pathname !== path) navigate(path);
   };
 
@@ -176,10 +189,11 @@ export default function App() {
 
           {active === 'calendar' && (
             <Calendar
-              key={calEventId ?? 'cal'}
+              key={calEventId ?? (agendaClientId ? `agenda-${agendaClientId}` : 'cal')}
               onOpenClient={openClient}
               onOpenProperty={openProperty}
               initialEventId={calEventId}
+              initialNewEventClientId={agendaClientId}
             />
           )}
 
@@ -194,6 +208,7 @@ export default function App() {
               initialPhone={clientPhone}
               onOpenProperty={openProperty}
               onOpenEvent={openEvent}
+              onAgenda={openAgenda}
             />
           )}
 
