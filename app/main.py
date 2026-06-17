@@ -531,6 +531,10 @@ app.include_router(admin_router)
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
 
+# Operaciones (vínculos relacionales, garantes, ventas) — comparte prefix /admin
+from app.api.routes.operations import router as operations_router
+app.include_router(operations_router)
+
 # Auth (JWT multi-tenant signup/login)
 from app.api.routes.auth import router as auth_router
 app.include_router(auth_router)
@@ -569,6 +573,7 @@ from fastapi import APIRouter as _APIRouter
 _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 _api_compat.include_router(cobranzas_router)
+_api_compat.include_router(operations_router)
 _api_compat.include_router(auth_router)
 _api_compat.include_router(billing_router)
 _api_compat.include_router(team_router)

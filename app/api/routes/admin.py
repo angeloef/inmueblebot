@@ -600,6 +600,7 @@ class PropertyRelateClient(BaseModel):
     client_id: str            # UUID of the User/Lead
     relation: str = "interested"  # 'interested', 'buyer', 'tenant'
     update_status: bool = True    # auto-update property status
+    agent_id: Optional[str] = None  # UUID de tenant_members: agente atribuido (C5)
 
 
 class ClientPropertyInterest(BaseModel):
@@ -1405,6 +1406,46 @@ def relate_client_to_property(
         user.extra_data = uextra
     except AttributeError:
         pass
+
+    # ── Modelo relacional (C1/C5): además del JSONB legacy, escribir el vínculo en
+    # property_relations y —para inquilino— asegurar un contrato (el contrato es la
+    # fuente de verdad). En SAVEPOINT: si falla, no envenena el commit del endpoint.
+    try:
+        from datetime import date as _date, datetime as _dtsync
+        from app.api.routes.operations import ensure_operations_schema, upsert_relation
+        from app.core.tenancy import resolve_tenant_id as _resolve_tenant
+        from app.db.models import PropertyRelation as _PR, Contract as _Contract
+        ensure_operations_schema()
+        _agent_uuid = None
+        if getattr(data, "agent_id", None):
+            try:
+                _agent_uuid = _UUID(data.agent_id)
+            except ValueError:
+                _agent_uuid = None
+        with db.begin_nested():
+            if data.relation == "none":
+                for _r in db.query(_PR).filter(
+                    _PR.property_id == prop_id, _PR.client_id == uid, _PR.status == "active"
+                ).all():
+                    _r.status = "ended"
+                    _r.ended_at = _dtsync.utcnow()
+            else:
+                upsert_relation(db, property_id=prop_id, client_id=uid,
+                                relation=data.relation, agent_id=_agent_uuid)
+                if data.relation == "tenant":
+                    _existing = db.query(_Contract).filter(
+                        _Contract.property_id == prop_id, _Contract.tenant_id == uid,
+                        _Contract.status.in_(("draft", "active")),
+                    ).first()
+                    if not _existing:
+                        _c = _Contract(property_id=prop_id, tenant_id=uid,
+                                       status="draft", start_date=_date.today())
+                        _c.org_id = _resolve_tenant()
+                        if _agent_uuid is not None:
+                            _c.agent_id = _agent_uuid
+                        db.add(_c)
+    except Exception as _exc:  # noqa: BLE001 — el sync relacional nunca aborta el vínculo
+        logger.warning("relate-client: sync relacional falló: %s", _exc)
 
     # Log del vínculo: visible tanto en el timeline de la propiedad como del cliente.
     if data.relation == "none":

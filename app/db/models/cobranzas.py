@@ -14,7 +14,7 @@ from datetime import datetime, date
 from typing import Optional, List
 from uuid import uuid4
 from sqlalchemy import (
-    String, Integer, Float, Date, DateTime, Boolean,
+    String, Integer, BigInteger, Float, Date, DateTime, Boolean,
     ForeignKey, Index, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -120,6 +120,30 @@ class Contract(Base):
     )
 
     notes: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
+
+    # Atribución por agente (C5) — FK a tenant_members. Columna creada vía
+    # ensure_operations_schema (ALTER IF NOT EXISTS).
+    agent_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenant_members.id", ondelete="SET NULL"),
+        nullable=True, comment="Agente (tenant_members) atribuido",
+    )
+
+    # Depósito en garantía (C3)
+    deposit_amount: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0",
+        comment="Monto del depósito en garantía",
+    )
+    deposit_currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="ARS", server_default="ARS",
+    )
+    deposit_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="none", server_default="none",
+        comment="none | held | returned | partial",
+    )
+    deposit_returned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    deposit_notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,

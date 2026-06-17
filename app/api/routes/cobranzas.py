@@ -190,6 +190,12 @@ class ContractCreate(BaseModel):
     commission_pct: float = 0.0
     status: str = "active"
     notes: Optional[str] = None
+    agent_id: Optional[str] = None              # UUID de tenant_members (C5)
+    deposit_amount: Optional[int] = None        # depósito en garantía (C3)
+    deposit_currency: Optional[str] = None
+    deposit_status: Optional[str] = None        # none | held | returned | partial
+    deposit_returned_at: Optional[str] = None   # ISO date
+    deposit_notes: Optional[str] = None
 
 
 class ContractUpdate(BaseModel):
@@ -209,6 +215,12 @@ class ContractUpdate(BaseModel):
     commission_pct: Optional[float] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    agent_id: Optional[str] = None
+    deposit_amount: Optional[int] = None
+    deposit_currency: Optional[str] = None
+    deposit_status: Optional[str] = None
+    deposit_returned_at: Optional[str] = None
+    deposit_notes: Optional[str] = None
 
 
 class ChargeUpdate(BaseModel):
@@ -379,7 +391,8 @@ def _apply_contract_fields(c: Contract, data: dict) -> None:
     """Aplica campos de un dict (create/update) al objeto Contract."""
     for key in ("base_rent", "currency", "payment_due_day", "grace_days",
                 "adjustment_index", "adjustment_frequency_months", "adjustment_fixed_pct",
-                "punitorio_daily_pct", "commission_pct", "status", "notes"):
+                "punitorio_daily_pct", "commission_pct", "status", "notes",
+                "deposit_amount", "deposit_currency", "deposit_status", "deposit_notes"):
         if key in data and data[key] is not None:
             setattr(c, key, data[key])
     if "property_id" in data:
@@ -388,6 +401,10 @@ def _apply_contract_fields(c: Contract, data: dict) -> None:
         c.tenant_id = _as_uuid(data["tenant_id"], "tenant_id")
     if data.get("owner_id") is not None:
         c.owner_id = _as_uuid(data["owner_id"], "owner_id")
+    if data.get("agent_id") is not None:
+        c.agent_id = _as_uuid(data["agent_id"], "agent_id")
+    if "deposit_returned_at" in data and data["deposit_returned_at"]:
+        c.deposit_returned_at = _parse_date(data["deposit_returned_at"])
     if "start_date" in data and data["start_date"]:
         c.start_date = _parse_date(data["start_date"])
     if "end_date" in data:
