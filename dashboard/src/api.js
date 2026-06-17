@@ -980,6 +980,21 @@ export const useUpdateGlobalEntity = (entity) => {
   });
 };
 
+// ─── Analítica de plataforma (super-admin, plan 06) ──────────────────────────
+// Pega a /admin/analytics/*: agregados cross-tenant de TODAS las inmobiliarias.
+// Gateado por require_superadmin; el GUC RLS expone el cross-tenant.
+
+const analyticsApi = {
+  overview: () => http.get('/admin/analytics/overview').then(r => r.data),
+  tenants:  () => http.get('/admin/analytics/tenants').then(r => r.data),
+};
+
+export const useAnalyticsOverview = (enabled = true) =>
+  useQuery({ queryKey: ['analytics', 'overview'], queryFn: analyticsApi.overview, enabled, staleTime: 60_000 });
+
+export const useAnalyticsTenants = (enabled = true) =>
+  useQuery({ queryKey: ['analytics', 'tenants'], queryFn: analyticsApi.tenants, enabled, staleTime: 60_000 });
+
 // ─── WhatsApp Conversations ─────────────────────────────────────────────────
 
 const conversationApi = {

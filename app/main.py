@@ -531,6 +531,10 @@ app.include_router(admin_router)
 from app.api.routes.admin_global import router as admin_global_router
 app.include_router(admin_global_router)
 
+# Analítica de plataforma cross-tenant super-admin (plan 06) — prefix /admin/analytics
+from app.api.routes.admin_analytics import router as admin_analytics_router
+app.include_router(admin_analytics_router)
+
 # Cobranzas (gestión de alquileres) — comparte prefix /admin
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
@@ -577,6 +581,7 @@ from fastapi import APIRouter as _APIRouter
 _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 _api_compat.include_router(admin_global_router)
+_api_compat.include_router(admin_analytics_router)
 _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(operations_router)
 _api_compat.include_router(auth_router)

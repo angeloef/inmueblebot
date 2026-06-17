@@ -2,13 +2,14 @@
  * SuperadminShell.jsx — layout de la consola /superadmin.
  *
  * Header con marca + selector global de inmobiliaria (consumido por 05/06) + logout, y
- * navegación de pestañas. Las pestañas "Datos", "Analítica" y "Errores" son placeholders
- * que llenan los planes 05, 06 y 07 respectivamente.
+ * navegación de pestañas. "Datos" (plan 05) y "Analítica" (plan 06) ya están implementadas;
+ * "Errores" sigue como placeholder hasta el plan 07.
  */
 import React, { useState } from 'react';
 import { useAuth } from '../auth';
 import { useSuperadminTenant } from './TenantContext';
 import GlobalExplorer from './GlobalExplorer';
+import PlatformAnalytics from './PlatformAnalytics';
 
 const NAVY = '#164a71';
 
@@ -137,7 +138,9 @@ export default function SuperadminShell({ account }) {
 
       <main style={S.main}>
         <div id="sa-tabpanel" role="tabpanel" aria-labelledby={`sa-tab-${activeTab}`}>
-          {activeTab === 'data' ? <GlobalExplorer /> : <Placeholder tab={tab} scope={scope} />}
+          {activeTab === 'data' && <GlobalExplorer />}
+          {activeTab === 'analytics' && <PlatformAnalytics />}
+          {activeTab !== 'data' && activeTab !== 'analytics' && <Placeholder tab={tab} scope={scope} />}
         </div>
       </main>
     </div>
