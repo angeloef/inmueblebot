@@ -27,6 +27,13 @@ from app.core.config import get_settings
 # current_setting() in the policy makes it NULL-safe for non-app sessions.
 TENANT_GUC = "app.current_tenant_id"
 
+# Postgres GUC that, when set to ``'on'``, lets a super-admin session read/write rows of
+# EVERY tenant (cross-tenant). Each RLS policy ORs ``current_setting('app.is_superadmin',
+# true) = 'on'`` (NULL-safe ⇒ off by default). Driven by the ContextVar below + the session
+# listener, transaction-local so it never leaks to the next checkout on a pooled connection.
+# Only ever turned on inside ``require_superadmin`` (fail-closed). See migration 0018.
+SUPERADMIN_GUC = "app.is_superadmin"
+
 
 def default_tenant_id() -> UUID:
     """The default tenant (existing inmobiliaria). Fallback for any unscoped path."""
@@ -105,7 +112,39 @@ def resolve_tenant_id() -> UUID:
     return _current_tenant.get() or default_tenant_id()
 
 
-class tenant_scope:
+# --- Per-task super-admin context -------------------------------------------------
+# When True, the GUC listener sets ``app.is_superadmin='on'`` so RLS exposes EVERY tenant.
+# Default False everywhere; only the ``require_superadmin`` dependency flips it on.
+_superadmin: ContextVar[bool] = ContextVar("superadmin", default=False)
+
+
+def set_superadmin(enabled: bool) -> Token:
+    """Enable/disable cross-tenant super-admin access for this async task.
+
+    Returns a token to reset with. Used by ``require_superadmin`` so every DB session
+    opened inside a super-admin route sees all tenants (the GUC listener reads this).
+    """
+    return _superadmin.set(enabled)
+
+
+def reset_superadmin(token: Token) -> None:
+    """Restore the previous super-admin context (token from ``set_superadmin``)."""
+    _superadmin.reset(token)
+
+
+def is_superadmin_context() -> bool:
+    """Whether the current task runs with cross-tenant super-admin access."""
+    return _superadmin.get()
+
+
+# NOTE: there is intentionally NO public ``superadmin_scope`` context manager. Cross-tenant
+# access is granted ONLY by the ``require_superadmin`` dependency (deps.py), which sets this
+# ContextVar for the whole request and is fail-closed. Plans 05/06/07 obtain cross-tenant
+# access simply by depending on ``require_superadmin`` — they must never flip ``set_superadmin``
+# directly, which would bypass authentication.
+
+
+class tenant_scope:  # noqa: N801 — lowercase like contextlib helpers (e.g. suppress)
     """Context manager that pins the current tenant for the enclosed block.
 
     Used by background jobs that iterate over tenants: each tenant gets its own
@@ -123,7 +162,7 @@ class tenant_scope:
         self._tenant_id = tenant_id
         self._token: Token | None = None
 
-    def __enter__(self) -> "tenant_scope":
+    def __enter__(self) -> tenant_scope:
         self._token = set_current_tenant(self._tenant_id)
         return self
 

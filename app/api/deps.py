@@ -11,7 +11,12 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.security import decode_token
-from app.core.tenancy import reset_current_tenant, set_current_tenant
+from app.core.tenancy import (
+    reset_current_tenant,
+    reset_superadmin,
+    set_current_tenant,
+    set_superadmin,
+)
 from app.db.models import Subscription, TenantAccount
 from app.db.session import async_session_factory
 from app.services.subscription_service import subscription_grants_access
@@ -100,8 +105,10 @@ def _resolve_effective_tenant(account: TenantAccount, x_branch_id: str | None) -
     if x_branch_id:
         try:
             wanted = UUID(x_branch_id)
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid branch id")
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid branch id"
+            ) from exc
         if wanted in getattr(account, "branch_ids", []):
             account.active_branch_id = wanted  # type: ignore[attr-defined]
             return wanted
@@ -138,14 +145,26 @@ async def require_superadmin(
     """Auth de super-admin: acepta la ADMIN_API_KEY global (ops) O un JWT con role
     ``superadmin`` (el dueño logueado en el dashboard).
 
-    Rutas a nivel plataforma (gestión de tenants, reindex, cleanup, simulate). La
-    key global no resuelve tenant (ve todo); el JWT superadmin setea su contexto.
-    Fail-closed: cualquier otra cosa → 401/403.
+    Rutas a nivel plataforma (gestión de tenants, reindex, cleanup, simulate). Ambos
+    paths activan el contexto super-admin (GUC ``app.is_superadmin='on'``), de modo que
+    cualquier query a una tabla con RLS dentro de la request ve TODOS los tenants
+    (cross-tenant real, base de los planes 05/06/07). Fail-closed: cualquier otra cosa
+    → 401/403, y el GUC se apaga al salir (transaction-local + reset del ContextVar).
     """
     settings = get_settings()
     api_key = x_api_key or x_admin_api_key
-    if api_key and settings.ADMIN_API_KEY and hmac.compare_digest(api_key, settings.ADMIN_API_KEY):
-        yield None
+    configured_key = settings.ADMIN_API_KEY
+    # Fail-closed contra el default inseguro: NUNCA aceptar la api-key si no se configuró
+    # una real (vacía o el placeholder de fábrica). Con el GUC superadmin esta key da
+    # acceso cross-tenant total, así que un default sin setear sería un agujero crítico.
+    key_is_usable = bool(configured_key) and configured_key != "admin-secret-key"
+    if api_key and key_is_usable and hmac.compare_digest(api_key, configured_key):
+        # Ops global key: sin tenant resuelto, pero con acceso cross-tenant explícito.
+        sa_token = set_superadmin(True)
+        try:
+            yield None
+        finally:
+            reset_superadmin(sa_token)
         return
 
     token = creds.credentials if creds else access_cookie
@@ -156,9 +175,11 @@ async def require_superadmin(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     ctx_token = set_current_tenant(account.tenant_id)
+    sa_token = set_superadmin(True)
     try:
         yield account
     finally:
+        reset_superadmin(sa_token)
         reset_current_tenant(ctx_token)
 
 

@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import Login from './Login';
+import SuperadminApp from './superadmin/SuperadminApp';
 import { AuthProvider, useAuth } from './auth';
 import { startVersionWatcher } from './version';
 import '../tokens.css';
@@ -44,6 +45,11 @@ function Splash({ text = 'Cargando…' }) {
 // deep-link (?next=/dashboard/clientes) para volver a la vista bookmarkeada.
 function Root() {
   const { status } = useAuth();
+  // La superficie /superadmin es un árbol aparte con su propio login y gate por rol; no pasa
+  // por el redirect al login canónico de la landing (que es para inmobiliarias). Lo leemos del
+  // router (reactivo) en vez de un const a nivel módulo, para no servir el árbol equivocado si
+  // alguna navegación client-side cambia el path sin recargar.
+  const isSuperadminPath = useLocation().pathname.startsWith('/superadmin');
 
   const shouldRedirect =
     status === 'anon' && !!LOGIN_URL && !sessionStorage.getItem(REDIRECT_FLAG);
@@ -59,6 +65,8 @@ function Root() {
       window.location.replace(`${LOGIN_URL}?next=${next}`);
     }
   }, [status, shouldRedirect]);
+
+  if (isSuperadminPath) return <SuperadminApp />;
 
   if (status === 'loading') return <Splash />;
   if (status === 'reconnecting') return <Splash text="Conectando con el servidor…" />;
