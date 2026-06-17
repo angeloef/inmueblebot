@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import require_active_subscription
+from app.api.deps import require_plan
 from app.core.tenancy import resolve_tenant_id
 from app.db.models import TenantAccount
 from app.db.models.document import DOCUMENT_CATEGORIES, Document
@@ -75,7 +75,7 @@ def _strip_data_uri(b64: str) -> str:
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     payload: DocumentCreate,
-    account: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    account: TenantAccount = Depends(require_plan(feature="documents")),  # noqa: B008
 ) -> DocumentOut:
     if not payload.client_id and not payload.contract_id:
         raise HTTPException(status_code=422, detail="Indicá un cliente o un contrato")
@@ -130,7 +130,7 @@ async def upload_document(
 async def list_documents(
     client_id: str | None = Query(default=None),
     contract_id: str | None = Query(default=None),
-    _: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    _: TenantAccount = Depends(require_plan(feature="documents")),  # noqa: B008
 ) -> list[DocumentOut]:
     """Lista metadatos (sin el blob). Filtra por cliente y/o contrato; RLS scopea por tenant."""
     stmt = select(Document).order_by(Document.created_at.desc())
@@ -153,7 +153,7 @@ async def list_documents(
 @router.get("/{doc_id}/download")
 async def download_document(
     doc_id: UUID,
-    _: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    _: TenantAccount = Depends(require_plan(feature="documents")),  # noqa: B008
 ) -> Response:
     async with async_session_factory() as s:
         doc = await s.get(Document, doc_id)
@@ -173,7 +173,7 @@ async def download_document(
 @router.delete("/{doc_id}")
 async def delete_document(
     doc_id: UUID,
-    _: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    _: TenantAccount = Depends(require_plan(feature="documents")),  # noqa: B008
 ) -> dict:
     async with async_session_factory() as s:
         doc = await s.get(Document, doc_id)

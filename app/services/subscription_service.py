@@ -118,22 +118,31 @@ def verify_webhook_signature(
 
 # ── Crear preapproval (suscripción) ───────────────────────────────────────────
 
-async def create_preapproval(tenant_id: UUID, payer_email: str) -> str:
+async def create_preapproval(tenant_id: UUID, payer_email: str, plan: str = "profesional") -> str:
     """Crea un preapproval recurrente en MercadoPago y devuelve el ``init_point``.
 
     Persiste ``mp_preapproval_id``/``amount``/``plan`` en la fila Subscription del
-    tenant. El precio sale SIEMPRE de la config del servidor (``MP_PLAN_PRICE_ARS``).
+    tenant. El precio sale SIEMPRE del catálogo del servidor (nunca del cliente).
     """
+    from app.services.plans import CATALOG, TierName
+
+    tier_name: TierName = plan if plan in CATALOG else "profesional"  # type: ignore[assignment]
+    plan_obj = CATALOG[tier_name]
+    if not plan_obj.self_serve:
+        raise SubscriptionConfigError(
+            f"El plan {tier_name} no es self-serve. Contactar a ventas."
+        )
+
     settings = get_settings()
     token = settings.MERCADOPAGO_ACCESS_TOKEN
-    price = float(settings.MP_PLAN_PRICE_ARS or 0)
-    if not token or price <= 0:
+    price = plan_obj.price_ars_monthly
+    if not token:
         raise SubscriptionConfigError(
-            "MERCADOPAGO_ACCESS_TOKEN o MP_PLAN_PRICE_ARS no configurados."
+            "MERCADOPAGO_ACCESS_TOKEN no configurado."
         )
 
     body = {
-        "reason": settings.MP_PLAN_NAME,
+        "reason": plan_obj.display_name,
         "external_reference": str(tenant_id),
         "payer_email": payer_email,
         "back_url": f"{settings.PUBLIC_APP_URL}/checkout/success",
@@ -178,7 +187,7 @@ async def create_preapproval(tenant_id: UUID, payer_email: str) -> str:
         if sub is not None:
             sub.mp_preapproval_id = str(preapproval_id)
             sub.amount = price
-            sub.plan = settings.MP_PLAN_NAME
+            sub.plan = tier_name
             sub.currency = "ARS"
             await session.commit()
         else:

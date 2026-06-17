@@ -24,6 +24,7 @@ from app.core.security import (
 from app.db.models import Subscription, Tenant, TenantAccount
 from app.db.session import async_session_factory
 from app.services import auth_service, email_service, google_oauth
+from app.services.plans import get_plan_or_default
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -83,7 +84,11 @@ class AccountResponse(BaseModel):
 class SubscriptionResponse(BaseModel):
     status: str
     plan: str | None
+    tier: str | None = None
     trial_ends_at: str | None
+    limits: dict | None = None
+    features: list[str] | None = None
+    self_serve: bool | None = None
 
 
 class BranchSummary(BaseModel):
@@ -294,10 +299,19 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
     plan: str | None = None
     if sub is not None:
         plan = sub.plan
+        plan_obj = get_plan_or_default(sub.plan)
         sub_resp = SubscriptionResponse(
             status=sub.status,
             plan=sub.plan,
+            tier=plan_obj.name,
             trial_ends_at=str(sub.trial_ends_at) if sub.trial_ends_at else None,
+            limits={
+                "users": plan_obj.limits.users,
+                "conversations_per_month": plan_obj.limits.conversations_per_month,
+                "properties": plan_obj.limits.properties,
+            },
+            features=sorted(plan_obj.features),
+            self_serve=plan_obj.self_serve,
         )
 
     branches: list[BranchSummary] = []

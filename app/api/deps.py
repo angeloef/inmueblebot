@@ -19,6 +19,7 @@ from app.core.tenancy import (
 )
 from app.db.models import Subscription, TenantAccount
 from app.db.session import async_session_factory
+from app.services.plans import Feature, TierName, get_plan_or_default
 from app.services.subscription_service import subscription_grants_access
 
 # Cookie httpOnly que setea /auth/* y lee el dashboard Vite (mismo origen vía el
@@ -231,3 +232,56 @@ async def require_active_subscription(
             detail="Subscription required",
         )
     return account
+
+
+def require_plan(  # noqa: ANN201
+    *,
+    feature: Feature | None = None,
+    min_tier: TierName | None = None,
+):
+    """Dependency factory: verifica suscripción activa Y tier suficiente.
+
+    Uso:
+        account = Depends(require_plan(feature="exports"))
+        account = Depends(require_plan(min_tier="profesional"))
+
+    Si el tenant no tiene acceso (trial vencido/sin sub) → 402 ``reason:subscription``.
+    Si el tier es insuficiente → 402 ``reason:tier`` con ``required`` y ``feature``.
+    """
+    async def _checker(
+        account: TenantAccount = Depends(get_current_account),  # noqa: B008
+    ) -> TenantAccount:
+        billing_tenant = getattr(account, "billing_tenant_id", account.tenant_id)
+        async with async_session_factory() as session:
+            sub = await session.scalar(
+                select(Subscription).where(Subscription.tenant_id == billing_tenant)
+            )
+        if not subscription_grants_access(sub):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={"reason": "subscription", "message": "Subscription required"},
+            )
+        plan = get_plan_or_default(sub.plan if sub else None)
+        if feature is not None and not plan.includes_feature(feature):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "reason": "tier",
+                    "feature": feature,
+                    "current_tier": plan.name,
+                    "message": "Esta función requiere un plan superior.",
+                },
+            )
+        if min_tier is not None and not plan.meets_min_tier(min_tier):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "reason": "tier",
+                    "required": min_tier,
+                    "current_tier": plan.name,
+                    "message": f"Esta función requiere el plan {min_tier}.",
+                },
+            )
+        return account
+
+    return _checker

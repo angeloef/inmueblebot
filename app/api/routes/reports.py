@@ -15,7 +15,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import app.services.billing_service as bs
-from app.api.deps import require_active_subscription
+from app.api.deps import require_plan
 from app.db.models import TenantAccount
 from app.services.analytics_service import compute_metrics
 
@@ -51,7 +51,7 @@ def _parse_period(period: str | None, today: date) -> date:
 
 
 @router.get("/periods")
-async def list_periods(_: TenantAccount = Depends(require_active_subscription)) -> dict:  # noqa: B008
+async def list_periods(_: TenantAccount = Depends(require_plan(feature="exec_reports"))) -> dict:  # noqa: B008
     """Últimos 12 meses seleccionables (incluye el mes en curso)."""
     today = bs.today_ar()
     cur = bs.month_start(today)
@@ -66,7 +66,7 @@ async def list_periods(_: TenantAccount = Depends(require_active_subscription)) 
 @router.get("")
 async def get_report(
     period: str | None = Query(default=None),
-    account: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    account: TenantAccount = Depends(require_plan(feature="exec_reports")),  # noqa: B008
 ) -> dict:
     today = bs.today_ar()
     cur_start = _parse_period(period, today)
@@ -110,7 +110,7 @@ async def get_report(
 
 @router.get("/trend")
 async def get_trend(
-    account: TenantAccount = Depends(require_active_subscription),
+    account: TenantAccount = Depends(require_plan(feature="exec_reports")),  # noqa: B008
 ) -> dict:
     today = bs.today_ar()
     cur_start = bs.month_start(today)

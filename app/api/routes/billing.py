@@ -23,6 +23,7 @@ from app.core.rate_limiter import rate_limiter
 from app.db.models import Subscription, TenantAccount
 from app.db.session import async_session_factory
 from app.services import subscription_service
+from app.services.plans import CATALOG, get_plan_or_default, list_plans
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,10 @@ async def _subscribe_rate_limit(
 # ── Response schemas ─────────────────────────────────────────────────────────
 
 
+class SubscribeRequest(BaseModel):
+    plan: str = "profesional"
+
+
 class SubscribeResponse(BaseModel):
     init_point: str
 
@@ -59,9 +64,13 @@ class SubscribeResponse(BaseModel):
 class BillingStatusResponse(BaseModel):
     status: str
     plan: str | None
+    tier: str | None
     trial_ends_at: str | None
     current_period_end: str | None
     has_access: bool
+    limits: dict | None = None
+    features: list[str] | None = None
+    self_serve: bool | None = None
 
 
 # ── Endpoints autenticados ───────────────────────────────────────────────────
@@ -73,12 +82,27 @@ class BillingStatusResponse(BaseModel):
     response_model=SubscribeResponse,
 )
 async def subscribe(
+    body: SubscribeRequest,
     account: TenantAccount = Depends(_subscribe_rate_limit),  # noqa: B008
 ) -> SubscribeResponse:
     """Crea la suscripción en MercadoPago y devuelve el ``init_point`` para redirigir."""
+    plan_name: str = body.plan.lower()
+    if plan_name not in CATALOG:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Plan inválido. Opciones: {', '.join(CATALOG)}",
+        )
+    if not CATALOG[plan_name].self_serve:  # type: ignore[index]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "reason": "enterprise_no_self_serve",
+                "message": "Enterprise no es self-serve. Contactanos para una cotización.",
+            },
+        )
     try:
         init_point = await subscription_service.create_preapproval(
-            account.tenant_id, account.email
+            account.tenant_id, account.email, plan=plan_name
         )
     except subscription_service.SubscriptionConfigError as exc:
         # Falta config del servidor (token/precio). No es culpa del cliente.
@@ -111,13 +135,31 @@ async def billing_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No subscription",
         )
+    plan_obj = get_plan_or_default(sub.plan)
     return BillingStatusResponse(
         status=sub.status,
         plan=sub.plan,
+        tier=plan_obj.name,
         trial_ends_at=str(sub.trial_ends_at) if sub.trial_ends_at else None,
         current_period_end=str(sub.current_period_end) if sub.current_period_end else None,
         has_access=subscription_service.subscription_grants_access(sub),
+        limits={
+            "users": plan_obj.limits.users,
+            "conversations_per_month": plan_obj.limits.conversations_per_month,
+            "properties": plan_obj.limits.properties,
+        },
+        features=sorted(plan_obj.features),
+        self_serve=plan_obj.self_serve,
     )
+
+
+@router.get(
+    "/billing/plans",
+    status_code=status.HTTP_200_OK,
+)
+async def get_plans() -> dict:
+    """Lista el catálogo de planes con precios y características. Público (no requiere auth)."""
+    return {"plans": list_plans()}
 
 
 # ── Webhook público de MercadoPago ───────────────────────────────────────────

@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import text
 
-from app.api.deps import require_active_subscription
+from app.api.deps import require_plan
 from app.db.models import TenantAccount
 from app.db.session import async_session_factory
 
@@ -59,7 +59,7 @@ def _date_bounds(date_from: str | None, date_to: str | None) -> tuple[datetime |
 async def export_leads(
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
-    _: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    _: TenantAccount = Depends(require_plan(feature="exports")),  # noqa: B008
 ) -> Response:
     start, end = _date_bounds(date_from, date_to)
     where = []
@@ -91,7 +91,7 @@ async def export_leads(
 async def export_cobranzas(
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
-    _: TenantAccount = Depends(require_active_subscription),  # noqa: B008
+    _: TenantAccount = Depends(require_plan(feature="exports")),  # noqa: B008
 ) -> Response:
     d_from = _parse_date(date_from)
     d_to = _parse_date(date_to)
