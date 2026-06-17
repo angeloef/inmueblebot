@@ -1,7 +1,7 @@
 ---
 id: 09
 title: "Flujo SaaS en frontend — banner trial, manejo 402, checkout y sección de suscripción"
-status: pending
+status: in_progress
 priority: high
 area: frontend
 files:

@@ -24,7 +24,7 @@ const PATH_TO_VIEW = Object.fromEntries(
 PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
-import { Sidebar, Topbar } from './Shell';
+import { Sidebar, Topbar, TrialBanner, UpgradeModal } from './Shell';
 import { useAuth } from './auth';
 import { useTheme } from './useTheme';
 import { ToastStack, pushToast } from './Primitives';
@@ -77,6 +77,15 @@ export default function App() {
   // nuevo y el cliente precargado.
   const [agendaClientId, setAgendaClientId] = useState(null);
 
+  // Upgrade modal: abierto cuando el interceptor 402 dispara subscription:required
+  const [upgradeDetail, setUpgradeDetail] = useState(null);
+
+  useEffect(() => {
+    const handler = (e) => setUpgradeDetail(e.detail ?? {});
+    window.addEventListener('subscription:required', handler);
+    return () => window.removeEventListener('subscription:required', handler);
+  }, []);
+
   const updateEventMut = useUpdateEvent();
   const deleteEventMut = useDeleteEvent();
 
@@ -105,6 +114,8 @@ export default function App() {
     const path = VIEW_TO_PATH[view];
     if (path && location.pathname !== path) navigate(path);
   };
+
+  const goToPlans = () => navTo('settings');
 
   const openAgenda = (client) => {
     setCalEventId(null);
@@ -179,6 +190,7 @@ export default function App() {
       <Sidebar active={active} onNav={navTo} isOpen={menuOpen} onClose={() => setMenuOpen(false)} account={me} />
       <div className="main">
         <Topbar onMenuToggle={() => setMenuOpen(v => !v)} onNotifAction={handleNotifAction} theme={theme} onToggleTheme={toggleTheme} account={me} onLogout={logout} />
+        <TrialBanner onGoToPlans={goToPlans} />
         <div className="canvas">
 
           {active === 'dashboard' && (
@@ -246,6 +258,13 @@ export default function App() {
         />
       )}
       <ToastStack />
+      {upgradeDetail !== null && (
+        <UpgradeModal
+          detail={upgradeDetail}
+          onClose={() => setUpgradeDetail(null)}
+          onGoToPlans={goToPlans}
+        />
+      )}
     </div>
   );
 }

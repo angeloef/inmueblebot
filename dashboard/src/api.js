@@ -80,6 +80,9 @@ http.interceptors.response.use(
     if (response?.status === 401 && !isAuthPath(config?.url)) {
       window.dispatchEvent(new CustomEvent('auth:expired'));
     }
+    if (response?.status === 402) {
+      window.dispatchEvent(new CustomEvent('subscription:required', { detail: response.data ?? {} }));
+    }
     return Promise.reject(error);
   },
 );
@@ -116,6 +119,8 @@ export function propertyImageUrl(id, index = 0, ver = '') {
 // ─── Query keys ───────────────────────────────────────────────────────────────
 
 export const keys = {
+  billingStatus:   ['billing', 'status'],
+  billingPlans:    ['billing', 'plans'],
   properties:      ['properties'],
   property:        (id) => ['properties', id],
   clients:         ['clients'],
@@ -1421,6 +1426,35 @@ export const useDeleteDocument = () => {
   return useMutation({
     mutationFn: documentsApi.remove,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+};
+
+// ─── Billing / SaaS (plan 09) ────────────────────────────────────────────────
+
+const billingApi = {
+  status:    () => http.get('/billing/status').then(r => r.data),
+  plans:     () => http.get('/billing/plans').then(r => r.data.plans ?? []),
+  subscribe: (plan) => http.post('/billing/subscribe', { plan }).then(r => r.data),
+};
+
+export const useBillingStatus = () =>
+  useQuery({
+    queryKey: keys.billingStatus,
+    queryFn:  billingApi.status,
+    staleTime: 30_000,
+    retry: false,
+  });
+
+export const useBillingPlans = () =>
+  useQuery({ queryKey: keys.billingPlans, queryFn: billingApi.plans, staleTime: 5 * 60_000 });
+
+export const useSubscribe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (plan) => billingApi.subscribe(plan),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.billingStatus });
+    },
   });
 };
 

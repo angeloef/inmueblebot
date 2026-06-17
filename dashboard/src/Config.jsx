@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Icon, Button, pushToast } from './Primitives';
+import { useAuth } from './auth';
 import {
   useBotSettings, useUpdateBotSettings,
   useTenants, useCreateTenant, useUpdateTenant, useDeleteTenant,
   useUpdateTenantSettings,
+  useBillingStatus, useBillingPlans, useSubscribe,
 } from './api';
 
 // ── Section wrapper ────────────────────────────────────────────────────────────
@@ -271,6 +273,212 @@ function TenantsSection() {
   );
 }
 
+// ── Plan y suscripción ─────────────────────────────────────────────────────────
+
+const FEATURE_LABELS = {
+  cobranzas:      'Gestión de alquileres',
+  website:        'Sitio web catálogo',
+  weekly_report:  'Reporte semanal',
+  cold_leads:     'Seguimiento leads fríos',
+  visit_reminder: 'Recordatorio de visitas',
+  multi_branch:   'Multi-sucursal',
+  documents:      'Documentos vinculados',
+  exec_reports:   'Reportes ejecutivos',
+  exports:        'Exportación CSV',
+  api:            'API / integraciones',
+};
+
+function StatusPill({ status }) {
+  const map = {
+    trial:      { label: 'Prueba',   color: 'var(--warning-500,#d97706)', bg: 'var(--warning-50,#fffbeb)' },
+    active:     { label: 'Activo',   color: 'var(--success-500,#16a34a)', bg: 'var(--success-50,#f0fdf4)' },
+    past_due:   { label: 'Vencido',  color: 'var(--danger-500,#dc2626)',  bg: 'var(--danger-50,#fef2f2)' },
+    paused:     { label: 'Pausado',  color: 'var(--fg-tertiary,#9ca3af)', bg: 'var(--bg-200,#f9fafb)' },
+    cancelled:  { label: 'Cancelado',color: 'var(--danger-500,#dc2626)',  bg: 'var(--danger-50,#fef2f2)' },
+  };
+  const s = map[status] ?? { label: status, color: 'var(--fg-secondary)', bg: 'var(--bg-200)' };
+  return (
+    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+      color: s.color, background: s.bg, border: `1px solid ${s.color}33` }}>
+      {s.label}
+    </span>
+  );
+}
+
+function LimitBar({ label, used, max }) {
+  const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--fg-secondary)' }}>
+        <span>{label}</span>
+        <span>{max ? `${used ?? '—'} / ${max}` : 'Ilimitado'}</span>
+      </div>
+      {max && (
+        <div style={{ height: 4, borderRadius: 2, background: 'var(--border-200,#e5e7eb)' }}>
+          <div style={{ height: 4, borderRadius: 2, width: `${pct}%`,
+            background: pct > 80 ? 'var(--danger-500,#dc2626)' : 'var(--primary-500,#2563eb)' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanSection({ onGoToPlans }) {
+  const { me } = useAuth();
+  const { data: billing, isLoading: loadingBilling } = useBillingStatus();
+  const { data: plans, isLoading: loadingPlans } = useBillingPlans();
+  const subscribeMut = useSubscribe();
+  const [subscribing, setSubscribing] = useState(null); // plan name being subscribed
+
+  // Detectar retorno de MercadoPago (query params)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mpStatus = params.get('payment_status') || params.get('status');
+    if (mpStatus === 'approved') {
+      pushToast({ kind: 'success', text: '¡Pago procesado! Tu plan se actualizará en instantes.' });
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    } else if (mpStatus === 'failure') {
+      pushToast({ kind: 'danger', text: 'El pago no pudo procesarse. Intentá de nuevo.' });
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    } else if (mpStatus === 'pending') {
+      pushToast({ kind: 'info', text: 'Pago pendiente de confirmación.' });
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    }
+  }, []);
+
+  const handleSubscribe = async (planName) => {
+    setSubscribing(planName);
+    try {
+      const { init_point } = await subscribeMut.mutateAsync(planName);
+      window.location.href = init_point;
+    } catch (err) {
+      const msg = err?.response?.data?.detail ?? 'No se pudo iniciar el pago.';
+      pushToast({ kind: 'danger', text: typeof msg === 'string' ? msg : 'No se pudo iniciar el pago.' });
+      setSubscribing(null);
+    }
+  };
+
+  const currentPlan = billing?.plan ?? me?.subscription?.plan ?? me?.plan ?? null;
+  const currentStatus = billing?.status ?? me?.subscription?.status ?? null;
+  const trialEnds = billing?.trial_ends_at ?? me?.subscription?.trial_ends_at ?? null;
+  const periodEnd = billing?.current_period_end ?? null;
+  const limits = billing?.limits ?? null;
+  const features = billing?.features ?? me?.features ?? [];
+
+  const daysLeft = trialEnds
+    ? Math.ceil((new Date(trialEnds).getTime() - Date.now()) / 86_400_000)
+    : null;
+
+  return (
+    <Section title="Plan y suscripción" description="Gestioná tu plan, revisá límites y actualizá tu suscripción.">
+      {/* Estado actual */}
+      {loadingBilling ? (
+        <p className="sub">Cargando estado de suscripción…</p>
+      ) : billing ? (
+        <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>
+              Plan {currentPlan ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1) : '—'}
+            </span>
+            {currentStatus && <StatusPill status={currentStatus} />}
+          </div>
+
+          {currentStatus === 'trial' && daysLeft !== null && (
+            <p className="sub">
+              {daysLeft <= 0
+                ? 'El período de prueba venció.'
+                : `Período de prueba: quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''}.`}
+            </p>
+          )}
+          {periodEnd && currentStatus === 'active' && (
+            <p className="sub">Renovación: {new Date(periodEnd).toLocaleDateString('es-AR')}</p>
+          )}
+
+          {limits && (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <LimitBar label="Propiedades" used={null} max={limits.properties} />
+              <LimitBar label="Conversaciones/mes" used={null} max={limits.conversations_per_month} />
+              <LimitBar label="Usuarios del equipo" used={null} max={limits.users} />
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="sub">Sin información de suscripción.</p>
+      )}
+
+      {/* Comparativa de tiers */}
+      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: 'var(--fg-secondary)' }}>Planes disponibles</div>
+      {loadingPlans ? (
+        <p className="sub">Cargando planes…</p>
+      ) : (plans ?? []).length === 0 ? (
+        <p className="sub">No hay planes disponibles.</p>
+      ) : (
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))' }}>
+          {(plans ?? []).map((plan) => {
+            const isCurrent = plan.name === currentPlan;
+            const isEnterprise = !plan.self_serve;
+            return (
+              <div key={plan.name} style={{
+                border: isCurrent ? '2px solid var(--primary-500,#2563eb)' : '1px solid var(--border,#e5e7eb)',
+                borderRadius: 10, padding: '14px 16px', display: 'grid', gap: 10,
+                background: isCurrent ? 'var(--primary-50,#eff6ff)' : 'var(--bg-100,#fff)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>
+                    {plan.display_name ?? plan.name}
+                  </span>
+                  {isCurrent && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-600,#1d4ed8)',
+                      background: 'var(--primary-100,#dbeafe)', padding: '1px 7px', borderRadius: 20 }}>
+                      Tu plan
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 13, color: 'var(--fg-secondary)' }}>
+                  {plan.price_ars_monthly
+                    ? `$${Number(plan.price_ars_monthly).toLocaleString('es-AR')} /mes`
+                    : isEnterprise ? 'Precio a consultar' : 'Gratis'}
+                </div>
+
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 4 }}>
+                  {(plan.features ?? []).map((f) => (
+                    <li key={f} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', color: 'var(--fg-secondary)' }}>
+                      <Icon name="check" size={12} style={{ color: 'var(--success-500,#16a34a)', flexShrink: 0 }} />
+                      {FEATURE_LABELS[f] ?? f}
+                    </li>
+                  ))}
+                </ul>
+
+                {!isCurrent && (
+                  isEnterprise ? (
+                    <a
+                      href="mailto:ventas@viviendapp.com"
+                      className="btn btn-secondary btn-sm"
+                      style={{ textAlign: 'center', textDecoration: 'none' }}
+                    >
+                      Hablar con ventas
+                    </a>
+                  ) : (
+                    <Button
+                      kind="primary"
+                      size="sm"
+                      disabled={subscribing === plan.name}
+                      onClick={() => handleSubscribe(plan.name)}
+                    >
+                      {subscribing === plan.name ? 'Redirigiendo…' : 'Suscribirse'}
+                    </Button>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Config() {
@@ -393,6 +601,9 @@ export default function Config() {
         >
           <RouterSegmented value={activeRouter} onChange={handleSwitchRouter} saving={switching} />
         </Section>
+
+        {/* ── Plan y suscripción ── */}
+        <PlanSection onGoToPlans={() => {}} />
 
         {/* ── Inmobiliarias (tenants) ── */}
         <TenantsSection />

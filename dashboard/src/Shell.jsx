@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon, Button, IconButton, pushToast } from './Primitives';
-import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications, useCreateErrorReport } from './api';
+import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications, useCreateErrorReport, useBillingStatus } from './api';
 import { useAuth } from './auth';
 import { useFocusTrap } from './useFocusTrap';
 
@@ -197,6 +197,100 @@ function AccountMenu({ onNav }) {
         </div>
         <Icon name="chevronDown" size={14} />
       </button>
+    </div>
+  );
+}
+
+// ── TrialBanner ────────────────────────────────────────────────────────────────
+// Barra global que aparece cuando el trial vence en ≤7 días o la suscripción está
+// en past_due/paused/cancelled. Descartable por sesión (estado en React, no localStorage).
+
+function daysLeft(isoDate) {
+  if (!isoDate) return null;
+  const diff = new Date(isoDate).getTime() - Date.now();
+  return Math.ceil(diff / 86_400_000);
+}
+
+export function TrialBanner({ onGoToPlans }) {
+  const { data: billing } = useBillingStatus();
+  const [dismissed, setDismiss] = useState(false);
+
+  if (dismissed || !billing) return null;
+
+  const { status, trial_ends_at } = billing;
+
+  if (status === 'trial') {
+    const days = daysLeft(trial_ends_at);
+    if (days === null || days > 7) return null;
+    const label = days <= 0
+      ? 'Tu período de prueba venció.'
+      : days === 1
+        ? 'Te queda 1 día de prueba gratuita.'
+        : `Te quedan ${days} días de prueba gratuita.`;
+    return (
+      <div className="trial-banner trial-banner--trial" role="status" aria-live="polite">
+        <Icon name="alert" size={14} />
+        <span>{label}</span>
+        <button type="button" className="trial-banner-cta" onClick={onGoToPlans}>Ver planes</button>
+        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>×</button>
+      </div>
+    );
+  }
+
+  if (status === 'past_due' || status === 'paused' || status === 'cancelled') {
+    return (
+      <div className="trial-banner trial-banner--warn" role="status" aria-live="polite">
+        <Icon name="alert" size={14} />
+        <span>Tu suscripción está inactiva.</span>
+        <button type="button" className="trial-banner-cta" onClick={onGoToPlans}>Reactivar plan</button>
+        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>×</button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ── UpgradeModal ───────────────────────────────────────────────────────────────
+// Modal global que se abre al recibir el evento `subscription:required` (emitido
+// por el interceptor 402). Accesible: foco atrapado, Esc, aria-modal.
+
+export function UpgradeModal({ detail, onClose, onGoToPlans }) {
+  const trapRef = useFocusTrap(onClose);
+  const required = detail?.required ?? detail?.feature ?? null;
+  const feature = detail?.feature ?? null;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="upgrade-modal-title"
+        ref={trapRef}
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 460 }}
+      >
+        <div className="modal-head">
+          <h3 id="upgrade-modal-title">Función de plan superior</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
+        </div>
+        <div className="modal-body">
+          <p>
+            {feature
+              ? `Esta función (${feature}) requiere el plan `
+              : 'Esta función requiere el plan '}
+            <strong>{required ? required.charAt(0).toUpperCase() + required.slice(1) : 'superior'}</strong>.
+          </p>
+          <p style={{ color: 'var(--fg-tertiary)', fontSize: 13, marginTop: 8 }}>
+            Actualizá tu plan para desbloquear esta y otras funciones avanzadas.
+          </p>
+        </div>
+        <div className="modal-foot">
+          <Button kind="ghost" size="sm" onClick={onClose}>Cerrar</Button>
+          <Button kind="primary" size="sm" onClick={() => { onClose(); onGoToPlans(); }}>Ver planes</Button>
+        </div>
+      </div>
     </div>
   );
 }
