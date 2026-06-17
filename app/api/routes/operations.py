@@ -105,8 +105,11 @@ _OPERATIONS_ALTERS = [
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(20) NOT NULL DEFAULT 'none'",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_returned_at TIMESTAMPTZ",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_notes VARCHAR(500)",
-    # C5 (visitas): atribución de agente en appointments.
-    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES tenant_members(id) ON DELETE SET NULL",
+    # C5 (visitas): atribución de agente en appointments. SIN FK: appointments es una
+    # tabla caliente (el bot escribe citas); ADD COLUMN con FK necesitaría lock sobre
+    # appointments + tenant_members y con lock_timeout corto se caería. Columna plana
+    # UUID = metadata-only (instantáneo). La integridad la cubre el ORM (relación lógica).
+    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS agent_id UUID",
 ]
 
 _schema_ready = False
@@ -130,16 +133,21 @@ def ensure_operations_schema() -> None:
                 exists = conn.execute(
                     _text("SELECT to_regclass('public.property_relations')")
                 ).scalar()
-            with engine.begin() as conn:
-                conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
-                # CREATE solo si faltan las tablas base.
-                if not exists:
+            # CREATE solo si faltan las tablas base (una transacción).
+            if not exists:
+                with engine.begin() as conn:
+                    conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
                     for stmt in _OPERATIONS_DDL:
                         conn.execute(_text(stmt))
-                # ALTERs idempotentes: SIEMPRE (columnas nuevas agregadas en deploys
-                # posteriores; el fast-path del CREATE las saltearía).
-                for stmt in _OPERATIONS_ALTERS:
-                    conn.execute(_text(stmt))
+            # ALTERs idempotentes: SIEMPRE y cada uno en su PROPIA transacción, así un
+            # fallo/timeout (p. ej. lock en una tabla caliente) no aborta a los demás.
+            for stmt in _OPERATIONS_ALTERS:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
+                        conn.execute(_text(stmt))
+                except Exception as e2:
+                    logger.warning("operations ALTER diferido: %s", e2)
             _schema_ready = True
             logger.info("Operations schema ensured (isolated transaction)")
         except Exception as e:
