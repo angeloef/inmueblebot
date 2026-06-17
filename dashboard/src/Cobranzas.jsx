@@ -6,6 +6,7 @@ import {
   useCreateContract, useUpdateContract, useDeleteContract,
   useGenerateCharges, useUpdateCharge, usePayCharge, useRemindCharge,
   useCreateExpense, useDeleteExpense, useIndices, useUpsertIndex,
+  useTeamMembers, useGuarantors, useCreateGuarantor, useDeleteGuarantor,
 } from './api';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
@@ -38,6 +39,7 @@ const CHARGE_PILL = {
 };
 
 const CONTRACT_PILL = {
+  draft:     { kind: 'pending',   label: 'Borrador' },
   active:    { kind: 'active',    label: 'Activo' },
   ended:     { kind: 'cancelled', label: 'Finalizado' },
   cancelled: { kind: 'cancelled', label: 'Cancelado' },
@@ -52,12 +54,94 @@ const adjDescription = (c) => {
   return `IPC ${each}`;
 };
 
+// ─── Garantes del contrato (C2) ───────────────────────────────────────────────
+
+const GUARANTEE_LABEL = {
+  propietaria: 'Garantía propietaria',
+  recibo: 'Recibo de sueldo',
+  caucion: 'Seguro de caución',
+  otro: 'Otro',
+};
+
+function GuarantorsPanel({ contractId }) {
+  const { data: guarantors = [], isLoading } = useGuarantors(contractId);
+  const createMut = useCreateGuarantor();
+  const deleteMut = useDeleteGuarantor(contractId);
+  const [form, setForm] = useState({ name: '', guarantee_type: 'recibo', phone: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const add = () => {
+    if (!form.name.trim()) return;
+    createMut.mutate(
+      { contractId, name: form.name.trim(), guarantee_type: form.guarantee_type, phone: form.phone || null },
+      {
+        onSuccess: () => { setForm({ name: '', guarantee_type: 'recibo', phone: '' }); pushToast({ text: 'Garante agregado.', kind: 'success' }); },
+        onError: () => pushToast({ text: 'No se pudo agregar el garante.', kind: 'danger' }),
+      },
+    );
+  };
+
+  return (
+    <div className="detail-block">
+      <h3>Garantes</h3>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 140 }}>
+          <label>Nombre</label>
+          <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Nombre del garante" />
+        </div>
+        <div className="field" style={{ marginBottom: 0, minWidth: 160 }}>
+          <label>Tipo de garantía</label>
+          <select value={form.guarantee_type} onChange={e => set('guarantee_type', e.target.value)}>
+            <option value="propietaria">Garantía propietaria</option>
+            <option value="recibo">Recibo de sueldo</option>
+            <option value="caucion">Seguro de caución</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div className="field" style={{ marginBottom: 0, minWidth: 120 }}>
+          <label>Teléfono</label>
+          <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="Opcional" />
+        </div>
+        <Button kind="secondary" size="sm" onClick={add} disabled={createMut.isPending}>
+          {createMut.isPending ? 'Agregando…' : '+ Agregar'}
+        </Button>
+      </div>
+      {isLoading ? (
+        <div className="muted" style={{ fontSize: 12 }}>Cargando garantes…</div>
+      ) : guarantors.length === 0 ? (
+        <div className="muted" style={{ fontSize: 12 }}>Sin garantes todavía.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {guarantors.map(g => (
+            <div key={g.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+              borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+            }}>
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 8,
+                background: 'var(--surface-2, #f3f4f6)', color: 'var(--fg-secondary, #475467)', flexShrink: 0,
+              }}>{GUARANTEE_LABEL[g.guarantee_type] || g.guarantee_type}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{g.name || '—'}</div>
+                {g.phone && <div style={{ fontSize: 11, color: 'var(--muted, #6b7280)' }}>{g.phone}</div>}
+              </div>
+              <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteMut.mutate(g.id)} disabled={deleteMut.isPending}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Editor de contrato (modal) ───────────────────────────────────────────────
 
 function ContractEditor({ contract, mode, onClose, onSave, saving }) {
   const isEdit = mode === 'edit';
   const { data: clients = [] } = useClients();
   const { data: properties = [] } = useProperties();
+  const { data: members = [] } = useTeamMembers();
+  const agents = members.filter(m => (m.status ?? 'accepted') === 'accepted');
 
   const [form, setForm] = useState({
     property_id: contract?.property_id ?? '',
@@ -74,6 +158,10 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
     adjustment_fixed_pct: contract?.adjustment_fixed_pct ?? '',
     punitorio_daily_pct: contract?.punitorio_daily_pct ?? 0,
     commission_pct: contract?.commission_pct ?? 0,
+    agent_id:    contract?.agent_id ?? '',
+    deposit_amount:   contract?.deposit_amount ?? '',
+    deposit_currency: contract?.deposit_currency ?? 'ARS',
+    deposit_status:   contract?.deposit_status ?? 'none',
     notes: contract?.notes ?? '',
   });
   const [errors, setErrors] = useState({});
@@ -99,6 +187,10 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
       adjustment_fixed_pct: form.adjustment_index === 'fixed' ? (Number(form.adjustment_fixed_pct) || 0) : null,
       punitorio_daily_pct: Number(form.punitorio_daily_pct) || 0,
       commission_pct: Number(form.commission_pct) || 0,
+      agent_id: form.agent_id || null,
+      deposit_amount: Number(form.deposit_amount) || 0,
+      deposit_currency: form.deposit_currency,
+      deposit_status: form.deposit_status,
       notes: form.notes || null,
     };
     onSave(payload);
@@ -144,6 +236,28 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
             <div className="field">
               <label>Comisión inmobiliaria (%)</label>
               <input type="number" value={form.commission_pct} onChange={e => set('commission_pct', e.target.value)} placeholder="0" />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Agente asignado</label>
+              <select value={form.agent_id} onChange={e => set('agent_id', e.target.value)}>
+                <option value="">— Sin asignar —</option>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name || a.email}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Depósito en garantía</label>
+              <input type="number" value={form.deposit_amount} onChange={e => set('deposit_amount', e.target.value)} placeholder="0" />
+            </div>
+            <div className="field">
+              <label>Estado del depósito</label>
+              <select value={form.deposit_status} onChange={e => set('deposit_status', e.target.value)}>
+                <option value="none">Sin depósito</option>
+                <option value="held">Retenido</option>
+                <option value="partial">Devuelto parcial</option>
+                <option value="returned">Devuelto</option>
+              </select>
             </div>
           </div>
           <div className="field-row">
@@ -438,6 +552,7 @@ function ContractDrawer({ contractId, onClose, onEdit, onDelete }) {
                 </div>
               </div>
 
+              <GuarantorsPanel contractId={contract.id} />
               <DocumentsPanel contractId={contract.id} title="Documentos del contrato" />
             </Fragment>
           )}

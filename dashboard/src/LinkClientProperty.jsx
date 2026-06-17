@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Pill, Icon, initials, pushToast } from './Primitives';
 import { fmtCurrency } from './data';
-import { useClients, useProperties, useRelateClientToProperty } from './api';
+import { useClients, useProperties, useRelateClientToProperty, useTeamMembers } from './api';
 
 // Relaciones cliente↔propiedad (compartidas entre el lado cliente y el lado propiedad).
 const RELATIONS = [
@@ -28,17 +28,21 @@ export default function LinkClientProperty({ side, client, property, onDone, def
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [relation, setRelation] = useState(defaultRelation);
+  const [agentId, setAgentId] = useState('');
   const relateClient = useRelateClientToProperty();
 
   const isClientSide = side === 'client';
   const { data: properties = [] } = useProperties();
   const { data: clients = [] } = useClients();
+  const { data: members = [] } = useTeamMembers();
+  // Solo miembros activos (aceptados) como agentes asignables.
+  const agents = members.filter(m => (m.status ?? 'accepted') === 'accepted');
 
-  const close = () => { setOpen(false); setSearch(''); setRelation(defaultRelation); };
+  const close = () => { setOpen(false); setSearch(''); setRelation(defaultRelation); setAgentId(''); };
 
   const link = (propId, clientId, label) => {
     relateClient.mutate(
-      { prop_id: propId, client_id: clientId, relation, update_status: true },
+      { prop_id: propId, client_id: clientId, relation, update_status: true, agent_id: agentId || null },
       {
         // Mantener el panel abierto si falla, para reintentar sin reabrirlo.
         onError:   () => pushToast({ text: 'Error al vincular. Verificá la conexión.', kind: 'danger' }),
@@ -82,6 +86,17 @@ export default function LinkClientProperty({ side, client, property, onDone, def
           <button key={k} type="button" className={`chip ${relation === k ? 'active' : ''}`} aria-pressed={relation === k} onClick={() => setRelation(k)}>{l}</button>
         ))}
       </div>
+      {agents.length > 0 && (
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Agente asignado</label>
+          <select value={agentId} onChange={e => setAgentId(e.target.value)} aria-label="Agente asignado">
+            <option value="">Sin asignar</option>
+            {agents.map(a => (
+              <option key={a.id} value={a.id}>{a.name || a.email}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {isClientSide
           ? matchedProps.map(p => {

@@ -558,8 +558,8 @@ export const useUpdatePropertyStatus = () => {
 export const useRelateClientToProperty = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ prop_id, client_id, relation, update_status = true }) =>
-      http.post(`/admin/properties/${prop_id}/relate-client`, { client_id, relation, update_status }),
+    mutationFn: ({ prop_id, client_id, relation, update_status = true, agent_id = null }) =>
+      http.post(`/admin/properties/${prop_id}/relate-client`, { client_id, relation, update_status, agent_id }),
     onMutate: async ({ prop_id, relation }) => {
       // Map relations to status changes
       const relationToStatus = { buyer: 'sold', tenant: 'rented' };
@@ -1175,6 +1175,57 @@ export const useRemoveMember = () => {
       if (ctx?.prev) qc.setQueryData(['team', 'members'], ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['team', 'members'] }),
+  });
+};
+
+// ─── Operaciones: ventas + garantes (fase crítica) ────────────────────────────
+const salesApi = {
+  list:   (propertyId) => http.get('/admin/sales', { params: propertyId ? { property_id: propertyId } : {} }).then(r => r.data.sales ?? []),
+  create: (data)       => http.post('/admin/sales', data).then(r => r.data),
+  update: ({ id, ...rest }) => http.patch(`/admin/sales/${id}`, rest).then(r => r.data),
+  remove: (id)         => http.delete(`/admin/sales/${id}`).then(r => r.data),
+};
+
+export const useSales = (propertyId) =>
+  useQuery({ queryKey: ['sales', propertyId ?? 'all'], queryFn: () => salesApi.list(propertyId) });
+
+export const useCreateSale = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: salesApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: ['sales'] }) });
+};
+
+export const useUpdateSale = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: salesApi.update, onSuccess: () => qc.invalidateQueries({ queryKey: ['sales'] }) });
+};
+
+export const useDeleteSale = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: salesApi.remove, onSuccess: () => qc.invalidateQueries({ queryKey: ['sales'] }) });
+};
+
+const guarantorApi = {
+  list:   (contractId)        => http.get(`/admin/contracts/${contractId}/guarantors`).then(r => r.data.guarantors ?? []),
+  create: ({ contractId, ...data }) => http.post(`/admin/contracts/${contractId}/guarantors`, data).then(r => r.data),
+  remove: (id)                => http.delete(`/admin/guarantors/${id}`).then(r => r.data),
+};
+
+export const useGuarantors = (contractId) =>
+  useQuery({ queryKey: ['guarantors', contractId], queryFn: () => guarantorApi.list(contractId), enabled: !!contractId });
+
+export const useCreateGuarantor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: guarantorApi.create,
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['guarantors', vars.contractId] }),
+  });
+};
+
+export const useDeleteGuarantor = (contractId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: guarantorApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['guarantors', contractId] }),
   });
 };
 
