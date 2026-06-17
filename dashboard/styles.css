@@ -887,6 +887,11 @@ input, select, textarea { font-family: inherit; }
 .config-field { margin: 0; }
 .config-field label { font-size: 13px; font-weight: 500; color: var(--fg-primary); margin-bottom: 4px; display: block; }
 .config-hint { font-size: 11.5px; color: var(--fg-tertiary); margin-bottom: 6px; line-height: 1.4; }
+/* Fila de opción checkbox dentro de un config-field: no debe heredar el estilo del
+   label-título (.field label / .config-field label = mayúscula, block, color título). */
+.config-field .opt-check { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 0; font-size: 13px; font-weight: 400; color: var(--fg-primary); text-transform: none; letter-spacing: normal; cursor: pointer; }
+.config-field .opt-check + .opt-check { margin-top: 6px; }
+.config-field .opt-check input { margin: 0; flex: 0 0 auto; }
 
 .config-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 

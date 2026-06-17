@@ -193,7 +193,7 @@ export default function Website() {
             {current.id === 'domain' && (
               <>
                 <Field label="¿Ya tenés un dominio?">
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <label className="opt-check">
                     <input type="checkbox" checked={data.domain.has_domain} onChange={set('domain', 'has_domain')} />
                     <span>Sí, ya tengo un dominio</span>
                   </label>
@@ -202,7 +202,7 @@ export default function Website() {
                   <Field label="¿Cuál?"><input type="text" value={data.domain.domain_name} onChange={set('domain', 'domain_name')} placeholder="miinmobiliaria.com.ar" /></Field>
                 )}
                 <Field label="¿Querés que lo compremos nosotros?" hint="Si no tenés dominio, podemos conseguirlo.">
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <label className="opt-check">
                     <input type="checkbox" checked={data.domain.wants_us_to_buy} onChange={set('domain', 'wants_us_to_buy')} />
                     <span>Sí, compren un dominio por mí</span>
                   </label>
@@ -239,12 +239,12 @@ export default function Website() {
             {current.id === 'catalog' && (
               <>
                 <Field label="¿Qué operaciones publicar?">
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={data.catalog.op_alquiler} onChange={set('catalog', 'op_alquiler')} /><span>Alquiler</span></label>
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}><input type="checkbox" checked={data.catalog.op_venta} onChange={set('catalog', 'op_venta')} /><span>Venta</span></label>
+                  <label className="opt-check"><input type="checkbox" checked={data.catalog.op_alquiler} onChange={set('catalog', 'op_alquiler')} /><span>Alquiler</span></label>
+                  <label className="opt-check"><input type="checkbox" checked={data.catalog.op_venta} onChange={set('catalog', 'op_venta')} /><span>Venta</span></label>
                 </Field>
                 <Field label="Campos a ocultar en la ficha" hint="Si hay algo que NO querés mostrar (ej: precio en algunas)."><input type="text" value={data.catalog.hide_fields} onChange={set('catalog', 'hide_fields')} placeholder="precio en propiedades premium" /></Field>
                 <Field label="Botón de WhatsApp en cada propiedad">
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={data.catalog.cta_whatsapp} onChange={set('catalog', 'cta_whatsapp')} /><span>Sí, que el visitante escriba al bot por WhatsApp</span></label>
+                  <label className="opt-check"><input type="checkbox" checked={data.catalog.cta_whatsapp} onChange={set('catalog', 'cta_whatsapp')} /><span>Sí, que el visitante escriba al bot por WhatsApp</span></label>
                 </Field>
                 <Field label="Notas sobre el catálogo"><textarea rows={2} value={data.catalog.notes} onChange={set('catalog', 'notes')} placeholder="Las propiedades salen del sistema, se sincronizan solas." /></Field>
                 <p className="sub" style={{ marginTop: 8 }}>Tus propiedades se sincronizan automáticamente desde el sistema — no hay que cargarlas de nuevo.</p>
