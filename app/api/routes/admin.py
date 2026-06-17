@@ -574,6 +574,7 @@ class AppointmentCreate(BaseModel):
     property_id: Optional[int] = None
     status: Optional[str] = "confirmed"
     notes: Optional[str] = None
+    agent_id: Optional[str] = None      # UUID de tenant_members: agente atribuido (C5)
 
 
 class AppointmentUpdate(BaseModel):
@@ -584,6 +585,7 @@ class AppointmentUpdate(BaseModel):
     property_id: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    agent_id: Optional[str] = None
 
 
 class HandoffRequest(BaseModel):
@@ -724,6 +726,7 @@ def _apt_to_dict(a):
         "type": a.type,
         "status": a.status,
         "notes": a.notes,
+        "agent_id": str(a.agent_id) if getattr(a, "agent_id", None) else None,
         "calendar_event_id": a.calendar_event_id,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
@@ -1563,7 +1566,11 @@ def create_appointment(
 ):
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Appointment
+    from app.api.routes.operations import ensure_operations_schema
     from datetime import datetime, timezone, timedelta
+
+    # Garantiza appointments.agent_id (ALTER idempotente) antes del INSERT.
+    ensure_operations_schema()
 
     start = None
     if data.start_time:
@@ -1591,6 +1598,13 @@ def create_appointment(
         except ValueError:
             pass   # invalid UUID — ignore, create without user link
 
+    agent_uuid = None
+    if data.agent_id:
+        try:
+            agent_uuid = _uuid.UUID(data.agent_id)
+        except ValueError:
+            pass
+
     apt = Appointment(
         # tenant_id REQUIRED: RLS WITH CHECK rejects NULL. See create_property.
         tenant_id=resolve_tenant_id(),
@@ -1601,6 +1615,7 @@ def create_appointment(
         type=apt_type,
         status=apt_status,
         notes=data.notes,
+        agent_id=agent_uuid,
     )
     db.add(apt)
     db.commit()
@@ -1756,7 +1771,10 @@ def update_appointment(
     _: bool = Depends(require_active_subscription),
 ):
     from app.db.models import Appointment
+    from app.api.routes.operations import ensure_operations_schema
     from datetime import datetime, timedelta
+
+    ensure_operations_schema()  # garantiza appointments.agent_id
 
     try:
         aid = _uuid.UUID(apt_id)
@@ -1808,6 +1826,16 @@ def update_appointment(
 
     if "property_id" in updates:
         apt.property_id = updates.pop("property_id")
+
+    if "agent_id" in updates:
+        agent_str = updates.pop("agent_id")
+        if agent_str:
+            try:
+                apt.agent_id = _uuid.UUID(agent_str)
+            except ValueError:
+                pass
+        else:
+            apt.agent_id = None
 
     if "notes" in updates:
         apt.notes = updates.pop("notes")

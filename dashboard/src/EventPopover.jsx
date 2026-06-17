@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, initials } from './Primitives';
 import { fmtTime12 } from './data';
-import { useClients, useProperties, useCalendarStatus } from './api';
+import { useClients, useProperties, useCalendarStatus, useTeamMembers } from './api';
 
 export const KIND_META = {
   visit: { label: 'Visita',   color: 'var(--accent-500)',  cls: 'ev-visit' },
@@ -12,9 +12,12 @@ export function EventPopover({ event, anchor, onClose, onEdit, onReschedule, onC
   const { data: clients = [] }    = useClients();
   const { data: properties = [] } = useProperties();
   const { data: calStatus }       = useCalendarStatus();
+  const { data: members = [] }    = useTeamMembers();
   if (!event) return null;
   const meta   = KIND_META[event.kind];
   const client = clients.find(c => c.id === event.clientId);
+  const agentMember = members.find(m => String(m.id) === String(event.agentId));
+  const agentName = agentMember ? (agentMember.name || agentMember.email) : null;
   const prop   = properties.find(p => String(p.id) === String(event.propId));
 
   const ref = useRef(null);
@@ -110,7 +113,7 @@ export function EventPopover({ event, anchor, onClose, onEdit, onReschedule, onC
           <div className="popover-row">
             <Icon name="user" size={16} />
             <div className="val">
-              {event.agent}
+              {agentName || 'Sin asignar'}
               <span className="sub">Agente asignado</span>
             </div>
           </div>
@@ -190,12 +193,14 @@ function isPastDateTime(dateISO, timeStr) {
 export function EventEditor({ event, mode, onClose, onSave, saving = false }) {
   const { data: clients = [] }    = useClients();
   const { data: properties = [] } = useProperties();
+  const { data: members = [] }    = useTeamMembers();
+  const agents = members.filter(m => (m.status ?? 'accepted') === 'accepted');
   const today = new Date().toISOString().slice(0, 10);
   const [pastError, setPastError] = useState(false);
   const [form, setForm] = useState(() => {
     const base = event || {
       title: '', kind: 'visit', date: today, start: '10:00', end: '11:00',
-      clientId: '', propId: '', agent: 'M. Pereyra', status: 'pending', notes: '',
+      clientId: '', propId: '', agentId: '', status: 'pending', notes: '',
     };
     // En modo create, pre-rellena el título con el prefijo del kind
     if (mode === 'create' && !base.title) {
@@ -276,10 +281,9 @@ export function EventEditor({ event, mode, onClose, onSave, saving = false }) {
                 </div>
                 <div className="field">
                   <label>Agente</label>
-                  <select value={form.agent} onChange={e => set('agent', e.target.value)}>
-                    <option>M. Pereyra</option>
-                    <option>J. Suárez</option>
-                    <option>L. Vélez</option>
+                  <select value={form.agentId} onChange={e => set('agentId', e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {agents.map(a => <option key={a.id} value={a.id}>{a.name || a.email}</option>)}
                   </select>
                 </div>
               </div>

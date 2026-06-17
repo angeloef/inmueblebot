@@ -92,13 +92,21 @@ _OPERATIONS_DDL = [
     "CREATE INDEX IF NOT EXISTS ix_guarantors_contract ON guarantors(tenant_id, contract_id)",
     "CREATE INDEX IF NOT EXISTS ix_sales_property ON sales(tenant_id, property_id)",
     "CREATE INDEX IF NOT EXISTS ix_sales_status ON sales(tenant_id, status)",
-    # C3: columnas de depósito + atribución de agente en contracts (ALTER idempotente).
+]
+
+# ALTERs idempotentes en tablas PREEXISTENTES (contracts, appointments). Corren
+# SIEMPRE —aún si property_relations ya existe— porque columnas nuevas se agregan en
+# deploys posteriores y el fast-path del CREATE las saltearía. Son baratos e IF NOT EXISTS.
+_OPERATIONS_ALTERS = [
+    # C3/C5: columnas de depósito + atribución de agente en contracts.
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES tenant_members(id) ON DELETE SET NULL",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_amount BIGINT NOT NULL DEFAULT 0",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_currency VARCHAR(3) NOT NULL DEFAULT 'ARS'",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(20) NOT NULL DEFAULT 'none'",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_returned_at TIMESTAMPTZ",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_notes VARCHAR(500)",
+    # C5 (visitas): atribución de agente en appointments.
+    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES tenant_members(id) ON DELETE SET NULL",
 ]
 
 _schema_ready = False
@@ -122,14 +130,15 @@ def ensure_operations_schema() -> None:
                 exists = conn.execute(
                     _text("SELECT to_regclass('public.property_relations')")
                 ).scalar()
-            # Aun si la tabla existe, los ALTER de contracts son idempotentes y baratos;
-            # corremos el DDL completo solo si falta la tabla base.
-            if exists:
-                _schema_ready = True
-                return
             with engine.begin() as conn:
                 conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
-                for stmt in _OPERATIONS_DDL:
+                # CREATE solo si faltan las tablas base.
+                if not exists:
+                    for stmt in _OPERATIONS_DDL:
+                        conn.execute(_text(stmt))
+                # ALTERs idempotentes: SIEMPRE (columnas nuevas agregadas en deploys
+                # posteriores; el fast-path del CREATE las saltearía).
+                for stmt in _OPERATIONS_ALTERS:
                     conn.execute(_text(stmt))
             _schema_ready = True
             logger.info("Operations schema ensured (isolated transaction)")

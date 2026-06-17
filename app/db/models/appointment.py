@@ -92,6 +92,15 @@ class Appointment(Base):
         comment="Notas adicionales de la cita"
     )
 
+    # Agente atribuido (C5) — FK a tenant_members. Columna creada vía
+    # ensure_operations_schema (ALTER IF NOT EXISTS).
+    agent_id: Mapped[Optional[uuid4]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_members.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Agente (tenant_members) atribuido a la visita"
+    )
+
     # Marca de cuándo se envió/encoló el recordatorio de visita (24h antes) — idempotencia
     # del job visit_reminder. NULL = pendiente de recordar.
     reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
