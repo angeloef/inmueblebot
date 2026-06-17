@@ -98,8 +98,15 @@ _OPERATIONS_DDL = [
 # SIEMPRE —aún si property_relations ya existe— porque columnas nuevas se agregan en
 # deploys posteriores y el fast-path del CREATE las saltearía. Son baratos e IF NOT EXISTS.
 _OPERATIONS_ALTERS = [
-    # C3/C5: columnas de depósito + atribución de agente en contracts.
-    "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES tenant_members(id) ON DELETE SET NULL",
+    # agent_id es una referencia BLANDA (atribución): el dropdown puede mandar el id del
+    # dueño (que no es una fila de tenant_members) → una FK dura tira "violates foreign key
+    # constraint". Dropeamos las FK auto-generadas para que acepte cualquier agente/dueño.
+    "ALTER TABLE contracts DROP CONSTRAINT IF EXISTS contracts_agent_id_fkey",
+    "ALTER TABLE property_relations DROP CONSTRAINT IF EXISTS property_relations_agent_id_fkey",
+    "ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_agent_id_fkey",
+    "ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_agent_id_fkey",
+    # C3/C5: columnas de depósito + atribución de agente en contracts (agent_id sin FK).
+    "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS agent_id UUID",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_amount BIGINT NOT NULL DEFAULT 0",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_currency VARCHAR(3) NOT NULL DEFAULT 'ARS'",
     "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(20) NOT NULL DEFAULT 'none'",
