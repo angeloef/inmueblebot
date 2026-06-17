@@ -148,15 +148,21 @@ def ensure_operations_schema() -> None:
                         conn.execute(_text(stmt))
             # ALTERs idempotentes: SIEMPRE y cada uno en su PROPIA transacción, así un
             # fallo/timeout (p. ej. lock en una tabla caliente) no aborta a los demás.
+            all_ok = True
             for stmt in _OPERATIONS_ALTERS:
                 try:
                     with engine.begin() as conn:
-                        conn.execute(_text("SET LOCAL lock_timeout = '4s'"))
+                        conn.execute(_text("SET LOCAL lock_timeout = '15s'"))
                         conn.execute(_text(stmt))
                 except Exception as e2:
+                    all_ok = False
                     logger.warning("operations ALTER diferido: %s", e2)
-            _schema_ready = True
-            logger.info("Operations schema ensured (isolated transaction)")
+            # Solo marcamos listo si TODOS los ALTER aplicaron. Si alguno se difirió
+            # (p. ej. un DROP CONSTRAINT que no consiguió el lock), NO marcamos ready:
+            # se reintenta en el próximo request hasta que apliquen.
+            if all_ok:
+                _schema_ready = True
+                logger.info("Operations schema ensured")
         except Exception as e:
             logger.warning("ensure_operations_schema deferred: %s", e)
 
