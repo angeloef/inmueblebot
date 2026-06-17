@@ -15,7 +15,7 @@ import {
   useUpdateGlobalEntity,
 } from '../api';
 
-const NAVY = '#164a71';
+const NAVY = 'var(--accent-600)';
 const PAGE_SIZE = 50;
 
 // Configuración por entidad: hook de listado, columnas de tabla y campos editables.
@@ -107,25 +107,25 @@ const S = {
   },
   tenantPill: {
     display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
-    background: 'rgba(22,74,113,0.10)', color: NAVY,
+    background: 'var(--accent-50)', color: NAVY,
   },
   editBtn: {
     appearance: 'none', border: '1px solid var(--border-subtle, #d0d5dd)', cursor: 'pointer',
-    padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: '#fff', color: NAVY,
+    padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: 'var(--surface-raised)', color: NAVY,
   },
   empty: { padding: '40px 16px', textAlign: 'center', color: 'var(--fg-tertiary, #667085)' },
   pager: { display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', padding: '12px' },
   pagerBtn: (disabled) => ({
     appearance: 'none', border: '1px solid var(--border-subtle, #d0d5dd)', borderRadius: 6,
-    padding: '6px 12px', fontSize: 13, fontWeight: 600, background: '#fff',
-    color: disabled ? '#aab' : NAVY, cursor: disabled ? 'not-allowed' : 'pointer',
+    padding: '6px 12px', fontSize: 13, fontWeight: 600, background: 'var(--surface-raised)',
+    color: disabled ? 'var(--fg-muted)' : NAVY, cursor: disabled ? 'not-allowed' : 'pointer',
   }),
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(16,24,40,0.45)',
     display: 'flex', justifyContent: 'flex-end', zIndex: 50,
   },
   drawer: {
-    width: 'min(440px, 100%)', height: '100%', background: '#fff', boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
+    width: 'min(440px, 100%)', height: '100%', background: 'var(--surface-raised)', boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
     display: 'flex', flexDirection: 'column',
   },
   drawerHead: { padding: '18px 20px', borderBottom: '1px solid var(--border-subtle, #e6e9ee)' },
@@ -133,10 +133,10 @@ const S = {
   drawerFoot: { padding: '16px 20px', borderTop: '1px solid var(--border-subtle, #e6e9ee)', display: 'flex', gap: 10, justifyContent: 'flex-end' },
   label: { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fg-tertiary, #667085)', marginBottom: 6 },
   input: { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-subtle, #d0d5dd)', fontSize: 13, outline: 'none', boxSizing: 'border-box' },
-  warn: { fontSize: 12, color: '#b54708', background: '#fffaeb', border: '1px solid #fedf89', borderRadius: 8, padding: '8px 10px' },
+  warn: { fontSize: 12, color: 'var(--warning-700)', background: 'var(--warning-50)', border: '1px solid var(--warning-100)', borderRadius: 8, padding: '8px 10px' },
   primary: { appearance: 'none', border: 'none', cursor: 'pointer', padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, background: NAVY, color: '#fff' },
-  ghost: { appearance: 'none', border: '1px solid var(--border-subtle, #d0d5dd)', cursor: 'pointer', padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: '#fff', color: 'var(--fg-secondary, #344054)' },
-  err: { fontSize: 12, color: '#d92d20', marginTop: 8 },
+  ghost: { appearance: 'none', border: '1px solid var(--border-subtle, #d0d5dd)', cursor: 'pointer', padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'var(--surface-raised)', color: 'var(--fg-secondary, #344054)' },
+  err: { fontSize: 12, color: 'var(--danger-500)', marginTop: 8 },
 };
 
 function cellText(value) {

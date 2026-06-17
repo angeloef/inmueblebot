@@ -12,7 +12,7 @@ import GlobalExplorer from './GlobalExplorer';
 import PlatformAnalytics from './PlatformAnalytics';
 import ErrorTriage from './ErrorTriage';
 
-const NAVY = '#164a71';
+const NAVY = 'var(--accent-600)';
 
 const TABS = [
   { id: 'data', label: 'Datos', hint: 'Explorador global (plan 05)' },
@@ -77,9 +77,9 @@ function TenantSelector() {
         onChange={(e) => setSelectedTenantId(e.target.value || null)}
         disabled={isLoading}
       >
-        <option value="" style={{ color: '#111', background: '#fff' }}>Todas las inmobiliarias</option>
+        <option value="" style={{ color: '#111', background: 'var(--surface-raised)' }}>Todas las inmobiliarias</option>
         {tenants.map((t) => (
-          <option key={t.id} value={t.id} style={{ color: '#111', background: '#fff' }}>
+          <option key={t.id} value={t.id} style={{ color: '#111', background: 'var(--surface-raised)' }}>
             {t.display_name || t.company_name || t.slug || t.id}
           </option>
         ))}

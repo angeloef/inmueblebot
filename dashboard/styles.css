@@ -362,6 +362,32 @@ input, select, textarea { font-family: inherit; }
 .prop-thumb { width: 44px; height: 36px; background: var(--gray-100); border-radius: 5px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--fg-muted); }
 .prop-thumb svg { width: 18px; height: 18px; }
 
+/* ── Property grid card (catálogo) ──────────────────────────────────────────── */
+.prop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-4); padding: var(--space-4); }
+.prop-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
+}
+.prop-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+.prop-card:active { transform: translateY(-1px); }
+.prop-card:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-color: var(--border-focus); }
+.prop-card-media { position: relative; }
+.prop-card-media .prop-img { aspect-ratio: 4/3; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.prop-card-body { padding: var(--space-3); display: flex; flex-direction: column; gap: 5px; }
+.prop-card-addr { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--fg-primary); }
+.prop-card-meta { font-size: var(--text-2xs); color: var(--fg-tertiary); }
+.prop-card-price { font-size: var(--text-md); font-weight: var(--fw-semibold); margin-top: 2px; display: flex; align-items: baseline; gap: 5px; font-variant-numeric: tabular-nums; }
+.prop-card-price .cur { font-size: var(--text-2xs); font-weight: var(--fw-medium); color: var(--fg-muted); letter-spacing: 0.02em; }
+.prop-card-price .per { font-weight: var(--fw-regular); font-size: var(--text-xs); color: var(--fg-tertiary); }
+@media (prefers-reduced-motion: reduce) {
+  .prop-card { transition: none; }
+  .prop-card:hover, .prop-card:active { transform: none; }
+}
+
 /* Imagen diferida con skeleton shimmer (estilo YouTube) */
 .prop-img { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--gray-100);
             display: flex; align-items: center; justify-content: center; }
@@ -1114,47 +1140,4 @@ input, select, textarea { font-family: inherit; }
   .acct-pop { left: 0; right: auto; min-width: 220px; }
 }
 
-/* ── Trial Banner (plan 09 — SaaS) ──────────────────────────────────────────── */
-.trial-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  border-bottom: 1px solid transparent;
-  flex-shrink: 0;
-}
-.trial-banner--trial {
-  background: var(--warning-50, #fffbeb);
-  color: var(--warning-700, #b45309);
-  border-color: var(--warning-200, #fde68a);
-}
-.trial-banner--warn {
-  background: var(--danger-50, #fef2f2);
-  color: var(--danger-700, #b91c1c);
-  border-color: var(--danger-200, #fecaca);
-}
-.trial-banner-cta {
-  margin-left: 4px;
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
-  background: none;
-  border: none;
-  color: inherit;
-  padding: 0;
-  font-size: 13px;
-}
-.trial-banner-close {
-  margin-left: auto;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: inherit;
-  opacity: .6;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 2px;
-}
-.trial-banner-close:hover { opacity: 1; }
+/* Trial banner styling moved to saas.css (plan 09 redesign). */

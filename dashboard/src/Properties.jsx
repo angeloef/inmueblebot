@@ -366,7 +366,7 @@ function ImageGallery({ images }) {
           {images.map((url, i) => (
             <button key={i} type="button" aria-label={`Ver foto ${i + 1}${i === idx ? ' (actual)' : ''}`} aria-pressed={i === idx} onClick={() => setIdx(i)}
                  style={{ width: 56, height: 44, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', padding: 0,
-                          border: i === idx ? '2px solid var(--primary-500)' : '2px solid transparent',
+                          border: i === idx ? '2px solid var(--accent-500)' : '2px solid transparent',
                           opacity: i === idx ? 1 : 0.55, transition: 'opacity 0.15s',
                           background: 'var(--gray-100)' }}>
               {isImg(url) ? (
@@ -509,12 +509,12 @@ function RefsInput({ refs, onChange }) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: refs.length ? 6 : 0 }}>
         {refs.map(r => (
           <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-            background: 'var(--primary-50, #eff6ff)', border: '1px solid var(--primary-200, #bfdbfe)',
+            background: 'var(--accent-50)', border: '1px solid var(--accent-100)',
             borderRadius: 12, padding: '2px 8px', fontSize: 13 }}>
             {r}
             <button type="button" title="Eliminar" onClick={() => removeRef(r)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                lineHeight: 1, color: 'var(--neutral-500, #6b7280)', fontSize: 14 }}>×</button>
+                lineHeight: 1, color: 'var(--fg-tertiary)', fontSize: 14 }}>×</button>
           </span>
         ))}
       </div>
@@ -612,10 +612,10 @@ function CityAutocomplete({ city, placeId, onChange }) {
     top: pos ? pos.top : 0, left: pos ? pos.left : 0, width: pos ? pos.width : 'auto',
     zIndex: 1000,
     margin: 0, padding: 0, listStyle: 'none', maxHeight: 240, overflowY: 'auto',
-    background: 'var(--surface, #fff)', border: '1px solid var(--neutral-200, #e5e7eb)',
-    borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.12)',
+    background: 'var(--surface-float)', border: '1px solid var(--border-default)',
+    borderRadius: 8, boxShadow: 'var(--shadow-lg)',
   };
-  const hintStyle = { padding: '8px 10px', fontSize: 14, color: 'var(--gray-500, #6b7280)' };
+  const hintStyle = { padding: '8px 10px', fontSize: 14, color: 'var(--fg-tertiary)' };
 
   return (
     <div className="field" ref={boxRef} style={{ position: 'relative' }}>
@@ -639,7 +639,7 @@ function CityAutocomplete({ city, placeId, onChange }) {
               onMouseEnter={() => setActive(i)}
               style={{
                 padding: '8px 10px', cursor: 'pointer', fontSize: 14,
-                background: i === active ? 'var(--primary-50, #eff6ff)' : 'transparent',
+                background: i === active ? 'var(--accent-50)' : 'transparent',
               }}>
               {s.description}
             </li>
@@ -1034,13 +1034,12 @@ export default function Properties({ onOpenClient, initialProperty }) {
               </tbody>
             </table>
           ) : (
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:14,padding:14}}>
+            <div className="prop-grid">
               {filtered.map(p => (
-                <div key={p.id} tabIndex={0} aria-label={`Ver propiedad ${p.addr}`}
+                <div key={p.id} className="prop-card" tabIndex={0} aria-label={`Ver propiedad ${p.addr}`}
                      onClick={() => setOpen(p)}
-                     onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setOpen(p); } }}
-                     style={{border:'1px solid var(--border-default)',borderRadius:10,cursor:'pointer',background:'var(--surface-raised)',transition:'box-shadow var(--dur-fast)'}} onMouseEnter={(e)=>e.currentTarget.style.boxShadow='var(--shadow-sm)'} onMouseLeave={(e)=>e.currentTarget.style.boxShadow=''}>
-                  <div style={{position:'relative'}}>
+                     onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setOpen(p); } }}>
+                  <div className="prop-card-media">
                     <PropertyImage
                       src={p.photo}
                       alt={p.addr}
@@ -1049,14 +1048,14 @@ export default function Properties({ onOpenClient, initialProperty }) {
                     />
                     <StatusDropdown kind={p.status} overlay onSelect={(s) => updateStatus.mutate({ id: p.id, status: s })} />
                   </div>
-                  <div style={{padding:12,display:'flex',flexDirection:'column',gap:6}}>
-                    <div style={{fontSize:13,fontWeight:600,color:'var(--fg-primary)'}}>{p.addr}</div>
-                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.neigh}</div>
-                    <div style={{fontSize:11,color:'var(--fg-tertiary)'}}>{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
-                    <div className="tabular" style={{fontSize:14,fontWeight:600,marginTop:2,display:'flex',alignItems:'baseline',gap:5}}>
+                  <div className="prop-card-body">
+                    <div className="prop-card-addr">{p.addr}</div>
+                    <div className="prop-card-meta">{p.neigh}</div>
+                    <div className="prop-card-meta">{p.rooms !== '—' && p.rooms + ' · '}{p.m2} m² · {p.baths} baño{p.baths!==1?'s':''}</div>
+                    <div className="prop-card-price tabular">
                       {fmtCurrency(p.price, p.currency)}
-                      <span style={{fontSize:10,fontWeight:500,color:'var(--fg-muted)',letterSpacing:'0.02em'}}>{p.currency}</span>
-                      {p.operation==='rent' && p.status !== 'sale' && <span className="muted" style={{fontWeight:400,fontSize:11}}> /mes</span>}
+                      <span className="cur">{p.currency}</span>
+                      {p.operation==='rent' && p.status !== 'sale' && <span className="per">/mes</span>}
                     </div>
                   </div>
                 </div>

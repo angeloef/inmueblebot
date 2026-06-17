@@ -62,7 +62,7 @@ const S = {
   }),
   error: {
     background: 'var(--danger-50, #fef3f2)', color: 'var(--danger-600, #b42318)',
-    border: '1px solid var(--danger-200, #fecdca)', borderRadius: 8,
+    border: '1px solid var(--danger-100)', borderRadius: 8,
     padding: '8px 12px', fontSize: 13, marginBottom: 16,
   },
 };

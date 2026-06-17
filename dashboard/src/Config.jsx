@@ -288,35 +288,36 @@ const FEATURE_LABELS = {
   api:            'API / integraciones',
 };
 
+const STATUS_LABELS = {
+  trial:     'Prueba',
+  active:    'Activo',
+  past_due:  'Vencido',
+  paused:    'Pausado',
+  cancelled: 'Cancelado',
+};
+
 function StatusPill({ status }) {
-  const map = {
-    trial:      { label: 'Prueba',   color: 'var(--warning-500,#d97706)', bg: 'var(--warning-50,#fffbeb)' },
-    active:     { label: 'Activo',   color: 'var(--success-500,#16a34a)', bg: 'var(--success-50,#f0fdf4)' },
-    past_due:   { label: 'Vencido',  color: 'var(--danger-500,#dc2626)',  bg: 'var(--danger-50,#fef2f2)' },
-    paused:     { label: 'Pausado',  color: 'var(--fg-tertiary,#9ca3af)', bg: 'var(--bg-200,#f9fafb)' },
-    cancelled:  { label: 'Cancelado',color: 'var(--danger-500,#dc2626)',  bg: 'var(--danger-50,#fef2f2)' },
-  };
-  const s = map[status] ?? { label: status, color: 'var(--fg-secondary)', bg: 'var(--bg-200)' };
+  const label = STATUS_LABELS[status] ?? status;
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-      color: s.color, background: s.bg, border: `1px solid ${s.color}33` }}>
-      {s.label}
+    <span className={`plan-status-pill is-${status}`}>
+      <span className="dot" aria-hidden="true" />
+      {label}
     </span>
   );
 }
 
 function LimitBar({ label, used, max }) {
-  const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  const pct = max && used != null ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  const fillClass = pct > 90 ? 'is-over' : pct > 80 ? 'is-warn' : '';
   return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--fg-secondary)' }}>
-        <span>{label}</span>
-        <span>{max ? `${used ?? '—'} / ${max}` : 'Ilimitado'}</span>
+    <div className="limit-bar">
+      <div className="limit-bar-head">
+        <span className="lbl">{label}</span>
+        <span className="val">{max ? `${used ?? '—'} / ${max}` : 'Ilimitado'}</span>
       </div>
-      {max && (
-        <div style={{ height: 4, borderRadius: 2, background: 'var(--border-200,#e5e7eb)' }}>
-          <div style={{ height: 4, borderRadius: 2, width: `${pct}%`,
-            background: pct > 80 ? 'var(--danger-500,#dc2626)' : 'var(--primary-500,#2563eb)' }} />
+      {max != null && (
+        <div className="limit-bar-track">
+          <div className={`limit-bar-fill ${fillClass}`} style={{ width: `${pct}%` }} />
         </div>
       )}
     </div>
@@ -375,30 +376,27 @@ function PlanSection({ onGoToPlans }) {
       {loadingBilling ? (
         <p className="sub">Cargando estado de suscripción…</p>
       ) : billing ? (
-        <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>
-              Plan {currentPlan ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1) : '—'}
+        <div className="plan-summary">
+          <div className="plan-summary-top">
+            <span className="plan-summary-name">
+              Plan <span>{currentPlan ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1) : <span className="muted">—</span>}</span>
             </span>
             {currentStatus && <StatusPill status={currentStatus} />}
+            {currentStatus === 'trial' && daysLeft !== null && (
+              <span className="plan-summary-meta">
+                {daysLeft <= 0 ? 'El período de prueba venció' : <>Prueba: quedan <b>{daysLeft} día{daysLeft !== 1 ? 's' : ''}</b></>}
+              </span>
+            )}
+            {periodEnd && currentStatus === 'active' && (
+              <span className="plan-summary-meta">Renovación: <b>{new Date(periodEnd).toLocaleDateString('es-AR')}</b></span>
+            )}
           </div>
 
-          {currentStatus === 'trial' && daysLeft !== null && (
-            <p className="sub">
-              {daysLeft <= 0
-                ? 'El período de prueba venció.'
-                : `Período de prueba: quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''}.`}
-            </p>
-          )}
-          {periodEnd && currentStatus === 'active' && (
-            <p className="sub">Renovación: {new Date(periodEnd).toLocaleDateString('es-AR')}</p>
-          )}
-
           {limits && (
-            <div style={{ display: 'grid', gap: 8 }}>
-              <LimitBar label="Propiedades" used={null} max={limits.properties} />
-              <LimitBar label="Conversaciones/mes" used={null} max={limits.conversations_per_month} />
-              <LimitBar label="Usuarios del equipo" used={null} max={limits.users} />
+            <div className="plan-usage">
+              <LimitBar label="Propiedades" used={limits.properties_used} max={limits.properties} />
+              <LimitBar label="Conversaciones/mes" used={limits.conversations_used} max={limits.conversations_per_month} />
+              <LimitBar label="Usuarios del equipo" used={limits.users_used} max={limits.users} />
             </div>
           )}
         </div>
@@ -407,68 +405,64 @@ function PlanSection({ onGoToPlans }) {
       )}
 
       {/* Comparativa de tiers */}
-      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: 'var(--fg-secondary)' }}>Planes disponibles</div>
+      <div className="plan-grid-label">Planes disponibles</div>
       {loadingPlans ? (
         <p className="sub">Cargando planes…</p>
       ) : (plans ?? []).length === 0 ? (
         <p className="sub">No hay planes disponibles.</p>
       ) : (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))' }}>
+        <div className="plan-grid">
           {(plans ?? []).map((plan) => {
             const isCurrent = plan.name === currentPlan;
             const isEnterprise = !plan.self_serve;
+            const isFeatured = !!plan.recommended;
             return (
-              <div key={plan.name} style={{
-                border: isCurrent ? '2px solid var(--primary-500,#2563eb)' : '1px solid var(--border,#e5e7eb)',
-                borderRadius: 10, padding: '14px 16px', display: 'grid', gap: 10,
-                background: isCurrent ? 'var(--primary-50,#eff6ff)' : 'var(--bg-100,#fff)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>
-                    {plan.display_name ?? plan.name}
-                  </span>
-                  {isCurrent && (
-                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-600,#1d4ed8)',
-                      background: 'var(--primary-100,#dbeafe)', padding: '1px 7px', borderRadius: 20 }}>
-                      Tu plan
-                    </span>
+              <div key={plan.name} className={`plan-card${isCurrent ? ' is-current' : ''}${isFeatured ? ' is-featured' : ''}`}>
+                {isFeatured && <span className="plan-ribbon">Recomendado</span>}
+                <div className="plan-card-head">
+                  <span className="plan-card-name">{plan.display_name ?? plan.name}</span>
+                  {isCurrent && <span className="plan-card-tag">Tu plan</span>}
+                </div>
+
+                <div className="plan-card-price">
+                  {plan.price_ars_monthly ? (
+                    <>
+                      <span className="amount">${Number(plan.price_ars_monthly).toLocaleString('es-AR')}</span>
+                      <span className="period">/mes</span>
+                    </>
+                  ) : (
+                    <span className="custom">{isEnterprise ? 'A consultar' : 'Gratis'}</span>
                   )}
                 </div>
 
-                <div style={{ fontSize: 13, color: 'var(--fg-secondary)' }}>
-                  {plan.price_ars_monthly
-                    ? `$${Number(plan.price_ars_monthly).toLocaleString('es-AR')} /mes`
-                    : isEnterprise ? 'Precio a consultar' : 'Gratis'}
-                </div>
+                <div className="plan-card-divider" />
 
-                <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 4 }}>
+                <ul className="plan-feats">
                   {(plan.features ?? []).map((f) => (
-                    <li key={f} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', color: 'var(--fg-secondary)' }}>
-                      <Icon name="check" size={12} style={{ color: 'var(--success-500,#16a34a)', flexShrink: 0 }} />
+                    <li key={f}>
+                      <Icon name="check" size={14} stroke={2.5} />
                       {FEATURE_LABELS[f] ?? f}
                     </li>
                   ))}
                 </ul>
 
-                {!isCurrent && (
-                  isEnterprise ? (
-                    <a
-                      href="mailto:ventas@viviendapp.com"
-                      className="btn btn-secondary btn-sm"
-                      style={{ textAlign: 'center', textDecoration: 'none' }}
-                    >
-                      Hablar con ventas
-                    </a>
-                  ) : (
-                    <Button
-                      kind="primary"
-                      size="sm"
-                      disabled={subscribing === plan.name}
-                      onClick={() => handleSubscribe(plan.name)}
-                    >
-                      {subscribing === plan.name ? 'Redirigiendo…' : 'Suscribirse'}
-                    </Button>
-                  )
+                {isCurrent ? (
+                  <span className="plan-card-current-note">
+                    <Icon name="check" size={14} stroke={2.5} />Plan activo
+                  </span>
+                ) : isEnterprise ? (
+                  <a href="mailto:ventas@viviendapp.com" className="btn btn-secondary btn-sm">
+                    Hablar con ventas
+                  </a>
+                ) : (
+                  <Button
+                    kind={isFeatured ? 'primary' : 'secondary'}
+                    size="sm"
+                    disabled={subscribing === plan.name}
+                    onClick={() => handleSubscribe(plan.name)}
+                  >
+                    {subscribing === plan.name ? 'Redirigiendo…' : 'Suscribirse'}
+                  </Button>
                 )}
               </div>
             );

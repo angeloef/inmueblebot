@@ -16,7 +16,7 @@ import SuperadminLogin from './SuperadminLogin';
 import SuperadminShell from './SuperadminShell';
 import { SuperadminTenantProvider } from './TenantContext';
 
-const NAVY = '#164a71';
+const NAVY = 'var(--accent-600)';
 
 function Splash({ text = 'Cargando…' }) {
   return (

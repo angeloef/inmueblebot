@@ -222,17 +222,19 @@ export function TrialBanner({ onGoToPlans }) {
   if (status === 'trial') {
     const days = daysLeft(trial_ends_at);
     if (days === null || days > 7) return null;
-    const label = days <= 0
-      ? 'Tu período de prueba venció.'
-      : days === 1
-        ? 'Te queda 1 día de prueba gratuita.'
-        : `Te quedan ${days} días de prueba gratuita.`;
+    const amount = days <= 0 ? 'venció' : days === 1 ? '1 día' : `${days} días`;
     return (
       <div className="trial-banner trial-banner--trial" role="status" aria-live="polite">
-        <Icon name="alert" size={14} />
-        <span>{label}</span>
+        <span className="trial-banner-ico"><Icon name="clock" size={14} /></span>
+        <span className="trial-banner-text">
+          {days <= 0
+            ? <>Tu período de prueba <b>venció</b>.</>
+            : <>Te {days === 1 ? 'queda' : 'quedan'} <b>{amount}</b> de prueba gratuita.</>}
+        </span>
         <button type="button" className="trial-banner-cta" onClick={onGoToPlans}>Ver planes</button>
-        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>×</button>
+        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>
+          <Icon name="x" size={14} />
+        </button>
       </div>
     );
   }
@@ -240,10 +242,12 @@ export function TrialBanner({ onGoToPlans }) {
   if (status === 'past_due' || status === 'paused' || status === 'cancelled') {
     return (
       <div className="trial-banner trial-banner--warn" role="status" aria-live="polite">
-        <Icon name="alert" size={14} />
-        <span>Tu suscripción está inactiva.</span>
+        <span className="trial-banner-ico"><Icon name="alert" size={14} /></span>
+        <span className="trial-banner-text">Tu suscripción está inactiva.</span>
         <button type="button" className="trial-banner-cta" onClick={onGoToPlans}>Reactivar plan</button>
-        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>×</button>
+        <button type="button" className="trial-banner-close" aria-label="Cerrar aviso" onClick={() => setDismiss(true)}>
+          <Icon name="x" size={14} />
+        </button>
       </div>
     );
   }
@@ -263,31 +267,35 @@ export function UpgradeModal({ detail, onClose, onGoToPlans }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal"
+        className="modal upgrade-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="upgrade-modal-title"
         ref={trapRef}
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 460 }}
       >
         <div className="modal-head">
-          <h3 id="upgrade-modal-title">Función de plan superior</h3>
-          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
+          <span className="close" style={{ marginLeft: 'auto' }}><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
         </div>
         <div className="modal-body">
-          <p>
-            {feature
-              ? `Esta función (${feature}) requiere el plan `
-              : 'Esta función requiere el plan '}
-            <strong>{required ? required.charAt(0).toUpperCase() + required.slice(1) : 'superior'}</strong>.
-          </p>
-          <p style={{ color: 'var(--fg-tertiary)', fontSize: 13, marginTop: 8 }}>
-            Actualizá tu plan para desbloquear esta y otras funciones avanzadas.
-          </p>
+          <div className="upgrade-hero">
+            <span className="upgrade-lock" aria-hidden="true"><Icon name="lock" size={26} /></span>
+            <h3 id="upgrade-modal-title">Función de plan superior</h3>
+            {required && (
+              <span className="upgrade-tier-badge">
+                Requiere plan {required.charAt(0).toUpperCase() + required.slice(1)}
+              </span>
+            )}
+            <p className="upgrade-copy">
+              {feature
+                ? `“${feature}” no está incluida en tu plan actual. `
+                : 'Esta función no está incluida en tu plan actual. '}
+              Actualizá para desbloquearla junto a otras funciones avanzadas.
+            </p>
+          </div>
         </div>
         <div className="modal-foot">
-          <Button kind="ghost" size="sm" onClick={onClose}>Cerrar</Button>
+          <Button kind="ghost" size="sm" onClick={onClose}>Ahora no</Button>
           <Button kind="primary" size="sm" onClick={() => { onClose(); onGoToPlans(); }}>Ver planes</Button>
         </div>
       </div>

@@ -10,59 +10,57 @@
 import React, { useMemo, useState } from 'react';
 import { useAnalyticsOverview, useAnalyticsTenants } from '../api';
 
-const NAVY = '#164a71';
-const ACCENT = '#2e90fa';
-const MUTED = '#667085';
+// Chart fills must be concrete colors (SVG presentation attributes don't resolve
+// CSS var()); these mirror the brand tokens 1:1. UI chrome uses var() directly.
+const ACCENT = 'var(--accent-500)';
+const DANGER = 'var(--danger-500)';
+const MUTED = 'var(--fg-tertiary)';
 
 const S = {
   section: { marginBottom: 28 },
-  h2: { fontSize: 13, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: MUTED, margin: '0 0 12px' },
+  h2: { fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--fg-tertiary)', margin: '0 0 12px' },
   narrative: {
-    background: 'var(--surface-raised, #fff)', border: '1px solid var(--border-subtle, #e6e9ee)',
-    borderRadius: 12, padding: '16px 18px', fontSize: 14, lineHeight: 1.5,
-    color: 'var(--fg-secondary, #344054)', marginBottom: 20,
+    background: 'var(--surface-raised)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-xl)', padding: '16px 18px', fontSize: 14, lineHeight: 1.5,
+    color: 'var(--fg-secondary)', marginBottom: 20, textWrap: 'pretty',
   },
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 },
   kpiCard: {
-    background: 'var(--surface-raised, #fff)', border: '1px solid var(--border-subtle, #e6e9ee)',
-    borderRadius: 12, padding: '14px 16px',
+    background: 'var(--surface-raised)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)', padding: '14px 16px', boxShadow: 'var(--shadow-xs)',
   },
-  kpiLabel: { fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 6 },
-  kpiValue: { fontSize: 24, fontWeight: 700, color: NAVY, lineHeight: 1.1 },
-  kpiSub: { fontSize: 12, color: MUTED, marginTop: 4 },
+  kpiLabel: { fontSize: 12, color: 'var(--fg-tertiary)', fontWeight: 600, marginBottom: 6 },
+  kpiValue: { fontSize: 24, fontWeight: 700, color: 'var(--fg-primary)', lineHeight: 1.1, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' },
+  kpiSub: { fontSize: 12, color: 'var(--fg-tertiary)', marginTop: 4 },
   card: {
-    background: 'var(--surface-raised, #fff)', border: '1px solid var(--border-subtle, #e6e9ee)',
-    borderRadius: 12, padding: 16,
+    background: 'var(--surface-raised)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)', padding: 16,
   },
-  chartTitle: { fontSize: 13, fontWeight: 600, color: 'var(--fg-secondary, #344054)', marginBottom: 10 },
+  chartTitle: { fontSize: 13, fontWeight: 600, color: 'var(--fg-secondary)', marginBottom: 10 },
   phase2: {
-    background: '#fffaeb', border: '1px solid #fedf89', borderRadius: 12,
-    padding: '14px 16px', color: '#b54708', fontSize: 13,
+    background: 'var(--warning-50)', border: '1px solid var(--warning-100)', borderRadius: 'var(--radius-lg)',
+    padding: '14px 16px', color: 'var(--warning-700)', fontSize: 13,
   },
   toolbar: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' },
   spacer: { flex: 1 },
-  exportBtn: {
-    appearance: 'none', border: '1px solid var(--border-subtle, #d0d5dd)', cursor: 'pointer',
-    padding: '7px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: '#fff', color: NAVY,
-  },
-  tableCard: { border: '1px solid var(--border-subtle, #e6e9ee)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface-raised, #fff)' },
+  tableCard: { border: '1px solid var(--border-default)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--surface-raised)' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
   th: (active) => ({
-    textAlign: 'left', padding: '10px 12px', background: 'var(--surface-base, #f6f8fa)',
-    color: active ? NAVY : MUTED, fontWeight: 600, fontSize: 12, cursor: 'pointer',
-    borderBottom: '1px solid var(--border-subtle, #e6e9ee)', whiteSpace: 'nowrap', userSelect: 'none',
+    textAlign: 'left', padding: '10px 12px', background: 'var(--surface-base)',
+    color: active ? 'var(--accent-600)' : 'var(--fg-tertiary)', fontWeight: 600, fontSize: 12, cursor: 'pointer',
+    borderBottom: '1px solid var(--border-default)', whiteSpace: 'nowrap', userSelect: 'none',
   }),
   thButton: {
     appearance: 'none', background: 'none', border: 'none', padding: 0, margin: 0,
     font: 'inherit', color: 'inherit', cursor: 'pointer', fontWeight: 600,
   },
-  td: { padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #f0f2f5)', color: 'var(--fg-secondary, #344054)' },
-  tenantPill: { display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: 'rgba(22,74,113,0.10)', color: NAVY },
-  empty: { padding: '40px 16px', textAlign: 'center', color: MUTED },
+  td: { padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--fg-secondary)', fontVariantNumeric: 'tabular-nums' },
+  tenantPill: { display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: 'var(--accent-50)', color: 'var(--accent-700)' },
+  empty: { padding: '40px 16px', textAlign: 'center', color: 'var(--fg-tertiary)' },
   statusBadge: (ok) => ({
     fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
-    background: ok ? 'rgba(18,183,106,0.12)' : 'rgba(102,112,133,0.12)',
-    color: ok ? '#067647' : MUTED,
+    background: ok ? 'var(--state-success-bg)' : 'var(--state-neutral-bg)',
+    color: ok ? 'var(--state-success-fg)' : 'var(--state-neutral-fg)',
   }),
 };
 
@@ -86,12 +84,12 @@ function BarChart({ series, color = ACCENT }) {
           // aria-hidden: el <svg> ya expone la serie completa vía aria-label (fuente única
           // para AT); evita doble lectura de cada etiqueta de barra.
           <g key={d.month} aria-hidden="true">
-            <rect x={x + 3} y={y} width={Math.max(2, barW - 6)} height={h} rx={3} fill={color} />
-            <text x={x + barW / 2} y={height - 5} textAnchor="middle" fontSize="9" fill={MUTED}>
+            <rect x={x + 3} y={y} width={Math.max(2, barW - 6)} height={h} rx={3} style={{ fill: color }} />
+            <text x={x + barW / 2} y={height - 5} textAnchor="middle" fontSize="9" style={{ fill: MUTED }}>
               {d.month.slice(5)}
             </text>
             {d.count > 0 && (
-              <text x={x + barW / 2} y={y - 3} textAnchor="middle" fontSize="9" fill={MUTED}>{d.count}</text>
+              <text x={x + barW / 2} y={y - 3} textAnchor="middle" fontSize="9" style={{ fill: MUTED }}>{d.count}</text>
             )}
           </g>
         );
@@ -177,7 +175,7 @@ function SaasSection({ saas }) {
         </div>
         <div style={S.card}>
           <div style={S.chartTitle}>Bajas por mes</div>
-          <BarChart series={saas.churn_by_month || []} color="#f04438" />
+          <BarChart series={saas.churn_by_month || []} color={DANGER} />
         </div>
       </div>
     </section>
@@ -245,7 +243,7 @@ function DrilldownSection() {
           {items.length} inmobiliaria(s) · ordená por columna
         </span>
         <span style={S.spacer} />
-        <button type="button" style={S.exportBtn} disabled={items.length === 0} onClick={() => downloadCsv(sorted)}>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={items.length === 0} onClick={() => downloadCsv(sorted)}>
           Exportar CSV
         </button>
       </div>

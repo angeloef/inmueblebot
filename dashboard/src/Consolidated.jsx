@@ -77,7 +77,7 @@ export default function Consolidated({ onNav }) {
           {branches.length === 0 ? (
             <p style={{ color: 'var(--muted, #6b7280)' }}>
               No tenés sucursales todavía. {onNav && (
-                <button className="btn-link" style={{ background: 'none', border: 'none', color: 'var(--primary-600, #155f6f)', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => onNav('sucursales')}>
+                <button className="btn-link" style={{ background: 'none', border: 'none', color: 'var(--accent-600)', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => onNav('sucursales')}>
                   Creá la primera
                 </button>
               )}
