@@ -1,7 +1,7 @@
 ---
 id: 08
 title: "Tiers de planes en backend — catálogo, gating por tier y montos MP"
-status: pending
+status: completed
 priority: high
 area: backend
 files:
@@ -80,3 +80,4 @@ Trial: 30 días sin tarjeta. Anual −20%. Pack 100 conv extra: $12.000. Enterpr
 
 ## 7. Bitácora (append-only)
 - 2026-06-16 — Plan creado. Decisiones a confirmar con el founder en preflight: tier por defecto para suscripciones existentes en el backfill, y si el enforcement de cupos de conversaciones entra en v1 o fase 2.
+- 2026-06-17 — Implementado y pusheado (SHA 1a567f4). Decisiones tomadas: backfill default = 'profesional'; enforcement de cupos = fase 2 (expuesto en limits pero sin hard-block). Gates: ruff ✅, 25/25 tests ✅, security-reviewer APPROVED. Archivos nuevos: plans.py (catálogo), backfill_subscription_tiers.py, test_plans_gating.py. Rutas reclasificadas: reports/exports/documents → require_plan(feature=...). GET /billing/plans público, billing/status y /auth/me exponen tier/limits/features/self_serve.

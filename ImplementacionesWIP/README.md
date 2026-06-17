@@ -15,7 +15,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 05 | [`05_superadmin-explorador-global-cross-tenant.md`](./05_superadmin-explorador-global-cross-tenant.md) | Backend + Frontend | `completed` | 04 (reusa activity_log de 03) |
 | 06 | [`06_superadmin-analitica-visual-y-textual.md`](./06_superadmin-analitica-visual-y-textual.md) | Backend + Frontend | `completed` | 04 |
 | 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `completed` | 04 |
-| 08 | [`08_tiers-planes-backend.md`](./08_tiers-planes-backend.md) | Backend | `pending` | — (base de 09) |
+| 08 | [`08_tiers-planes-backend.md`](./08_tiers-planes-backend.md) | Backend | `completed` | — (base de 09) |
 | 09 | [`09_flujo-saas-frontend.md`](./09_flujo-saas-frontend.md) | Frontend | `pending` | 08 |
 
 ### Épica SaaS / planes (08–09)
