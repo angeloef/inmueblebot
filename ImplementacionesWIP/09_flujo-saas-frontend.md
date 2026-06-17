@@ -1,7 +1,7 @@
 ---
 id: 09
 title: "Flujo SaaS en frontend — banner trial, manejo 402, checkout y sección de suscripción"
-status: in_progress
+status: completed
 priority: high
 area: frontend
 files:
@@ -78,3 +78,4 @@ Construir el flujo SaaS visible para el usuario sobre el backend de tiers (plan 
 
 ## 7. Bitácora (append-only)
 - 2026-06-16 — Plan creado. Depende de 08 (catálogo/tier/402 estructurado). Recordatorio: este entorno prohíbe localStorage en artefactos; el "descartar por sesión" del banner usa estado de sesión del front, no localStorage.
+- 2026-06-17 — Implementado y pusheado. SHA: cb5bf42. Gates: build ✓, react-reviewer ✓ (2 HIGH corregidos: role=status/aria-live=polite, strip MP params). TrialBanner + UpgradeModal + hooks billing + PlanSection en Config.
