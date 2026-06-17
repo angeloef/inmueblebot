@@ -119,13 +119,44 @@ contracts  (ALTER: columnas nuevas, IF NOT EXISTS)
 
 ---
 
-## Estado de ejecución
+## Estado de ejecución (actualizado 2026-06-17)
 
-- [x] Modelos ORM nuevos (`operations.py`)
-- [x] `ensure_operations_schema()` (DDL aislado + ALTERs de `contracts`)
-- [x] Router `operations.py` + registro en `main.py`
-- [x] `relate-client` escribe relacional + `agent_id` + contrato draft
-- [x] `create_contract`/`update_contract` con `agent_id` + depósito
-- [ ] Frontend (fase siguiente)
-- [ ] Backfill ejecutado en prod (endpoint disponible; correr post-deploy)
+### Backend — críticos C1–C5
+- [x] Modelos ORM nuevos (`operations.py`): `PropertyRelation`, `Guarantor`, `Sale`.
+- [x] `ensure_operations_schema()` — DDL en transacción aislada + ALTERs idempotentes
+      (corren SIEMPRE y cada uno en su propia transacción).
+- [x] Router `operations.py` + registro en `main.py` (app + compat `/api`).
+- [x] `relate-client` escribe en `property_relations` + `agent_id` + crea contrato `draft`.
+- [x] `create_contract`/`update_contract` con `agent_id` + depósito; serializer los devuelve.
+- [x] Backfill ejecutado en prod: `POST /admin/operations/backfill` (migró 2 vínculos JSONB→relacional).
+
+### Frontend — críticos C1–C5
+- [x] `LinkClientProperty`: dropdown "Agente asignado" (miembros de equipos) → `agent_id`.
+- [x] `Cobranzas` (ContractEditor): dropdown de agente + depósito (monto/estado); pill "Borrador".
+- [x] `GuarantorsPanel`: alta/baja/listado de garantes por contrato.
+- [x] `api.js`: hooks `useSales*`, `useGuarantors*`, `agent_id` en `useRelateClientToProperty`.
+
+### Visitas — C5 extendido a `appointments`
+- [x] `appointments.agent_id` (columna) + create/update/serializer.
+- [x] `EventEditor`/`EventPopover`: select de agente real (antes nombres mock hardcodeados).
+- [x] `api.js`: `toEvent`/`fromEvent` mapean `agent_id`.
+
+### Fixes de raíz descubiertos y resueltos en el camino
+- [x] 500 al vincular: tabla `activity_log` no existía (la migración monolítica abortaba en
+      `messages.id` UUID). Ver memoria `startup-migration-single-txn-landmine`.
+- [x] `log_activity`/`log_activity_async` envueltos en SAVEPOINT (`begin_nested`) para no
+      envenenar el commit del endpoint.
+- [x] `agent_id` como **referencia blanda**: se dropearon las FK `*_agent_id_fkey` porque el
+      dropdown puede mandar el id del dueño (que no es fila de `tenant_members`) → la FK dura
+      tiraba 500.
+
+### Pendiente
+- [ ] Validación en vivo de la atribución de agente en visitas (esperando deploy de `eed3537`).
+- [ ] Importantes (fase 2): IPC automático/ICL, recibos/liquidación PDF, dunning, co-partes.
+- [ ] Menores (fase 3): estados de propiedad finos, embudo comercial, tope punitorio, USD.
+
+### Commits clave (rama main)
+`14ee3fd` savepoint log_activity · `744cc51` fix messages.id migración · `f116b32` modelo
+operaciones C1–C5 · `2ebdc8b` UI operaciones · `1d6be33` agente en visitas · `eed3537`
+agent_id soft ref.
 ```
