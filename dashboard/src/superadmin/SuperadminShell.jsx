@@ -10,13 +10,14 @@ import { useAuth } from '../auth';
 import { useSuperadminTenant } from './TenantContext';
 import GlobalExplorer from './GlobalExplorer';
 import PlatformAnalytics from './PlatformAnalytics';
+import ErrorTriage from './ErrorTriage';
 
 const NAVY = '#164a71';
 
 const TABS = [
   { id: 'data', label: 'Datos', hint: 'Explorador global (plan 05)' },
   { id: 'analytics', label: 'Analítica', hint: 'Análisis de plataforma (plan 06)' },
-  { id: 'errors', label: 'Errores', hint: 'Triage de reportes (plan 07)' },
+  { id: 'errors', label: 'Errores', hint: 'Triage de reportes' },
 ];
 
 const S = {
@@ -86,25 +87,9 @@ function TenantSelector() {
   );
 }
 
-function Placeholder({ tab, scope }) {
-  return (
-    <div style={S.placeholder}>
-      <div style={S.phTitle}>{tab.label}</div>
-      <p style={{ margin: 0 }}>{tab.hint}.</p>
-      <p style={{ margin: '8px 0 0', fontSize: 13 }}>Ámbito actual: <strong>{scope}</strong>.</p>
-    </div>
-  );
-}
-
 export default function SuperadminShell({ account }) {
   const { logout } = useAuth();
-  const { selectedTenant } = useSuperadminTenant();
   const [activeTab, setActiveTab] = useState(TABS[0].id);
-
-  const tab = TABS.find((t) => t.id === activeTab) ?? TABS[0];
-  const scope = selectedTenant
-    ? (selectedTenant.display_name || selectedTenant.slug || selectedTenant.id)
-    : 'Todas las inmobiliarias';
 
   return (
     <div style={S.page}>
@@ -140,7 +125,7 @@ export default function SuperadminShell({ account }) {
         <div id="sa-tabpanel" role="tabpanel" aria-labelledby={`sa-tab-${activeTab}`}>
           {activeTab === 'data' && <GlobalExplorer />}
           {activeTab === 'analytics' && <PlatformAnalytics />}
-          {activeTab !== 'data' && activeTab !== 'analytics' && <Placeholder tab={tab} scope={scope} />}
+          {activeTab === 'errors' && <ErrorTriage />}
         </div>
       </main>
     </div>

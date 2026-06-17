@@ -14,7 +14,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 04 | [`04_superadmin-base-y-acceso-cross-tenant.md`](./04_superadmin-base-y-acceso-cross-tenant.md) | Backend + Frontend | `completed` | — (base de 05/06/07) |
 | 05 | [`05_superadmin-explorador-global-cross-tenant.md`](./05_superadmin-explorador-global-cross-tenant.md) | Backend + Frontend | `completed` | 04 (reusa activity_log de 03) |
 | 06 | [`06_superadmin-analitica-visual-y-textual.md`](./06_superadmin-analitica-visual-y-textual.md) | Backend + Frontend | `completed` | 04 |
-| 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `pending` | 04 |
+| 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `completed` | 04 |
 
 ### Épica Super-admin (04–07)
 Dashboard dedicado a los 2 devs en ruta aislada `/superadmin` (login por `role=superadmin`).

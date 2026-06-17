@@ -1,7 +1,93 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Icon } from './Primitives';
-import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications } from './api';
+import { Icon, Button, IconButton, pushToast } from './Primitives';
+import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications, useCreateErrorReport } from './api';
 import { useAuth } from './auth';
+import { useFocusTrap } from './useFocusTrap';
+
+// Contexto útil para el dev, sin datos sensibles (sin tokens/cookies). El backend
+// igualmente redacta credenciales antes de persistir.
+async function collectReportContext() {
+  let version = null;
+  try {
+    const res = await fetch('/version', { cache: 'no-store' });
+    if (res.ok) { const d = await res.json(); version = d?.commit ?? d?.build ?? null; }
+  } catch { /* offline / cold start: el reporte se manda igual sin versión */ }
+  return {
+    route: `${window.location.pathname}${window.location.hash}`,
+    version,
+    user_agent: navigator.userAgent,
+  };
+}
+
+const SEVERITY_OPTIONS = [
+  { value: 'low', label: 'Baja' },
+  { value: 'med', label: 'Media' },
+  { value: 'high', label: 'Alta' },
+];
+
+// Modal global "Reportar error": mensaje + severidad. Adjunta contexto automáticamente.
+function ReportErrorModal({ onClose }) {
+  const [message, setMessage] = useState('');
+  const [severity, setSeverity] = useState('med');
+  const [error, setError] = useState('');
+  const createReport = useCreateErrorReport();
+  const trapRef = useFocusTrap(onClose);
+
+  const handleSubmit = async () => {
+    if (!message.trim()) { setError('Contanos qué pasó.'); return; }
+    try {
+      const context = await collectReportContext();
+      await createReport.mutateAsync({ message: message.trim(), severity, context });
+      pushToast({ kind: 'success', text: 'Reporte enviado. ¡Gracias!' });
+      onClose();
+    } catch {
+      pushToast({ kind: 'danger', text: 'No se pudo enviar el reporte. Reintentá.' });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="report-error-title" ref={trapRef} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal-head">
+          <h3 id="report-error-title">Reportar un error</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label htmlFor="report-message">¿Qué pasó? *</label>
+            <textarea
+              id="report-message"
+              autoFocus
+              className={error ? 'invalid' : ''}
+              aria-invalid={error ? 'true' : undefined}
+              value={message}
+              onChange={e => { setMessage(e.target.value); if (error) setError(''); }}
+              placeholder="Describí el problema: qué intentabas hacer y qué salió mal."
+              rows={5}
+              maxLength={4000}
+            />
+            {error && <span className="field-error">{error}</span>}
+          </div>
+          <div className="field">
+            <label htmlFor="report-severity">Gravedad</label>
+            <select id="report-severity" value={severity} onChange={e => setSeverity(e.target.value)}>
+              {SEVERITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--fg-tertiary)' }}>
+            Adjuntamos la sección actual y la versión de la app. No enviamos contraseñas ni datos sensibles.
+          </p>
+        </div>
+        <div className="modal-foot">
+          <Button kind="ghost" size="sm" onClick={onClose} disabled={createReport.isPending}>Cancelar</Button>
+          <Button kind="primary" size="sm" icon="check" onClick={handleSubmit} disabled={createReport.isPending}>
+            {createReport.isPending ? 'Enviando…' : 'Enviar reporte'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Iniciales para el avatar a partir del nombre o el email.
 function initialsFrom(account) {
@@ -381,6 +467,7 @@ function BranchSelector() {
 
 export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, account, onLogout }) {
   const [open, setOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const ref = useRef(null);
   const { data } = useNotifications();
   const unread = data?.unread_count ?? 0;
@@ -427,9 +514,20 @@ export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, acco
         </button>
         {open && <NotificationPanel onClose={() => setOpen(false)} onAction={onNotifAction} />}
       </div>
+      <button
+        type="button"
+        className="tb-icon"
+        title="Reportar un error"
+        aria-label="Reportar un error"
+        aria-haspopup="dialog"
+        onClick={() => setReportOpen(true)}
+      >
+        <Icon name="alert" size={22} />
+      </button>
       <button type="button" className="tb-icon" title="Ayuda" aria-label="Ayuda">
         <Icon name="info" size={24} />
       </button>
+      {reportOpen && <ReportErrorModal onClose={() => setReportOpen(false)} />}
       <span
         className="tb-avatar"
         title={account?.account?.email || 'Mi cuenta'}

@@ -995,6 +995,36 @@ export const useAnalyticsOverview = (enabled = true) =>
 export const useAnalyticsTenants = (enabled = true) =>
   useQuery({ queryKey: ['analytics', 'tenants'], queryFn: analyticsApi.tenants, enabled, staleTime: 60_000 });
 
+// ─── Reporte de errores in-app + triage super-admin (plan 07) ────────────────
+// POST /admin/error-reports lo crea cualquier usuario autenticado; GET/PATCH son
+// super-admin (gateado en el backend; el GUC RLS expone el cross-tenant).
+
+const errorReportsApi = {
+  create: (data) => http.post('/admin/error-reports', data).then(r => r.data),
+  list:   (params = {}) => http.get('/admin/error-reports', { params }).then(r => r.data),
+  update: (id, data) => http.patch(`/admin/error-reports/${id}`, data).then(r => r.data),
+};
+
+export const useCreateErrorReport = () =>
+  useMutation({ mutationFn: errorReportsApi.create });
+
+export const useErrorReports = (params = {}, enabled = true) =>
+  useQuery({
+    queryKey: ['error-reports', params],
+    queryFn: () => errorReportsApi.list(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+
+export const useUpdateErrorReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }) => errorReportsApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['error-reports'] }),
+  });
+};
+
 // ─── WhatsApp Conversations ─────────────────────────────────────────────────
 
 const conversationApi = {

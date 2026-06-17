@@ -535,6 +535,10 @@ app.include_router(admin_global_router)
 from app.api.routes.admin_analytics import router as admin_analytics_router
 app.include_router(admin_analytics_router)
 
+# Reporte de errores in-app + triage super-admin (plan 07) — prefix /admin/error-reports
+from app.api.routes.error_reports import router as error_reports_router
+app.include_router(error_reports_router)
+
 # Cobranzas (gestión de alquileres) — comparte prefix /admin
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
@@ -582,6 +586,7 @@ _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
 _api_compat.include_router(admin_global_router)
 _api_compat.include_router(admin_analytics_router)
+_api_compat.include_router(error_reports_router)
 _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(operations_router)
 _api_compat.include_router(auth_router)
