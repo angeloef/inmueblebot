@@ -527,6 +527,10 @@ app.include_router(simulate_router, tags=["testing"])
 from app.api.routes.admin import router as admin_router
 app.include_router(admin_router)
 
+# Explorador global cross-tenant super-admin (plan 05) — prefix /admin/global
+from app.api.routes.admin_global import router as admin_global_router
+app.include_router(admin_global_router)
+
 # Cobranzas (gestión de alquileres) — comparte prefix /admin
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
@@ -572,6 +576,7 @@ app.include_router(exports_router)
 from fastapi import APIRouter as _APIRouter
 _api_compat = _APIRouter(prefix="/api")
 _api_compat.include_router(admin_router)
+_api_compat.include_router(admin_global_router)
 _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(operations_router)
 _api_compat.include_router(auth_router)

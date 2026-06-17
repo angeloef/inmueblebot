@@ -28,6 +28,8 @@ VALID_ACTIONS = frozenset(
         "relation_linked",
         "relation_changed",
         "relation_unlinked",
+        # Edición cross-tenant desde la consola super-admin (plan 05). actor='superadmin:<id>'.
+        "superadmin_edited",
     }
 )
 

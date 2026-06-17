@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../auth';
 import { useSuperadminTenant } from './TenantContext';
+import GlobalExplorer from './GlobalExplorer';
 
 const NAVY = '#164a71';
 
@@ -124,7 +125,7 @@ export default function SuperadminShell({ account }) {
             type="button"
             role="tab"
             id={`sa-tab-${t.id}`}
-            aria-controls="sa-tabpanel"
+            aria-controls={t.id === activeTab ? 'sa-tabpanel' : undefined}
             aria-selected={t.id === activeTab}
             style={S.tab(t.id === activeTab)}
             onClick={() => setActiveTab(t.id)}
@@ -136,7 +137,7 @@ export default function SuperadminShell({ account }) {
 
       <main style={S.main}>
         <div id="sa-tabpanel" role="tabpanel" aria-labelledby={`sa-tab-${activeTab}`}>
-          <Placeholder tab={tab} scope={scope} />
+          {activeTab === 'data' ? <GlobalExplorer /> : <Placeholder tab={tab} scope={scope} />}
         </div>
       </main>
     </div>

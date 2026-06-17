@@ -13,7 +13,7 @@
  */
 
 import axios from 'axios';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
@@ -940,6 +940,43 @@ export const useUpdateTenantSettings = () => {
       // Also invalidate the tenant list so active_router badge refreshes.
       qc.invalidateQueries({ queryKey: keys.tenants });
     },
+  });
+};
+
+// ─── Explorador global cross-tenant (super-admin, plan 05) ───────────────────
+// Pega a /admin/global/*: lista y edita entidades de TODAS las inmobiliarias.
+// El backend gateado por require_superadmin; el GUC RLS expone el cross-tenant.
+
+const globalKeys = {
+  clients:      (params) => ['global', 'clients', params],
+  properties:   (params) => ['global', 'properties', params],
+  appointments: (params) => ['global', 'appointments', params],
+};
+
+const globalApi = {
+  list:   (entity, params = {}) =>
+    http.get(`/admin/global/${entity}`, { params }).then(r => r.data),
+  update: (entity, id, data) =>
+    http.patch(`/admin/global/${entity}/${id}`, data).then(r => r.data),
+};
+
+// `enabled` permite que GlobalExplorer llame los 3 hooks incondicionalmente (Rules of
+// Hooks) y solo deje activo el de la entidad visible. placeholderData=keepPreviousData
+// (v5) evita el parpadeo a vacío al paginar/buscar.
+export const useGlobalClients = (params = {}, enabled = true) =>
+  useQuery({ queryKey: globalKeys.clients(params), queryFn: () => globalApi.list('clients', params), enabled, placeholderData: keepPreviousData });
+
+export const useGlobalProperties = (params = {}, enabled = true) =>
+  useQuery({ queryKey: globalKeys.properties(params), queryFn: () => globalApi.list('properties', params), enabled, placeholderData: keepPreviousData });
+
+export const useGlobalAppointments = (params = {}, enabled = true) =>
+  useQuery({ queryKey: globalKeys.appointments(params), queryFn: () => globalApi.list('appointments', params), enabled, placeholderData: keepPreviousData });
+
+export const useUpdateGlobalEntity = (entity) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }) => globalApi.update(entity, id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['global', entity] }),
   });
 };
 
