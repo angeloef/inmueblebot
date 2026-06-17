@@ -58,17 +58,21 @@ async def _upsert_superadmin(email: str, password: str) -> str:
     return action
 
 
+# ⚠️  CREDENCIALES DE DESARROLLO — ELIMINAR ANTES DE PRODUCCIÓN
+# Ver PRODUCTION_LAUNCH_CHECKLIST.md §8 (superadmin de test).
+_DEV_EMAIL = "dev@viviendapp.com"
+_DEV_PASSWORD = "superadmin-dev-2026"
+
+
 async def _main() -> int:
-    password = os.environ.get("SUPERADMIN_PASSWORD", "").strip()
-    emails_raw = os.environ.get("SUPERADMIN_EMAILS") or os.environ.get("SUPERADMIN_EMAIL", "")
+    password = os.environ.get("SUPERADMIN_PASSWORD", _DEV_PASSWORD).strip()
+    emails_raw = (
+        os.environ.get("SUPERADMIN_EMAILS")
+        or os.environ.get("SUPERADMIN_EMAIL")
+        or _DEV_EMAIL
+    )
     emails = [e for e in (x.strip() for x in emails_raw.split(",")) if e]
 
-    if not emails or not password:
-        print(
-            "ERROR: set SUPERADMIN_EMAIL (o SUPERADMIN_EMAILS=a,b) y SUPERADMIN_PASSWORD.",
-            file=sys.stderr,
-        )
-        return 2
     if len(password) < 12:
         # Esta única cuenta concede acceso cross-tenant total; exigir una passphrase fuerte.
         print("ERROR: SUPERADMIN_PASSWORD debe tener al menos 12 caracteres.", file=sys.stderr)

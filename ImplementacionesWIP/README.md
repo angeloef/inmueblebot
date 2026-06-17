@@ -15,6 +15,15 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 05 | [`05_superadmin-explorador-global-cross-tenant.md`](./05_superadmin-explorador-global-cross-tenant.md) | Backend + Frontend | `completed` | 04 (reusa activity_log de 03) |
 | 06 | [`06_superadmin-analitica-visual-y-textual.md`](./06_superadmin-analitica-visual-y-textual.md) | Backend + Frontend | `completed` | 04 |
 | 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `completed` | 04 |
+| 08 | [`08_tiers-planes-backend.md`](./08_tiers-planes-backend.md) | Backend | `pending` | — (base de 09) |
+| 09 | [`09_flujo-saas-frontend.md`](./09_flujo-saas-frontend.md) | Frontend | `pending` | 08 |
+
+### Épica SaaS / planes (08–09)
+Completar el flujo de suscripciones: **08** lleva el backend de mono-plan a **3 tiers**
+(Básico/Pro/Enterprise) con catálogo central, gating por tier, montos MP y exposición de
+tier/límites; **09** construye el frontend (banner de trial, manejo de 402 con modal+lock,
+sección "Plan y suscripción" en Config con checkout MercadoPago). Orden: **08 → 09**.
+Catálogo/precios en `recommended_pricing_plans_v3.md`. Enterprise = "Hablar con ventas" (no self-serve).
 
 ### Épica Super-admin (04–07)
 Dashboard dedicado a los 2 devs en ruta aislada `/superadmin` (login por `role=superadmin`).

@@ -21,7 +21,7 @@ const TABS = [
 ];
 
 const S = {
-  page: { minHeight: '100vh', background: 'var(--surface-base, #f6f8fa)', color: 'var(--fg-primary, #111)' },
+  page: { height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--surface-base, #f6f8fa)', color: 'var(--fg-primary, #111)', overflow: 'hidden' },
   header: {
     display: 'flex', alignItems: 'center', gap: 16,
     padding: '14px 24px', background: NAVY, color: '#fff',
@@ -38,7 +38,7 @@ const S = {
   select: {
     padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.25)',
     background: 'rgba(255,255,255,0.10)', color: '#fff', fontSize: 13, outline: 'none',
-    maxWidth: 260,
+    maxWidth: 260, colorScheme: 'dark',
   },
   logout: {
     padding: '7px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.25)',
@@ -55,7 +55,8 @@ const S = {
     borderBottom: active ? `2px solid ${NAVY}` : '2px solid transparent',
     marginBottom: -1,
   }),
-  main: { padding: 24, maxWidth: 1120, margin: '0 auto' },
+  main: { flex: 1, overflowY: 'auto', padding: 24 },
+  mainInner: { maxWidth: 1120, margin: '0 auto' },
   placeholder: {
     border: '1px dashed var(--border-subtle, #d0d5dd)', borderRadius: 12,
     padding: '48px 24px', textAlign: 'center', color: 'var(--fg-tertiary, #667085)',
@@ -76,9 +77,9 @@ function TenantSelector() {
         onChange={(e) => setSelectedTenantId(e.target.value || null)}
         disabled={isLoading}
       >
-        <option value="">Todas las inmobiliarias</option>
+        <option value="" style={{ color: '#111', background: '#fff' }}>Todas las inmobiliarias</option>
         {tenants.map((t) => (
-          <option key={t.id} value={t.id}>
+          <option key={t.id} value={t.id} style={{ color: '#111', background: '#fff' }}>
             {t.display_name || t.company_name || t.slug || t.id}
           </option>
         ))}
@@ -122,7 +123,7 @@ export default function SuperadminShell({ account }) {
       </div>
 
       <main style={S.main}>
-        <div id="sa-tabpanel" role="tabpanel" aria-labelledby={`sa-tab-${activeTab}`}>
+        <div style={S.mainInner} id="sa-tabpanel" role="tabpanel" aria-labelledby={`sa-tab-${activeTab}`}>
           {activeTab === 'data' && <GlobalExplorer />}
           {activeTab === 'analytics' && <PlatformAnalytics />}
           {activeTab === 'errors' && <ErrorTriage />}

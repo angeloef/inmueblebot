@@ -174,3 +174,20 @@ JOBS_SECRET=<secret fuerte>                   # habilita POST /jobs/run (sin est
 NEXT_PUBLIC_PLAN_PRICE_ARS=15000
 NEXT_PUBLIC_API_URL=https://inmueblebot-api.onrender.com
 ```
+
+
+---
+
+## 8. ⚠️ Superadmin de desarrollo — ELIMINAR antes de producción
+
+Las credenciales hardcodeadas en `scripts/seed_superadmin.py` son solo para desarrollo local:
+
+- **Email:** `dev@viviendapp.com`
+- **Password:** `superadmin-dev-2026`
+
+Antes de salir a producción:
+- [ ] Eliminar las constantes `_DEV_EMAIL` y `_DEV_PASSWORD` de `scripts/seed_superadmin.py`
+      y restaurar la validación que exige `SUPERADMIN_EMAIL` + `SUPERADMIN_PASSWORD` por env var.
+- [ ] Confirmar que no existe ninguna fila `role='superadmin'` con ese email en la DB de prod
+      (`SELECT email FROM tenant_accounts WHERE role='superadmin'`).
+- [ ] Seedear el superadmin real con credenciales fuertes via env vars en Render.
