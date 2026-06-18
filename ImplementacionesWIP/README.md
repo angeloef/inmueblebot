@@ -17,6 +17,17 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `completed` | 04 |
 | 08 | [`08_tiers-planes-backend.md`](./08_tiers-planes-backend.md) | Backend | `completed` | — (base de 09) |
 | 09 | [`09_flujo-saas-frontend.md`](./09_flujo-saas-frontend.md) | Frontend | `completed` | 08 |
+| 10 | [`10_fix-bypass-paywall-candado-nav.md`](./10_fix-bypass-paywall-candado-nav.md) | Frontend | `pending` | — (relac. 08/09) |
+| 11 | [`11_formato-numerico-modal-contrato.md`](./11_formato-numerico-modal-contrato.md) | Frontend | `pending` | — |
+| 12 | [`12_enviar-correo-desde-app.md`](./12_enviar-correo-desde-app.md) | Backend + Frontend | `completed` | — (reusa activity_log de 03) |
+| 13 | [`13_faq-ux-wizard-guiado.md`](./13_faq-ux-wizard-guiado.md) | Frontend | `completed` | — |
+
+### Arreglos dashboard (10–12)
+Fixes independientes pedidos sobre el dashboard: **10** cierra el **bypass del paywall**
+(candado en nav que abre upgrade sin entrar + guard de ruta) — *prioridad crítica*; **11**
+formatea los montos del modal de contrato en Cobranzas (es-AR: $, miles con punto, decimales
+con coma, % ); **12** envía correo al cliente **desde la app** vía Resend (from plataforma,
+reply-to inmobiliaria) y lo registra en `activity_log`. Orden sugerido: **10 → 12 → 11**.
 
 ### Épica SaaS / planes (08–09)
 Completar el flujo de suscripciones: **08** lleva el backend de mono-plan a **3 tiers**

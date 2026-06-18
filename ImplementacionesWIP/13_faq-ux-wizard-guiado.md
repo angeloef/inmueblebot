@@ -1,7 +1,7 @@
 ---
 id: 13
 title: "FAQ — rediseño UX: wizard guiado, panel de ayuda, progreso y estado vacío"
-status: in_progress
+status: completed
 priority: medium
 area: frontend
 files:
@@ -78,3 +78,4 @@ Convertir la carga de FAQ (hoy un formulario plano) en una experiencia **guiada,
 
 ## 7. Bitácora (append-only)
 - 2026-06-18 — Plan creado. Decisiones UX: wizard por pasos + barra de progreso + panel lateral de ayuda + estado vacío con CTA + lista en tarjetas + set sugerido del rubro. Frontend puro, sin cambios de backend (reusa create/update existentes).
+- 2026-06-18 — Implementado y pusheado. SHA: 5be8524. Gates: build ✓, react-reviewer ✓ (3 HIGH resueltos: aria roles en step-dots, article en FaqCard, invalidateQueries en reorder catch; 2 MEDIUM resueltos: aria-label en search input y progress modal). Chunk-size warning pre-existente, no es regresión.
