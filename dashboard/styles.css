@@ -36,6 +36,13 @@ input, select, textarea { font-family: inherit; }
 .sb-item.active { background: var(--accent-50); color: var(--accent-600); font-weight: 500; box-shadow: inset 2px 0 0 var(--accent-500); border-radius: 0 6px 6px 0; }
 .sb-item.active svg { color: var(--accent-500); }
 .sb-item .badge { margin-left: auto; background: var(--accent-500); color: var(--fg-inverse); font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 500; }
+.sb-item--locked { opacity: 0.65; }
+.sb-item--locked:hover { background: var(--bg-hover); color: var(--fg-secondary); cursor: pointer; }
+.sb-lock-badge { margin-left: auto; color: var(--fg-muted); flex-shrink: 0; }
+.feature-lock { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 64px 24px; text-align: center; color: var(--fg-secondary); }
+.feature-lock__icon { font-size: 40px; }
+.feature-lock__title { font-size: 18px; font-weight: 600; color: var(--fg-primary); margin: 0; }
+.feature-lock__desc { font-size: 14px; margin: 0; max-width: 320px; }
 .sb-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 10px; padding: 10px 8px; }
 .sb-bottom .av { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-500); color: var(--fg-inverse); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
 .sb-bottom .who { font-size: 12px; line-height: 1.3; }

@@ -25,6 +25,7 @@ PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
 import { Sidebar, Topbar, TrialBanner, UpgradeModal } from './Shell';
+import { VIEW_GATES, hasFeature, dispatchUpgradeEvent } from './featureGates';
 import { useAuth } from './auth';
 import { useTheme } from './useTheme';
 import { ToastStack, pushToast } from './Primitives';
@@ -44,6 +45,29 @@ import Sucursales from './Sucursales';
 import Consolidated from './Consolidated';
 import DocumentsView from './DocumentsView';
 import Reportes from './Reportes';
+
+// ── Feature lock placeholder (guard de ruta) ─────────────────────────────────
+function FeatureLock({ gate, onGoToPlans }) {
+  return (
+    <div className="feature-lock">
+      <span className="feature-lock__icon" aria-hidden="true">🔒</span>
+      <h2 className="feature-lock__title">Función no disponible en tu plan</h2>
+      <p className="feature-lock__desc">
+        Esta sección requiere el plan <strong>{gate.required}</strong> o superior.
+      </p>
+      <button
+        type="button"
+        className="btn btn--primary btn--sm"
+        onClick={() => {
+          dispatchUpgradeEvent(gate.feature, gate.required);
+          onGoToPlans();
+        }}
+      >
+        Ver planes
+      </button>
+    </div>
+  );
+}
 
 // ── Notification type → destination ─────────────────────────────────────────
 const NOTIF_VISIT_TYPES  = new Set(['visit_scheduled', 'visit_rescheduled', 'visit_cancelled', 'call_scheduled']);
@@ -224,19 +248,35 @@ export default function App() {
             />
           )}
 
-          {active === 'cobranzas' && <Cobranzas />}
+          {active === 'cobranzas' && (
+            hasFeature(me, VIEW_GATES.cobranzas.feature)
+              ? <Cobranzas />
+              : <FeatureLock gate={VIEW_GATES.cobranzas} onGoToPlans={goToPlans} />
+          )}
 
-          {active === 'website' && <Website />}
+          {active === 'website' && (
+            hasFeature(me, VIEW_GATES.website.feature)
+              ? <Website />
+              : <FeatureLock gate={VIEW_GATES.website} onGoToPlans={goToPlans} />
+          )}
 
           {active === 'faqs' && <FAQs />}
 
           {active === 'chats' && <Chats />}
 
-          {active === 'documents' && <DocumentsView />}
+          {active === 'documents' && (
+            hasFeature(me, VIEW_GATES.documents.feature)
+              ? <DocumentsView />
+              : <FeatureLock gate={VIEW_GATES.documents} onGoToPlans={goToPlans} />
+          )}
 
           {active === 'sucursales' && <Sucursales />}
 
-          {active === 'reportes' && <Reportes />}
+          {active === 'reportes' && (
+            hasFeature(me, VIEW_GATES.reportes.feature)
+              ? <Reportes />
+              : <FeatureLock gate={VIEW_GATES.reportes} onGoToPlans={goToPlans} />
+          )}
 
           {active === 'equipos' && <Equipos />}
 

@@ -3,6 +3,7 @@ import { Icon, Button, IconButton, pushToast } from './Primitives';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications, useCreateErrorReport, useBillingStatus } from './api';
 import { useAuth } from './auth';
 import { useFocusTrap } from './useFocusTrap';
+import { VIEW_GATES, hasFeature, dispatchUpgradeEvent } from './featureGates';
 
 // Contexto útil para el dev, sin datos sensibles (sin tokens/cookies). El backend
 // igualmente redacta credenciales antes de persistir.
@@ -319,6 +320,12 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
   ];
 
   const handleNav = (id) => {
+    const gate = VIEW_GATES[id];
+    if (gate && !hasFeature(account, gate.feature)) {
+      dispatchUpgradeEvent(gate.feature, gate.required);
+      if (onClose) onClose();
+      return;
+    }
     onNav(id);
     if (onClose) onClose();
   };
@@ -335,29 +342,45 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
         </div>
         <nav className="sb-nav" aria-label="Navegación principal">
           <div className="sb-section">Principal</div>
-          {items.map(it => (
-            <button key={it.id}
-                 type="button"
-                 className={`sb-item ${active === it.id ? 'active' : ''}`}
-                 title={it.label}
-                 aria-current={active === it.id ? 'page' : undefined}
-                 onClick={() => handleNav(it.id)}>
-              <Icon name={it.icon} size={16} />
-              <span>{it.label}</span>
-              {it.badge && <span className="badge">{it.badge}</span>}
-            </button>
-          ))}
-          {more.map(it => (
-            <button key={it.id}
-                 type="button"
-                 className={`sb-item ${active === it.id ? 'active' : ''}`}
-                 title={it.label}
-                 aria-current={active === it.id ? 'page' : undefined}
-                 onClick={() => handleNav(it.id)}>
-              <Icon name={it.icon} size={16} />
-              <span>{it.label}</span>
-            </button>
-          ))}
+          {items.map(it => {
+            const gate = VIEW_GATES[it.id];
+            const locked = gate && !hasFeature(account, gate.feature);
+            return (
+              <button key={it.id}
+                   type="button"
+                   className={`sb-item${active === it.id ? ' active' : ''}${locked ? ' sb-item--locked' : ''}`}
+                   title={locked ? `Disponible en plan ${gate.required}` : it.label}
+                   aria-label={locked ? `${it.label} — ver planes para desbloquear` : it.label}
+                   aria-current={!locked && active === it.id ? 'page' : undefined}
+                   onClick={() => handleNav(it.id)}>
+                <Icon name={it.icon} size={16} />
+                <span>{it.label}</span>
+                {locked
+                  ? <Icon name="lock" size={12} className="sb-lock-badge" aria-hidden="true" />
+                  : it.badge
+                    ? <span className="badge">{it.badge}</span>
+                    : null
+                }
+              </button>
+            );
+          })}
+          {more.map(it => {
+            const gate = VIEW_GATES[it.id];
+            const locked = gate && !hasFeature(account, gate.feature);
+            return (
+              <button key={it.id}
+                   type="button"
+                   className={`sb-item${active === it.id ? ' active' : ''}${locked ? ' sb-item--locked' : ''}`}
+                   title={locked ? `Disponible en plan ${gate.required}` : it.label}
+                   aria-label={locked ? `${it.label} — ver planes para desbloquear` : it.label}
+                   aria-current={!locked && active === it.id ? 'page' : undefined}
+                   onClick={() => handleNav(it.id)}>
+                <Icon name={it.icon} size={16} />
+                <span>{it.label}</span>
+                {locked && <Icon name="lock" size={12} className="sb-lock-badge" aria-hidden="true" />}
+              </button>
+            );
+          })}
           <div className="sb-section">Sistema</div>
           {account?.scope === 'org' && (
             <button type="button" className={`sb-item ${active === 'sucursales' ? 'active' : ''}`} title="Sucursales" aria-current={active === 'sucursales' ? 'page' : undefined} onClick={() => handleNav('sucursales')}>
