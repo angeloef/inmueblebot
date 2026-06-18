@@ -650,13 +650,83 @@ function CityAutocomplete({ city, placeId, onChange }) {
   );
 }
 
-function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null, saving = false }) {
+// ─── Wizard de propiedad ──────────────────────────────────────────────────────
+
+const PROP_STEPS = [
+  { id: 'ubicacion',      label: 'Ubicación',      title: '¿Dónde está la propiedad?',          subtitle: 'Dirección completa y zona.' },
+  { id: 'caracteristicas',label: 'Características', title: '¿Cómo es la propiedad?',             subtitle: 'Tipo, operación y características.' },
+  { id: 'precio',         label: 'Precio',          title: '¿Cuál es el precio?',                subtitle: 'El bot filtra por presupuesto.' },
+  { id: 'fotos',          label: 'Fotos',            title: 'Agregá fotos de la propiedad',       subtitle: 'La primera foto es la portada.' },
+  { id: 'revision',       label: 'Revisión',         title: 'Revisá y guardá',                    subtitle: 'Vista previa antes de confirmar.' },
+];
+
+const PROP_STEP_HELP = {
+  ubicacion: {
+    heading: 'Sobre la dirección',
+    tips: [
+      'Incluí número de calle: "Av. San Martín 1250".',
+      'El barrio/zona ayuda al bot a filtrar por sector.',
+      'Los puntos de referencia mejoran la búsqueda: "frente al parque", "a 2 cuadras del hospital".',
+    ],
+    examples: ['Mitre 450, Oberá', 'Colón 1200 esq. Corrientes'],
+  },
+  caracteristicas: {
+    heading: 'Tipo y operación',
+    tips: [
+      'Operación (alquiler/venta) define cómo ofrece el bot la propiedad.',
+      'Estado "disponible" la muestra en las búsquedas activas.',
+      'Completá m² y ambientes para que el bot pueda filtrar por tamaño.',
+    ],
+    examples: [],
+  },
+  precio: {
+    heading: 'Precio de publicación',
+    tips: [
+      'Ingresá el precio en la moneda de publicación.',
+      'El bot usa este valor para filtrar por presupuesto del cliente.',
+      'Para alquileres, es el valor mensual.',
+    ],
+    examples: ['ARS 285.000 /mes', 'USD 85.000 venta'],
+  },
+  fotos: {
+    heading: 'Tips para las fotos',
+    tips: [
+      'La primera foto es la portada de la propiedad.',
+      'Podés reordenar: arrastrá o usá el ícono de estrella.',
+      'JPG, PNG o WebP · hasta 10 fotos por propiedad.',
+    ],
+    examples: [],
+  },
+  revision: {
+    heading: 'Antes de guardar',
+    tips: [
+      'Revisá dirección y precio: son los datos clave para el bot.',
+      'Podés editar la propiedad en cualquier momento.',
+      'La propiedad queda activa de inmediato una vez guardada.',
+    ],
+    examples: [],
+  },
+};
+
+const PROP_STEP_MICROCOPY = [
+  '¡Empezá por la ubicación!',
+  '¿Cómo es la propiedad?',
+  '¡Casi listo, el precio!',
+  'Sumá las fotos',
+  '¡Un último vistazo!',
+];
+
+function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }) {
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+
   const [form, setForm] = useState(() => {
     if (initialData) {
       return {
         addr:      initialData.addr      || '',
         neigh:     initialData.neigh     || '',
-        city:      initialData.city      || initialData.neigh || '',
+        city:      initialData.city      || '',
         type:      initialData.type      || 'Departamento',
         operation: initialData.operation || 'rent',
         status:    initialData.status    || 'available',
@@ -681,12 +751,12 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
       desc: '', notes: '', photos: [], refs: [], place_id: '',
     };
   });
+
   const [priceDisplay, setPriceDisplay] = useState(() =>
     initialData?.price != null
       ? formatPriceDisplay(String(initialData.price), initialData.currency || 'ARS')
       : ''
   );
-  const [touched, setTouched] = useState({ addr: false, price: false });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -710,194 +780,390 @@ function NewPropertyModal({ onClose, onSave, mode = 'create', initialData = null
     return { ...f, photos: [target, ...f.photos.filter(p => p.id !== id)] };
   });
 
-  const canSave = form.addr.trim() && form.price;
-  const errAddr  = touched.addr  && !form.addr.trim();
-  const errPrice = touched.price && !form.price;
   const trapRef = useFocusTrap(onClose);
+  const totalSteps = PROP_STEPS.length;
+  const pct = Math.round(((step + 1) / totalSteps) * 100);
 
-  const submit = () => {
-    setTouched({ addr: true, price: true });
-    if (!canSave) return;
-    const imagesUrls = form.photos.map(p => p.url);
-    // En modo edición sin fotos nuevas, mandamos null = "sin cambios": las imágenes
-    // en memoria son URLs diferidas, no el base64 original, así que no las reenviamos.
-    const photo = imagesUrls[0] || (mode === 'edit' ? null : '');
-    const allImages = imagesUrls.length > 0 ? imagesUrls : (mode === 'edit' ? null : []);
-    onSave({
-      addr:      form.addr,
-      neigh:     form.neigh,
-      city:      form.city,
-      type:      form.type,
-      operation: form.operation,
-      status:    form.status,
-      rooms:     form.rooms,
-      m2:        Number(form.m2) || 0,
-      baths:     Number(form.baths) || 0,
-      parking:   Number(form.parking) || 0,
-      price:     Number(form.price) || 0,
-      currency:  form.currency,
-      agent:     form.agent,
-      notes:     form.desc || form.notes,
-      photo,
-      images: allImages,
-      refs:      form.refs,
-      place_id:  form.place_id,
-    });
+  const validate = (upToStep) => {
+    const errs = {};
+    if (upToStep > 0 && !form.addr.trim()) errs.addr = 'La dirección es obligatoria.';
+    if (upToStep > 2 && !form.price)       errs.price = 'El precio es obligatorio.';
+    return errs;
   };
+
+  const goNext = () => {
+    const errs = validate(step + 1);
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setErrors({});
+    setStep(s => Math.min(s + 1, totalSteps - 1));
+  };
+
+  const goBack = () => setStep(s => Math.max(s - 1, 0));
+
+  const jumpTo = (i) => {
+    const errs = validate(i);
+    if (!Object.keys(errs).length || i < step) { setErrors({}); setStep(i); }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && step < totalSteps - 1) {
+      e.preventDefault();
+      goNext();
+    }
+  };
+
+  const handleSave = async () => {
+    const errs = validate(totalSteps);
+    if (Object.keys(errs).length) { setErrors(errs); setStep(errs.addr ? 0 : 2); return; }
+    setSaving(true);
+    try {
+      const imagesUrls = form.photos.map(p => p.url);
+      const photo = imagesUrls[0] || (mode === 'edit' ? null : '');
+      const allImages = imagesUrls.length > 0 ? imagesUrls : (mode === 'edit' ? null : []);
+      await onSave({
+        addr:      form.addr,
+        neigh:     form.neigh,
+        city:      form.city,
+        type:      form.type,
+        operation: form.operation,
+        status:    form.status,
+        rooms:     form.rooms,
+        m2:        Number(form.m2) || 0,
+        baths:     Number(form.baths) || 0,
+        parking:   Number(form.parking) || 0,
+        price:     Number(form.price) || 0,
+        currency:  form.currency,
+        agent:     form.agent,
+        notes:     form.desc || form.notes,
+        photo,
+        images:    allImages,
+        refs:      form.refs,
+        place_id:  form.place_id,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const helpData = PROP_STEP_HELP[PROP_STEPS[step].id];
+
   return (
-    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
-      <div className="modal lg" role="dialog" aria-modal="true" aria-labelledby="property-modal-title" ref={trapRef} onClick={e => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3 id="property-modal-title">{mode === 'edit' ? 'Editar propiedad' : 'Nueva propiedad'}</h3>
-          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
+    <>
+      <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <div
+        className="drawer prop-wizard"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prop-wizard-title"
+        ref={trapRef}
+        onKeyDown={handleKeyDown}
+      >
+        {/* Header */}
+        <div className="drawer-head">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 id="prop-wizard-title" style={{ margin: 0, fontSize: 15 }}>
+              {mode === 'edit' ? 'Editar propiedad' : 'Nueva propiedad'}
+            </h2>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              {PROP_STEPS[step].title}
+            </div>
+          </div>
+          <IconButton name="x" title="Cerrar" onClick={onClose} />
         </div>
-        <div className="modal-body">
-          <div className="field">
-            <label>Dirección <span style={{color:'var(--danger-500)'}}>*</span></label>
-            <input
-              placeholder="Av. Cabildo 2350"
-              value={form.addr}
-              onChange={e => set('addr', e.target.value)}
-              onBlur={() => setTouched(t => ({ ...t, addr: true }))}
-              autoFocus
-              style={errAddr ? { borderColor: 'var(--danger-500)', boxShadow: '0 0 0 2px var(--danger-100)' } : undefined}
-            />
-            {errAddr && <span style={{fontSize:11,color:'var(--danger-500)',marginTop:3,display:'block'}}>La dirección es obligatoria.</span>}
-          </div>
-          <div className="field-row">
-            <div className="field">
-              <label>Barrio / zona</label>
-              <input placeholder="Belgrano" value={form.neigh} onChange={e => set('neigh', e.target.value)} />
-            </div>
-            <CityAutocomplete
-              city={form.city}
-              placeId={form.place_id}
-              onChange={(city, placeId) => setForm(f => ({ ...f, city, place_id: placeId }))}
-            />
-            <div className="field">
-              <label>Código interno</label>
-              <input placeholder="Se genera automáticamente" disabled />
-            </div>
-          </div>
 
-          <RefsInput refs={form.refs} onChange={v => set('refs', v)} />
-
-          <div className="field-row">
-            <div className="field">
-              <label>Tipo</label>
-              <select value={form.type} onChange={e => set('type', e.target.value)}>
-                <option>Departamento</option>
-                <option>Casa</option>
-                <option>PH</option>
-                <option>Local</option>
-                <option>Oficina</option>
-                <option>Terreno</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Operación</label>
-              <select value={form.operation} onChange={e => set('operation', e.target.value)}>
-                <option value="rent">Alquiler</option>
-                <option value="sale">Venta</option>
-              </select>
-            </div>
+        {/* Progreso */}
+        <div className="faq-progress-wrap">
+          <div className="faq-step-dots" aria-label="Pasos del wizard">
+            {PROP_STEPS.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                aria-current={i === step ? 'step' : undefined}
+                aria-label={`Ir al paso ${i + 1}: ${s.label}`}
+                className={`faq-step-dot${i < step ? ' done' : ''}${i === step ? ' current' : ''}`}
+                onClick={() => jumpTo(i)}
+              >
+                {i < step ? <Icon name="check" size={11} /> : i + 1}
+              </button>
+            ))}
           </div>
-
-          <div className="field-row">
-            <div className="field">
-              <label>Estado</label>
-              <select value={form.status} onChange={e => set('status', e.target.value)}>
-                <option value="available">Disponible</option>
-                <option value="reserved">Reservada</option>
-                <option value="rented">Alquilada</option>
-                <option value="sale">En venta</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Agente asignado</label>
-              <select value={form.agent} onChange={e => set('agent', e.target.value)}>
-                <option>M. Pereyra</option>
-                <option>J. Suárez</option>
-                <option>L. Ferreyra</option>
-                <option>D. Ramírez</option>
-              </select>
-            </div>
+          <div
+            className="faq-progress-bar"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Progreso"
+          >
+            <div className="faq-progress-fill" style={{ width: `${pct}%` }} />
           </div>
-
-          <div className="prop-attrs-grid">
-            <div className="field">
-              <label>Ambientes</label>
-              <select value={form.rooms} onChange={e => set('rooms', e.target.value)}>
-                <option value="—">—</option>
-                <option>1 amb</option>
-                <option>2 amb</option>
-                <option>3 amb</option>
-                <option>4 amb</option>
-                <option>5+ amb</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Baños</label>
-              <input type="number" min="0" value={form.baths} onChange={e => set('baths', e.target.value)} style={{textAlign:'center'}} />
-            </div>
-            <div className="field">
-              <label>Cocheras</label>
-              <input type="number" min="0" value={form.parking} onChange={e => set('parking', e.target.value)} style={{textAlign:'center'}} />
-            </div>
-            <div className="field">
-              <label>Superficie (m²)</label>
-              <input type="number" min="1" placeholder="58" value={form.m2} onChange={e => set('m2', e.target.value)} />
-            </div>
+          <div className="faq-progress-label">
+            <span>{PROP_STEP_MICROCOPY[step]}</span>
+            <span className="muted">{step + 1} / {totalSteps}</span>
           </div>
+        </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label>Precio <span style={{color:'var(--danger-500)'}}>*</span></label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder={form.currency === 'USD' ? '85,000' : '285.000'}
-                value={priceDisplay}
-                onChange={handlePriceChange}
-                onBlur={() => setTouched(t => ({ ...t, price: true }))}
-                style={errPrice ? { borderColor: 'var(--danger-500)', boxShadow: '0 0 0 2px var(--danger-100)' } : undefined}
+        {/* Cuerpo: form + panel de ayuda */}
+        <div className="faq-wizard-body">
+          <div className="faq-wizard-form">
+
+            {/* Paso 1: Ubicación */}
+            {step === 0 && (
+              <>
+                <div className="field">
+                  <label htmlFor="pw-addr">Dirección <span style={{ color: 'var(--danger-500)' }}>*</span></label>
+                  <input
+                    id="pw-addr"
+                    placeholder="Av. San Martín 1250"
+                    value={form.addr}
+                    onChange={e => { set('addr', e.target.value); setErrors(prev => ({ ...prev, addr: undefined })); }}
+                    className={errors.addr ? 'invalid' : ''}
+                    autoFocus
+                  />
+                  {errors.addr && <span className="field-error">{errors.addr}</span>}
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="pw-neigh">Barrio / zona</label>
+                    <input id="pw-neigh" placeholder="Centro, Norte..." value={form.neigh} onChange={e => set('neigh', e.target.value)} />
+                  </div>
+                  <CityAutocomplete
+                    city={form.city}
+                    placeId={form.place_id}
+                    onChange={(city, placeId) => setForm(f => ({ ...f, city, place_id: placeId }))}
+                  />
+                </div>
+                <RefsInput refs={form.refs} onChange={v => set('refs', v)} />
+              </>
+            )}
+
+            {/* Paso 2: Características */}
+            {step === 1 && (
+              <>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="pw-type">Tipo</label>
+                    <select id="pw-type" value={form.type} onChange={e => set('type', e.target.value)} autoFocus>
+                      <option>Departamento</option>
+                      <option>Casa</option>
+                      <option>PH</option>
+                      <option>Local</option>
+                      <option>Oficina</option>
+                      <option>Terreno</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-op">Operación</label>
+                    <select id="pw-op" value={form.operation} onChange={e => set('operation', e.target.value)}>
+                      <option value="rent">Alquiler</option>
+                      <option value="sale">Venta</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-status">Estado</label>
+                    <select id="pw-status" value={form.status} onChange={e => set('status', e.target.value)}>
+                      <option value="available">Disponible</option>
+                      <option value="reserved">Reservada</option>
+                      <option value="rented">Alquilada</option>
+                      <option value="sale">En venta</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="prop-attrs-grid">
+                  <div className="field">
+                    <label htmlFor="pw-rooms">Ambientes</label>
+                    <select id="pw-rooms" value={form.rooms} onChange={e => set('rooms', e.target.value)}>
+                      <option value="—">—</option>
+                      <option>1 amb</option>
+                      <option>2 amb</option>
+                      <option>3 amb</option>
+                      <option>4 amb</option>
+                      <option>5+ amb</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-baths">Baños</label>
+                    <input id="pw-baths" type="number" min="0" value={form.baths} onChange={e => set('baths', e.target.value)} style={{ textAlign: 'center' }} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-parking">Cocheras</label>
+                    <input id="pw-parking" type="number" min="0" value={form.parking} onChange={e => set('parking', e.target.value)} style={{ textAlign: 'center' }} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-m2">Superficie (m²)</label>
+                    <input id="pw-m2" type="number" min="1" placeholder="58" value={form.m2} onChange={e => set('m2', e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Paso 3: Precio */}
+            {step === 2 && (
+              <>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="pw-price">Precio <span style={{ color: 'var(--danger-500)' }}>*</span></label>
+                    <input
+                      id="pw-price"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder={form.currency === 'USD' ? '85,000' : '285.000'}
+                      value={priceDisplay}
+                      onChange={handlePriceChange}
+                      className={errors.price ? 'invalid' : ''}
+                      autoFocus
+                    />
+                    {errors.price && <span className="field-error">{errors.price}</span>}
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pw-currency">Moneda</label>
+                    <select id="pw-currency" value={form.currency} onChange={handleCurrencyChange}>
+                      <option value="ARS">ARS — pesos</option>
+                      <option value="USD">USD — dólares</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="pw-agent">Agente asignado</label>
+                    <select id="pw-agent" value={form.agent} onChange={e => set('agent', e.target.value)}>
+                      <option>M. Pereyra</option>
+                      <option>J. Suárez</option>
+                      <option>L. Ferreyra</option>
+                      <option>D. Ramírez</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Código interno</label>
+                    <input placeholder="Se genera automáticamente" disabled />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Paso 4: Fotos */}
+            {step === 3 && (
+              <PhotoDropzone
+                photos={form.photos}
+                onAdd={addPhotos}
+                onRemove={removePhoto}
+                onSetCover={setCover}
               />
-              {errPrice && <span style={{fontSize:11,color:'var(--danger-500)',marginTop:3,display:'block'}}>El precio es obligatorio.</span>}
+            )}
+
+            {/* Paso 5: Revisión */}
+            {step === 4 && (
+              <>
+                <div className="field">
+                  <label htmlFor="pw-desc">Descripción</label>
+                  <textarea
+                    id="pw-desc"
+                    placeholder="Descripción para mostrar a los clientes, ej: 'Departamento luminoso con balcón...'"
+                    value={form.desc}
+                    onChange={e => set('desc', e.target.value)}
+                    rows={3}
+                    style={{ resize: 'vertical', width: '100%' }}
+                    autoFocus
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pw-notes">Notas internas</label>
+                  <textarea
+                    id="pw-notes"
+                    placeholder="Detalles internos para el equipo"
+                    value={form.notes}
+                    onChange={e => set('notes', e.target.value)}
+                    rows={2}
+                    style={{ resize: 'vertical', width: '100%' }}
+                  />
+                </div>
+                {/* Preview ficha */}
+                <div className="prop-wizard-preview">
+                  <div className="prop-wizard-preview-label">Vista previa</div>
+                  <div className="prop-wizard-preview-card">
+                    {form.photos.length > 0 && (
+                      <img
+                        src={form.photos[0].url}
+                        alt="Portada"
+                        className="prop-wizard-preview-img"
+                      />
+                    )}
+                    <div className="prop-wizard-preview-body">
+                      <div className="prop-wizard-preview-addr">{form.addr || '—'}</div>
+                      <div className="prop-wizard-preview-meta">
+                        {form.neigh && <span>{form.neigh} · </span>}
+                        {form.type} · {form.rooms !== '—' ? form.rooms + ' · ' : ''}{form.m2 ? form.m2 + ' m²' : ''}
+                      </div>
+                      <div className="prop-wizard-preview-price">
+                        {form.price
+                          ? (form.currency === 'USD' ? 'USD ' : 'ARS ') + priceDisplay
+                          : <span style={{ color: 'var(--danger-400)' }}>Sin precio</span>}
+                        {form.operation === 'rent' && <span className="muted"> /mes</span>}
+                      </div>
+                      {form.desc && (
+                        <div className="prop-wizard-preview-desc">{form.desc.slice(0, 120)}{form.desc.length > 120 ? '…' : ''}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Panel lateral de ayuda */}
+          <aside className="faq-help-panel" aria-label="Consejos">
+            <div className="faq-help-heading">
+              <Icon name="info" size={13} style={{ color: 'var(--accent-500)', flexShrink: 0 }} />
+              {helpData.heading}
             </div>
-            <div className="field">
-              <label>Moneda</label>
-              <select value={form.currency} onChange={handleCurrencyChange}>
-                <option value="ARS">ARS — pesos</option>
-                <option value="USD">USD — dólares</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="field">
-            <label>Descripción</label>
-            <textarea placeholder="Descripción para mostrar a los clientes, ej: 'Departamento luminoso con balcón y vista al parque...'"
-              value={form.desc} onChange={e => set('desc', e.target.value)} rows={3}
-              style={{resize:'vertical',width:'100%'}} />
-          </div>
-
-          <div className="field">
-            <label>Notas</label>
-            <textarea placeholder="Detalles internos para el equipo" value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{resize:'vertical',width:'100%'}} />
-          </div>
-
-          <PhotoDropzone
-            photos={form.photos}
-            onAdd={addPhotos}
-            onRemove={removePhoto}
-            onSetCover={setCover}
-          />
+            <ul className="faq-help-tips">
+              {helpData.tips.map((tip, i) => <li key={i}>{tip}</li>)}
+            </ul>
+            {helpData.examples.length > 0 && (
+              <>
+                <div className="faq-help-examples-label">Ejemplos</div>
+                {helpData.examples.map((ex, i) => (
+                  <div key={i} className="faq-help-example">&ldquo;{ex}&rdquo;</div>
+                ))}
+              </>
+            )}
+          </aside>
         </div>
-        <div className="modal-foot">
-          <Button kind="ghost" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
-          <Button kind="primary" size="sm" onClick={submit} disabled={!canSave || saving}>
-            {saving ? 'Guardando…' : mode === 'edit' ? 'Guardar cambios' : 'Crear propiedad'}
+
+        {/* Footer */}
+        <div className="faq-wizard-footer">
+          <Button kind="secondary" size="sm" onClick={step === 0 ? onClose : goBack}>
+            {step === 0 ? 'Cancelar' : 'Atrás'}
           </Button>
+          {step < totalSteps - 1 ? (
+            <Button kind="primary" size="sm" onClick={goNext} icon="arrowRight">
+              Siguiente
+            </Button>
+          ) : (
+            <Button kind="primary" size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Guardando…' : mode === 'edit' ? 'Guardar cambios' : 'Crear propiedad'}
+            </Button>
+          )}
         </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Estado vacío de propiedades (0 propiedades) ──────────────────────────────
+
+function PropertiesEmptyState({ onNew }) {
+  return (
+    <div className="faq-empty">
+      <div className="faq-empty-icon">
+        <Icon name="building" size={36} style={{ color: 'var(--accent-400)' }} />
+      </div>
+      <h3 className="faq-empty-title">Todavía no tenés propiedades cargadas</h3>
+      <p className="faq-empty-sub">
+        Cargá tu primera propiedad y el bot podrá mostrarla a tus clientes, filtrar por presupuesto y agendar visitas.
+      </p>
+      <div className="faq-empty-actions">
+        <Button kind="primary" icon="plus" onClick={onNew}>Cargar mi primera propiedad</Button>
       </div>
     </div>
   );
@@ -953,6 +1219,8 @@ export default function Properties({ onOpenClient, initialProperty }) {
     sold: properties.filter(p=>p.status==='sold').length,
   };
 
+  const isEmpty = properties.length === 0;
+
   return (
     <div className="page-view">
       <div className="page-h">
@@ -960,13 +1228,18 @@ export default function Properties({ onOpenClient, initialProperty }) {
           <h1>Propiedades</h1>
           <div className="sub">{properties.length} en cartera · {counts.available} disponibles · {counts.rented} alquiladas · {counts.sold} vendidas</div>
         </div>
-        <div className="page-h-actions">
-          <Button kind="secondary" icon="download">Exportar</Button>
-          <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>Agregar propiedad</Button>
-        </div>
+        {!isEmpty && (
+          <div className="page-h-actions">
+            <Button kind="secondary" icon="download">Exportar</Button>
+            <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>Agregar propiedad</Button>
+          </div>
+        )}
       </div>
       <div className="scroll-surface surface">
-        <div className="filter-bar">
+        {isEmpty ? (
+          <PropertiesEmptyState onNew={() => setCreating(true)} />
+        ) : null}
+        {!isEmpty && (<><div className="filter-bar">
           <input placeholder="Buscar por dirección, barrio..." value={search} onChange={e => setSearch(e.target.value)} />
           {[['all','Todas',counts.all],['available','Disponibles',counts.available],['rented','Alquiladas',counts.rented],['sale','En venta',counts.sale],['reserved','Reservadas',counts.reserved],['sold','Vendidas',counts.sold]].map(([k,l,n]) => (
             <button key={k} type="button" className={`chip ${filter===k?'active':''}`} aria-pressed={filter===k} onClick={()=>setFilter(k)}>{l}<span className="num">{n}</span></button>
@@ -1063,6 +1336,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
             </div>
           )}
         </div>
+      </>)}
       </div>
       {open && (
         <PropertyDrawer
@@ -1097,29 +1371,27 @@ export default function Properties({ onOpenClient, initialProperty }) {
         </div>
       )}
       {creating && (
-        <NewPropertyModal
+        <PropertyWizard
           onClose={() => setCreating(false)}
-          onSave={(data) => {
-            setCreating(false);
+          onSave={(data) => new Promise((resolve, reject) => {
             createProperty.mutate(data, {
-              onSuccess: () => pushToast({ text: 'Propiedad creada.' }),
-              onError: () => pushToast({ text: 'Error al crear la propiedad.', kind: 'danger' }),
+              onSuccess: () => { pushToast({ text: 'Propiedad creada.' }); setCreating(false); resolve(); },
+              onError: (e) => { pushToast({ text: 'Error al crear la propiedad.', kind: 'danger' }); reject(e); },
             });
-          }}
+          })}
         />
       )}
       {editing && (
-        <NewPropertyModal
+        <PropertyWizard
           mode="edit"
           initialData={editing}
           onClose={() => setEditing(null)}
-          onSave={(data) => {
-            setEditing(null);
+          onSave={(data) => new Promise((resolve, reject) => {
             updateProperty.mutate({ id: editing.id, ...data }, {
-              onSuccess: () => pushToast({ text: 'Propiedad actualizada.' }),
-              onError: () => pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }),
+              onSuccess: () => { pushToast({ text: 'Propiedad actualizada.' }); setEditing(null); resolve(); },
+              onError: (e) => { pushToast({ text: 'Error al guardar los cambios.', kind: 'danger' }); reject(e); },
             });
-          }}
+          })}
         />
       )}
     </div>
