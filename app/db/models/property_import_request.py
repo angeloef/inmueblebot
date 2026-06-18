@@ -5,7 +5,7 @@ Tabla global (sin RLS), igual que error_reports. Los adjuntos se guardan en la t
 hija ``property_import_files`` (base64, igual patrón que documents).
 """
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID as PyUUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -36,15 +36,15 @@ MAX_FILES_PER_REQUEST = 10
 class PropertyImportRequest(Base):
     __tablename__ = "property_import_requests"
 
-    id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
 
-    tenant_id: Mapped[uuid4] = mapped_column(
+    tenant_id: Mapped[PyUUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    account_id: Mapped[uuid4 | None] = mapped_column(
+    account_id: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
     requester_email: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -77,9 +77,9 @@ class PropertyImportRequest(Base):
 class PropertyImportFile(Base):
     __tablename__ = "property_import_files"
 
-    id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
 
-    import_request_id: Mapped[uuid4] = mapped_column(
+    import_request_id: Mapped[PyUUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("property_import_requests.id", ondelete="CASCADE"),
         nullable=False,
