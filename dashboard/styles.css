@@ -889,9 +889,13 @@ input, select, textarea { font-family: inherit; }
 .config-hint { font-size: 11.5px; color: var(--fg-tertiary); margin-bottom: 6px; line-height: 1.4; }
 /* Fila de opción checkbox dentro de un config-field: no debe heredar el estilo del
    label-título (.field label / .config-field label = mayúscula, block, color título). */
-.config-field .opt-check { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 0; font-size: 13px; font-weight: 400; color: var(--fg-primary); text-transform: none; letter-spacing: normal; cursor: pointer; }
+/* width:100% (no fit-content): con fit-content un texto largo colapsa hacia min-content
+   (la palabra más ancha) y envuelve en una columna angosta con el checkbox aparentemente
+   centrado. width:100% deja el checkbox a la izquierda y el texto ocupando el resto. */
+.config-field .opt-check { display: flex; align-items: center; justify-content: flex-start; align-self: flex-start; gap: 8px; width: 100%; margin: 0; font-size: 13px; font-weight: 400; color: var(--fg-primary); text-transform: none; letter-spacing: normal; cursor: pointer; text-align: left; }
 .config-field .opt-check + .opt-check { margin-top: 6px; }
 .config-field .opt-check input { margin: 0; flex: 0 0 auto; }
+.config-field .opt-check span { flex: 1 1 auto; min-width: 0; }
 
 .config-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 
