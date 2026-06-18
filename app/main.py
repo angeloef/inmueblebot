@@ -192,6 +192,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Scheduler start failed: %s", e)
 
+    # ── Super-admin seed (idempotente) ───────────────────────────────
+    # Crea o promueve la cuenta superadmin al arrancar. Si SUPERADMIN_EMAIL/PASSWORD
+    # no están en el entorno usa las credenciales de desarrollo hardcodeadas.
+    # Nunca lanza excepción — un fallo aquí no debe impedir el arranque.
+    try:
+        from scripts.seed_superadmin import _upsert_superadmin, _DEV_EMAIL, _DEV_PASSWORD
+        _sa_email = os.environ.get("SUPERADMIN_EMAIL", _DEV_EMAIL)
+        _sa_password = os.environ.get("SUPERADMIN_PASSWORD", _DEV_PASSWORD)
+        _action = await _upsert_superadmin(_sa_email, _sa_password)
+        logger.info("[Startup] super-admin %s: %s", _action, _sa_email)
+    except Exception as e:
+        logger.warning("[Startup] seed_superadmin failed: %s", e)
+
     yield
 
     logger.info("Shutting down")
