@@ -1,13 +1,70 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useClients, useProperties, useEvents, useActivity, useCreateClient, useUpdateClient, useDeleteClient } from './api';
+import { useClients, useProperties, useEvents, useActivity, useCreateClient, useUpdateClient, useDeleteClient, useSendClientEmail } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import DocumentsPanel from './DocumentsPanel';
 import ExportCsv from './ExportCsv';
 import LinkClientProperty from './LinkClientProperty';
 import Timeline from './Timeline';
+
+// ─── Modal enviar correo ───────────────────────────────────────────────────────
+function SendEmailModal({ client, onClose }) {
+  const trapRef = useFocusTrap(onClose);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const sendMut = useSendClientEmail(client.id);
+
+  const handleSend = () => {
+    if (!subject.trim() || !body.trim()) return;
+    sendMut.mutate({ subject: subject.trim(), body: body.trim() }, {
+      onSuccess: () => {
+        pushToast({ text: `Correo enviado a ${client.email}`, kind: 'success' });
+        onClose();
+      },
+      onError: (err) => {
+        const detail = err?.response?.data?.detail ?? 'Error al enviar el correo.';
+        pushToast({ text: detail, kind: 'danger' });
+      },
+    });
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="send-email-title"
+           ref={trapRef} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+        <div className="modal-head">
+          <h3 id="send-email-title">Enviar correo</h3>
+          <span className="close"><IconButton name="x" title="Cerrar" onClick={onClose} /></span>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label>Para</label>
+            <input type="text" value={client.email} readOnly style={{ background: 'var(--bg-subtle)' }} />
+          </div>
+          <div className="field">
+            <label htmlFor="email-subject">Asunto</label>
+            <input id="email-subject" type="text" value={subject} maxLength={200}
+                   onChange={e => setSubject(e.target.value)} placeholder="Asunto del correo" />
+          </div>
+          <div className="field">
+            <label htmlFor="email-body">Mensaje</label>
+            <textarea id="email-body" value={body} maxLength={4000} rows={6}
+                      onChange={e => setBody(e.target.value)} placeholder="Escribí el mensaje..." />
+          </div>
+        </div>
+        <div className="modal-foot">
+          <Button kind="ghost" size="sm" onClick={onClose} disabled={sendMut.isPending}>Cancelar</Button>
+          <Button kind="primary" size="sm" icon="mail" onClick={handleSend}
+                  disabled={!subject.trim() || !body.trim() || sendMut.isPending}>
+            {sendMut.isPending ? 'Enviando…' : 'Enviar'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ROLE_OPTIONS = [
   { value: 'prospect', label: 'Prospecto' },
@@ -119,6 +176,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
   if (!client) return null;
   const [tab, setTab] = useState('overview');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const interestProps = (client.interest || []).map(id => properties.find(p => String(p.id) === String(id))).filter(Boolean);
   // Properties linked via property_relations (buyer, tenant, interested)
   const linkedProps = (client.property_relations || []).map(r => ({
@@ -164,7 +222,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
                 <Button kind="secondary" size="sm" icon="whatsapp" disabled={!client.phone}
                         onClick={() => client.phone && window.open(`https://wa.me/${client.phone.replace(/[^\d]/g, '')}`, '_blank', 'noopener,noreferrer')}>WhatsApp</Button>
                 <Button kind="secondary" size="sm" icon="mail" disabled={!client.email}
-                        onClick={() => client.email && window.open(`mailto:${client.email}`)}>Correo</Button>
+                        onClick={() => client.email && setShowEmailModal(true)}>Correo</Button>
                 <Button kind="secondary" size="sm" icon="calendar" disabled={!onAgenda}
                         onClick={() => onAgenda && onAgenda(client)}>Agendar</Button>
               </div>
@@ -255,6 +313,9 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
           </div>}
         </div>
       </div>
+      {showEmailModal && (
+        <SendEmailModal client={client} onClose={() => setShowEmailModal(false)} />
+      )}
     </Fragment>
   );
 }

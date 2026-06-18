@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as _html_stdlib
 import logging
 
 import httpx
@@ -10,22 +11,32 @@ logger = logging.getLogger(__name__)
 _RESEND_URL = "https://api.resend.com/emails"
 
 
-async def _send(to: str, subject: str, html: str) -> bool:
+async def _send(
+    to: str,
+    subject: str,
+    html: str,
+    *,
+    reply_to: str | None = None,
+    from_: str | None = None,
+) -> bool:
     settings = get_settings()
     if not settings.RESEND_API_KEY:
         logger.warning("[email] RESEND_API_KEY ausente — email a %s omitido (degradado)", to)
         return False
+    payload: dict = {
+        "from": from_ or settings.EMAIL_FROM,
+        "to": [to],
+        "subject": subject,
+        "html": html,
+    }
+    if reply_to:
+        payload["reply_to"] = [reply_to]
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
                 _RESEND_URL,
                 headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                json={
-                    "from": settings.EMAIL_FROM,
-                    "to": [to],
-                    "subject": subject,
-                    "html": html,
-                },
+                json=payload,
             )
         if r.status_code >= 400:
             logger.error("[email] Resend falló (%s): %s", r.status_code, r.text)
@@ -34,6 +45,28 @@ async def _send(to: str, subject: str, html: str) -> bool:
     except Exception as exc:
         logger.error("[email] excepción enviando a %s: %s", to, exc)
         return False
+
+
+async def send_client_email(
+    to: str,
+    subject: str,
+    body: str,
+    *,
+    reply_to: str | None = None,
+) -> bool:
+    """Envía un correo libre a un cliente de parte de la plataforma (reply-to = inmobiliaria)."""
+    safe_body = _html_stdlib.escape(body).replace("\n", "<br>")
+    safe_subject = _html_stdlib.escape(subject)
+    html_content = (
+        f'<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;'
+        f'color:#111827;line-height:1.6">'
+        f"<p>{safe_body}</p>"
+        f'<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">'
+        f'<p style="color:#6b7280;font-size:12px">'
+        f"Este correo fue enviado a través de ViviendApp.</p>"
+        f"</div>"
+    )
+    return await _send(to, safe_subject, html_content, reply_to=reply_to)
 
 
 async def send_verification_email(email: str, token: str) -> bool:

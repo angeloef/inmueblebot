@@ -9,6 +9,7 @@ from app.db.models import TenantAccount
 from app.core.config import get_settings
 from app.core.memory import MemoryManager
 from app.services.activity_log_service import log_activity, log_activity_async
+from app.services.email_service import send_client_email
 import uuid as _uuid
 import logging
 
@@ -2905,6 +2906,75 @@ async def reindex_knowledge(
 
     result = await reindex_tenant(default_tenant_id())
     return {"status": "ok", **result}
+
+
+class SendClientEmailBody(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=4000)
+
+
+@router.post("/clients/{client_id}/email")
+async def send_email_to_client(
+    client_id: str,
+    data: SendClientEmailBody,
+    db: Session = Depends(get_db),
+    account: TenantAccount = Depends(get_current_account),
+) -> dict:
+    """Envía un correo libre a un cliente del tenant.
+
+    - ``from`` = EMAIL_FROM (plataforma)
+    - ``reply_to`` = email del account/agente autenticado (server-side; no lo fija el cliente)
+    - Registra el envío en ``activity_log``.
+    """
+    from app.core.tenancy import resolve_tenant_id
+
+    tenant_id = resolve_tenant_id()
+
+    # Validar que el cliente pertenece a este tenant y tiene email
+    row = db.execute(
+        text(
+            "SELECT id, email, name FROM users "
+            "WHERE id = :cid AND tenant_id = :tid"
+        ),
+        {"cid": client_id, "tid": str(tenant_id)},
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    client_email = row.email if row else None
+    if not client_email:
+        raise HTTPException(status_code=422, detail="El cliente no tiene email registrado.")
+
+    # reply_to = email del account autenticado (server-side)
+    reply_to_email: str | None = getattr(account, "email", None)
+
+    sent = await send_client_email(
+        to=client_email,
+        subject=data.subject,
+        body=data.body,
+        reply_to=reply_to_email,
+    )
+
+    if not sent:
+        # RESEND_API_KEY no configurado o falló
+        raise HTTPException(
+            status_code=503,
+            detail="El servicio de correo no está configurado o no está disponible. Contactá al soporte.",
+        )
+
+    # Registrar en activity_log (asunto + longitud del cuerpo; sin PII del contenido)
+    actor = getattr(account, "email", None) or "dashboard"
+    log_activity(
+        db,
+        tenant_id=tenant_id,
+        entity_type="client",
+        entity_id=client_id,
+        action="email_sent",
+        actor=actor,
+        payload={"subject": data.subject, "body_length": len(data.body), "to": client_email},
+    )
+    db.commit()
+
+    return {"sent": True, "to": client_email}
 
 
 @router.post("/cleanup-clients")

@@ -1488,3 +1488,12 @@ export async function downloadCsv(dataset, { from, to } = {}) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+
+// ─── Email a cliente ───────────────────────────────────────────────────────────
+export const useSendClientEmail = (clientId) => {
+  return useMutation({
+    mutationFn: ({ subject, body }) =>
+      http.post(`/admin/clients/${clientId}/email`, { subject, body }).then(r => r.data),
+  });
+};
