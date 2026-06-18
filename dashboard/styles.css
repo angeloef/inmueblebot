@@ -894,7 +894,9 @@ input, select, textarea { font-family: inherit; }
    centrado. width:100% deja el checkbox a la izquierda y el texto ocupando el resto. */
 .config-field .opt-check { display: flex; align-items: center; justify-content: flex-start; align-self: flex-start; gap: 8px; width: 100%; margin: 0; font-size: 13px; font-weight: 400; color: var(--fg-primary); text-transform: none; letter-spacing: normal; cursor: pointer; text-align: left; }
 .config-field .opt-check + .opt-check { margin-top: 6px; }
-.config-field .opt-check input { margin: 0; flex: 0 0 auto; }
+/* width:auto ANULA `.field input { width:100% }` (línea ~313), que si no estira el
+   checkbox a todo el ancho y empuja el texto fuera de la vista. */
+.config-field .opt-check input[type="checkbox"] { margin: 0; flex: 0 0 auto; width: auto; min-width: 0; }
 .config-field .opt-check span { flex: 1 1 auto; min-width: 0; }
 
 .config-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
