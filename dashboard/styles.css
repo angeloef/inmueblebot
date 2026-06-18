@@ -1162,3 +1162,134 @@ input, select, textarea { font-family: inherit; }
 }
 
 /* Trial banner styling moved to saas.css (plan 09 redesign). */
+
+/* ─── Plan 13: FAQ Wizard ──────────────────────────────────────────────────── */
+
+/* Drawer más ancho para el wizard */
+.faq-wizard { width: 720px; }
+
+/* Progreso */
+.faq-progress-wrap { padding: 10px 20px 8px; border-bottom: 1px solid var(--border-default); background: var(--surface-raised); }
+.faq-step-dots { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.faq-step-dot {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--border-default);
+  background: var(--surface-raised); color: var(--fg-tertiary); font-size: 11px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  font-family: inherit;
+}
+.faq-step-dot.done { background: var(--accent-100); border-color: var(--accent-300); color: var(--accent-600); }
+.faq-step-dot.current { background: var(--accent-500); border-color: var(--accent-600); color: #fff; }
+.faq-step-dot:hover:not(.current) { border-color: var(--accent-300); color: var(--accent-600); }
+
+.faq-progress-bar {
+  height: 5px; background: var(--gray-100); border-radius: 99px; overflow: hidden;
+}
+.faq-progress-fill {
+  height: 100%; background: linear-gradient(90deg, var(--accent-400), var(--accent-600));
+  border-radius: 99px; transition: width 300ms var(--ease-out);
+}
+.faq-progress-label {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 5px; font-size: 11px; color: var(--fg-secondary);
+}
+
+/* Cuerpo del wizard: form + panel de ayuda */
+.faq-wizard-body {
+  display: flex; flex: 1; min-height: 0; overflow: hidden;
+}
+.faq-wizard-form {
+  flex: 1; min-width: 0; overflow-y: auto; padding: 20px;
+}
+.faq-wizard-form .field textarea { min-height: 120px; }
+
+/* Panel de ayuda */
+.faq-help-panel {
+  width: 220px; flex-shrink: 0; border-left: 1px solid var(--border-default);
+  background: var(--gray-25); padding: 16px 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.faq-help-heading {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; color: var(--fg-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;
+}
+.faq-help-tips { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; }
+.faq-help-tips li { font-size: 12px; color: var(--fg-secondary); line-height: 1.45; }
+.faq-help-examples-label {
+  font-size: 10px; font-weight: 600; color: var(--fg-tertiary);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px;
+}
+.faq-help-example {
+  font-size: 12px; color: var(--fg-secondary); background: var(--surface-raised);
+  border: 1px solid var(--border-subtle); border-radius: 6px; padding: 6px 8px;
+  line-height: 1.4; font-style: italic;
+}
+
+/* Footer del wizard */
+.faq-wizard-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 20px; border-top: 1px solid var(--border-default);
+  background: var(--surface-raised); flex-shrink: 0;
+}
+
+/* Preview (paso 4) */
+.faq-preview-bubble {
+  background: var(--gray-25); border: 1px solid var(--border-default);
+  border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.faq-preview-q { font-weight: 600; font-size: 14px; color: var(--fg-primary); }
+.faq-preview-a { font-size: 13px; color: var(--fg-secondary); line-height: 1.55; white-space: pre-wrap; }
+.faq-preview-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Tarjetas de la lista */
+.faq-card-list { display: flex; flex-direction: column; gap: 0; }
+.faq-card {
+  display: flex; align-items: flex-start; gap: 12; padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+  outline: none; gap: 12px;
+}
+.faq-card:hover { background: var(--bg-hover); }
+.faq-card:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-400); }
+.faq-card-body { flex: 1; min-width: 0; }
+.faq-card-q { font-weight: 600; font-size: 13.5px; color: var(--fg-primary); margin-bottom: 3px; }
+.faq-card-a {
+  font-size: 12.5px; color: var(--fg-secondary); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.faq-card-meta { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+.faq-card-actions { display: flex; gap: 2px; flex-shrink: 0; align-self: flex-start; padding-top: 2px; }
+
+/* Estado vacío */
+.faq-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 60px 24px; text-align: center; flex: 1;
+}
+.faq-empty-icon {
+  width: 64px; height: 64px; border-radius: 50%; background: var(--accent-50);
+  border: 1px solid var(--accent-100); display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.faq-empty-title { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: var(--fg-primary); }
+.faq-empty-sub { margin: 0 0 24px; font-size: 13px; color: var(--fg-secondary); max-width: 340px; line-height: 1.55; }
+.faq-empty-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* Ítems del modal de sugeridos */
+.faq-suggest-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle); cursor: pointer;
+}
+.faq-suggest-item:last-child { border-bottom: none; }
+.faq-suggest-item input { margin-top: 2px; }
+.faq-suggest-item.selected { /* color handled by checkbox state */ }
+
+/* Responsive: panel de ayuda colapsado en viewport chico */
+@media (max-width: 600px) {
+  .faq-wizard { width: 100%; }
+  .faq-wizard-body { flex-direction: column; }
+  .faq-help-panel {
+    width: auto; border-left: none; border-top: 1px solid var(--border-default);
+    max-height: 160px;
+  }
+}
