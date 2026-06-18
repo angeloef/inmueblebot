@@ -16,6 +16,75 @@ import ExportCsv from './ExportCsv';
 
 const money = (n, cur) => fmtCurrency(n, cur);
 
+// Parsea un string es-AR con separadores de miles y coma decimal a número.
+function parseEsAR(str) {
+  if (str === '' || str == null) return '';
+  const clean = String(str).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+  const n = parseFloat(clean);
+  return isNaN(n) ? '' : n;
+}
+
+// Formatea número a string es-AR sin símbolo (ej: "150.000,50").
+function fmtNumber(n) {
+  const num = Number(n);
+  if (isNaN(num) || n === '') return '';
+  return num.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+}
+
+// Input monetario: muestra formato es-AR con símbolo al perder foco; raw al editar.
+function MoneyInput({ value, onChange, currency = 'ARS', className, id, placeholder, 'aria-describedby': describedBy }) {
+  const [focused, setFocused] = useState(false);
+  const symbol = currency === 'USD' ? 'USD ' : '$ ';
+  const displayValue = focused ? String(value) : (value === '' ? '' : symbol + fmtNumber(value));
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder ?? (symbol + '0')}
+      aria-describedby={describedBy}
+      value={displayValue}
+      onFocus={() => setFocused(true)}
+      onBlur={e => {
+        setFocused(false);
+        const parsed = parseEsAR(e.target.value);
+        onChange(parsed);
+      }}
+      onChange={e => {
+        // Durante edición solo actualiza el string crudo; el parse ocurre en blur
+        onChange(e.target.value);
+      }}
+    />
+  );
+}
+
+// Input porcentaje: muestra "12 %" al perder foco; raw al editar.
+function PercentInput({ value, onChange, className, id, placeholder, step, 'aria-describedby': describedBy }) {
+  const [focused, setFocused] = useState(false);
+  const displayValue = focused ? String(value) : (value === '' || value === 0 ? '' : `${fmtNumber(value)} %`);
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder ?? '0 %'}
+      aria-describedby={describedBy}
+      value={displayValue}
+      onFocus={() => setFocused(true)}
+      onBlur={e => {
+        setFocused(false);
+        const parsed = parseEsAR(e.target.value);
+        onChange(parsed === '' ? 0 : parsed);
+      }}
+      onChange={e => onChange(e.target.value)}
+    />
+  );
+}
+
 const fmtDate = (iso) => {
   if (!iso) return '—';
   const [y, m, d] = iso.slice(0, 10).split('-');
@@ -170,7 +239,8 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
   const handleSave = () => {
     const errs = {};
     if (!form.start_date) errs.start_date = 'Requerido.';
-    if (!form.base_rent || Number(form.base_rent) <= 0) errs.base_rent = 'Ingresá el alquiler.';
+    const toNum = (v) => { const n = parseEsAR(v); return n === '' ? 0 : Number(n); };
+    if (!form.base_rent || toNum(form.base_rent) <= 0) errs.base_rent = 'Ingresá el alquiler.';
     if (Object.keys(errs).length) { setErrors(errs); return; }
     const payload = {
       property_id: form.property_id ? Number(form.property_id) : null,
@@ -178,17 +248,17 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
       owner_id:    form.owner_id || null,
       start_date:  form.start_date,
       end_date:    form.end_date || null,
-      base_rent:   Number(form.base_rent) || 0,
+      base_rent:   toNum(form.base_rent),
       currency:    form.currency,
       payment_due_day: Number(form.payment_due_day) || 10,
       grace_days:  Number(form.grace_days) || 0,
       adjustment_index: form.adjustment_index,
       adjustment_frequency_months: Number(form.adjustment_frequency_months) || 1,
-      adjustment_fixed_pct: form.adjustment_index === 'fixed' ? (Number(form.adjustment_fixed_pct) || 0) : null,
-      punitorio_daily_pct: Number(form.punitorio_daily_pct) || 0,
-      commission_pct: Number(form.commission_pct) || 0,
+      adjustment_fixed_pct: form.adjustment_index === 'fixed' ? toNum(form.adjustment_fixed_pct) : null,
+      punitorio_daily_pct: toNum(form.punitorio_daily_pct),
+      commission_pct: toNum(form.commission_pct),
       agent_id: form.agent_id || null,
-      deposit_amount: Number(form.deposit_amount) || 0,
+      deposit_amount: toNum(form.deposit_amount),
       deposit_currency: form.deposit_currency,
       deposit_status: form.deposit_status,
       notes: form.notes || null,
@@ -234,8 +304,8 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
               </select>
             </div>
             <div className="field">
-              <label>Comisión inmobiliaria (%)</label>
-              <input type="number" value={form.commission_pct} onChange={e => set('commission_pct', e.target.value)} placeholder="0" />
+              <label htmlFor="commission_pct">Comisión inmobiliaria (%)</label>
+              <PercentInput id="commission_pct" value={form.commission_pct} onChange={v => set('commission_pct', v)} placeholder="0 %" />
             </div>
           </div>
           <div className="field-row">
@@ -247,8 +317,8 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
               </select>
             </div>
             <div className="field">
-              <label>Depósito en garantía</label>
-              <input type="number" value={form.deposit_amount} onChange={e => set('deposit_amount', e.target.value)} placeholder="0" />
+              <label htmlFor="deposit_amount">Depósito en garantía</label>
+              <MoneyInput id="deposit_amount" value={form.deposit_amount} onChange={v => set('deposit_amount', v)} currency={form.deposit_currency} />
             </div>
             <div className="field">
               <label>Estado del depósito</label>
@@ -273,8 +343,8 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
           </div>
           <div className="field-row">
             <div className="field">
-              <label>Alquiler base *</label>
-              <input type="number" className={errors.base_rent ? 'invalid' : ''} value={form.base_rent} onChange={e => set('base_rent', e.target.value)} placeholder="0" />
+              <label htmlFor="base_rent">Alquiler base *</label>
+              <MoneyInput id="base_rent" value={form.base_rent} onChange={v => set('base_rent', v)} currency={form.currency} className={errors.base_rent ? 'invalid' : ''} />
               {errors.base_rent && <span className="field-error">{errors.base_rent}</span>}
             </div>
             <div className="field">
@@ -305,14 +375,14 @@ function ContractEditor({ contract, mode, onClose, onSave, saving }) {
             {form.adjustment_index === 'fixed' && (
               <div className="field">
                 <label>% por ajuste</label>
-                <input type="number" value={form.adjustment_fixed_pct} onChange={e => set('adjustment_fixed_pct', e.target.value)} placeholder="8" />
+                <PercentInput value={form.adjustment_fixed_pct} onChange={v => set('adjustment_fixed_pct', v)} placeholder="8 %" />
               </div>
             )}
           </div>
           <div className="field-row">
             <div className="field">
               <label>Punitorio diario (%)</label>
-              <input type="number" step="0.01" value={form.punitorio_daily_pct} onChange={e => set('punitorio_daily_pct', e.target.value)} placeholder="0.1" />
+              <PercentInput value={form.punitorio_daily_pct} onChange={v => set('punitorio_daily_pct', v)} placeholder="0,1 %" />
             </div>
             <div className="field">
               <label>Días de gracia</label>
