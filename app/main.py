@@ -628,6 +628,8 @@ _NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 @app.head("/", include_in_schema=False)
 @app.get("/dashboard", include_in_schema=False)
 @app.get("/dashboard/{full_path:path}", include_in_schema=False)
+@app.get("/superadmin", include_in_schema=False)
+@app.get("/superadmin/{full_path:path}", include_in_schema=False)
 async def serve_dashboard(full_path: str = ""):
     dashboard_index = os.path.join(dashboard_dir, "index.html")
     if os.path.isfile(dashboard_index):
