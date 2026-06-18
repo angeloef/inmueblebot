@@ -1,7 +1,7 @@
 ---
 id: 15
 title: "Importación asistida de propiedades — el cliente manda su listado, los devs lo cargan"
-status: in_progress
+status: completed
 priority: high
 area: backend+frontend
 files:
@@ -81,3 +81,4 @@ Que una inmobiliaria con muchas propiedades **en otro formato** (planilla, PDF, 
 
 ## 7. Bitácora (append-only)
 - 2026-06-18 — Plan creado. Decisiones: entrada = archivos + nota; seguimiento = estado en app + email al completar; botón en estado vacío (plan 14) + header. Depende de 14 (estado vacío donde se inserta el CTA). Espeja error_reports + documents + ErrorTriage; reusa email_service (plan 12).
+- 2026-06-18 — Implementado. Backend: PropertyImportRequest + PropertyImportFile (modelos), migración 0020, endpoints POST/GET-mine/GET-all/PATCH/GET-file. Frontend cliente: ImportModal (dropzone + nota), ImportStatusPanel, botón en header y estado vacío. Frontend superadmin: PropertyImports.jsx + pestaña en SuperadminShell. Gates: build ✓, ruff ✓, security-reviewer APPROVE (sin CRITICAL/HIGH). SHA: d7dc3d6. Pusheado a main → auto-deploy en Render (requiere alembic upgrade head post-deploy).

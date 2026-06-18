@@ -17,10 +17,19 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 07 | [`07_error-reporting-in-app-y-pestana-superadmin.md`](./07_error-reporting-in-app-y-pestana-superadmin.md) | Backend + Frontend | `completed` | 04 |
 | 08 | [`08_tiers-planes-backend.md`](./08_tiers-planes-backend.md) | Backend | `completed` | — (base de 09) |
 | 09 | [`09_flujo-saas-frontend.md`](./09_flujo-saas-frontend.md) | Frontend | `completed` | 08 |
-| 10 | [`10_fix-bypass-paywall-candado-nav.md`](./10_fix-bypass-paywall-candado-nav.md) | Frontend | `pending` | — (relac. 08/09) |
-| 11 | [`11_formato-numerico-modal-contrato.md`](./11_formato-numerico-modal-contrato.md) | Frontend | `pending` | — |
+| 10 | [`10_fix-bypass-paywall-candado-nav.md`](./10_fix-bypass-paywall-candado-nav.md) | Frontend | `completed` | — (relac. 08/09) |
+| 11 | [`11_formato-numerico-modal-contrato.md`](./11_formato-numerico-modal-contrato.md) | Frontend | `completed` | — |
 | 12 | [`12_enviar-correo-desde-app.md`](./12_enviar-correo-desde-app.md) | Backend + Frontend | `completed` | — (reusa activity_log de 03) |
 | 13 | [`13_faq-ux-wizard-guiado.md`](./13_faq-ux-wizard-guiado.md) | Frontend | `completed` | — |
+| 14 | [`14_propiedades-ux-wizard-y-tutorial.md`](./14_propiedades-ux-wizard-y-tutorial.md) | Frontend | `completed` | — (reusa patrón del 13) |
+| 15 | [`15_importacion-asistida-propiedades.md`](./15_importacion-asistida-propiedades.md) | Backend + Frontend | `completed` | 14 (CTA en estado vacío) |
+
+### Propiedades (14–15)
+**14** rediseña el alta de propiedades como **wizard por pasos** con tips permanentes y barra de
+progreso; el tutorial/CTA de onboarding solo aparece con **0 propiedades** (reusa el patrón del 13).
+**15** suma **importación asistida**: el cliente manda su listado (archivos + nota) desde Propiedades,
+ve el estado (Recibido → En proceso → Cargadas) y recibe email al completar; los devs lo reciben/parsean
+en una pestaña nueva **"Importaciones"** del `/superadmin` (espeja `error_reports` + `ErrorTriage`). Orden: **14 → 15**.
 
 ### Arreglos dashboard (10–12)
 Fixes independientes pedidos sobre el dashboard: **10** cierra el **bypass del paywall**
