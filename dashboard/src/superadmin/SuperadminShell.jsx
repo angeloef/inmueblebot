@@ -11,6 +11,7 @@ import { useSuperadminTenant } from './TenantContext';
 import GlobalExplorer from './GlobalExplorer';
 import PlatformAnalytics from './PlatformAnalytics';
 import ErrorTriage from './ErrorTriage';
+import PropertyImports from './PropertyImports';
 
 const NAVY = 'var(--accent-600)';
 
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'data', label: 'Datos', hint: 'Explorador global (plan 05)' },
   { id: 'analytics', label: 'Analítica', hint: 'Análisis de plataforma (plan 06)' },
   { id: 'errors', label: 'Errores', hint: 'Triage de reportes' },
+  { id: 'imports', label: 'Importaciones', hint: 'Pedidos de carga asistida de propiedades' },
 ];
 
 const S = {
@@ -127,6 +129,7 @@ export default function SuperadminShell({ account }) {
           {activeTab === 'data' && <GlobalExplorer />}
           {activeTab === 'analytics' && <PlatformAnalytics />}
           {activeTab === 'errors' && <ErrorTriage />}
+          {activeTab === 'imports' && <PropertyImports />}
         </div>
       </main>
     </div>

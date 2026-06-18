@@ -20,6 +20,7 @@ from app.db.models.document import Document
 from app.db.models.metric_snapshot import MetricSnapshot
 from app.db.models.activity_log import ActivityLog
 from app.db.models.operations import PropertyRelation, Guarantor, Sale
+from app.db.models.property_import_request import PropertyImportRequest, PropertyImportFile
 
 __all__ = [
     "PropertyRelation",
@@ -48,4 +49,6 @@ __all__ = [
     "TenantMember",
     "Subscription",
     "ErrorReport",
+    "PropertyImportRequest",
+    "PropertyImportFile",
 ]

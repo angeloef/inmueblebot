@@ -1497,3 +1497,45 @@ export const useSendClientEmail = (clientId) => {
       http.post(`/admin/clients/${clientId}/email`, { subject, body }).then(r => r.data),
   });
 };
+
+// ─── Importación asistida de propiedades (plan 15) ─────────────────────────────
+const propertyImportsApi = {
+  create: (data) => http.post('/admin/property-imports', data).then(r => r.data),
+  mine:   ()     => http.get('/admin/property-imports/mine').then(r => r.data),
+  all:    (params = {}) => http.get('/admin/property-imports/all', { params }).then(r => r.data),
+  update: (id, data) => http.patch(`/admin/property-imports/${id}`, data).then(r => r.data),
+  fileUrl: (requestId, fileId) => `/admin/property-imports/${requestId}/files/${fileId}`,
+};
+
+export const useCreatePropertyImport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: propertyImportsApi.create,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['property-imports-mine'] }),
+  });
+};
+
+export const useMyPropertyImports = (enabled = true) =>
+  useQuery({
+    queryKey: ['property-imports-mine'],
+    queryFn: propertyImportsApi.mine,
+    enabled,
+    staleTime: 15_000,
+  });
+
+export const useAllPropertyImports = (params = {}, enabled = true) =>
+  useQuery({
+    queryKey: ['property-imports-all', params],
+    queryFn: () => propertyImportsApi.all(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+
+export const useUpdatePropertyImport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }) => propertyImportsApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['property-imports-all'] }),
+  });
+};

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
-import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, useActivity, propertyApi } from './api';
+import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, useActivity, propertyApi, useCreatePropertyImport, useMyPropertyImports } from './api';
 import { KIND_META } from './EventPopover';
 import { useFocusTrap } from './useFocusTrap';
 import { useAuth } from './auth';
@@ -1152,7 +1152,7 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
 
 // ─── Estado vacío de propiedades (0 propiedades) ──────────────────────────────
 
-function PropertiesEmptyState({ onNew }) {
+function PropertiesEmptyState({ onNew, onImport }) {
   return (
     <div className="faq-empty">
       <div className="faq-empty-icon">
@@ -1164,7 +1164,203 @@ function PropertiesEmptyState({ onNew }) {
       </p>
       <div className="faq-empty-actions">
         <Button kind="primary" icon="plus" onClick={onNew}>Cargar mi primera propiedad</Button>
+        <Button kind="secondary" icon="upload" onClick={onImport}>Mandanos tu listado y las subimos por vos</Button>
       </div>
+    </div>
+  );
+}
+
+const IMPORT_STATUS_LABEL = {
+  received:    { label: 'Recibido',    color: 'var(--accent-600)' },
+  in_progress: { label: 'En proceso',  color: 'var(--warning-700)' },
+  completed:   { label: 'Cargadas',    color: 'var(--state-success-fg)' },
+  cancelled:   { label: 'Cancelado',   color: 'var(--fg-muted)' },
+};
+
+const ALLOWED_IMPORT_TYPES = [
+  'application/pdf',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/csv',
+  'text/plain',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+];
+
+const MAX_IMPORT_FILE_MB = 5;
+const MAX_IMPORT_FILES = 10;
+
+function ImportModal({ onClose }) {
+  const [files, setFiles] = useState([]);
+  const [note, setNote] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+  const trapRef = useFocusTrap();
+  const createImport = useCreatePropertyImport();
+
+  const addFiles = (incoming) => {
+    const valid = [...incoming].filter(f => {
+      if (!ALLOWED_IMPORT_TYPES.includes(f.type)) {
+        pushToast({ text: `Tipo no permitido: ${f.name}`, kind: 'warning' });
+        return false;
+      }
+      if (f.size > MAX_IMPORT_FILE_MB * 1024 * 1024) {
+        pushToast({ text: `${f.name} supera 5 MB`, kind: 'warning' });
+        return false;
+      }
+      return true;
+    });
+    setFiles(prev => {
+      const next = [...prev, ...valid].slice(0, MAX_IMPORT_FILES);
+      if (prev.length + valid.length > MAX_IMPORT_FILES) {
+        pushToast({ text: `Máximo ${MAX_IMPORT_FILES} archivos por pedido`, kind: 'warning' });
+      }
+      return next;
+    });
+  };
+
+  const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  };
+
+  const handleSubmit = async () => {
+    const filePayloads = await Promise.all(
+      files.map(f => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+          filename: f.name,
+          content_type: f.type || 'application/octet-stream',
+          data: reader.result.split(',')[1],
+        });
+        reader.onerror = reject;
+        reader.readAsDataURL(f);
+      }))
+    );
+    createImport.mutate(
+      { note: note.trim() || null, files: filePayloads },
+      {
+        onSuccess: () => {
+          pushToast({ text: '¡Pedido enviado! Te avisamos cuando esté cargado.' });
+          onClose();
+        },
+        onError: () => pushToast({ text: 'Error al enviar el pedido.', kind: 'danger' }),
+      }
+    );
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="import-modal-title"
+         onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" ref={trapRef} style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h2 id="import-modal-title" style={{ margin: 0, fontSize: 16 }}>Mandanos tu listado de propiedades</h2>
+          <IconButton icon="x" aria-label="Cerrar" onClick={onClose} />
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, color: 'var(--fg-secondary)', fontSize: 14 }}>
+            Subí tus propiedades en el formato que tengas (planilla, PDF, Word, fotos) y las cargamos por vos.
+            Te avisamos por email cuando estén listas.
+          </p>
+          <div
+            className={`prop-import-dropzone${dragOver ? ' drag-over' : ''}`}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            aria-label="Área para subir archivos de propiedades"
+            onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && fileRef.current?.click()}
+          >
+            <Icon name="upload" size={24} style={{ color: 'var(--accent-400)', marginBottom: 8 }} />
+            <span style={{ fontSize: 14, color: 'var(--fg-secondary)' }}>
+              Arrastrá archivos acá o <strong>hacé clic</strong>
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 4 }}>
+              Excel, CSV, PDF, Word, imágenes · hasta 5 MB por archivo · máx. {MAX_IMPORT_FILES} archivos
+            </span>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept={ALLOWED_IMPORT_TYPES.join(',')}
+              style={{ display: 'none' }}
+              onChange={e => addFiles(e.target.files)}
+            />
+          </div>
+          {files.length > 0 && (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {files.map((f, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '6px 10px', background: 'var(--surface-base)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                  <Icon name="file" size={14} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                  <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>{(f.size / 1024).toFixed(0)} KB</span>
+                  <IconButton icon="x" size={12} aria-label={`Quitar ${f.name}`} onClick={() => removeFile(i)} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label htmlFor="import-note" style={{ fontSize: 13, fontWeight: 600 }}>Contexto / nota (opcional)</label>
+            <textarea
+              id="import-note"
+              rows={3}
+              placeholder="¿Cuántas propiedades son aprox.? ¿Algo que debamos saber?"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              maxLength={4000}
+              style={{ resize: 'vertical', fontSize: 14, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--fg-primary)' }}
+            />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <Button kind="secondary" onClick={onClose}>Cancelar</Button>
+          <Button
+            kind="primary"
+            icon="send"
+            onClick={handleSubmit}
+            disabled={files.length === 0 || createImport.isPending}
+          >
+            {createImport.isPending ? 'Enviando…' : 'Enviar listado'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportStatusPanel() {
+  const { data, isLoading } = useMyPropertyImports();
+  const items = data?.items ?? [];
+  if (isLoading || items.length === 0) return null;
+
+  return (
+    <div className="prop-import-status-panel">
+      <div className="prop-import-status-title">
+        <Icon name="inbox" size={14} />
+        Mis importaciones
+      </div>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.map(req => {
+          const meta = IMPORT_STATUS_LABEL[req.status] || IMPORT_STATUS_LABEL.received;
+          return (
+            <li key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <span style={{ flex: 1, color: 'var(--fg-secondary)' }}>
+                {new Date(req.created_at).toLocaleDateString('es-AR')}
+                {req.file_count > 0 && ` · ${req.file_count} archivo${req.file_count > 1 ? 's' : ''}`}
+              </span>
+              <span style={{ fontWeight: 700, color: meta.color }}>{meta.label}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -1186,6 +1382,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Persistir la vista elegida para recordarla al volver a la pestaña
   useEffect(() => {
@@ -1231,14 +1428,16 @@ export default function Properties({ onOpenClient, initialProperty }) {
         {!isEmpty && (
           <div className="page-h-actions">
             <Button kind="secondary" icon="download">Exportar</Button>
+            <Button kind="ghost" icon="upload" onClick={() => setShowImportModal(true)}>Importar listado</Button>
             <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>Agregar propiedad</Button>
           </div>
         )}
       </div>
       <div className="scroll-surface surface">
         {isEmpty ? (
-          <PropertiesEmptyState onNew={() => setCreating(true)} />
+          <PropertiesEmptyState onNew={() => setCreating(true)} onImport={() => setShowImportModal(true)} />
         ) : null}
+        {!isEmpty && <ImportStatusPanel />}
         {!isEmpty && (<><div className="filter-bar">
           <input placeholder="Buscar por dirección, barrio..." value={search} onChange={e => setSearch(e.target.value)} />
           {[['all','Todas',counts.all],['available','Disponibles',counts.available],['rented','Alquiladas',counts.rented],['sale','En venta',counts.sale],['reserved','Reservadas',counts.reserved],['sold','Vendidas',counts.sold]].map(([k,l,n]) => (
@@ -1394,6 +1593,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
           })}
         />
       )}
+      {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} />}
     </div>
   );
 }

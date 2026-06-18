@@ -552,6 +552,10 @@ app.include_router(admin_analytics_router)
 from app.api.routes.error_reports import router as error_reports_router
 app.include_router(error_reports_router)
 
+# Importación asistida de propiedades (plan 15) — prefix /admin/property-imports
+from app.api.routes.property_imports import router as property_imports_router
+app.include_router(property_imports_router)
+
 # Cobranzas (gestión de alquileres) — comparte prefix /admin
 from app.api.routes.cobranzas import router as cobranzas_router
 app.include_router(cobranzas_router)
