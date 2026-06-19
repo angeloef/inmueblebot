@@ -454,6 +454,8 @@ class UsageResponse(BaseModel):
     properties: dict
     conversations_month: dict
     team_members: dict
+    period_start: str | None = None
+    period_end: str | None = None
 
 
 @router.post("/change-password", status_code=status.HTTP_200_OK)
@@ -602,8 +604,8 @@ async def get_usage(
     account: TenantAccount = Depends(get_current_account),  # noqa: B008
 ) -> UsageResponse:
     """Devuelve el uso actual del tenant vs. sus límites del plan."""
-    from datetime import date
-    from sqlalchemy import func as sqlfunc, text
+    from datetime import date, timedelta
+    from sqlalchemy import func as sqlfunc
     from app.db.models.property import Property
     from app.db.models.conversation import Conversation
     from app.db.models.tenant_member import TenantMember
@@ -616,7 +618,16 @@ async def get_usage(
 
     tid = account.tenant_id
     today = date.today()
-    month_start = today.replace(day=1)
+
+    # Use billing period if available; fall back to rolling 30-day window.
+    if sub and sub.current_period_end:
+        period_end_date = sub.current_period_end.date()
+        period_start = period_end_date - timedelta(days=30)
+        period_end_str = period_end_date.isoformat()
+    else:
+        period_start = today - timedelta(days=30)
+        period_end_str = None
+    period_start_str = period_start.isoformat()
 
     async with async_session_factory() as session:
         prop_count = await session.scalar(
@@ -628,7 +639,7 @@ async def get_usage(
         conv_count = await session.scalar(
             select(sqlfunc.count()).select_from(Conversation).where(
                 Conversation.tenant_id == tid,
-                Conversation.created_at >= month_start,
+                Conversation.created_at >= period_start,
             )
         ) or 0
 
@@ -645,6 +656,8 @@ async def get_usage(
         properties={"used": prop_count, "limit": limits.properties},
         conversations_month={"used": conv_count, "limit": limits.conversations_per_month},
         team_members={"used": member_count, "limit": limits.users},
+        period_start=period_start_str,
+        period_end=period_end_str,
     )
 
 

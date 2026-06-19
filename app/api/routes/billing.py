@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -26,6 +27,8 @@ from app.services import subscription_service
 from app.services.plans import CATALOG, get_plan_or_default, list_plans
 
 logger = logging.getLogger(__name__)
+
+_MP_BASE = "https://api.mercadopago.com"
 
 router = APIRouter(tags=["billing"])
 
@@ -71,6 +74,18 @@ class BillingStatusResponse(BaseModel):
     limits: dict | None = None
     features: list[str] | None = None
     self_serve: bool | None = None
+
+
+class PaymentRecord(BaseModel):
+    id: str
+    date: str
+    amount: float
+    currency: str
+    status: str
+
+
+class PaymentsResponse(BaseModel):
+    payments: list[PaymentRecord]
 
 
 # ── Endpoints autenticados ───────────────────────────────────────────────────
@@ -151,6 +166,60 @@ async def billing_status(
         features=sorted(plan_obj.features),
         self_serve=plan_obj.self_serve,
     )
+
+
+@router.get(
+    "/billing/payments",
+    status_code=status.HTTP_200_OK,
+    response_model=PaymentsResponse,
+)
+async def list_payments(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> PaymentsResponse:
+    """Historial de pagos del preapproval activo del tenant (tenant-scoped)."""
+    async with async_session_factory() as session:
+        sub = await session.scalar(
+            select(Subscription).where(Subscription.tenant_id == account.tenant_id)
+        )
+    if sub is None or not sub.mp_preapproval_id:
+        return PaymentsResponse(payments=[])
+
+    settings = get_settings()
+    token = settings.MERCADOPAGO_ACCESS_TOKEN
+    if not token:
+        return PaymentsResponse(payments=[])
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{_MP_BASE}/authorized_payments/search",
+                params={"preapproval_id": sub.mp_preapproval_id},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        logger.error("[mp] error fetching authorized_payments: %s", exc)
+        return PaymentsResponse(payments=[])
+
+    if resp.status_code >= 400:
+        logger.warning("[mp] authorized_payments search failed (%s)", resp.status_code)
+        return PaymentsResponse(payments=[])
+
+    results = (resp.json().get("results") or [])
+    payments = sorted(
+        [
+            PaymentRecord(
+                id=str(p.get("id", "")),
+                date=p.get("date_approved") or p.get("date_created") or "",
+                amount=float(p.get("transaction_amount") or 0),
+                currency=p.get("currency_id") or "ARS",
+                status=p.get("status") or "unknown",
+            )
+            for p in results
+        ],
+        key=lambda p: p.date,
+        reverse=True,
+    )
+    return PaymentsResponse(payments=payments)
 
 
 @router.get(

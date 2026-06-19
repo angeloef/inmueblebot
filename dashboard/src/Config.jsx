@@ -5,7 +5,7 @@ import { useTheme } from './useTheme';
 import {
   useTenants, useCreateTenant, useUpdateTenant, useDeleteTenant,
   useUpdateTenantSettings,
-  useBillingStatus, useBillingPlans, useSubscribe,
+  useBillingStatus, useBillingPlans, useSubscribe, usePaymentHistory,
   useTeamMembers, useInviteMember, useRemoveMember,
   useUsage, useChangePassword, useUpdateProfile, useMyTenant, useUpdateMyTenant,
 } from './api';
@@ -521,6 +521,7 @@ function SectionFacturacion() {
   const { me } = useAuth();
   const { data: billing, isLoading: loadingBilling, refetch: refetchBilling } = useBillingStatus();
   const { data: plans, isLoading: loadingPlans } = useBillingPlans();
+  const { data: payments, isLoading: loadingPayments } = usePaymentHistory();
   const subscribeMut = useSubscribe();
   const [subscribing, setSubscribing] = useState(null);
   const [awaitingPayment, setAwaitingPayment] = useState(null);
@@ -684,6 +685,36 @@ function SectionFacturacion() {
           })}
         </div>
       )}
+
+      <div style={{ font: '600 12px/1 Inter,sans-serif', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cfg-soft)', margin: '32px 0 14px' }}>Historial de pagos</div>
+      {loadingPayments ? <Skeleton /> : (!payments || payments.length === 0) ? (
+        <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', margin: 0 }}>Sin pagos registrados aún.</p>
+      ) : (
+        <div style={{ border: '1px solid var(--cfg-line)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', font: '400 13px/1.4 Inter,sans-serif', color: 'var(--cfg-txt)' }}>
+            <thead>
+              <tr style={{ background: 'var(--cfg-card2)', borderBottom: '1px solid var(--cfg-line)' }}>
+                {['Fecha', 'Monto', 'Estado'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', font: '600 12px/1 Inter,sans-serif', color: 'var(--cfg-soft)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p, i) => (
+                <tr key={p.id} style={{ borderBottom: i < payments.length - 1 ? '1px solid var(--cfg-line-soft)' : 'none' }}>
+                  <td style={{ padding: '11px 14px' }}>{p.date ? new Date(p.date).toLocaleDateString('es-AR') : '—'}</td>
+                  <td style={{ padding: '11px 14px' }}>${Number(p.amount).toLocaleString('es-AR', { minimumFractionDigits: 2 })} {p.currency}</td>
+                  <td style={{ padding: '11px 14px' }}>
+                    <span style={{ font: '600 11px/1 Inter,sans-serif', padding: '4px 9px', borderRadius: 9999, background: p.status === 'approved' ? 'var(--cfg-ok-bg)' : 'var(--cfg-card2)', color: p.status === 'approved' ? 'var(--cfg-ok)' : 'var(--cfg-muted)' }}>
+                      {p.status === 'approved' ? 'Aprobado' : p.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -717,12 +748,17 @@ function SectionUso() {
   if (isLoading) return <Skeleton />;
   if (isError) return <SectionError onRetry={refetch} />;
 
+  const periodEnd = usage?.period_end;
+  const periodLabel = periodEnd
+    ? `Conversaciones del período (se renueva el ${new Date(periodEnd).toLocaleDateString('es-AR')})`
+    : 'Conversaciones (últimos 30 días)';
+
   return (
     <div>
-      <CfgSectionHead title="Uso" description="Consumo del período actual." />
+      <CfgSectionHead title="Uso" description="Consumo del período de facturación actual." />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 28 }}>
         <UsageBar label="Propiedades" used={usage?.properties?.used} limit={usage?.properties?.limit} />
-        <UsageBar label="Conversaciones este mes" used={usage?.conversations_month?.used} limit={usage?.conversations_month?.limit} />
+        <UsageBar label={periodLabel} used={usage?.conversations_month?.used} limit={usage?.conversations_month?.limit} />
         <UsageBar label="Miembros del equipo" used={usage?.team_members?.used} limit={usage?.team_members?.limit} />
       </div>
       <p style={{ font: '400 12px/1.5 Inter,sans-serif', color: 'var(--cfg-soft)', margin: '26px 0 0' }}>

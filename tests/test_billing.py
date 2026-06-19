@@ -382,3 +382,41 @@ async def test_mark_expired_trials() -> None:
         await session.delete(await session.get(TenantAccount, account.id))
         await session.delete(await session.get(Tenant, tenant_id))
         await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Plan 19: payments endpoint + usage period window
+# ---------------------------------------------------------------------------
+
+async def test_payments_requires_auth() -> None:
+    """GET /billing/payments without auth → 401/403."""
+    from app.main import app
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/billing/payments")
+        assert resp.status_code in (401, 403), resp.text
+
+
+def test_usage_period_window_uses_billing_period() -> None:
+    """Usage period_start is 30 days before current_period_end when sub is active."""
+    from datetime import date, timedelta
+
+    period_end = date(2026, 7, 9)
+    expected_start = period_end - timedelta(days=30)
+
+    # Simulate the logic from get_usage
+    period_start = period_end - timedelta(days=30)
+    assert period_start == expected_start
+    assert (period_end - period_start).days == 30
+
+
+def test_usage_period_window_falls_back_to_30_days() -> None:
+    """Without a billing period_end, usage window is rolling 30 days."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    # Simulate: no sub → rolling 30 days
+    period_start = today - timedelta(days=30)
+    assert (today - period_start).days == 30

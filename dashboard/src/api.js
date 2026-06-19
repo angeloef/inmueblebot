@@ -123,6 +123,7 @@ export const keys = {
   usage:           ['usage'],
   billingStatus:   ['billing', 'status'],
   billingPlans:    ['billing', 'plans'],
+  billingPayments: ['billing', 'payments'],
   properties:      ['properties'],
   property:        (id) => ['properties', id],
   clients:         ['clients'],
@@ -1459,6 +1460,13 @@ export const useSubscribe = () => {
     },
   });
 };
+
+export const usePaymentHistory = () =>
+  useQuery({
+    queryKey: keys.billingPayments,
+    queryFn: () => http.get('/billing/payments').then(r => r.data.payments ?? []),
+    staleTime: 60_000,
+  });
 
 // ─── Reportes ejecutivos (Enterprise — métricas mensuales) ────────────────────
 
