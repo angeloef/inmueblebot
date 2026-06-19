@@ -25,6 +25,7 @@ class TenantAccount(Base):
     # email-only. Unique parcial (solo filas no-NULL) en la DB.
     google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    avatar_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     role: Mapped[str] = mapped_column(
         String(20), default="owner", server_default="owner", nullable=False,
         comment="owner | admin | superadmin",

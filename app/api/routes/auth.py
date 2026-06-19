@@ -79,6 +79,7 @@ class AccountResponse(BaseModel):
     full_name: str | None
     role: str
     email_verified: bool
+    avatar_color: str | None = None
 
 
 class SubscriptionResponse(BaseModel):
@@ -120,6 +121,8 @@ class MeResponse(BaseModel):
     branches: list[BranchSummary] = []       # poblado solo para scope="org"
     # Nombre de la sucursal/org para el header (gerente: su sucursal; dueño: su org).
     org_name: str | None = None
+    # 'connected' si el tenant tiene phone_number_id; 'pending' si no.
+    whatsapp_status: str = "pending"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -324,6 +327,7 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
                 wa_connected=bool(getattr(b, "phone_number_id", None)),
             ))
 
+    wa_connected = bool(tenant and getattr(tenant, "phone_number_id", None))
     return MeResponse(
         account=AccountResponse(
             id=str(account.id),
@@ -331,12 +335,14 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
             full_name=account.full_name,
             role=account.role,
             email_verified=email_verified,
+            avatar_color=getattr(account, "avatar_color", None),
         ),
         tenant_id=str(account.tenant_id),
         tenant_slug=tenant.slug if tenant else None,
         tenant_status=tenant.status if tenant else None,
         subscription=sub_resp,
-        wa_connected=bool(tenant and getattr(tenant, "phone_number_id", None)),
+        wa_connected=wa_connected,
+        whatsapp_status="connected" if wa_connected else "pending",
         auth_methods=_auth_methods(account),
         scope=scope,
         plan=plan,
@@ -418,6 +424,228 @@ async def verify_email(token: str = Query(...)) -> dict[str, bool]:
             account.email_verified_at = datetime.now(timezone.utc)  # noqa: UP017
             await session.commit()
     return {"verified": True}
+
+
+# ── Plan 16: Perfil, contraseña, settings del tenant propio, uso ─────────────
+
+_AVATAR_COLORS = {"navy", "teal", "violet", "green", "orange"}
+_OWNER_ADMIN_ROLES = {"owner", "admin"}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    avatar_color: str | None = Field(default=None)
+
+
+class UpdateMyTenantRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=2, max_length=200)
+    company_name: str | None = Field(default=None, max_length=200)
+    business_hours: str | None = Field(default=None, max_length=300)
+    timezone: str | None = Field(default=None, max_length=60)
+    agent_whatsapp: str | None = Field(default=None, max_length=30)
+
+
+class UsageResponse(BaseModel):
+    properties: dict
+    conversations_month: dict
+    team_members: dict
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    req: ChangePasswordRequest,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict[str, bool]:
+    """Cambia la contraseña de la cuenta autenticada (no reset por token)."""
+    from app.core.security import verify_password
+
+    if not account.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta cuenta usa Google para iniciar sesión y no tiene contraseña.",
+        )
+    if not verify_password(req.current_password, account.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta.",
+        )
+    if req.current_password == req.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La nueva contraseña debe ser diferente a la actual.",
+        )
+    async with async_session_factory() as session:
+        acc = await session.get(TenantAccount, account.id)
+        if acc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada")
+        acc.password_hash = hash_password(req.new_password)
+        acc.token_version = (acc.token_version or 0) + 1
+        await session.commit()
+    return {"ok": True}
+
+
+@router.patch("/profile", status_code=status.HTTP_200_OK, response_model=MeResponse)
+async def update_profile(
+    req: UpdateProfileRequest,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> MeResponse:
+    """Actualiza nombre completo y color de avatar del perfil propio."""
+    if req.avatar_color is not None and req.avatar_color not in _AVATAR_COLORS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"avatar_color debe ser uno de: {', '.join(sorted(_AVATAR_COLORS))}",
+        )
+    async with async_session_factory() as session:
+        acc = await session.get(TenantAccount, account.id)
+        if acc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada")
+        if req.full_name is not None:
+            acc.full_name = req.full_name
+        if req.avatar_color is not None:
+            acc.avatar_color = req.avatar_color
+        await session.commit()
+        await session.refresh(acc)
+    # Relay to the /me handler using the updated account
+    return await me(acc)
+
+
+class MyTenantResponse(BaseModel):
+    display_name: str | None = None
+    company_name: str | None = None
+    business_hours: str | None = None
+    timezone: str | None = None
+    agent_whatsapp: str | None = None
+
+
+@router.get("/my-tenant", response_model=MyTenantResponse)
+async def get_my_tenant(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> MyTenantResponse:
+    """Devuelve los datos editables del tenant propio (para la sección Mi inmobiliaria)."""
+    from app.db.models.tenant import Tenant, TenantSettings
+    from sqlalchemy import and_
+
+    async with async_session_factory() as session:
+        tenant = await session.get(Tenant, account.tenant_id)
+        if tenant is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant no encontrado")
+        wa_row = await session.scalar(
+            select(TenantSettings).where(
+                and_(
+                    TenantSettings.tenant_id == account.tenant_id,
+                    TenantSettings.key == "agent_whatsapp",
+                )
+            )
+        )
+    return MyTenantResponse(
+        display_name=tenant.display_name,
+        company_name=getattr(tenant, "company_name", None),
+        business_hours=tenant.business_hours,
+        timezone=tenant.timezone,
+        agent_whatsapp=wa_row.value if wa_row else None,
+    )
+
+
+@router.patch("/my-tenant", status_code=status.HTTP_200_OK)
+async def update_my_tenant(
+    req: UpdateMyTenantRequest,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict[str, bool]:
+    """Self-service: el dueño/admin edita los datos de SU propia inmobiliaria."""
+    from app.db.models.tenant import Tenant, TenantSettings
+    from sqlalchemy import and_
+
+    if account.role not in _OWNER_ADMIN_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    updates = req.model_dump(exclude_unset=True)
+    if not updates:
+        return {"ok": True}
+
+    tenant_fields = {k: v for k, v in updates.items() if k != "agent_whatsapp"}
+    agent_whatsapp = updates.get("agent_whatsapp")
+
+    async with async_session_factory() as session:
+        tenant = await session.get(Tenant, account.tenant_id)
+        if tenant is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant no encontrado")
+        for key, value in tenant_fields.items():
+            setattr(tenant, key, value)
+        if agent_whatsapp is not None:
+            row = await session.scalar(
+                select(TenantSettings).where(
+                    and_(
+                        TenantSettings.tenant_id == account.tenant_id,
+                        TenantSettings.key == "agent_whatsapp",
+                    )
+                )
+            )
+            if row is None:
+                session.add(TenantSettings(
+                    tenant_id=account.tenant_id,
+                    key="agent_whatsapp",
+                    value=agent_whatsapp,
+                ))
+            else:
+                row.value = agent_whatsapp
+        await session.commit()
+    return {"ok": True}
+
+
+@router.get("/usage", response_model=UsageResponse)
+async def get_usage(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> UsageResponse:
+    """Devuelve el uso actual del tenant vs. sus límites del plan."""
+    from datetime import date
+    from sqlalchemy import func as sqlfunc, text
+    from app.db.models.property import Property
+    from app.db.models.conversation import Conversation
+    from app.db.models.tenant_member import TenantMember
+    from app.services.plans import get_plan_or_default
+
+    _, tenant, sub = await auth_service.get_account_with_subscription(account.id)
+    plan_name = sub.plan if sub else None
+    plan_obj = get_plan_or_default(plan_name)
+    limits = plan_obj.limits
+
+    tid = account.tenant_id
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    async with async_session_factory() as session:
+        prop_count = await session.scalar(
+            select(sqlfunc.count()).select_from(Property).where(
+                Property.tenant_id == tid,
+            )
+        ) or 0
+
+        conv_count = await session.scalar(
+            select(sqlfunc.count()).select_from(Conversation).where(
+                Conversation.tenant_id == tid,
+                Conversation.created_at >= month_start,
+            )
+        ) or 0
+
+        member_count = await session.scalar(
+            select(sqlfunc.count()).select_from(TenantMember).where(
+                TenantMember.tenant_id == tid,
+                TenantMember.status != "removed",
+            )
+        ) or 0
+        # Count owner themselves too
+        member_count += 1
+
+    return UsageResponse(
+        properties={"used": prop_count, "limit": limits.properties},
+        conversations_month={"used": conv_count, "limit": limits.conversations_per_month},
+        team_members={"used": member_count, "limit": limits.users},
+    )
 
 
 # ── Google OAuth (login/registro con Google) ──────────────────────────────────

@@ -119,6 +119,8 @@ export function propertyImageUrl(id, index = 0, ver = '') {
 // ─── Query keys ───────────────────────────────────────────────────────────────
 
 export const keys = {
+  me:              ['me'],
+  usage:           ['usage'],
   billingStatus:   ['billing', 'status'],
   billingPlans:    ['billing', 'plans'],
   properties:      ['properties'],
@@ -1537,5 +1539,47 @@ export const useUpdatePropertyImport = () => {
   return useMutation({
     mutationFn: ({ id, ...data }) => propertyImportsApi.update(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['property-imports-all'] }),
+  });
+};
+
+// ─── Plan 16: Perfil, contraseña, settings del tenant propio, uso ─────────────
+
+export const useUsage = () =>
+  useQuery({
+    queryKey: keys.usage,
+    queryFn: () => http.get('/auth/usage').then(r => r.data),
+    staleTime: 30_000,
+  });
+
+export const useChangePassword = () =>
+  useMutation({
+    mutationFn: (data) => http.post('/auth/change-password', data).then(r => r.data),
+  });
+
+export const useUpdateProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => http.patch('/auth/profile', data).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+};
+
+export const useMyTenant = () =>
+  useQuery({
+    queryKey: ['my-tenant'],
+    queryFn: () => http.get('/auth/my-tenant').then(r => r.data),
+    staleTime: 30_000,
+  });
+
+export const useUpdateMyTenant = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => http.patch('/auth/my-tenant', data).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.me });
+      qc.invalidateQueries({ queryKey: ['my-tenant'] });
+    },
   });
 };

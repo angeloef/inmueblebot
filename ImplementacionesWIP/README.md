@@ -23,6 +23,16 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 13 | [`13_faq-ux-wizard-guiado.md`](./13_faq-ux-wizard-guiado.md) | Frontend | `completed` | — |
 | 14 | [`14_propiedades-ux-wizard-y-tutorial.md`](./14_propiedades-ux-wizard-y-tutorial.md) | Frontend | `completed` | — (reusa patrón del 13) |
 | 15 | [`15_importacion-asistida-propiedades.md`](./15_importacion-asistida-propiedades.md) | Backend + Frontend | `completed` | 14 (CTA en estado vacío) |
+| 16 | [`16_config-backend-gaps.md`](./16_config-backend-gaps.md) | Backend | `completed` | — (base de 17) |
+| 17 | [`17_config-ui-rebuild-handoff.md`](./17_config-ui-rebuild-handoff.md) | Frontend | `completed` | 16 |
+
+### Configuración / nuevo layout (16–17)
+Reconstrucción de la pantalla **Configuración** según el handoff de diseño (`Claude interface layout-handoff/`):
+rail de 8 secciones (General, Cuenta, Mi inmobiliaria, Facturación, Uso, Equipo, Sistema·Admin, Inmobiliarias·Admin),
+búsqueda, tema claro/oscuro, save-bar y estados skeleton/error. **16** construye los huecos de backend que el diseño
+necesita (cambio de contraseña logueado, update de perfil, self-settings del dueño, `GET /usage`, `whatsapp_status`);
+**17** recrea la UI y la cablea. WhatsApp "Conectar" queda como **placeholder** (embedded signup = plan futuro).
+Solo se rediseña Configuración. Orden: **16 → 17**.
 
 ### Propiedades (14–15)
 **14** rediseña el alta de propiedades como **wizard por pasos** con tips permanentes y barra de
