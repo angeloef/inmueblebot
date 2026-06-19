@@ -519,10 +519,12 @@ function SectionInmobiliaria() {
 
 function SectionFacturacion() {
   const { me } = useAuth();
-  const { data: billing, isLoading: loadingBilling } = useBillingStatus();
+  const { data: billing, isLoading: loadingBilling, refetch: refetchBilling } = useBillingStatus();
   const { data: plans, isLoading: loadingPlans } = useBillingPlans();
   const subscribeMut = useSubscribe();
   const [subscribing, setSubscribing] = useState(null);
+  const [awaitingPayment, setAwaitingPayment] = useState(null);
+  const prevBillingRef = useRef(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -543,13 +545,36 @@ function SectionFacturacion() {
     setSubscribing(planName);
     try {
       const { init_point } = await subscribeMut.mutateAsync(planName);
-      window.location.href = init_point;
+      window.open(init_point, '_blank', 'noopener,noreferrer');
+      prevBillingRef.current = null; // reset so effect captures fresh baseline
+      setAwaitingPayment(planName);
     } catch (err) {
       const msg = err?.response?.data?.detail ?? 'No se pudo iniciar el pago.';
       pushToast({ kind: 'danger', text: typeof msg === 'string' ? msg : 'No se pudo iniciar el pago.' });
+    } finally {
       setSubscribing(null);
     }
   };
+
+  // ponytail: poll on window focus + 5s fallback while awaiting MP confirmation
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    window.addEventListener('focus', refetchBilling);
+    const interval = setInterval(refetchBilling, 5000);
+    return () => { window.removeEventListener('focus', refetchBilling); clearInterval(interval); };
+  }, [awaitingPayment, refetchBilling]);
+
+  useEffect(() => {
+    if (!awaitingPayment || !billing) return;
+    if (!prevBillingRef.current) { prevBillingRef.current = billing; return; }
+    const prev = prevBillingRef.current;
+    prevBillingRef.current = billing;
+    const planMatch = billing.plan?.toLowerCase() === awaitingPayment.toLowerCase();
+    if (billing.status === 'active' && (planMatch || prev.status !== 'active')) {
+      setAwaitingPayment(null);
+      pushToast({ kind: 'success', text: `¡Plan ${awaitingPayment} activado!` });
+    }
+  }, [billing, awaitingPayment]);
 
   const currentPlan = billing?.plan ?? me?.subscription?.plan ?? me?.plan ?? null;
   const currentStatus = billing?.status ?? me?.subscription?.status ?? null;
@@ -563,6 +588,19 @@ function SectionFacturacion() {
   return (
     <div>
       <CfgSectionHead title="Facturación" description="Gestioná tu plan y tu suscripción." />
+
+      {awaitingPayment && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, background: 'var(--cfg-card)', border: '1px solid var(--cfg-brand)', borderRadius: 12, padding: '16px 20px', marginTop: 22 }}>
+          <div>
+            <div style={{ font: '600 14px/1.3 Inter,sans-serif', color: 'var(--cfg-strong)' }}>Esperando confirmación del pago…</div>
+            <div style={{ font: '400 12px/1.4 Inter,sans-serif', color: 'var(--cfg-muted)', marginTop: 4 }}>Completá el pago en la ventana de MercadoPago. La página se actualizará automáticamente.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <CfgBtn variant="secondary" onClick={() => refetchBilling()}>Verificar ahora</CfgBtn>
+            <CfgBtn variant="ghost" onClick={() => setAwaitingPayment(null)}>Cancelar</CfgBtn>
+          </div>
+        </div>
+      )}
 
       {loadingBilling ? (
         <Skeleton />
@@ -588,7 +626,7 @@ function SectionFacturacion() {
                 </div>
                 {periodEnd && <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', margin: '6px 0 0' }}>Se renueva el {new Date(periodEnd).toLocaleDateString('es-AR')}.</p>}
               </div>
-              <CfgBtn variant="secondary">Gestionar pago</CfgBtn>
+              <CfgBtn variant="secondary" onClick={() => handleSubscribe(currentPlan)}>Gestionar pago</CfgBtn>
             </div>
           )}
           {currentStatus === 'past_due' && (
@@ -600,7 +638,7 @@ function SectionFacturacion() {
                 </div>
                 <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', margin: '6px 0 0' }}>Regularizá el pago para reactivar el bot.</p>
               </div>
-              <CfgBtn variant="danger">Reintentar pago</CfgBtn>
+              <CfgBtn variant="danger" onClick={() => handleSubscribe(currentPlan)}>Reintentar pago</CfgBtn>
             </div>
           )}
         </>
@@ -636,8 +674,8 @@ function SectionFacturacion() {
                   ) : isEnterprise ? (
                     <a href="mailto:ventas@viviendapp.com" style={{ display: 'block', textAlign: 'center', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, textDecoration: 'none' }}>Hablar con ventas</a>
                   ) : (
-                    <button onClick={() => handleSubscribe(plan.name)} disabled={subscribing === plan.name} style={{ width: '100%', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, cursor: 'pointer' }}>
-                      {subscribing === plan.name ? 'Redirigiendo…' : `Cambiar a ${plan.display_name ?? plan.name}`}
+                    <button onClick={() => handleSubscribe(plan.name)} disabled={subscribing === plan.name || !!awaitingPayment} style={{ width: '100%', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, cursor: 'pointer' }}>
+                      {subscribing === plan.name ? 'Abriendo…' : awaitingPayment ? 'Pago pendiente…' : `Cambiar a ${plan.display_name ?? plan.name}`}
                     </button>
                   )}
                 </div>
