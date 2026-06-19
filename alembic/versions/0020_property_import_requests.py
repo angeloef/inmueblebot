@@ -46,12 +46,12 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS ix_property_import_requests_tenant_id
-            ON property_import_requests(tenant_id);
-        CREATE INDEX IF NOT EXISTS ix_property_import_requests_status_created
-            ON property_import_requests(status, created_at);
-        """
+        "CREATE INDEX IF NOT EXISTS ix_property_import_requests_tenant_id"
+        " ON property_import_requests(tenant_id)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_property_import_requests_status_created"
+        " ON property_import_requests(status, created_at)"
     )
     op.execute(
         """
