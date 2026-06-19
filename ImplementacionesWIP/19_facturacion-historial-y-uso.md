@@ -1,7 +1,7 @@
 ---
 id: 19
 title: "Facturación/Uso — historial de pagos + 'uso últimos 30 días' con reset por período"
-status: in_progress
+status: completed
 priority: medium
 area: backend+frontend
 files:
@@ -46,3 +46,4 @@ agents: ["react-reviewer", "security-reviewer"]
 
 ## 7. Bitácora (append-only)
 - 2026-06-19 — Plan creado. Depende de 18 (billing) y reusa `/usage` (plan 16).
+- 2026-06-19 — Implementado y pusheado. SHA: 1a2ca0f. Gates: ruff OK, build OK, 13/14 billing tests pass (1 ASGI test bloqueado por bug pre-existente datetime.UTC en Python 3.10 en admin_analytics.py). Security review: no CRITICAL/HIGH. Ponytail full corrido. Visual: endpoints registrados en OpenAPI, /billing/payments responde 401 sin auth (correcto).

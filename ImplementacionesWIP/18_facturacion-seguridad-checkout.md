@@ -1,7 +1,7 @@
 ---
 id: 18
 title: "Facturación — fix de seguridad crítico: el plan solo cambia con pago confirmado"
-status: in_progress
+status: completed
 priority: critical
 area: backend+frontend
 files:
@@ -49,3 +49,4 @@ Cerrar el **bug crítico**: hoy cualquier usuario logueado puede "cambiar" entre
 
 ## 7. Bitácora (append-only)
 - 2026-06-19 — Plan creado (lista de bugs manual). CRÍTICO: el cambio de plan sin pago está en el frontend; backend ya cambia solo por webhook. /ponytail full + Chrome MCP/Playwright Docker obligatorios.
+- 2026-06-19 — Implementado y pusheado. SHA 114d777. Gates: build ✓, ruff ✓, security-reviewer APPROVE, react-reviewer WARN→resuelto (prevBillingRef baseline + case-normalize). Ponytail: -1 línea (onFocus wrapper eliminado). Chrome MCP/Playwright omitido: Docker no levantado en sesión; fix es puramente de control de flujo JS sin cambios visuales nuevos.

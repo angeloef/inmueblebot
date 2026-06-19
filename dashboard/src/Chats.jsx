@@ -286,7 +286,7 @@ const S = {
     flex: 1,
     overflowY: 'auto',
     padding: 16,
-    background: '#e5ddd5',
+    background: 'var(--chat-bg)',
   },
   msgRow: (align) => ({
     display: 'flex',
@@ -294,15 +294,15 @@ const S = {
     marginBottom: 8,
   }),
   msgBubble: (role) => {
-    let bg = '#fff';
+    let bg = 'var(--chat-bubble-bot)';
     let borderRadius = '0 8px 8px 8px';
     let align = 'left';
     if (role === 'user') {
-      bg = '#d9fdd3';
+      bg = 'var(--chat-bubble-user)';
       borderRadius = '8px 0 8px 8px';
       align = 'right';
     } else if (role === 'admin') {
-      bg = '#e3f2fd';
+      bg = 'var(--chat-bubble-admin)';
     }
     return {
       maxWidth: '70%',
@@ -315,7 +315,7 @@ const S = {
   },
   msgContent: {
     fontSize: 13,
-    color: '#111',
+    color: 'var(--chat-msg-color)',
     lineHeight: 1.4,
   },
   msgMeta: {
@@ -398,7 +398,7 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
         position: 'relative',
         cursor: loading ? 'not-allowed' : 'pointer',
         opacity: loading ? 0.6 : 1,
-        background: isOn ? '#25D366' : '#ccc',
+        background: isOn ? '#25D366' : 'var(--border-default)',
         transition: 'background 0.2s',
         overflow: 'hidden',
         padding: 0,
@@ -413,7 +413,7 @@ function ToggleSwitch({ isOn, loading, onToggle }) {
           background: '#fff',
           position: 'absolute',
           top: 2,
-          left: isOn ? 60 : 2,
+          left: isOn ? 20 : 2,
           transition: 'left 0.2s',
           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
         }}
@@ -735,8 +735,8 @@ function ChatView({ conversationId, onBack }) {
         <div style={{
           padding: '4px 12px',
           fontSize: 11,
-          background: '#fff3cd',
-          color: '#856404',
+          background: 'var(--state-warning-bg)',
+          color: 'var(--state-warning-fg)',
           textAlign: 'center',
         }}>
           Conexión en tiempo real perdida — usando actualización periódica

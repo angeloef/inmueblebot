@@ -100,6 +100,13 @@
   --state-neutral-bg: #f5f6f7; --state-neutral-fg: #6c727b; --state-neutral-border: #e2e5e8;
   --state-purple-bg:  #f1eef7; --state-purple-fg:  #4a3573; --state-purple-border:  #e3dcef;
 
+  /* ───── Chat colors (WhatsApp panel) ───── */
+  --chat-bg:           #e5ddd5;
+  --chat-bubble-bot:   #ffffff;
+  --chat-bubble-user:  #d9fdd3;
+  --chat-bubble-admin: #e3f2fd;
+  --chat-msg-color:    #111111;
+
   /* ───── Theme transition ───── */
   --theme-transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
 
@@ -252,6 +259,13 @@
   --state-info-bg:    #16213a; --state-info-fg:    #8fb0e8; --state-info-border:    #27406d;
   --state-neutral-bg: #20242a; --state-neutral-fg: #9aa1ab; --state-neutral-border: #333941;
   --state-purple-bg:  #221b30; --state-purple-fg:  #b89fe0; --state-purple-border:  #3a2d4d;
+
+  /* Chat colors */
+  --chat-bg:           #1a1e25;
+  --chat-bubble-bot:   #1e2127;
+  --chat-bubble-user:  #1a3a2a;
+  --chat-bubble-admin: #16203a;
+  --chat-msg-color:    #e2e5e9;
 
   /* Shadows — deeper opacity reads on dark */
   --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.3);
