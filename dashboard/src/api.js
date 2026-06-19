@@ -1468,6 +1468,13 @@ export const usePaymentHistory = () =>
     staleTime: 60_000,
   });
 
+// ─── Sales inquiries (Enterprise — plan 20) ──────────────────────────────────
+
+export const useSubmitSalesInquiry = () =>
+  useMutation({
+    mutationFn: (data) => http.post('/sales-inquiries', data).then(r => r.data),
+  });
+
 // ─── Reportes ejecutivos (Enterprise — métricas mensuales) ────────────────────
 
 export const reportsApi = {

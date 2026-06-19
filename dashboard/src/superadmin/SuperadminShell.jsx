@@ -12,6 +12,7 @@ import GlobalExplorer from './GlobalExplorer';
 import PlatformAnalytics from './PlatformAnalytics';
 import ErrorTriage from './ErrorTriage';
 import PropertyImports from './PropertyImports';
+import SalesInquiries from './SalesInquiries';
 
 const NAVY = 'var(--accent-600)';
 
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'analytics', label: 'Analítica', hint: 'Análisis de plataforma (plan 06)' },
   { id: 'errors', label: 'Errores', hint: 'Triage de reportes' },
   { id: 'imports', label: 'Importaciones', hint: 'Pedidos de carga asistida de propiedades' },
+  { id: 'ventas', label: 'Ventas', hint: 'Consultas Enterprise' },
 ];
 
 const S = {
@@ -130,6 +132,7 @@ export default function SuperadminShell({ account }) {
           {activeTab === 'analytics' && <PlatformAnalytics />}
           {activeTab === 'errors' && <ErrorTriage />}
           {activeTab === 'imports' && <PropertyImports />}
+          {activeTab === 'ventas' && <SalesInquiries />}
         </div>
       </main>
     </div>

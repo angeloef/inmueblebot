@@ -8,6 +8,7 @@ import {
   useBillingStatus, useBillingPlans, useSubscribe, usePaymentHistory,
   useTeamMembers, useInviteMember, useRemoveMember,
   useUsage, useChangePassword, useUpdateProfile, useMyTenant, useUpdateMyTenant,
+  useSubmitSalesInquiry,
 } from './api';
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -515,6 +516,90 @@ function SectionInmobiliaria() {
   );
 }
 
+// ── Sales inquiry modal (Enterprise — plan 20) ────────────────────────────────
+
+const WA_SALES = 'https://wa.me/5491100000000'; // ponytail: placeholder, reemplazar con número real
+
+function SalesModal({ onClose }) {
+  const submit = useSubmitSalesInquiry();
+  const [form, setForm] = useState({ contact_name: '', phone: '', property_count: '', message: '' });
+  const [sending, setSending] = useState(false);
+
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.contact_name.trim()) { pushToast({ text: 'Nombre requerido.', kind: 'danger' }); return; }
+    setSending(true);
+    try {
+      await submit.mutateAsync({ ...form });
+      pushToast({ text: 'Consulta enviada. Te contactamos pronto.', kind: 'success' });
+      onClose();
+    } catch {
+      pushToast({ text: 'Error al enviar. Intentá de nuevo.', kind: 'danger' });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const inp = {
+    font: '400 14px/1.4 Inter,sans-serif', color: 'var(--cfg-strong)',
+    background: 'var(--cfg-input)', border: '1px solid var(--cfg-line)',
+    borderRadius: 8, padding: '9px 12px', width: '100%', outline: 'none', boxSizing: 'border-box',
+  };
+
+  return (
+    <div
+      role="presentation"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sales-modal-title"
+        style={{ background: 'var(--cfg-card)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 id="sales-modal-title" style={{ font: '700 18px/1.2 Inter,sans-serif', color: 'var(--cfg-strong)', margin: '0 0 6px' }}>Plan Enterprise</h2>
+        <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', margin: '0 0 20px' }}>
+          Completá el formulario y te contactamos. O escribinos directamente por WhatsApp.
+        </p>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ font: '500 12px/1 Inter,sans-serif', color: 'var(--cfg-soft)', display: 'block', marginBottom: 6 }}>Nombre *</label>
+            <input style={inp} value={form.contact_name} onChange={set('contact_name')} maxLength={255} placeholder="Tu nombre" required />
+          </div>
+          <div>
+            <label style={{ font: '500 12px/1 Inter,sans-serif', color: 'var(--cfg-soft)', display: 'block', marginBottom: 6 }}>Teléfono</label>
+            <input style={inp} value={form.phone} onChange={set('phone')} maxLength={50} placeholder="+54 9 11 ..." />
+          </div>
+          <div>
+            <label style={{ font: '500 12px/1 Inter,sans-serif', color: 'var(--cfg-soft)', display: 'block', marginBottom: 6 }}>Propiedades / sucursales</label>
+            <input style={inp} value={form.property_count} onChange={set('property_count')} maxLength={50} placeholder="Ej: 200 propiedades, 3 sucursales" />
+          </div>
+          <div>
+            <label style={{ font: '500 12px/1 Inter,sans-serif', color: 'var(--cfg-soft)', display: 'block', marginBottom: 6 }}>Mensaje (opcional)</label>
+            <textarea style={{ ...inp, resize: 'vertical', minHeight: 72 }} value={form.message} onChange={set('message')} maxLength={2000} placeholder="Contanos tu caso..." />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button type="submit" disabled={sending} style={{ flex: 1, font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-brand-fg)', background: 'var(--cfg-brand)', border: 'none', borderRadius: 8, padding: '11px 0', cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.7 : 1 }}>
+              {sending ? 'Enviando…' : 'Enviar consulta'}
+            </button>
+            <a href={WA_SALES} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, font: '600 14px/1 Inter,sans-serif', color: '#fff', background: 'var(--cfg-wa)', borderRadius: 8, padding: '11px 14px', textDecoration: 'none' }}>
+              {ICONS.wa} WhatsApp
+            </a>
+          </div>
+        </form>
+
+        <button onClick={onClose} aria-label="Cerrar" style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cfg-soft)', font: '500 20px/1 Inter,sans-serif' }}>×</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Section: Facturación ──────────────────────────────────────────────────────
 
 function SectionFacturacion() {
@@ -525,6 +610,7 @@ function SectionFacturacion() {
   const subscribeMut = useSubscribe();
   const [subscribing, setSubscribing] = useState(null);
   const [awaitingPayment, setAwaitingPayment] = useState(null);
+  const [showSalesModal, setShowSalesModal] = useState(false);
   const prevBillingRef = useRef(null);
 
   useEffect(() => {
@@ -673,7 +759,7 @@ function SectionFacturacion() {
                   {isCurrent ? (
                     <button disabled style={{ width: '100%', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-soft)', background: 'var(--cfg-card2)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, cursor: 'default' }}>Plan actual</button>
                   ) : isEnterprise ? (
-                    <a href="mailto:ventas@viviendapp.com" style={{ display: 'block', textAlign: 'center', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, textDecoration: 'none' }}>Hablar con ventas</a>
+                    <button onClick={() => setShowSalesModal(true)} style={{ width: '100%', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, cursor: 'pointer' }}>Hablar con ventas</button>
                   ) : (
                     <button onClick={() => handleSubscribe(plan.name)} disabled={subscribing === plan.name || !!awaitingPayment} style={{ width: '100%', font: '600 14px/1 Inter,sans-serif', color: 'var(--cfg-strong)', background: 'var(--cfg-card)', border: '1px solid var(--cfg-line)', borderRadius: 8, padding: 10, cursor: 'pointer' }}>
                       {subscribing === plan.name ? 'Abriendo…' : awaitingPayment ? 'Pago pendiente…' : `Cambiar a ${plan.display_name ?? plan.name}`}
@@ -715,6 +801,7 @@ function SectionFacturacion() {
           </table>
         </div>
       )}
+      {showSalesModal && <SalesModal onClose={() => setShowSalesModal(false)} />}
     </div>
   );
 }

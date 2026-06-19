@@ -21,6 +21,7 @@ from app.db.models.metric_snapshot import MetricSnapshot
 from app.db.models.activity_log import ActivityLog
 from app.db.models.operations import PropertyRelation, Guarantor, Sale
 from app.db.models.property_import_request import PropertyImportRequest, PropertyImportFile
+from app.db.models.sales_inquiry import SalesInquiry
 
 __all__ = [
     "PropertyRelation",
@@ -51,4 +52,5 @@ __all__ = [
     "ErrorReport",
     "PropertyImportRequest",
     "PropertyImportFile",
+    "SalesInquiry",
 ]

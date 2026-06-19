@@ -87,6 +87,34 @@ async def send_password_reset(email: str, token: str) -> bool:
     )
 
 
+async def send_sales_inquiry_notification(
+    to: str,
+    contact_name: str,
+    contact_email: str,
+    tenant_name: str,
+    phone: str | None,
+    property_count: str | None,
+    message: str | None,
+) -> bool:
+    """Notifica a ventas@viviendapp.com de una nueva consulta Enterprise."""
+    import html as _h
+    rows = [
+        ("Nombre", contact_name),
+        ("Email", contact_email),
+        ("Inmobiliaria", tenant_name),
+        ("Teléfono", phone or "—"),
+        ("Propiedades/sucursales", property_count or "—"),
+        ("Mensaje", message or "—"),
+    ]
+    body = "".join(f"<p><b>{_h.escape(k)}:</b> {_h.escape(str(v))}</p>" for k, v in rows)
+    html = (
+        f'<div style="font-family:system-ui,sans-serif;max-width:600px">'
+        f'<h2 style="color:#155f6f">Nueva consulta Enterprise</h2>{body}'
+        f'</div>'
+    )
+    return await _send(to, f"Consulta Enterprise — {_h.escape(contact_name)}", html)
+
+
 async def send_invite_email(to_email: str, agency_name: str, invite_url: str) -> bool:
     html = (
         f'<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">'

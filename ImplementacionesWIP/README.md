@@ -25,6 +25,23 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 15 | [`15_importacion-asistida-propiedades.md`](./15_importacion-asistida-propiedades.md) | Backend + Frontend | `completed` | 14 (CTA en estado vacío) |
 | 16 | [`16_config-backend-gaps.md`](./16_config-backend-gaps.md) | Backend | `completed` | — (base de 17) |
 | 17 | [`17_config-ui-rebuild-handoff.md`](./17_config-ui-rebuild-handoff.md) | Frontend | `completed` | 16 |
+| 18 | [`18_facturacion-seguridad-checkout.md`](./18_facturacion-seguridad-checkout.md) | Backend+Frontend | `completed` | — **(CRÍTICO)** |
+| 19 | [`19_facturacion-historial-y-uso.md`](./19_facturacion-historial-y-uso.md) | Backend+Frontend | `completed` | 18 |
+| 20 | [`20_hablar-con-ventas-enterprise.md`](./20_hablar-con-ventas-enterprise.md) | Backend+Frontend | `completed` | — |
+| 21 | [`21_fixes-visuales-darkmode-y-modal.md`](./21_fixes-visuales-darkmode-y-modal.md) | Frontend | `pending` | — |
+| 22 | [`22_gating-candado-enterprise-audit.md`](./22_gating-candado-enterprise-audit.md) | Frontend+Backend | `pending` | — |
+| 23 | [`23_config-cleanup-sistema-y-equipo.md`](./23_config-cleanup-sistema-y-equipo.md) | Frontend+Backend | `pending` | — |
+| 24 | [`24_inmobiliarias-sucursales-unificadas.md`](./24_inmobiliarias-sucursales-unificadas.md) | Frontend+Backend | `pending` | — |
+| 25 | [`25_branding-logo-viviendapp.md`](./25_branding-logo-viviendapp.md) | Frontend | `pending` | — |
+| 26 | [`26_perfil-avatar-foto-crop.md`](./26_perfil-avatar-foto-crop.md) | Backend+Frontend | `pending` | 16 |
+| 27 | [`27_borrar-cuenta-2fa-email.md`](./27_borrar-cuenta-2fa-email.md) | Backend+Frontend | `pending` | — |
+| 28 | [`28_ambientes-vs-habitaciones-monoambiente.md`](./28_ambientes-vs-habitaciones-monoambiente.md) | Backend+Frontend+Bot | `pending` | — |
+| 29 | [`29_propiedades-agente-asignado-cleanup.md`](./29_propiedades-agente-asignado-cleanup.md) | Frontend+Backend | `pending` | — |
+
+### Lote de bugs del testing manual (18–29)
+Agrupados por área para distintas sesiones del loop. **Prioridad:** 18 (seguridad de cobro) primero.
+**Nuevo estándar (SKILL actualizado):** todo plan corre **`/ponytail full`** tras implementar y verifica
+los cambios visuales con **Chrome MCP/Playwright en Docker local** (light+dark) antes de marcar done.
 
 ### Configuración / nuevo layout (16–17)
 Reconstrucción de la pantalla **Configuración** según el handoff de diseño (`Claude interface layout-handoff/`):

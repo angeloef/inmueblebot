@@ -552,6 +552,10 @@ app.include_router(admin_analytics_router)
 from app.api.routes.error_reports import router as error_reports_router
 app.include_router(error_reports_router)
 
+# Consultas Enterprise 'Hablar con ventas' (plan 20) — prefix /sales-inquiries
+from app.api.routes.sales_inquiries import router as sales_inquiries_router
+app.include_router(sales_inquiries_router)
+
 # Importación asistida de propiedades (plan 15) — prefix /admin/property-imports
 from app.api.routes.property_imports import router as property_imports_router
 app.include_router(property_imports_router)
@@ -604,6 +608,7 @@ _api_compat.include_router(admin_router)
 _api_compat.include_router(admin_global_router)
 _api_compat.include_router(admin_analytics_router)
 _api_compat.include_router(error_reports_router)
+_api_compat.include_router(sales_inquiries_router)
 _api_compat.include_router(cobranzas_router)
 _api_compat.include_router(operations_router)
 _api_compat.include_router(auth_router)
