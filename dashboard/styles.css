@@ -179,6 +179,9 @@ input, select, textarea { font-family: inherit; }
 /* ───── Table ───── */
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th { text-align: left; font-weight: 500; font-size: 11px; color: var(--fg-tertiary); padding: 9px 14px; border-bottom: 1px solid var(--border-default); background: var(--gray-25); letter-spacing: 0.02em; text-transform: uppercase; position: sticky; top: 0; z-index: 1; }
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl th.sortable:hover { color: var(--fg-secondary); }
+.tbl th.sort-active { color: var(--accent-600); }
 .tbl td { padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); color: var(--fg-primary); vertical-align: middle; transition: background var(--dur-fast) var(--ease-out); }
 .tbl tr { cursor: pointer; }
 .tbl tbody tr:hover td { background: var(--bg-hover); }

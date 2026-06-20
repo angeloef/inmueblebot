@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Fragment } from 'react';
+import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { Icon, Button, IconButton, Pill, StatusDropdown, initials, pushToast } from './Primitives';
 import { fmtCurrency, fmtTime12 } from './data';
 import { useProperties, useClients, useEvents, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useRelateClientToProperty, useBranches, useReassignProperty, useActivity, propertyApi, useCreatePropertyImport, useMyPropertyImports } from './api';
@@ -1378,6 +1378,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
   const [filter, setFilter] = useState('all');
   const [op, setOp] = useState('all');
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState(null); // { col, dir } | null
   const [view, setView] = useState(() => {
     const stored = localStorage.getItem('propView');
     return stored === 'list' || stored === 'grid' ? stored : 'grid';
@@ -1410,6 +1411,31 @@ export default function Properties({ onOpenClient, initialProperty }) {
     if (search && !(p.addr.toLowerCase().includes(search.toLowerCase()) || p.neigh.toLowerCase().includes(search.toLowerCase()))) return false;
     return true;
   });
+
+  const handleSort = (col, defaultDir = 'asc') => {
+    setSortBy(prev =>
+      prev && prev.col === col
+        ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { col, dir: defaultDir }
+    );
+  };
+
+  // ponytail: client-side sort; nulls last; stable via index tie-break
+  const sorted = useMemo(() => {
+    if (!sortBy) return filtered;
+    const { col, dir } = sortBy;
+    const mult = dir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let va, vb;
+      if (col === 'precio') { va = a.price; vb = b.price; }
+      else if (col === 'tipo') { va = a.type; vb = b.type; }
+      else if (col === 'estado') { va = a.status; vb = b.status; }
+      else if (col === 'operacion') { va = a.operation; vb = b.operation; }
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (typeof va === 'number' ? va - vb : va.localeCompare(vb, 'es')) * mult;
+    });
+  }, [filtered, sortBy]);
 
   const counts = {
     all: properties.length,
@@ -1463,14 +1489,31 @@ export default function Properties({ onOpenClient, initialProperty }) {
             <table className="tbl props-tbl">
               <thead><tr>
                 <th>Propiedad</th>
-                <th className="props-col-tipo">Tipo</th>
-                <th>Estado</th>
-                <th className="props-col-op">Operación</th>
-                <th style={{textAlign:'right'}}>Precio</th>
+                <th className={`props-col-tipo sortable${sortBy?.col==='tipo'?' sort-active':''}`}
+                    onClick={() => handleSort('tipo')}
+                    aria-sort={sortBy?.col==='tipo' ? (sortBy.dir==='asc'?'ascending':'descending') : 'none'}>
+                  Tipo {sortBy?.col==='tipo' ? (sortBy.dir==='asc'?'▲':'▼') : ''}
+                </th>
+                <th className={`sortable${sortBy?.col==='estado'?' sort-active':''}`}
+                    onClick={() => handleSort('estado')}
+                    aria-sort={sortBy?.col==='estado' ? (sortBy.dir==='asc'?'ascending':'descending') : 'none'}>
+                  Estado {sortBy?.col==='estado' ? (sortBy.dir==='asc'?'▲':'▼') : ''}
+                </th>
+                <th className={`props-col-op sortable${sortBy?.col==='operacion'?' sort-active':''}`}
+                    onClick={() => handleSort('operacion')}
+                    aria-sort={sortBy?.col==='operacion' ? (sortBy.dir==='asc'?'ascending':'descending') : 'none'}>
+                  Operación {sortBy?.col==='operacion' ? (sortBy.dir==='asc'?'▲':'▼') : ''}
+                </th>
+                <th className={`sortable${sortBy?.col==='precio'?' sort-active':''}`}
+                    style={{textAlign:'right'}}
+                    onClick={() => handleSort('precio', 'desc')}
+                    aria-sort={sortBy?.col==='precio' ? (sortBy.dir==='asc'?'ascending':'descending') : 'none'}>
+                  Precio {sortBy?.col==='precio' ? (sortBy.dir==='asc'?'▲':'▼') : ''}
+                </th>
                 <th></th>
               </tr></thead>
               <tbody>
-                {filtered.map(p => (
+                {sorted.map(p => (
                   <tr key={p.id} tabIndex={0} aria-label={`Ver propiedad ${p.addr}`}
                       onClick={() => setOpen(p)}
                       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(p); } }}>
