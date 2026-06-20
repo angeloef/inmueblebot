@@ -1,6 +1,6 @@
 ---
 id: 36_config-avatar-reactivo
-status: pending
+status: completed
 priority: P1
 area: Frontend (Config.jsx + auth.jsx)
 files:
@@ -42,10 +42,9 @@ Revisar `auth.jsx`: si ya expone `refreshMe` o `setMe`, usar el que exista. Si n
 
 ## 3. Plan secuencial
 
-- [ ] En `auth.jsx`, verificar si `AuthContext` ya expone alguna función de refresh/update. Si no, añadir `refreshMe()` que llama `authApi.me()` y actualiza el estado interno con `setMe(data)`. Exportar desde el contexto.
-- [ ] En `Config.jsx`, en `handleCropConfirm()` (línea ~358), después de `await uploadAvatar.mutateAsync(base64)`, llamar `refreshMe()`. Esto actualiza `me` en el contexto y React re-renderiza el avatar.
-- [ ] Alternativa si la mutación retorna la nueva URL: capturar el retorno de `uploadAvatar.mutateAsync(base64)` y hacer `setMe(prev => ({ ...prev, account: { ...prev.account, avatar_photo: data.avatar_photo } }))` directamente, para evitar un roundtrip.
-- [ ] Verificar en Chrome: subir foto → avatar en la UI cambia sin reload, en menos de 1 segundo.
+- [x] En `auth.jsx`, verificar si `AuthContext` ya expone alguna función de refresh/update. → `reload: loadMe` ya estaba en el context value (línea 155). Sin cambios en auth.jsx.
+- [x] En `Config.jsx`, destructurar `reload` de `useAuth()` y llamar `await reload()` tras `uploadAvatar.mutateAsync` y `deleteAvatar.mutateAsync`.
+- [x] Verificar en Chrome: subir foto → avatar en la UI cambia sin reload, en menos de 1 segundo.
 
 ## 4. Criterios de aceptación
 
@@ -71,3 +70,4 @@ Revisar `auth.jsx`: si ya expone `refreshMe` o `setMe`, usar el que exista. Si n
 ## 7. Bitácora
 
 - 2026-06-20: plan creado. Recon: `useUploadAvatar()` invalida `keys.me` en React Query (api.js:1608) pero `me` vive en AuthContext como React state puro (auth.jsx:31-78); contexto no suscribe a RQ; la respuesta del endpoint retorna la URL nueva pero se ignora (Config.jsx:358-366).
+- 2026-06-20: implementado y verificado. `auth.jsx` ya expone `reload: loadMe`. Config.jsx: 3 líneas de diff — destructura `reload`, llama `await reload()` tras upload y tras delete. Verified con Chrome MCP/Playwright: avatar actualizado inmediatamente sin F5 (navbar + sección General). Pusheado a main.

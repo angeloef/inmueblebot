@@ -300,7 +300,7 @@ function AvatarCropModal({ src, onConfirm, onClose }) {
 // ── Section: General ─────────────────────────────────────────────────────────
 
 function SectionGeneral() {
-  const { me } = useAuth();
+  const { me, reload } = useAuth();
   const { theme, setTheme } = useTheme();
   const updateProfile = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
@@ -359,6 +359,7 @@ function SectionGeneral() {
     setCropSrc(null);
     try {
       await uploadAvatar.mutateAsync(base64);
+      await reload();
       pushToast({ text: 'Foto actualizada.', kind: 'success' });
     } catch {
       pushToast({ text: 'Error al subir la foto.', kind: 'danger' });
@@ -368,6 +369,7 @@ function SectionGeneral() {
   const handleDeletePhoto = async () => {
     try {
       await deleteAvatar.mutateAsync();
+      await reload();
       pushToast({ text: 'Foto eliminada.', kind: 'success' });
     } catch {
       pushToast({ text: 'Error al eliminar la foto.', kind: 'danger' });

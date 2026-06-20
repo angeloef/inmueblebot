@@ -43,7 +43,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `completed` | — |
 | 34 | [`34_propiedades-exportar-e-importar-modal.md`](./34_propiedades-exportar-e-importar-modal.md) | Frontend (Properties.jsx) | `completed` | — |
 | 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `completed` | — |
-| 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `pendiente` | — |
+| 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `completed` | — |
 
 ### Lote fixes UI/UX (34–36)
 Bugs detectados en testing: exportar/importar en Propiedades (34), FAQs duplicadas al cargar ejemplos dos veces (35), avatar de perfil requería reload para verse (36). Todos independientes entre sí.
