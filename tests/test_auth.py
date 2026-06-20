@@ -260,3 +260,100 @@ async def test_cross_tenant_property_isolation() -> None:
         assert img_resp.status_code == 404, (
             f"Tenant B should not reach Tenant A's property image, got {img_resp.status_code}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Plan 27: delete account with 2FA
+# ---------------------------------------------------------------------------
+
+@_db_skip
+async def test_delete_account_invalid_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wrong code → 400."""
+    from app.main import app
+    import app.api.routes.auth as auth_route
+
+    monkeypatch.setattr(auth_route, "_verify_and_consume_delete_code", lambda *_: False)
+
+    email = f"del+{uuid4().hex[:8]}@example.com"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/auth/signup", json={"email": email, "password": "password123", "agency_name": "Del Agency"})
+        assert r.status_code == 201
+        token = r.json()["access_token"]
+
+        resp = await client.post(
+            "/auth/account/delete/confirm",
+            json={"code": "000000"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert "inválido" in resp.json()["detail"].lower()
+
+
+@_db_skip
+async def test_delete_account_owner_deletes_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Valid code for sole owner → tenant + account deleted, session cleared."""
+    from app.main import app
+    import app.api.routes.auth as auth_route
+
+    # Monkeypatch to bypass Redis
+    async def _fake_verify(account_id: str, code: str) -> bool:
+        return code == "123456"
+
+    monkeypatch.setattr(auth_route, "_verify_and_consume_delete_code", _fake_verify)
+
+    email = f"del+{uuid4().hex[:8]}@example.com"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/auth/signup", json={"email": email, "password": "password123", "agency_name": "Del Agency Owner"})
+        assert r.status_code == 201
+        token = r.json()["access_token"]
+
+        resp = await client.post(
+            "/auth/account/delete/confirm",
+            json={"code": "123456"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["ok"] is True
+
+        # Account should no longer be accessible
+        me_resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me_resp.status_code == 401
+
+
+@_db_skip
+async def test_delete_account_request_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rate limit: 4th request within an hour is rejected."""
+    from app.main import app
+    import app.api.routes.auth as auth_route
+
+    call_count = 0
+
+    async def _fake_rate(account_id: str) -> bool:
+        nonlocal call_count
+        call_count += 1
+        return call_count <= 3
+
+    async def _fake_store(account_id: str, code: str) -> None:
+        pass
+
+    async def _fake_send(email: str, code: str) -> bool:
+        return True
+
+    monkeypatch.setattr(auth_route, "_check_rate_limit_del", _fake_rate)
+    monkeypatch.setattr(auth_route, "_store_delete_code", _fake_store)
+    from app.services import email_service as _es
+    monkeypatch.setattr(_es, "send_delete_account_code", _fake_send)
+
+    email = f"del+{uuid4().hex[:8]}@example.com"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/auth/signup", json={"email": email, "password": "password123", "agency_name": "Rate Agency"})
+        assert r.status_code == 201
+        token = r.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        for _ in range(3):
+            resp = await client.post("/auth/account/delete/request", headers=headers)
+            assert resp.status_code == 200
+
+        resp4 = await client.post("/auth/account/delete/request", headers=headers)
+        assert resp4.status_code == 429

@@ -1571,6 +1571,12 @@ export const useChangePassword = () =>
     mutationFn: (data) => http.post('/auth/change-password', data).then(r => r.data),
   });
 
+export const useDeleteAccountRequest = () =>
+  useMutation({ mutationFn: () => http.post('/auth/account/delete/request').then(r => r.data) });
+
+export const useDeleteAccountConfirm = () =>
+  useMutation({ mutationFn: (data) => http.post('/auth/account/delete/confirm', data).then(r => r.data) });
+
 export const useUpdateProfile = () => {
   const qc = useQueryClient();
   return useMutation({

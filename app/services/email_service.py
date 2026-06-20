@@ -115,6 +115,26 @@ async def send_sales_inquiry_notification(
     return await _send(to, f"Consulta Enterprise — {_h.escape(contact_name)}", html)
 
 
+async def send_delete_account_code(email: str, code: str) -> bool:
+    import html as _h
+    html = (
+        f'<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">'
+        f'<h2 style="color:#dc2626">Confirmá el borrado de tu cuenta</h2>'
+        f'<p>Recibimos una solicitud para <strong>borrar permanentemente</strong> '
+        f'tu cuenta de ViviendApp y todos sus datos.</p>'
+        f'<p style="font-size:14px;color:#374151">Tu código de confirmación:</p>'
+        f'<div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#111827;'
+        f'background:#f3f4f6;padding:20px;border-radius:8px;text-align:center;margin:16px 0">'
+        f'{_h.escape(code)}</div>'
+        f'<p style="color:#6b7280;font-size:13px">El código vence en 15 minutos. '
+        f'Si no solicitaste este borrado, ignorá este correo — tu cuenta sigue activa.</p>'
+        f'<p style="color:#dc2626;font-size:13px"><strong>Esta acción es irreversible. '
+        f'Todos tus datos se eliminarán de forma permanente.</strong></p>'
+        f'</div>'
+    )
+    return await _send(email, "Confirmá el borrado de tu cuenta en ViviendApp", html)
+
+
 async def send_invite_email(to_email: str, agency_name: str, invite_url: str) -> bool:
     html = (
         f'<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">'

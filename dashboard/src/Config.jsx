@@ -8,6 +8,7 @@ import {
   useTeamMembers, useInviteMember, useRemoveMember,
   useUsage, useChangePassword, useUpdateProfile, useMyTenant, useUpdateMyTenant,
   useSubmitSalesInquiry, useUploadAvatar, useDeleteAvatar,
+  useDeleteAccountRequest, useDeleteAccountConfirm,
 } from './api';
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -161,7 +162,7 @@ const NAV_SECTIONS = [
 // Search index: searchable terms per section
 const SEARCH_INDEX = [
   { key: 'general',       terms: ['perfil', 'avatar', 'nombre', 'apariencia', 'tema', 'oscuro', 'claro'] },
-  { key: 'cuenta',        terms: ['email', 'contraseña', 'password', 'seguridad', 'login', 'google', 'sesion', 'cerrar'] },
+  { key: 'cuenta',        terms: ['email', 'contraseña', 'password', 'seguridad', 'login', 'google', 'sesion', 'cerrar', 'borrar cuenta', 'eliminar cuenta', 'baja'] },
   { key: 'inmobiliaria',  terms: ['inmobiliaria', 'nombre comercial', 'horario', 'whatsapp', 'agente', 'timezone', 'zona horaria'] },
   { key: 'facturacion',   terms: ['facturacion', 'plan', 'pago', 'suscripcion', 'basico', 'profesional', 'enterprise', 'mercadopago'] },
   { key: 'uso',           terms: ['uso', 'propiedades', 'conversaciones', 'miembros', 'limite', 'consumo'] },
@@ -438,6 +439,94 @@ function SectionGeneral() {
 
 // ── Section: Cuenta ────────────────────────────────────────────────────────────
 
+function DeleteAccountModal({ onClose, onDeleted }) {
+  const requestMut = useDeleteAccountRequest();
+  const confirmMut = useDeleteAccountConfirm();
+  const [step, setStep] = useState('warn'); // 'warn' | 'code'
+  const [code, setCode] = useState('');
+
+  const handleSendCode = async () => {
+    try {
+      await requestMut.mutateAsync();
+      setStep('code');
+    } catch (err) {
+      pushToast({ text: err?.response?.data?.detail ?? 'Error al enviar el código.', kind: 'danger' });
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (code.length !== 6) { pushToast({ text: 'Ingresá el código de 6 dígitos.', kind: 'danger' }); return; }
+    try {
+      await confirmMut.mutateAsync({ code });
+      onDeleted();
+    } catch (err) {
+      pushToast({ text: err?.response?.data?.detail ?? 'Código inválido o vencido.', kind: 'danger' });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 2000 }}>
+      <div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, padding: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <span style={{ font: '700 17px/1 Inter,sans-serif', color: 'var(--cfg-bad)' }}>Borrar cuenta</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--cfg-muted)' }}>×</button>
+        </div>
+
+        {step === 'warn' && (
+          <>
+            <div style={{ background: 'var(--cfg-bad-bg)', border: '1px solid var(--cfg-bad)', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
+              <p style={{ font: '600 13px/1.5 Inter,sans-serif', color: 'var(--cfg-bad)', margin: 0 }}>Esta acción es irreversible</p>
+              <ul style={{ font: '400 13px/1.6 Inter,sans-serif', color: 'var(--cfg-strong)', margin: '8px 0 0 0', paddingLeft: 18 }}>
+                <li>Se eliminarán todos tus datos: propiedades, clientes, contratos, conversaciones y configuración.</li>
+                <li>No podés recuperar tu cuenta ni tus datos.</li>
+                <li>Tu suscripción se cancela de inmediato.</li>
+              </ul>
+            </div>
+            <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', marginBottom: 20 }}>
+              Enviamos un código de 6 dígitos a tu email para confirmar.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <CfgBtn variant="danger" onClick={handleSendCode} disabled={requestMut.isPending}>
+                {requestMut.isPending ? 'Enviando…' : 'Enviar código de confirmación'}
+              </CfgBtn>
+              <CfgBtn variant="ghost" onClick={onClose}>Cancelar</CfgBtn>
+            </div>
+          </>
+        )}
+
+        {step === 'code' && (
+          <>
+            <p style={{ font: '400 13px/1.5 Inter,sans-serif', color: 'var(--cfg-muted)', marginBottom: 16 }}>
+              Ingresá el código de 6 dígitos que enviamos a tu email.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              autoFocus
+              style={{
+                font: '700 28px/1 Inter,sans-serif', letterSpacing: 10, textAlign: 'center',
+                color: 'var(--cfg-strong)', background: 'var(--cfg-input)',
+                border: '1px solid var(--cfg-line)', borderRadius: 8, padding: '12px 16px',
+                width: '100%', outline: 'none', marginBottom: 16, boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <CfgBtn variant="danger" onClick={handleConfirm} disabled={confirmMut.isPending || code.length !== 6}>
+                {confirmMut.isPending ? 'Borrando…' : 'Confirmar borrado definitivo'}
+              </CfgBtn>
+              <CfgBtn variant="ghost" onClick={onClose}>Cancelar</CfgBtn>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SectionCuenta() {
   const { me, logout } = useAuth();
   const changePasswordMut = useChangePassword();
@@ -451,6 +540,7 @@ function SectionCuenta() {
   const [newPwd, setNewPwd] = useState('');
   const [repPwd, setRepPwd] = useState('');
   const [savingPwd, setSavingPwd] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const handleChangePwd = async () => {
     if (!curPwd || !newPwd) { pushToast({ text: 'Completá todos los campos.', kind: 'danger' }); return; }
@@ -531,6 +621,18 @@ function SectionCuenta() {
       <CfgRow label="Sesión" hint="Cerrar sesión en este dispositivo.">
         <CfgBtn variant="danger" onClick={logout}>Cerrar sesión</CfgBtn>
       </CfgRow>
+
+      <H3>Zona de peligro</H3>
+      <CfgRow label="Borrar cuenta" hint="Elimina tu cuenta y todos los datos de forma permanente e irreversible.">
+        <CfgBtn variant="danger" onClick={() => setShowDeleteModal(true)}>Borrar cuenta…</CfgBtn>
+      </CfgRow>
+
+      {showDeleteModal && (
+        <DeleteAccountModal
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => { setShowDeleteModal(false); logout(); }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import secrets as _secrets
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
@@ -7,7 +9,7 @@ import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import ACCESS_COOKIE_NAME, get_current_account
 from app.core.config import get_settings
@@ -721,6 +723,138 @@ async def get_usage(
         period_start=period_start_str,
         period_end=period_end_str,
     )
+
+
+# ── Plan 27: Borrar cuenta con 2FA por email ─────────────────────────────────
+
+
+async def _redis_client():  # noqa: ANN201
+    import redis.asyncio as aioredis
+    return aioredis.Redis.from_url(
+        get_settings().resolve_redis_url(),
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+    )
+
+
+async def _check_rate_limit_del(account_id: str) -> bool:
+    """True if under the 3-per-hour rate limit. Fail-open (allow) on Redis error."""
+    key = f"del_rate:{account_id}"
+    try:
+        r = await _redis_client()
+        try:
+            count = await r.incr(key)
+            if count == 1:
+                await r.expire(key, 3600)
+            return count <= 3
+        finally:
+            await r.aclose()
+    except Exception:
+        return True  # fail-open: don't block on Redis error
+
+
+async def _store_delete_code(account_id: str, code: str) -> None:
+    key = f"del_acct:{account_id}"
+    hashed = hashlib.sha256(code.encode()).hexdigest()
+    r = await _redis_client()
+    try:
+        await r.setex(key, 900, hashed)  # 15 min TTL
+    finally:
+        await r.aclose()
+
+
+async def _verify_and_consume_delete_code(account_id: str, code: str) -> bool:
+    """Returns True if code matches and is consumed (single-use). Fail-closed."""
+    key = f"del_acct:{account_id}"
+    hashed = hashlib.sha256(code.encode()).hexdigest()
+    try:
+        r = await _redis_client()
+        try:
+            stored = await r.get(key)
+            if stored != hashed:
+                return False
+            await r.delete(key)
+            return True
+        finally:
+            await r.aclose()
+    except Exception:
+        return False  # fail-closed
+
+
+class DeleteAccountConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+@router.post("/account/delete/request", status_code=status.HTTP_200_OK)
+async def delete_account_request(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict[str, bool]:
+    """Solicita el borrado de cuenta: envía código 2FA al email (rate-limited 3/h)."""
+    if not await _check_rate_limit_del(str(account.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Esperá una hora antes de volver a intentarlo.",
+        )
+    code = f"{_secrets.randbelow(1_000_000):06d}"
+    await _store_delete_code(str(account.id), code)
+    await email_service.send_delete_account_code(account.email, code)
+    return {"ok": True}
+
+
+@router.post("/account/delete/confirm", status_code=status.HTTP_200_OK)
+async def delete_account_confirm(
+    req: DeleteAccountConfirmRequest,
+    response: Response,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict[str, bool]:
+    """Confirma el borrado con el código 2FA. Irreversible."""
+    if not await _verify_and_consume_delete_code(str(account.id), req.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código inválido o vencido.",
+        )
+
+    async with async_session_factory() as session:
+        if account.role == "owner":
+            child_count = await session.scalar(
+                select(func.count()).select_from(Tenant).where(
+                    Tenant.parent_tenant_id == account.tenant_id
+                )
+            ) or 0
+            if child_count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Tu inmobiliaria tiene sucursales activas. "
+                        "Eliminá las sucursales antes de borrar tu cuenta."
+                    ),
+                )
+            other_count = await session.scalar(
+                select(func.count()).select_from(TenantAccount).where(
+                    TenantAccount.tenant_id == account.tenant_id,
+                    TenantAccount.id != account.id,
+                )
+            ) or 0
+            if other_count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Tenés miembros activos en tu equipo. "
+                        "Eliminá a los miembros antes de borrar tu cuenta."
+                    ),
+                )
+            tenant = await session.get(Tenant, account.tenant_id)
+            if tenant:
+                await session.delete(tenant)
+        else:
+            acc = await session.get(TenantAccount, account.id)
+            if acc:
+                await session.delete(acc)
+        await session.commit()
+
+    _clear_auth_cookies(response)
+    return {"ok": True}
 
 
 # ── Google OAuth (login/registro con Google) ──────────────────────────────────
