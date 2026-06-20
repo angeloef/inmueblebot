@@ -38,7 +38,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 28 | [`28_ambientes-vs-habitaciones-monoambiente.md`](./28_ambientes-vs-habitaciones-monoambiente.md) | Backend+Frontend+Bot | `completed` | — |
 | 29 | [`29_propiedades-agente-asignado-cleanup.md`](./29_propiedades-agente-asignado-cleanup.md) | Frontend+Backend | `completed` | — |
 | 30 | [`30_faq-ejemplos-overlay-bloqueante.md`](./30_faq-ejemplos-overlay-bloqueante.md) | Frontend | `completed` | — |
-| 31 | [`31_avatar-propagacion-y-crop-ui.md`](./31_avatar-propagacion-y-crop-ui.md) | Backend+Frontend | `pending` | — |
+| 31 | [`31_avatar-propagacion-y-crop-ui.md`](./31_avatar-propagacion-y-crop-ui.md) | Backend+Frontend | `completed` | — |
 | 32 | [`32_propiedades-sort-by.md`](./32_propiedades-sort-by.md) | Frontend | `pending` | — |
 | 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `pending` | — |
 

@@ -105,7 +105,7 @@ def _account_member(acc: TenantAccount, *, role: str, branch_name: str | None) -
         email=acc.email,
         name=acc.full_name,
         avatar_color=None,
-        photo_url=None,
+        photo_url=acc.avatar_photo,
         is_admin=True,
         status=MEMBER_ACCEPTED,
         role=role,
@@ -146,6 +146,28 @@ async def list_members(tenant_id: object) -> list[object]:
             if acc.id not in linked_account_ids
         ]
 
+        # Fotos de los miembros invitados que ya tienen TenantAccount.
+        acc_photos: dict = {}
+        if linked_account_ids:
+            photo_res = await session.execute(
+                select(TenantAccount.id, TenantAccount.avatar_photo)
+                .where(TenantAccount.id.in_(linked_account_ids))
+            )
+            acc_photos = {str(row[0]): row[1] for row in photo_res}
+
+    enriched_members = [
+        SimpleNamespace(
+            id=m.id, email=m.email, name=m.name,
+            avatar_color=m.avatar_color,
+            photo_url=acc_photos.get(str(m.account_id)) if m.account_id else m.photo_url,
+            is_admin=m.is_admin, status=m.status,
+            created_at=m.created_at,
+        )
+        if (m.account_id and str(m.account_id) in acc_photos)
+        else m
+        for m in members
+    ]
+
     # Gerentes de sucursal: cuentas de los tenants hijos (solo si este tenant es un org raíz;
     # para una sucursal, list_branches devuelve []). TenantAccount es global (sin RLS).
     branches = await list_branches(tenant_id)
@@ -168,7 +190,7 @@ async def list_members(tenant_id: object) -> list[object]:
                 )
 
     # Orden: org (owner arriba) → gerentes de sucursal → invitaciones más recientes.
-    return org_members + branch_members + members
+    return org_members + branch_members + enriched_members
 
 
 async def remove_member(tenant_id: object, member_id: object, requesting_account_id: object | None = None) -> None:

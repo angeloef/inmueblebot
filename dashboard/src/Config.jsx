@@ -205,6 +205,7 @@ function AvatarCropModal({ src, onConfirm, onClose }) {
   const imgRef = useRef(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
+  const [minScale, setMinScale] = useState(0.1);
   const [drag, setDrag] = useState(null);
   const SIZE = 240;
 
@@ -232,7 +233,14 @@ function AvatarCropModal({ src, onConfirm, onClose }) {
 
   useEffect(() => {
     const img = new Image();
-    img.onload = () => { imgRef.current = img; draw(); };
+    img.onload = () => {
+      imgRef.current = img;
+      // Scale that fits the whole image inside the circle frame.
+      const fit = Math.min(SIZE / img.naturalWidth, SIZE / img.naturalHeight);
+      setMinScale(fit);
+      setScale(fit);
+      draw();
+    };
     img.src = src;
   }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,7 +282,7 @@ function AvatarCropModal({ src, onConfirm, onClose }) {
             onMouseLeave={onMouseUp}
           />
           <input
-            type="range" min={0.5} max={3} step={0.05} value={scale}
+            type="range" min={minScale} max={3} step={0.01} value={scale}
             onChange={e => setScale(Number(e.target.value))}
             style={{ width: SIZE }}
             aria-label="Zoom"
@@ -1171,7 +1179,9 @@ function SectionEquipo() {
             return (
               <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.4fr auto', gap: 12, alignItems: 'center', padding: '14px 18px', borderTop: '1px solid var(--cfg-line-soft)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9999, background: m.avatar_color ? avatarHex(m.avatar_color) : 'var(--cfg-nav-act)', color: m.avatar_color ? '#fff' : 'var(--cfg-nav-act-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '600 13px/1 Inter,sans-serif', flexShrink: 0 }}>{ini}</div>
+                  {m.photo_url
+                    ? <img src={m.photo_url} alt={m.name ?? m.email} style={{ width: 34, height: 34, borderRadius: 9999, objectFit: 'cover', flexShrink: 0 }} />
+                    : <div style={{ width: 34, height: 34, borderRadius: 9999, background: m.avatar_color ? avatarHex(m.avatar_color) : 'var(--cfg-nav-act)', color: m.avatar_color ? '#fff' : 'var(--cfg-nav-act-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '600 13px/1 Inter,sans-serif', flexShrink: 0 }}>{ini}</div>}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ font: '600 14px/1.3 Inter,sans-serif', color: 'var(--cfg-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name ?? m.email}</div>
                     <div style={{ font: '400 12px/1.3 Inter,sans-serif', color: 'var(--cfg-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email}</div>

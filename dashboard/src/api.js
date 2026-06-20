@@ -1606,6 +1606,7 @@ export const useUploadAvatar = () => {
     mutationFn: (avatar_base64) => http.post('/auth/me/avatar', { avatar_base64 }).then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.me });
+      qc.invalidateQueries({ queryKey: ['team', 'members'] });
     },
   });
 };
@@ -1616,6 +1617,7 @@ export const useDeleteAvatar = () => {
     mutationFn: () => http.delete('/auth/me/avatar').then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.me });
+      qc.invalidateQueries({ queryKey: ['team', 'members'] });
     },
   });
 };
