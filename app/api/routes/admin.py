@@ -2450,7 +2450,7 @@ class TenantUpdate(BaseModel):
     status: Optional[str] = None
 
 
-def _tenant_to_dict(t, *, active_router: str = "") -> dict:  # noqa: ANN001
+def _tenant_to_dict(t) -> dict:  # noqa: ANN001
     """Serialize a Tenant — NEVER includes the access token (only whether one is set)."""
     return {
         "id": str(t.id),
@@ -2465,40 +2465,21 @@ def _tenant_to_dict(t, *, active_router: str = "") -> dict:  # noqa: ANN001
         "plan": t.plan,
         "status": t.status,
         "created_at": t.created_at.isoformat() if t.created_at else None,
-        "active_router": active_router,  # "" means "use global bot_settings value"
+        "parent_tenant_id": str(t.parent_tenant_id) if t.parent_tenant_id else None,
     }
 
 
 @router.get("/tenants")
 async def list_tenants(_: object = Depends(require_superadmin)) -> dict:
-    """List all provisioned tenants (inmobiliarias). Token never returned.
-
-    Includes the per-tenant ``active_router`` setting (V3 Phase 2).
-    """
+    """List all provisioned tenants (inmobiliarias) with parent_tenant_id for hierarchy. Token never returned."""
     from sqlalchemy import select
-    from app.db.models.tenant import Tenant, TenantSettings
+    from app.db.models.tenant import Tenant
     async with _make_async_session() as db:
         rows = await db.execute(select(Tenant).order_by(Tenant.created_at))
         tenants = rows.scalars().all()
 
-        # Fetch active_router for all tenants in one query (batch, not N+1).
-        if tenants:
-            tenant_ids = [t.id for t in tenants]
-            ar_rows = await db.execute(
-                select(TenantSettings.tenant_id, TenantSettings.value).where(
-                    TenantSettings.tenant_id.in_(tenant_ids),
-                    TenantSettings.key == "active_router",
-                )
-            )
-            active_routers = {row.tenant_id: (row.value or "") for row in ar_rows}
-        else:
-            active_routers = {}
-
         return {
-            "tenants": [
-                _tenant_to_dict(t, active_router=active_routers.get(t.id, ""))
-                for t in tenants
-            ],
+            "tenants": [_tenant_to_dict(t) for t in tenants],
             "total": len(tenants),
         }
 

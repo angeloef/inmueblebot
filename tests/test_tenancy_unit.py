@@ -106,30 +106,7 @@ def test_encryption_fails_closed_without_key(monkeypatch):
     crypto._fernet.cache_clear()
 
 
-# --- active_router resolution (Phase 1.5) -----------------------------------------
-def _resolve_with_settings(monkeypatch, bot_cfg: dict, use_v2_env: bool):
-    import app.agents.prompts as prompts
-    from app.api.routes import webhook
-
-    monkeypatch.setattr(prompts, "_get_cached_bot_settings", lambda: bot_cfg)
-
-    class _S:
-        USE_V2_ROUTER = use_v2_env
-
-    return webhook._resolve_active_router(_S())
-
-
-def test_active_router_explicit_values(monkeypatch):
-    for val in ("v1", "v2", "v3"):
-        assert _resolve_with_settings(monkeypatch, {"active_router": val}, False) == val
-
-
-def test_active_router_backcompat_use_v2(monkeypatch):
-    # No active_router key → fall back to legacy use_v2_router boolean.
-    assert _resolve_with_settings(monkeypatch, {"use_v2_router": "true"}, False) == "v2"
-    assert _resolve_with_settings(monkeypatch, {"use_v2_router": "false"}, True) == "v1"
-
-
-def test_active_router_invalid_value_falls_back(monkeypatch):
-    # Garbage value is ignored → legacy path; env USE_V2_ROUTER=True → v2.
-    assert _resolve_with_settings(monkeypatch, {"active_router": "bogus"}, True) == "v2"
+# --- active_router resolution — v3 is always the default -----------------------------------------
+def test_active_router_always_v3():
+    from app.api.routes.webhook import _resolve_active_router
+    assert _resolve_active_router(None) == "v3"

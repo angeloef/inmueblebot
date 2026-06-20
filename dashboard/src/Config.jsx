@@ -952,14 +952,17 @@ function SectionEquipo() {
 
 const EMPTY_TENANT = { slug: '', display_name: '', company_name: '', business_hours: '', timezone: 'America/Argentina/Cordoba', waba_id: '', phone_number_id: '', wa_access_token: '', plan: '', status: 'active' };
 
-function TenantRow({ t, onEdit, onDelete, busy }) {
+function TenantRow({ t, onEdit, onDelete, busy, isBranch = false }) {
   const waConnected = !!t.phone_number_id;
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, border: '1px solid var(--cfg-line)', borderRadius: 12, padding: '16px 18px', background: 'var(--cfg-card)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, minWidth: 0 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--cfg-nav-act)', color: 'var(--cfg-nav-act-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ICONS.inmobiliaria}</div>
+        <div style={{ width: 38, height: 38, borderRadius: 9, background: isBranch ? 'var(--cfg-card2)' : 'var(--cfg-nav-act)', color: isBranch ? 'var(--cfg-soft)' : 'var(--cfg-nav-act-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ICONS.inmobiliaria}</div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ font: '600 14px/1.3 Inter,sans-serif', color: 'var(--cfg-strong)' }}>{t.display_name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ font: '600 14px/1.3 Inter,sans-serif', color: 'var(--cfg-strong)' }}>{t.display_name}</span>
+            {isBranch && <span style={{ font: '600 10px/1 Inter,sans-serif', color: 'var(--cfg-muted)', background: 'var(--cfg-card2)', border: '1px solid var(--cfg-line)', padding: '2px 6px', borderRadius: 4 }}>sucursal</span>}
+          </div>
           <div style={{ font: '400 12px/1.3 Inter,sans-serif', color: 'var(--cfg-soft)', fontFamily: 'monospace' }}>{t.phone_number_id ?? t.slug}</div>
         </div>
       </div>
@@ -1039,6 +1042,16 @@ function SectionInmobiliarias() {
     catch (err) { pushToast({ text: err?.response?.data?.detail ?? 'No se pudo eliminar.', kind: 'danger' }); }
   };
 
+  // Build hierarchy: roots (no parent) with their branch children
+  const all = tenants ?? [];
+  const roots = all.filter(t => !t.parent_tenant_id);
+  const branchesByParent = all.reduce((acc, t) => {
+    if (t.parent_tenant_id) {
+      (acc[t.parent_tenant_id] ??= []).push(t);
+    }
+    return acc;
+  }, {});
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
@@ -1048,10 +1061,22 @@ function SectionInmobiliarias() {
 
       {isLoading ? <Skeleton /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 24 }}>
-          {(tenants ?? []).map(t => (
+          {roots.length === 0 && <p style={{ color: 'var(--cfg-muted)', font: '400 14px/1.5 Inter,sans-serif' }}>No hay inmobiliarias provisionadas todavía.</p>}
+          {roots.map(root => (
+            <React.Fragment key={root.id}>
+              <TenantRow t={root} onEdit={id => setMode(id)} onDelete={handleDelete} busy={busy} />
+              {(branchesByParent[root.id] ?? []).map(branch => (
+                <div key={branch.id} style={{ paddingLeft: 32, position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: 14, top: 0, bottom: 0, width: 2, background: 'var(--cfg-line)', borderRadius: 1 }} />
+                  <TenantRow t={branch} onEdit={id => setMode(id)} onDelete={handleDelete} busy={busy} isBranch />
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+          {/* orphan branches (parent not in list) shown flat */}
+          {all.filter(t => t.parent_tenant_id && !branchesByParent[t.parent_tenant_id]?.includes(t) && !roots.find(r => r.id === t.parent_tenant_id)).map(t => (
             <TenantRow key={t.id} t={t} onEdit={id => setMode(id)} onDelete={handleDelete} busy={busy} />
           ))}
-          {(tenants ?? []).length === 0 && <p style={{ color: 'var(--cfg-muted)', font: '400 14px/1.5 Inter,sans-serif' }}>No hay inmobiliarias provisionadas todavía.</p>}
         </div>
       )}
 
@@ -1059,7 +1084,7 @@ function SectionInmobiliarias() {
         <TenantForm initial={EMPTY_TENANT} onSubmit={handleCreate} onCancel={() => setMode(null)} busy={busy} isEdit={false} />
       )}
       {mode && mode !== 'create' && (() => {
-        const t = (tenants ?? []).find(x => x.id === mode);
+        const t = all.find(x => x.id === mode);
         if (!t) return null;
         return <TenantForm initial={{ ...EMPTY_TENANT, ...t, wa_access_token: '' }} onSubmit={p => handleUpdate(t.id, p)} onCancel={() => setMode(null)} busy={busy} isEdit />;
       })()}
