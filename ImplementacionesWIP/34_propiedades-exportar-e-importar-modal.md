@@ -1,6 +1,6 @@
 ---
 id: 34_propiedades-exportar-e-importar-modal
-status: in_progress
+status: completed
 priority: P1
 area: Frontend (Properties.jsx)
 files:
@@ -70,3 +70,4 @@ Dos bugs visuales/funcionales en `Properties.jsx` que tocan el mismo archivo:
 ## 7. Bitácora
 
 - 2026-06-20: plan creado. Recon: botón exportar sin handler (línea ~1460), modal usa `.modal-box` (clase inexistente) en lugar de `.modal` (línea ~1265).
+- 2026-06-20: implementado y pusheado. SHA cd5f6a7. Gates: build ✓, modal visual ✓ (DOM confirm: className=modal, bg=white, borderRadius=14px), react-reviewer ✓ (2 findings corregidos: revokeObjectURL defer + body.appendChild). Export E2E bloqueado por bug pre-existente de schema DB (columna ambientes faltante), no por el código.
