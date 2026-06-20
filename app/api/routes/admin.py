@@ -2932,20 +2932,26 @@ async def send_email_to_client(
     - Registra el envío en ``activity_log``.
     """
     from app.core.tenancy import resolve_tenant_id
+    from app.db.models import User
 
     tenant_id = resolve_tenant_id()
 
-    # Validar que el cliente pertenece a este tenant y tiene email
-    row = db.execute(
-        text(
-            "SELECT id, email, name FROM users "
-            "WHERE id = :cid AND tenant_id = :tid"
-        ),
-        {"cid": client_id, "tid": str(tenant_id)},
-    ).fetchone()
-    if row is None:
+    try:
+        uid = _uuid.UUID(client_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="client_id inválido (se espera UUID).",
+        ) from None
+
+    # Validar que el cliente pertenece a este tenant y obtener su email.
+    # El email de los clientes del dashboard vive en extra_data['email'] (JSON),
+    # no en la columna users.email — igual que lee _user_to_dict(). Buscar ahí
+    # primero y caer a la columna por si alguna fila legada la usa.
+    user = db.query(User).filter(User.id == uid, User.tenant_id == tenant_id).first()
+    if user is None:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
-    client_email = row.email if row else None
+    extra = _parse_extra(getattr(user, "extra_data", None))
+    client_email = extra.get("email") or getattr(user, "email", None)
     if not client_email:
         raise HTTPException(status_code=422, detail="El cliente no tiene email registrado.")
 
