@@ -1262,7 +1262,7 @@ function ImportModal({ onClose }) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="import-modal-title"
          onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" ref={trapRef} style={{ maxWidth: 520 }}>
+      <div className="modal" ref={trapRef} style={{ maxWidth: 520 }}>
         <div className="modal-header">
           <h2 id="import-modal-title" style={{ margin: 0, fontSize: 16 }}>Mandanos tu listado de propiedades</h2>
           <IconButton icon="x" aria-label="Cerrar" onClick={onClose} />
@@ -1369,6 +1369,8 @@ function ImportStatusPanel() {
   );
 }
 
+const STATUS_LABEL = { available: 'Disponible', rented: 'Alquilada', sale: 'En venta', reserved: 'Reservada', sold: 'Vendida' };
+
 export default function Properties({ onOpenClient, initialProperty }) {
   const { data: properties = [] } = useProperties();
   const createProperty  = useCreateProperty();
@@ -1448,6 +1450,25 @@ export default function Properties({ onOpenClient, initialProperty }) {
 
   const isEmpty = properties.length === 0;
 
+  const handleExport = () => {
+    const rows = [['Dirección','Barrio','Tipo','Estado','Operación','Precio','Moneda','Habitaciones','m²']];
+    sorted.forEach(p => rows.push([
+      p.addr, p.neigh, p.type ?? '',
+      STATUS_LABEL[p.status] ?? p.status,
+      p.operation === 'rent' ? 'Alquiler' : 'Venta',
+      p.price ?? '', p.currency ?? '',
+      p.rooms ?? '', p.m2 ?? '',
+    ]));
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = 'propiedades.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 100);
+  };
+
   return (
     <div className="page-view">
       <div className="page-h">
@@ -1457,7 +1478,7 @@ export default function Properties({ onOpenClient, initialProperty }) {
         </div>
         {!isEmpty && (
           <div className="page-h-actions">
-            <Button kind="secondary" icon="download">Exportar</Button>
+            <Button kind="secondary" icon="download" onClick={handleExport}>Exportar</Button>
             <Button kind="ghost" icon="upload" onClick={() => setShowImportModal(true)}>Importar listado</Button>
             <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>Agregar propiedad</Button>
           </div>

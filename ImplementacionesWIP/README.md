@@ -41,6 +41,12 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 31 | [`31_avatar-propagacion-y-crop-ui.md`](./31_avatar-propagacion-y-crop-ui.md) | Backend+Frontend | `completed` | — |
 | 32 | [`32_propiedades-sort-by.md`](./32_propiedades-sort-by.md) | Frontend | `completed` | — |
 | 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `completed` | — |
+| 34 | [`34_propiedades-exportar-e-importar-modal.md`](./34_propiedades-exportar-e-importar-modal.md) | Frontend (Properties.jsx) | `pendiente` | — |
+| 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `pendiente` | — |
+| 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `pendiente` | — |
+
+### Lote fixes UI/UX (34–36)
+Bugs detectados en testing: exportar/importar en Propiedades (34), FAQs duplicadas al cargar ejemplos dos veces (35), avatar de perfil requería reload para verse (36). Todos independientes entre sí.
 
 ### Lote de bugs del testing manual #2 (30–33)
 FAQ overlay bloqueante (30), avatar propagado al equipo + mejor crop (31), sort por columna en
