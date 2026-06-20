@@ -445,10 +445,9 @@ function SuggestedFaqsModal({ onClose, defaultOrder, createMut }) {
   const progressPct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="modal-wrap">
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="suggested-title" ref={trapRef}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="suggested-title"
+           ref={trapRef} onClick={e => e.stopPropagation()}>
           <div className="drawer-head" style={{ padding: '14px 20px' }}>
             <h2 id="suggested-title" style={{ margin: 0, fontSize: 15 }}>Ejemplos comunes del rubro</h2>
             <IconButton name="x" title="Cerrar" onClick={onClose} />
@@ -502,9 +501,8 @@ function SuggestedFaqsModal({ onClose, defaultOrder, createMut }) {
               Agregar{selected.size > 0 ? ` ${selected.size} FAQ${selected.size !== 1 ? 's' : ''}` : ''}
             </Button>
           </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
 
