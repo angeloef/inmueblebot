@@ -187,7 +187,7 @@ export default function Login() {
     <div style={S.screen}>
       <form style={S.card} onSubmit={handleSubmit} noValidate>
         <div style={S.brand}>
-          <img src="/logo.svg" alt="ViviendApp" style={S.logo} />
+          <img src="/logo.svg" alt="ViviendApp" style={S.logo} className="brand-logo" />
         </div>
         <h1 style={S.title}>Panel de tu inmobiliaria</h1>
         <p style={S.sub}>Iniciá sesión para gestionar propiedades, clientes y tu bot.</p>

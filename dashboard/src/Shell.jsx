@@ -338,7 +338,7 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
           <Icon name="chevronLeft" size={20} />
         </button>
         <div className="sb-brand">
-          <img src="/logo.svg" alt="InmuebleBot" />
+          <img src="/logo.svg" alt="ViviendApp" />
         </div>
         <nav className="sb-nav" aria-label="Navegación principal">
           <div className="sb-section">Principal</div>
