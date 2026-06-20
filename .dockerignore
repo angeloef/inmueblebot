@@ -28,6 +28,7 @@ Dockerfile
 !requirements.txt
 !pyproject.toml
 credentials/
+!alembic/
 !scripts/
 !app/core/date_parser.py
 !app/utils/date_parser.py
