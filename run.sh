@@ -8,6 +8,6 @@
 set -e
 
 alembic upgrade heads
-python scripts/seed_superadmin.py
+PYTHONPATH=/app python scripts/seed_superadmin.py
 
 exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
