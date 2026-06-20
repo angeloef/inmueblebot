@@ -4,22 +4,21 @@ Corre sin Postgres (lógica pura y ASGI offline).
 """
 from __future__ import annotations
 
+import typing
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
 from app.services.plans import (
     CATALOG,
-    Plan,
-    PlanLimits,
+    Feature,
     get_plan,
     get_plan_or_default,
     list_plans,
 )
 from app.services.subscription_service import subscription_grants_access
-
 
 # ── Catálogo ──────────────────────────────────────────────────────────────────
 
@@ -180,6 +179,29 @@ def test_enterprise_can_access_all():
     plan = CATALOG["enterprise"]
     for feature in ["cobranzas", "exports", "documents", "exec_reports", "multi_branch"]:
         assert plan.includes_feature(feature)  # type: ignore[arg-type]
+
+
+def test_enterprise_has_every_defined_feature():
+    """Enterprise must include ALL features defined in the Feature literal."""
+    all_features = typing.get_args(Feature)
+    plan = CATALOG["enterprise"]
+    missing = [f for f in all_features if not plan.includes_feature(f)]  # type: ignore[arg-type]
+    assert not missing, f"Enterprise missing: {missing}"
+
+
+def test_view_gates_features_unlocked_for_enterprise():
+    """All features referenced in VIEW_GATES must be present in the Enterprise plan."""
+    view_gate_features = ["cobranzas", "website", "documents", "exec_reports"]
+    plan = CATALOG["enterprise"]
+    for feat in view_gate_features:
+        assert plan.includes_feature(feat), f"Enterprise missing VIEW_GATE feature: {feat}"  # type: ignore[arg-type]
+
+
+def test_basico_has_none_of_the_view_gate_features():
+    view_gate_features = ["cobranzas", "website", "documents", "exec_reports"]
+    plan = CATALOG["basico"]
+    for feat in view_gate_features:
+        assert not plan.includes_feature(feat), f"Basico should not have: {feat}"  # type: ignore[arg-type]
 
 
 # ── create_preapproval — no llama a MP, verifica lógica de precio y Enterprise ───

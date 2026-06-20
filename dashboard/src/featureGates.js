@@ -8,12 +8,13 @@ export const VIEW_GATES = {
 };
 
 /**
- * Devuelve true si el account tiene la feature.
+ * Devuelve true si el account (objeto /me) tiene la feature.
  * Fail-closed: sin account o sin features → false.
  */
 export function hasFeature(account, feature) {
   if (!account) return false;
-  const features = account.features ?? [];
+  // ponytail: features viven en me.subscription.features, no en me.features
+  const features = account.subscription?.features ?? [];
   return Array.isArray(features) && features.includes(feature);
 }
 

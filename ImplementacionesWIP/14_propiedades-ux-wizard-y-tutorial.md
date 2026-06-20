@@ -1,7 +1,7 @@
 ---
 id: 14
 title: "Propiedades — rediseño UX: wizard por pasos, tips permanentes y tutorial en 0 propiedades"
-status: in_progress
+status: completed
 priority: medium
 area: frontend
 files:

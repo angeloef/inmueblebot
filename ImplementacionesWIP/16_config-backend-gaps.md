@@ -1,7 +1,7 @@
 ---
 id: 16
 title: "Configuración — huecos de backend que el nuevo layout necesita"
-status: pending
+status: completed
 priority: high
 area: backend
 files:

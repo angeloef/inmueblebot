@@ -1,7 +1,7 @@
 ---
 id: 17
 title: "Configuración — reconstruir la UI con el layout del handoff (rail de 8 secciones)"
-status: pending
+status: completed
 priority: high
 area: frontend
 files:
