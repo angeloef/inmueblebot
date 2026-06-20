@@ -28,15 +28,15 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 18 | [`18_facturacion-seguridad-checkout.md`](./18_facturacion-seguridad-checkout.md) | Backend+Frontend | `completed` | — **(CRÍTICO)** |
 | 19 | [`19_facturacion-historial-y-uso.md`](./19_facturacion-historial-y-uso.md) | Backend+Frontend | `completed` | 18 |
 | 20 | [`20_hablar-con-ventas-enterprise.md`](./20_hablar-con-ventas-enterprise.md) | Backend+Frontend | `completed` | — |
-| 21 | [`21_fixes-visuales-darkmode-y-modal.md`](./21_fixes-visuales-darkmode-y-modal.md) | Frontend | `pending` | — |
-| 22 | [`22_gating-candado-enterprise-audit.md`](./22_gating-candado-enterprise-audit.md) | Frontend+Backend | `pending` | — |
-| 23 | [`23_config-cleanup-sistema-y-equipo.md`](./23_config-cleanup-sistema-y-equipo.md) | Frontend+Backend | `pending` | — |
-| 24 | [`24_inmobiliarias-sucursales-unificadas.md`](./24_inmobiliarias-sucursales-unificadas.md) | Frontend+Backend | `pending` | — |
+| 21 | [`21_fixes-visuales-darkmode-y-modal.md`](./21_fixes-visuales-darkmode-y-modal.md) | Frontend | `completed` | — |
+| 22 | [`22_gating-candado-enterprise-audit.md`](./22_gating-candado-enterprise-audit.md) | Frontend+Backend | `completed` | — |
+| 23 | [`23_config-cleanup-sistema-y-equipo.md`](./23_config-cleanup-sistema-y-equipo.md) | Frontend+Backend | `completed` | — |
+| 24 | [`24_inmobiliarias-sucursales-unificadas.md`](./24_inmobiliarias-sucursales-unificadas.md) | Frontend+Backend | `completed` | — |
 | 25 | [`25_branding-logo-viviendapp.md`](./25_branding-logo-viviendapp.md) | Frontend | `completed` | — |
 | 26 | [`26_perfil-avatar-foto-crop.md`](./26_perfil-avatar-foto-crop.md) | Backend+Frontend | `completed` | 16 |
 | 27 | [`27_borrar-cuenta-2fa-email.md`](./27_borrar-cuenta-2fa-email.md) | Backend+Frontend | `completed` | — |
 | 28 | [`28_ambientes-vs-habitaciones-monoambiente.md`](./28_ambientes-vs-habitaciones-monoambiente.md) | Backend+Frontend+Bot | `completed` | — |
-| 29 | [`29_propiedades-agente-asignado-cleanup.md`](./29_propiedades-agente-asignado-cleanup.md) | Frontend+Backend | `pending` | — |
+| 29 | [`29_propiedades-agente-asignado-cleanup.md`](./29_propiedades-agente-asignado-cleanup.md) | Frontend+Backend | `completed` | — |
 
 ### Lote de bugs del testing manual (18–29)
 Agrupados por área para distintas sesiones del loop. **Prioridad:** 18 (seguridad de cobro) primero.

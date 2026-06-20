@@ -62,6 +62,10 @@ runner, al terminar un plan ofrecé continuar con el siguiente.
 - Implementá tarea por tarea, marcando TodoWrite. Seguí las reglas de estilo ECC
   (React/TS/Python). Inmutabilidad, sin `console.log`/`print`, props tipadas.
 - Si el plan sugiere refactor compartido (01↔02: `LinkClientProperty`), hacelo una vez.
+- **OBLIGATORIO — `/ponytail full`**: al terminar de implementar (antes de los gates),
+  ejecutá el comando del plugin **`/ponytail full`** sobre los cambios para optimizar el
+  código. Aplicá lo que recomiende (dentro del scope del plan) y registrá en la Bitácora
+  que se corrió. Esto rige para TODOS los planes de ahora en adelante.
 
 ### 5. VERIFY — quality gates (orden estricto, todo en local primero)
 Definición de "done" (basada en elite implementations; ejecutar **en este orden**):
@@ -74,13 +78,13 @@ Definición de "done" (basada en elite implementations; ejecutar **en este orden
 3. **Build + run local en Docker** (mantener el contenedor vivo entre iteraciones)
    - Levantar/usar `docker-compose` para servir API + dashboard.
    - Healthcheck antes de seguir (esperar cold start si aplica).
-4. **Verificación UX con Chrome MCP** (gold standard para los planes de frontend)
-   - Con las tools `mcp__Claude_in_Chrome__*`: navegar al dashboard local, ejecutar
-     el flujo del plan (p. ej. abrir cliente → vincular propiedad → verla listada),
-     **capturar screenshot**, leer la consola (`read_console_messages`) y la red.
-   - Criterio: cero errores en consola, el flujo funciona, y el resultado visual
-     cumple el estándar (estados vacío/cargando/error, foco, teclado, responsive).
-     Iterar sobre la UI hasta que quede "perfecta" dentro del budget.
+4. **Verificación UX con Chrome MCP + Playwright sobre el Docker local** (gold standard, OBLIGATORIO para todo cambio visual)
+   - Levantá el dashboard en **Docker local** (gate 3) y testealo con **Chrome MCP/Playwright**
+     (`mcp__Claude_in_Chrome__*`): navegá el flujo del plan, **capturá screenshot**, leé la
+     consola (`read_console_messages`) y la red. Probá **light Y dark mode** cuando aplique.
+   - Criterio: cero errores en consola, el flujo funciona, y el resultado visual cumple el
+     estándar (estados vacío/cargando/error, foco, teclado, responsive). Iterá hasta que quede
+     "perfecto" dentro del budget. **Ningún cambio visual se marca done sin esta verificación.**
 5. **Review por subagente** sobre el diff (`git diff`)
    - Frontend → **react-reviewer**. Backend/datos → **security-reviewer** (PII,
      tenant-scoping/RLS, sin secretos). Resolver findings antes de cerrar.

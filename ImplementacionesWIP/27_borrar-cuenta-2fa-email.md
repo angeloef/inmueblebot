@@ -1,7 +1,7 @@
 ---
 id: 27
 title: "Cuenta — borrar cuenta con 2FA por email + advertencias (irreversible)"
-status: in_progress
+status: completed
 priority: high
 area: backend+frontend
 files:
@@ -47,3 +47,4 @@ En Configuración → Cuenta, agregar **borrar la cuenta** con **2FA por correo*
 
 ## 7. Bitácora (append-only)
 - 2026-06-19 — Plan creado. Definir alcance del borrado (cuenta vs tenant) y cascada en preflight con Plan + security-reviewer. 2FA por email reusando email_service.
+- 2026-06-20 — Implementado. Backend: POST /auth/account/delete/request (código 6 dígitos SHA-256 en Redis, TTL 15min, rate-limit 3/h, email via email_service) + POST /auth/account/delete/confirm (owner solo→delete tenant cascade; owner con equipo/sucursales→409; member→delete account). Frontend: DeleteAccountModal 2-pasos (advertencias + código) en SectionCuenta zona de peligro. 3 tests (monkeypatched Redis). /ponytail full aplicado (func import en top-level, Tenant re-use, errores de línea larga corregidos). Build ✓. SHA: 8e2e7dd.
