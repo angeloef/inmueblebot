@@ -8,6 +8,7 @@ import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import decode_token
@@ -19,7 +20,7 @@ from app.core.tenancy import (
 )
 from app.db.models import Subscription, TenantAccount
 from app.db.session import async_session_factory
-from app.services.plans import Feature, TierName, get_plan_or_default
+from app.services.plans import Feature, Plan, TierName, get_plan_or_default
 from app.services.subscription_service import subscription_grants_access
 
 # Cookie httpOnly que setea /auth/* y lee el dashboard Vite (mismo origen vía el
@@ -285,3 +286,46 @@ def require_plan(  # noqa: ANN201
         return account
 
     return _checker
+
+
+# ── Límites cuantitativos por plan (plan 41) ────────────────────────────────────
+
+def enforce_resource_limit(resource: str, current: int, plan: Plan) -> None:
+    """Lanza 402 ``reason:limit`` si ``current`` ya alcanzó el límite del plan.
+
+    ``limit is None`` = ilimitado (Pro/Enterprise). El chequeo es ``>=`` para
+    bloquear el alta que excedería el tope (pre-inserción: current = conteo actual).
+    Función pura para testear el borde sin tocar la DB.
+    """
+    limit = getattr(plan.limits, resource)
+    if limit is not None and current >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "reason": "limit",
+                "resource": resource,
+                "limit": limit,
+                "current": current,
+                "current_tier": plan.name,
+                "message": f"Alcanzaste el límite de {limit} de tu plan.",
+            },
+        )
+
+
+async def get_account_plan(account: TenantAccount) -> Plan:
+    """Resuelve el Plan del tenant (suscripción global, sin RLS)."""
+    billing_tenant = getattr(account, "billing_tenant_id", account.tenant_id)
+    async with async_session_factory() as session:
+        sub = await session.scalar(
+            select(Subscription).where(Subscription.tenant_id == billing_tenant)
+        )
+    return get_plan_or_default(sub.plan if sub else None)
+
+
+def get_account_plan_sync(db: Session, account: TenantAccount) -> Plan:
+    """Variante sync para rutas sync (usa la Session ya abierta)."""
+    billing_tenant = getattr(account, "billing_tenant_id", account.tenant_id)
+    sub = db.scalar(
+        select(Subscription).where(Subscription.tenant_id == billing_tenant)
+    )
+    return get_plan_or_default(sub.plan if sub else None)

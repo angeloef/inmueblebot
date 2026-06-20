@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
-from app.api.deps import get_current_account
+from app.api.deps import enforce_resource_limit, get_account_plan, get_current_account
 from app.api.routes.auth import (
     TokenResponse,
     _set_auth_cookies,
@@ -88,6 +88,9 @@ async def invite_member(
     account: TenantAccount = Depends(get_current_account),  # noqa: B008
 ) -> TeamMemberOut:
     _require_admin(account)
+    plan = await get_account_plan(account)
+    current = await team_service.count_users(account.tenant_id)
+    enforce_resource_limit("users", current, plan)
     try:
         member = await team_service.invite_member(
             account.tenant_id, account.id, req.email, req.name,

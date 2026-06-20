@@ -44,6 +44,22 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 34 | [`34_propiedades-exportar-e-importar-modal.md`](./34_propiedades-exportar-e-importar-modal.md) | Frontend (Properties.jsx) | `completed` | — |
 | 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `completed` | — |
 | 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `completed` | — |
+| 37 | [`37_clientes-boton-editar-claro.md`](./37_clientes-boton-editar-claro.md) | Frontend (Clients.jsx) | `pending` | — |
+| 38 | [`38_fix-envio-correo-cliente-con-email.md`](./38_fix-envio-correo-cliente-con-email.md) | Backend + Frontend | `pending` | relac. 12 |
+| 39 | [`39_upsell-feature-preview-secciones-bloqueadas.md`](./39_upsell-feature-preview-secciones-bloqueadas.md) | Frontend (gating) | `pending` | relac. 10/22 |
+| 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `pending` | — |
+| 41 | [`41_enforcement-limites-plan-backend.md`](./41_enforcement-limites-plan-backend.md) | Backend | `completed` | **P0** — relac. 08/09 |
+
+### Lote testing manual #3 (37–41)
+Bugs/gaps detectados en testing manual sobre features ya marcadas `completed`:
+**41 (P0)** los límites cuantitativos de plan no se aplican (`plans.py` los define, nadie los
+enforce → Básico carga >50 propiedades e invita equipo sin tope) — bloqueo duro + 402/UpgradeModal;
+**38 (P1)** enviar correo a un cliente con email da 422 "no tiene email" (bug aguas arriba del
+endpoint, no en el 422); **40 (P1)** miniaturas de propiedades se sirven en nativa — generar WebP
+escalado al subir y servir nativa solo al editar; **39 (P2)** secciones bloqueadas solo muestran
+popup — agregar página de preview genérica con problema/funciones/CTA upgrade; **37 (P2)** botón
+"editar cliente" es icon-only poco claro. Orden sugerido: **41 → 38 → 40 → 39 → 37**.
+Todos corren `/ponytail full` + verificación Chrome MCP/Playwright en Docker (light+dark).
 
 ### Lote fixes UI/UX (34–36)
 Bugs detectados en testing: exportar/importar en Propiedades (34), FAQs duplicadas al cargar ejemplos dos veces (35), avatar de perfil requería reload para verse (36). Todos independientes entre sí.

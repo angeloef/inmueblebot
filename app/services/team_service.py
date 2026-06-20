@@ -49,6 +49,30 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def count_users(tenant_id: object) -> int:
+    """Cuenta usuarios del org para el límite de plan: cuentas reales (owner/admins)
+    + invitaciones pendientes sin cuenta. Los miembros aceptados tienen ``account_id``
+    y ya están contados como TenantAccount, así que solo sumamos invitaciones abiertas.
+    """
+    from sqlalchemy import func
+
+    async with async_session_factory() as session:
+        accounts = await session.scalar(
+            select(func.count())
+            .select_from(TenantAccount)
+            .where(TenantAccount.tenant_id == tenant_id)
+        ) or 0
+        pending_invites = await session.scalar(
+            select(func.count())
+            .select_from(TenantMember)
+            .where(
+                (TenantMember.tenant_id == tenant_id)
+                & (TenantMember.account_id.is_(None))
+            )
+        ) or 0
+    return accounts + pending_invites
+
+
 async def invite_member(
     tenant_id: object,
     invited_by_account_id: object,

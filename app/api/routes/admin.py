@@ -958,10 +958,20 @@ def get_property_image(
 def create_property(
     data: PropertyCreate,
     db: Session = Depends(get_db),
+    account: TenantAccount = Depends(get_current_account),
     _: bool = Depends(require_active_subscription),
 ):
+    from sqlalchemy import func, select
+
+    from app.api.deps import enforce_resource_limit, get_account_plan_sync
     from app.core.tenancy import resolve_tenant_id
     from app.db.models import Property
+
+    # Límite de plan: contar propiedades del tenant (RLS-scoped) antes de insertar.
+    plan = get_account_plan_sync(db, account)
+    current = db.scalar(select(func.count()).select_from(Property)) or 0
+    enforce_resource_limit("properties", current, plan)
+
     op = data.operation if data.operation in ("venta", "alquiler") else "venta"
 
     # Build location string — include city suffix if city was provided

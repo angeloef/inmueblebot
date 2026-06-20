@@ -224,3 +224,57 @@ def test_unknown_plan_falls_back_to_profesional_in_catalog():
     plan = get_plan_or_default("garbage_plan")
     assert plan.name == "profesional"
     assert plan.price_ars_monthly == 84_900.0
+
+
+# ── Límites cuantitativos por plan (plan 41) ────────────────────────────────────
+
+
+def test_enforce_resource_limit_unlimited_never_blocks():
+    """limit None (Pro/Enterprise) → nunca bloquea, por alto que sea el conteo."""
+    from app.api.deps import enforce_resource_limit
+
+    enforce_resource_limit("properties", 9999, CATALOG["profesional"])
+    enforce_resource_limit("users", 9999, CATALOG["enterprise"])
+
+
+def test_enforce_resource_limit_below_limit_passes():
+    from app.api.deps import enforce_resource_limit
+
+    enforce_resource_limit("properties", 49, CATALOG["basico"])  # 49 < 50
+
+
+def test_enforce_resource_limit_at_border_blocks():
+    """current == limit ya bloquea (el alta nº51 con 50 existentes)."""
+    from fastapi import HTTPException
+
+    from app.api.deps import enforce_resource_limit
+
+    with pytest.raises(HTTPException) as exc:
+        enforce_resource_limit("properties", 50, CATALOG["basico"])
+    assert exc.value.status_code == 402
+    assert exc.value.detail["reason"] == "limit"
+    assert exc.value.detail["resource"] == "properties"
+    assert exc.value.detail["limit"] == 50
+    assert exc.value.detail["current"] == 50
+    assert exc.value.detail["current_tier"] == "basico"
+
+
+def test_enforce_resource_limit_users_basico_blocks_second():
+    from fastapi import HTTPException
+
+    from app.api.deps import enforce_resource_limit
+
+    with pytest.raises(HTTPException) as exc:
+        enforce_resource_limit("users", 1, CATALOG["basico"])  # users=1
+    assert exc.value.detail["reason"] == "limit"
+    assert exc.value.detail["resource"] == "users"
+
+
+def test_enforce_resource_limit_exceeded_blocks():
+    """Cuenta ya excedida (60/50) sigue bloqueando altas nuevas, no rompe."""
+    from fastapi import HTTPException
+
+    from app.api.deps import enforce_resource_limit
+
+    with pytest.raises(HTTPException):
+        enforce_resource_limit("properties", 60, CATALOG["basico"])
