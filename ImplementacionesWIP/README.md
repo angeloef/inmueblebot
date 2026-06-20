@@ -40,7 +40,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 30 | [`30_faq-ejemplos-overlay-bloqueante.md`](./30_faq-ejemplos-overlay-bloqueante.md) | Frontend | `completed` | — |
 | 31 | [`31_avatar-propagacion-y-crop-ui.md`](./31_avatar-propagacion-y-crop-ui.md) | Backend+Frontend | `completed` | — |
 | 32 | [`32_propiedades-sort-by.md`](./32_propiedades-sort-by.md) | Frontend | `completed` | — |
-| 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `pending` | — |
+| 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `completed` | — |
 
 ### Lote de bugs del testing manual #2 (30–33)
 FAQ overlay bloqueante (30), avatar propagado al equipo + mejor crop (31), sort por columna en
