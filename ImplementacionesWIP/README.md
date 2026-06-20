@@ -44,7 +44,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 34 | [`34_propiedades-exportar-e-importar-modal.md`](./34_propiedades-exportar-e-importar-modal.md) | Frontend (Properties.jsx) | `completed` | — |
 | 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `completed` | — |
 | 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `completed` | — |
-| 37 | [`37_clientes-boton-editar-claro.md`](./37_clientes-boton-editar-claro.md) | Frontend (Clients.jsx) | `pending` | — |
+| 37 | [`37_clientes-boton-editar-claro.md`](./37_clientes-boton-editar-claro.md) | Frontend (Clients.jsx) | `completed` | — |
 | 38 | [`38_fix-envio-correo-cliente-con-email.md`](./38_fix-envio-correo-cliente-con-email.md) | Backend + Frontend | `pending` | relac. 12 |
 | 39 | [`39_upsell-feature-preview-secciones-bloqueadas.md`](./39_upsell-feature-preview-secciones-bloqueadas.md) | Frontend (gating) | `pending` | relac. 10/22 |
 | 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `pending` | — |

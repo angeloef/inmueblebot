@@ -193,7 +193,7 @@ function ClientDrawer({ client, onClose, onEdit, onDelete, onOpenProperty, onOpe
       <div className="drawer wide" role="dialog" aria-modal="true" aria-labelledby="client-drawer-title" ref={trapRef}>
         <div className="drawer-head" style={{padding:0,display:'block',borderBottom:'none'}}>
           <div style={{display:'flex',padding:'12px 16px 0',justifyContent:'flex-end',gap:4,alignItems:'center'}}>
-            <IconButton name="edit" title="Editar cliente" onClick={() => onEdit && onEdit(client)} />
+            <Button kind="secondary" size="sm" icon="edit" onClick={() => onEdit && onEdit(client)}>Editar</Button>
             {confirmDelete
               ? <span style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--danger-600)'}}>
                   ¿Eliminar?
