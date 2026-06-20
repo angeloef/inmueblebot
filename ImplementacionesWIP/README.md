@@ -47,7 +47,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 37 | [`37_clientes-boton-editar-claro.md`](./37_clientes-boton-editar-claro.md) | Frontend (Clients.jsx) | `completed` | — |
 | 38 | [`38_fix-envio-correo-cliente-con-email.md`](./38_fix-envio-correo-cliente-con-email.md) | Backend + Frontend | `completed` | relac. 12 |
 | 39 | [`39_upsell-feature-preview-secciones-bloqueadas.md`](./39_upsell-feature-preview-secciones-bloqueadas.md) | Frontend (gating) | `completed` | relac. 10/22 |
-| 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `pending` | — |
+| 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `completed` | — |
 | 41 | [`41_enforcement-limites-plan-backend.md`](./41_enforcement-limites-plan-backend.md) | Backend | `completed` | **P0** — relac. 08/09 |
 
 ### Lote testing manual #3 (37–41)

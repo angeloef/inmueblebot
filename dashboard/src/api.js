@@ -109,9 +109,10 @@ export const authApi = {
  * @param {string|number} ver image_ver para cache-busting
  * @returns {string}
  */
-export function propertyImageUrl(id, index = 0, ver = '') {
+export function propertyImageUrl(id, index = 0, ver = '', size = '') {
   const params = new URLSearchParams();
   if (ver) params.set('v', String(ver));
+  if (size && size !== 'full') params.set('size', size);
   const qs = params.toString();
   return `${API_BASE}/admin/properties/${id}/image/${index}${qs ? `?${qs}` : ''}`;
 }
@@ -287,7 +288,11 @@ function toProperty(p) {
     : [];
 
   const images = inlineImages.length > 0 ? inlineImages : lazyImages;
-  const photo  = images[0] ?? '';
+  // Portada de la grilla: miniatura WebP liviana (size=thumb) cuando la imagen se
+  // sirve diferida; el drawer/edición sigue usando `images` en resolución nativa.
+  const photo  = (inlineImages.length === 0 && imageCount > 0)
+    ? propertyImageUrl(p.id, 0, imageVer, 'thumb')
+    : (images[0] ?? '');
   return {
     id:        String(p.id),
     addr:      p.location ?? p.address ?? '',

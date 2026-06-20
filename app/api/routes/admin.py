@@ -909,16 +909,55 @@ async def city_autocomplete(
     return {"suggestions": suggestions}
 
 
+_THUMB_MAX_SIDE = 400  # px del lado mayor de la miniatura de la grilla
+_THUMB_QUALITY = 80
+
+
+def make_webp_thumb(
+    img_bytes: bytes,
+    max_side: int = _THUMB_MAX_SIDE,
+    quality: int = _THUMB_QUALITY,
+) -> bytes:
+    """Escala una imagen al lado mayor `max_side` (sin agrandar) y la devuelve en WebP.
+
+    Preserva el aspect ratio. Pensado para la grilla de Propiedades: mucho más
+    liviano que servir la nativa. Lanza ValueError si los bytes no son una imagen.
+    """
+    import io
+
+    from PIL import Image
+
+    try:
+        img = Image.open(io.BytesIO(img_bytes))
+        img.load()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("invalid image") from exc
+
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    img.thumbnail((max_side, max_side))  # in-place, mantiene aspect ratio, no agranda
+
+    out = io.BytesIO()
+    img.save(out, format="WEBP", quality=quality, method=4)
+    return out.getvalue()
+
+
 @router.get("/properties/{prop_id}/image/{index}")
 def get_property_image(
     prop_id: int,
     index: int,
+    size: str = "full",
     db: Session = Depends(get_db),
     _: object = Depends(require_active_subscription),
 ):
     """Devuelve los bytes de una imagen (decodificada de base64) como recurso HTTP
     cacheable independiente. Permite que el navegador cargue las fotos en paralelo,
-    de forma diferida (loading=lazy) y las guarde en caché entre recargas."""
+    de forma diferida (loading=lazy) y las guarde en caché entre recargas.
+
+    ``?size=thumb`` devuelve una miniatura WebP escalada (~400px, generada al vuelo)
+    para la grilla; el default ``full`` sirve la nativa (detalle/edición). Como la
+    URL incluye ``?v=image_ver`` y la respuesta es immutable, cada tamaño se cachea
+    una sola vez por versión en el navegador (no se regenera por request)."""
     import base64
     import re
 
@@ -930,7 +969,7 @@ def get_property_image(
         raise HTTPException(status_code=404, detail="Image not found")
 
     raw = imgs[index]
-    # URLs externas (S3, etc.): redirigir en vez de proxear.
+    # URLs externas (S3, etc.): redirigir en vez de proxear (no se generan thumbs).
     if raw.startswith("http://") or raw.startswith("https://"):
         return RedirectResponse(raw)
 
@@ -944,6 +983,14 @@ def get_property_image(
         img_bytes = base64.b64decode(b64)
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid image data")
+
+    # Miniatura WebP para la grilla; si falla la conversión, caer a la nativa (sin 404).
+    if size == "thumb":
+        try:
+            img_bytes = make_webp_thumb(img_bytes)
+            content_type = "image/webp"
+        except ValueError:
+            pass  # imagen rara → servir la nativa como fallback
 
     # Cacheable e inmutable: la URL incluye ?v=<image_ver>, así que un cambio de
     # imagen produce una URL nueva y nunca se sirve una versión vieja.
