@@ -200,7 +200,6 @@ function PropertyDrawer({ property, onClose, onOpenClient, onAgenda, onEdit, onD
               <dt>Dirección</dt><dd>{property.addr}, {property.neigh}</dd>
               <dt>Tipo</dt><dd>{property.type}</dd>
               <dt>Operación</dt><dd>{property.operation === 'rent' ? 'Alquiler' : 'Venta'}</dd>
-              <dt>Agente</dt><dd>{property.agent}</dd>
               <dt>Código interno</dt><dd className="tabular">IB-{property.id.toUpperCase()}</dd>
             </dl>
           </div>
@@ -738,7 +737,6 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
         parking:   initialData.parking   ?? 0,
         price:     initialData.price     != null ? String(initialData.price) : '',
         currency:  initialData.currency  || 'ARS',
-        agent:     initialData.agent     || 'M. Pereyra',
         desc:      initialData.desc || initialData.notes || '',
         notes:     initialData.notes     || '',
         photos:    [],
@@ -749,7 +747,7 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
     return {
       addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
       rooms: '2 amb', ambientes: 2, dormitorios: 1, m2: '', baths: 1, parking: 0,
-      price: '', currency: 'ARS', agent: 'M. Pereyra',
+      price: '', currency: 'ARS',
       desc: '', notes: '', photos: [], refs: [], place_id: '',
     };
   });
@@ -837,7 +835,6 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
         parking:   Number(form.parking) || 0,
         price:     Number(form.price) || 0,
         currency:  form.currency,
-        agent:     form.agent,
         notes:     form.desc || form.notes,
         photo,
         images:    allImages,
@@ -1040,15 +1037,6 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
                   </div>
                 </div>
                 <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="pw-agent">Agente asignado</label>
-                    <select id="pw-agent" value={form.agent} onChange={e => set('agent', e.target.value)}>
-                      <option>M. Pereyra</option>
-                      <option>J. Suárez</option>
-                      <option>L. Ferreyra</option>
-                      <option>D. Ramírez</option>
-                    </select>
-                  </div>
                   <div className="field">
                     <label>Código interno</label>
                     <input placeholder="Se genera automáticamente" disabled />
@@ -1479,7 +1467,6 @@ export default function Properties({ onOpenClient, initialProperty }) {
                 <th>Estado</th>
                 <th className="props-col-op">Operación</th>
                 <th style={{textAlign:'right'}}>Precio</th>
-                <th className="props-col-agent">Agente</th>
                 <th></th>
               </tr></thead>
               <tbody>
@@ -1511,7 +1498,6 @@ export default function Properties({ onOpenClient, initialProperty }) {
                       {fmtCurrency(p.price, p.currency)}
                       {p.operation === 'rent' && p.status !== 'sale' && <span className="muted" style={{fontWeight:400}}> /mes</span>}
                     </td>
-                    <td className="muted props-col-agent">{p.agent}</td>
                     <td><div className="row-actions" onClick={e => e.stopPropagation()}>
                       <IconButton name="edit" aria-label="Editar propiedad" onClick={() => setEditing(p)} />
                       <IconButton name="trash" aria-label="Eliminar propiedad" onClick={() => setDeleteTarget(p)} />
