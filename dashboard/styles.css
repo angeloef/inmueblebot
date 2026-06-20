@@ -45,6 +45,18 @@ input, select, textarea { font-family: inherit; }
 .feature-lock__icon { font-size: 40px; }
 .feature-lock__title { font-size: 18px; font-weight: 600; color: var(--fg-primary); margin: 0; }
 .feature-lock__desc { font-size: 14px; margin: 0; max-width: 320px; }
+
+/* ───── Feature preview (upsell page, plan 39) ───── */
+.feat-preview { display: flex; align-items: center; justify-content: center; min-height: 60vh; padding: 48px 24px; }
+.feat-preview__card { width: 100%; max-width: 560px; background: var(--surface-raised); border: 1px solid var(--border-default); border-radius: 16px; padding: 40px; box-shadow: var(--shadow-md); }
+.feat-preview__badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent-600); background: var(--accent-50, var(--bg-hover)); border: 1px solid var(--border-subtle); border-radius: 999px; padding: 4px 11px; margin-bottom: 16px; }
+.feat-preview__badge svg { width: 13px; height: 13px; }
+.feat-preview__title { font-size: 26px; font-weight: 700; line-height: 1.15; color: var(--fg-primary); margin: 0 0 10px; }
+.feat-preview__lede { font-size: 15px; line-height: 1.5; color: var(--fg-secondary); margin: 0 0 24px; }
+.feat-preview__list { list-style: none; margin: 0 0 28px; padding: 0; display: grid; gap: 12px; }
+.feat-preview__item { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.4; color: var(--fg-primary); }
+.feat-preview__item svg { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; color: var(--accent-500); }
+.feat-preview__cta { width: 100%; justify-content: center; font-size: 14px; padding: 11px; }
 .sb-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 10px; padding: 10px 8px; }
 .sb-bottom .av { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-500); color: var(--fg-inverse); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
 .sb-bottom .who { font-size: 12px; line-height: 1.3; }

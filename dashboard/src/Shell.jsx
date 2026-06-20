@@ -3,7 +3,7 @@ import { Icon, Button, IconButton, pushToast } from './Primitives';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead, useDeleteNotification, useDeleteReadNotifications, useCreateErrorReport, useBillingStatus } from './api';
 import { useAuth } from './auth';
 import { useFocusTrap } from './useFocusTrap';
-import { VIEW_GATES, hasFeature, dispatchUpgradeEvent } from './featureGates';
+import { VIEW_GATES, hasFeature } from './featureGates';
 
 // Contexto útil para el dev, sin datos sensibles (sin tokens/cookies). El backend
 // igualmente redacta credenciales antes de persistir.
@@ -335,12 +335,9 @@ export function Sidebar({ active, onNav, isOpen, onClose, account }) {
   ];
 
   const handleNav = (id) => {
-    const gate = VIEW_GATES[id];
-    if (gate && !hasFeature(account, gate.feature)) {
-      dispatchUpgradeEvent(gate.feature, gate.required);
-      if (onClose) onClose();
-      return;
-    }
+    // Las vistas gateadas ahora navegan a su página de preview (plan 39) en vez de
+    // hacer dead-end con el modal. App renderiza <FeaturePreview> (no la feature real)
+    // mientras el account no tenga la feature → sin bypass (plan 10 intacto).
     onNav(id);
     if (onClose) onClose();
   };

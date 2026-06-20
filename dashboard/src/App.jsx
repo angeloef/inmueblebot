@@ -25,10 +25,10 @@ PATH_TO_VIEW['/dashboard'] = 'dashboard';
 PATH_TO_VIEW['/'] = 'dashboard';
 
 import { Sidebar, Topbar, TrialBanner, UpgradeModal } from './Shell';
-import { VIEW_GATES, hasFeature, dispatchUpgradeEvent } from './featureGates';
+import { VIEW_GATES, FEATURE_PREVIEWS, hasFeature, dispatchUpgradeEvent } from './featureGates';
 import { useAuth } from './auth';
 import { useTheme } from './useTheme';
-import { ToastStack, pushToast } from './Primitives';
+import { ToastStack, pushToast, Icon } from './Primitives';
 import { EventPopover } from './EventPopover';
 import { useUpdateEvent, useDeleteEvent } from './api';
 import Dashboard from './Dashboard';
@@ -46,26 +46,47 @@ import Consolidated from './Consolidated';
 import DocumentsView from './DocumentsView';
 import Reportes from './Reportes';
 
-// ── Feature lock placeholder (guard de ruta) ─────────────────────────────────
-function FeatureLock({ gate, onGoToPlans }) {
+// ── Feature preview (guard de ruta + upsell, plan 39) ────────────────────────
+// Página real que reemplaza el dead-end: explica qué resuelve la sección y lleva
+// a planes/ventas. NO monta la feature real → no reintroduce el bypass del plan 10.
+// Genérica: el contenido por feature vive en FEATURE_PREVIEWS (featureGates.js).
+function FeaturePreview({ gate, onGoToPlans }) {
+  const preview = FEATURE_PREVIEWS[gate.feature];
+  const isEnterprise = gate.required === 'enterprise';
+  const ctaLabel = isEnterprise ? 'Hablar con ventas' : 'Ver planes';
+  const title = preview?.title ?? 'Función de plan superior';
+
   return (
-    <div className="feature-lock">
-      <span className="feature-lock__icon" aria-hidden="true">🔒</span>
-      <h2 className="feature-lock__title">Función no disponible en tu plan</h2>
-      <p className="feature-lock__desc">
-        Esta sección requiere el plan <strong>{gate.required}</strong> o superior.
-      </p>
-      <button
-        type="button"
-        className="btn btn--primary btn--sm"
-        onClick={() => {
-          dispatchUpgradeEvent(gate.feature, gate.required);
-          onGoToPlans();
-        }}
-      >
-        Ver planes
-      </button>
-    </div>
+    <section className="feat-preview" aria-labelledby="feat-preview-title">
+      <div className="feat-preview__card">
+        <span className="feat-preview__badge">
+          <Icon name="lock" size={13} aria-hidden="true" />
+          Disponible en plan {gate.required}
+        </span>
+        <h1 id="feat-preview-title" className="feat-preview__title">{title}</h1>
+        {preview?.problem && <p className="feat-preview__lede">{preview.problem}</p>}
+        {preview?.bullets?.length > 0 && (
+          <ul className="feat-preview__list">
+            {preview.bullets.map((b) => (
+              <li key={b} className="feat-preview__item">
+                <Icon name="check" size={16} aria-hidden="true" />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary feat-preview__cta"
+          onClick={() => {
+            if (!isEnterprise) dispatchUpgradeEvent(gate.feature, gate.required);
+            onGoToPlans();
+          }}
+        >
+          {ctaLabel}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -251,13 +272,13 @@ export default function App() {
           {active === 'cobranzas' && (
             hasFeature(me, VIEW_GATES.cobranzas.feature)
               ? <Cobranzas />
-              : <FeatureLock gate={VIEW_GATES.cobranzas} onGoToPlans={goToPlans} />
+              : <FeaturePreview gate={VIEW_GATES.cobranzas} onGoToPlans={goToPlans} />
           )}
 
           {active === 'website' && (
             hasFeature(me, VIEW_GATES.website.feature)
               ? <Website />
-              : <FeatureLock gate={VIEW_GATES.website} onGoToPlans={goToPlans} />
+              : <FeaturePreview gate={VIEW_GATES.website} onGoToPlans={goToPlans} />
           )}
 
           {active === 'faqs' && <FAQs />}
@@ -267,7 +288,7 @@ export default function App() {
           {active === 'documents' && (
             hasFeature(me, VIEW_GATES.documents.feature)
               ? <DocumentsView />
-              : <FeatureLock gate={VIEW_GATES.documents} onGoToPlans={goToPlans} />
+              : <FeaturePreview gate={VIEW_GATES.documents} onGoToPlans={goToPlans} />
           )}
 
           {active === 'sucursales' && <Sucursales />}
@@ -275,7 +296,7 @@ export default function App() {
           {active === 'reportes' && (
             hasFeature(me, VIEW_GATES.reportes.feature)
               ? <Reportes />
-              : <FeatureLock gate={VIEW_GATES.reportes} onGoToPlans={goToPlans} />
+              : <FeaturePreview gate={VIEW_GATES.reportes} onGoToPlans={goToPlans} />
           )}
 
           {active === 'equipos' && <Equipos />}
