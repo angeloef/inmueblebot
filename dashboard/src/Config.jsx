@@ -7,7 +7,7 @@ import {
   useBillingStatus, useBillingPlans, useSubscribe, usePaymentHistory,
   useTeamMembers, useInviteMember, useRemoveMember,
   useUsage, useChangePassword, useUpdateProfile, useMyTenant, useUpdateMyTenant,
-  useSubmitSalesInquiry,
+  useSubmitSalesInquiry, useUploadAvatar, useDeleteAvatar,
 } from './api';
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -197,18 +197,113 @@ function SectionError({ onRetry }) {
   );
 }
 
+// ── Avatar crop modal (canvas, no external deps) ──────────────────────────────
+
+function AvatarCropModal({ src, onConfirm, onClose }) {
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
+  const [drag, setDrag] = useState(null);
+  const SIZE = 240;
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    ctx.drawImage(img, SIZE / 2 - w / 2 + offset.x, SIZE / 2 - h / 2 + offset.y, w, h);
+    ctx.restore();
+    // dim ring
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 1, 0, Math.PI * 2);
+    ctx.stroke();
+  }, [offset, scale]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => { imgRef.current = img; draw(); };
+    img.src = src;
+  }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { draw(); }, [draw]);
+
+  const onMouseDown = (e) => {
+    e.preventDefault();
+    setDrag({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+  };
+  const onMouseMove = (e) => {
+    if (!drag) return;
+    setOffset({ x: e.clientX - drag.x, y: e.clientY - drag.y });
+  };
+  const onMouseUp = () => setDrag(null);
+
+  const handleConfirm = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    onConfirm(canvas.toDataURL('image/jpeg', 0.88));
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Recortar foto" onClick={e => e.stopPropagation()} style={{ maxWidth: 340 }}>
+        <div className="modal-head">
+          <h3>Ajustar foto</h3>
+          <button className="close" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20 }}>×</button>
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--fg-tertiary)', margin: 0 }}>Arrastrá para centrar · deslizá para ajustar el zoom</p>
+          <canvas
+            ref={canvasRef}
+            width={SIZE}
+            height={SIZE}
+            style={{ borderRadius: 9999, cursor: drag ? 'grabbing' : 'grab', touchAction: 'none' }}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+          />
+          <input
+            type="range" min={0.5} max={3} step={0.05} value={scale}
+            onChange={e => setScale(Number(e.target.value))}
+            style={{ width: SIZE }}
+            aria-label="Zoom"
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="cfg-btn cfg-btn-ghost" onClick={onClose}>Cancelar</button>
+            <button className="cfg-btn cfg-btn-primary" onClick={handleConfirm}>Guardar foto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Section: General ─────────────────────────────────────────────────────────
 
 function SectionGeneral() {
-  const { me, setMe } = useAuth();
+  const { me } = useAuth();
   const { theme, setTheme } = useTheme();
   const updateProfile = useUpdateProfile();
+  const uploadAvatar = useUploadAvatar();
+  const deleteAvatar = useDeleteAvatar();
 
   const account = me?.account ?? {};
   const [fullName, setFullName] = useState(account.full_name ?? '');
   const [avatarColor, setAvatarColor] = useState(account.avatar_color ?? 'navy');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [cropSrc, setCropSrc] = useState(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     setFullName(account.full_name ?? '');
@@ -238,12 +333,64 @@ function SectionGeneral() {
     setDirty(false);
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      pushToast({ text: 'Solo se permiten imágenes (jpg, png, webp).', kind: 'danger' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => setCropSrc(ev.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleCropConfirm = async (base64) => {
+    setCropSrc(null);
+    try {
+      await uploadAvatar.mutateAsync(base64);
+      pushToast({ text: 'Foto actualizada.', kind: 'success' });
+    } catch {
+      pushToast({ text: 'Error al subir la foto.', kind: 'danger' });
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    try {
+      await deleteAvatar.mutateAsync();
+      pushToast({ text: 'Foto eliminada.', kind: 'success' });
+    } catch {
+      pushToast({ text: 'Error al eliminar la foto.', kind: 'danger' });
+    }
+  };
+
   return (
     <div>
+      {cropSrc && <AvatarCropModal src={cropSrc} onConfirm={handleCropConfirm} onClose={() => setCropSrc(null)} />}
       <CfgSectionHead title="General" description="Tu perfil y las preferencias de la aplicación." />
 
       <H3>Perfil</H3>
-      <CfgRow label="Avatar" hint="Inicial generada a partir de tu nombre.">
+      <CfgRow label="Foto" hint="Subí una foto para tu avatar circular.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {account.avatar_photo
+            ? <img src={account.avatar_photo} alt="Avatar" style={{ width: 44, height: 44, borderRadius: 9999, objectFit: 'cover' }} />
+            : (
+              <div style={{
+                width: 44, height: 44, borderRadius: 9999, background: avatarHex(avatarColor),
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                font: '600 16px/1 Inter,sans-serif',
+              }}>{initials}</div>
+            )
+          }
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFileChange} />
+          <CfgBtn variant="ghost" onClick={() => fileRef.current?.click()}>Subir foto</CfgBtn>
+          {account.avatar_photo && (
+            <CfgBtn variant="ghost" onClick={handleDeletePhoto} style={{ color: 'var(--cfg-danger, #c0392b)' }}>Quitar</CfgBtn>
+          )}
+        </div>
+      </CfgRow>
+      <CfgRow label="Color del avatar" hint="Se usa cuando no hay foto.">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', gap: 6 }}>
             {AVATAR_COLORS.map(c => (
@@ -254,11 +401,6 @@ function SectionGeneral() {
               }} />
             ))}
           </div>
-          <div style={{
-            width: 44, height: 44, borderRadius: 9999, background: avatarHex(avatarColor),
-            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            font: '600 16px/1 Inter,sans-serif',
-          }}>{initials}</div>
         </div>
       </CfgRow>
       <CfgRow label="Nombre completo" hint="Cómo aparece tu nombre en el panel.">

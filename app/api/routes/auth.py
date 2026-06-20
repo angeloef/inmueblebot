@@ -80,6 +80,7 @@ class AccountResponse(BaseModel):
     role: str
     email_verified: bool
     avatar_color: str | None = None
+    avatar_photo: str | None = None
 
 
 class SubscriptionResponse(BaseModel):
@@ -336,6 +337,7 @@ async def me(account: TenantAccount = Depends(get_current_account)) -> MeRespons
             role=account.role,
             email_verified=email_verified,
             avatar_color=getattr(account, "avatar_color", None),
+            avatar_photo=getattr(account, "avatar_photo", None),
         ),
         tenant_id=str(account.tenant_id),
         tenant_slug=tenant.slug if tenant else None,
@@ -514,6 +516,66 @@ async def update_profile(
         await session.refresh(acc)
     # Relay to the /me handler using the updated account
     return await me(acc)
+
+
+_AVATAR_MAX_BYTES = 600_000  # ~450 KB base64 → ~337 KB decoded; generous for a cropped circle
+_AVATAR_ALLOWED_PREFIXES = (
+    "data:image/jpeg;base64,",
+    "data:image/png;base64,",
+    "data:image/webp;base64,",
+)
+
+
+class AvatarRequest(BaseModel):
+    avatar_base64: str
+
+
+@router.post("/me/avatar", status_code=status.HTTP_200_OK, response_model=AccountResponse)
+async def upload_avatar(
+    req: AvatarRequest,
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> AccountResponse:
+    """Guarda la foto de avatar (data URI base64, ya recortada en el cliente)."""
+    if not any(req.avatar_base64.startswith(p) for p in _AVATAR_ALLOWED_PREFIXES):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="avatar_base64 debe ser una data URI de imagen (jpeg/png/webp).",
+        )
+    if len(req.avatar_base64) > _AVATAR_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="La imagen es demasiado grande. Máximo 450 KB tras recorte.",
+        )
+    async with async_session_factory() as session:
+        acc = await session.get(TenantAccount, account.id)
+        if acc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada")  # noqa: E501
+        acc.avatar_photo = req.avatar_base64
+        await session.commit()
+        await session.refresh(acc)
+    return AccountResponse(
+        id=str(acc.id),
+        email=acc.email,
+        full_name=acc.full_name,
+        role=acc.role,
+        email_verified=bool(acc.email_verified_at),
+        avatar_color=getattr(acc, "avatar_color", None),
+        avatar_photo=acc.avatar_photo,
+    )
+
+
+@router.delete("/me/avatar", status_code=status.HTTP_200_OK)
+async def delete_avatar(
+    account: TenantAccount = Depends(get_current_account),  # noqa: B008
+) -> dict:
+    """Elimina la foto de avatar (vuelve al avatar de iniciales)."""
+    async with async_session_factory() as session:
+        acc = await session.get(TenantAccount, account.id)
+        if acc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada")  # noqa: E501
+        acc.avatar_photo = None
+        await session.commit()
+    return {"ok": True}
 
 
 class MyTenantResponse(BaseModel):

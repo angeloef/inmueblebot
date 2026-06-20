@@ -1581,6 +1581,26 @@ export const useUpdateProfile = () => {
   });
 };
 
+export const useUploadAvatar = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (avatar_base64) => http.post('/auth/me/avatar', { avatar_base64 }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+};
+
+export const useDeleteAvatar = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => http.delete('/auth/me/avatar').then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+};
+
 export const useMyTenant = () =>
   useQuery({
     queryKey: ['my-tenant'],

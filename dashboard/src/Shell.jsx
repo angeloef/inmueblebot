@@ -98,6 +98,21 @@ function initialsFrom(account) {
   return (ini || name.slice(0, 2) || '?').toUpperCase();
 }
 
+function AvatarSpot({ account, className, size = 28 }) {
+  const photo = account?.account?.avatar_photo;
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt="Avatar"
+        className={className}
+        style={{ width: size, height: size, borderRadius: 9999, objectFit: 'cover', flexShrink: 0 }}
+      />
+    );
+  }
+  return <span className={className}>{initialsFrom(account)}</span>;
+}
+
 function roleLabelFromScope(scope) {
   if (scope === 'org')    return 'Dueño';
   if (scope === 'branch') return 'Gerente';
@@ -155,7 +170,7 @@ function AccountMenu({ onNav }) {
       {open && (
         <div className="acct-pop" role="dialog" aria-label="Cuenta" onClick={e => e.stopPropagation()}>
           <div className="acct-pop-head">
-            <span className="av acct-pop-av">{initialsFrom(account)}</span>
+            <AvatarSpot account={account} className="av acct-pop-av" size={36} />
             <div className="acct-pop-id">
               <b>{name}</b>
               {email && <span>{email}</span>}
@@ -191,7 +206,7 @@ function AccountMenu({ onNav }) {
         onClick={() => setOpen(v => !v)}
         title="Mi cuenta"
       >
-        <span className="av">{initialsFrom(account)}</span>
+        <AvatarSpot account={account} className="av" size={28} />
         <div className="who">
           <b>{name}</b>
           <span>{contextLine(account, activeBranch)}</span>
@@ -653,13 +668,7 @@ export function Topbar({ onMenuToggle, onNotifAction, theme, onToggleTheme, acco
         <Icon name="info" size={24} />
       </button>
       {reportOpen && <ReportErrorModal onClose={() => setReportOpen(false)} />}
-      <span
-        className="tb-avatar"
-        title={account?.account?.email || 'Mi cuenta'}
-        aria-hidden="true"
-      >
-        {initialsFrom(account)}
-      </span>
+      <AvatarSpot account={account} className="tb-avatar" size={32} />
       {onLogout && (
         <button
           type="button"
