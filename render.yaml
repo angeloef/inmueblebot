@@ -33,17 +33,6 @@ services:
     healthCheckPath: /health
     autoDeploy: true
 
-    # Phase 0a: Alembic es la única autoridad de DDL. Esto corre UNA vez antes de
-    # promover el nuevo deploy (no por-boot). Con 0 migraciones es un no-op seguro;
-    # cuando exista el baseline, lo aplica. Si falla, Render aborta el deploy (rollback
-    # automático al release anterior) — exactamente lo que queremos para una migración rota.
-    #
-    # Seed super-admin: idempotente (crea o promueve). Sin SUPERADMIN_* en el entorno
-    # usa el default de dev (dev@viviendapp.com / superadmin-dev-2026) para destrabar el
-    # acceso a /superadmin. ⚠️ Para prod real: setear SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD
-    # (≥12) en Render Secrets y quitar el default; mientras tanto cada deploy re-resetea
-    # la pass del dev admin. Si el seed falla, aborta el deploy (rollback) — fail-closed.
-    preDeployCommand: alembic upgrade head && python scripts/seed_superadmin.py
 
     envVars:
       # ⚠️ Phase 0a: el valor (con credencial ROTADA) vive SOLO en Render Secrets.
