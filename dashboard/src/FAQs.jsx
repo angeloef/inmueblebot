@@ -416,7 +416,7 @@ function FaqCard({ faq, onEdit, onDelete }) {
 
 // ─── SuggestedFaqsModal ───────────────────────────────────────────────────────
 
-function SuggestedFaqsModal({ onClose, defaultOrder, createMut }) {
+function SuggestedFaqsModal({ onClose, defaultOrder, createMut, existingQuestions = [] }) {
   const [selected, setSelected] = useState(() => new Set(SUGGESTED_FAQS.map((_, i) => i)));
   const [progress, setProgress] = useState(null);
   const trapRef = useFocusTrap(onClose);
@@ -428,7 +428,16 @@ function SuggestedFaqsModal({ onClose, defaultOrder, createMut }) {
   });
 
   const handleAdd = async () => {
-    const toCreate = [...selected].map(i => SUGGESTED_FAQS[i]);
+    // Filtrar los que ya existen (por pregunta normalizada) para no duplicar.
+    const existing = new Set(existingQuestions.map(q => q.trim().toLowerCase()));
+    const toCreate = [...selected]
+      .map(i => SUGGESTED_FAQS[i])
+      .filter(item => !existing.has(item.question.trim().toLowerCase()));
+    if (toCreate.length === 0) {
+      pushToast({ text: 'Esos ejemplos ya están cargados.', kind: 'info' });
+      onClose();
+      return;
+    }
     setProgress({ done: 0, total: toCreate.length });
     let done = 0;
     for (const item of toCreate) {
@@ -497,7 +506,7 @@ function SuggestedFaqsModal({ onClose, defaultOrder, createMut }) {
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 20px', borderTop: '1px solid var(--border-default)' }}>
             <Button kind="secondary" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button kind="primary" size="sm" onClick={handleAdd} disabled={selected.size === 0 || !!progress}>
+            <Button kind="primary" size="sm" onClick={handleAdd} disabled={selected.size === 0 || !!progress || createMut.isPending}>
               Agregar{selected.size > 0 ? ` ${selected.size} FAQ${selected.size !== 1 ? 's' : ''}` : ''}
             </Button>
           </div>
@@ -649,6 +658,7 @@ export default function FAQs() {
           onClose={() => setShowSuggested(false)}
           defaultOrder={defaultOrder}
           createMut={createMut}
+          existingQuestions={faqs.map(f => f.question)}
         />
       )}
     </div>

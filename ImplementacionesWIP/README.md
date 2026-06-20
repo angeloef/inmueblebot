@@ -42,7 +42,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 32 | [`32_propiedades-sort-by.md`](./32_propiedades-sort-by.md) | Frontend | `completed` | — |
 | 33 | [`33_inicio-enterprise-rehacer-ui.md`](./33_inicio-enterprise-rehacer-ui.md) | Frontend | `completed` | — |
 | 34 | [`34_propiedades-exportar-e-importar-modal.md`](./34_propiedades-exportar-e-importar-modal.md) | Frontend (Properties.jsx) | `completed` | — |
-| 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `pendiente` | — |
+| 35 | [`35_faq-dedup-ejemplos.md`](./35_faq-dedup-ejemplos.md) | Frontend + Backend | `completed` | — |
 | 36 | [`36_config-avatar-reactivo.md`](./36_config-avatar-reactivo.md) | Frontend (Config.jsx + auth.jsx) | `pendiente` | — |
 
 ### Lote fixes UI/UX (34–36)

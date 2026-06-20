@@ -2176,9 +2176,20 @@ async def create_faq(
     """Crea una nueva entrada FAQ."""
     from app.core.tenancy import resolve_tenant_id
     from app.db.models.faq import FAQ as FAQModel
+    tenant_id = resolve_tenant_id()
+    # Dedup: si ya existe una FAQ con la misma pregunta (normalizada) en el tenant,
+    # devolver la existente en vez de crear un duplicado. RLS ya filtra por tenant.
+    normalized = (data.question or "").strip().lower()
+    existing = next(
+        (f for f in db.query(FAQModel).all()
+         if (f.question or "").strip().lower() == normalized),
+        None,
+    )
+    if existing:
+        return _faq_to_dict(existing)
     faq = FAQModel(
         # tenant_id REQUIRED: RLS WITH CHECK rejects NULL. See create_property.
-        tenant_id=resolve_tenant_id(),
+        tenant_id=tenant_id,
         question=data.question,
         answer=data.answer,
         category=data.category,

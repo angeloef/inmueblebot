@@ -1,6 +1,6 @@
 ---
 id: 35_faq-dedup-ejemplos
-status: pending
+status: completed
 priority: P1
 area: Frontend + Backend (FAQs.jsx + admin.py)
 files:
@@ -44,10 +44,10 @@ Al usar "Agregar ejemplos comunes" (botón que rellena FAQs con ejemplos predefi
 
 ## 3. Plan secuencial
 
-- [ ] **Fix frontend inmediato (más rápido)**: en `handleAdd()` de `SuggestedFaqsModal`, antes de iterar y crear, filtrar los FAQs seleccionados quitando los que ya existan en la lista actual (comparar por texto de `question`, case-insensitive trim). Solo crear los que NO están presentes.
-- [ ] **Fix botón**: deshabilitar el botón "Agregar" mientras `createMut.isPending` sea true (no solo `!!progress`), para evitar doble submit durante la operación async.
-- [ ] **Fix backend (robusto)**: en el endpoint `POST /admin/faqs`, antes de insertar, verificar si ya existe un FAQ con el mismo `question` (normalizado, trim+lower) para ese `tenant_id`. Si existe, retornar 200/409 sin crear duplicado. Alternativa más limpia: añadir unique constraint `(tenant_id, lower(question))` en la tabla `faq` y manejar `IntegrityError` devolviendo el registro existente.
-- [ ] Verificar: usar "Agregar ejemplos comunes" dos veces → segunda vez no añade duplicados (muestra 0 nuevos o mensaje "ya existen").
+- [x] **Fix frontend inmediato (más rápido)**: en `handleAdd()` de `SuggestedFaqsModal`, antes de iterar y crear, filtrar los FAQs seleccionados quitando los que ya existan en la lista actual (comparar por texto de `question`, case-insensitive trim). Solo crear los que NO están presentes.
+- [x] **Fix botón**: deshabilitar el botón "Agregar" mientras `createMut.isPending` sea true (no solo `!!progress`), para evitar doble submit durante la operación async.
+- [x] **Fix backend (robusto)**: en el endpoint `POST /admin/faqs`, antes de insertar, verificar si ya existe un FAQ con el mismo `question` (normalizado, trim+lower) para ese `tenant_id`. Si existe, retornar el registro existente (200) sin crear duplicado.
+- [x] Verificar: usar "Agregar ejemplos comunes" dos veces → segunda vez no añade duplicados (muestra 0 nuevos o mensaje "ya existen").
 
 ## 4. Criterios de aceptación
 
@@ -75,3 +75,5 @@ Al usar "Agregar ejemplos comunes" (botón que rellena FAQs con ejemplos predefi
 ## 7. Bitácora
 
 - 2026-06-20: plan creado. Recon: `handleAdd()` no filtra existentes (línea ~430), botón usa `!!progress` como guard (insuficiente, línea ~500), backend sin dedup (línea ~2170), sin unique constraint en DB.
+- 2026-06-20: implementado (loop). FAQs.jsx: `SuggestedFaqsModal` recibe `existingQuestions`; `handleAdd()` filtra por pregunta normalizada (trim+lower), toast "Esos ejemplos ya están cargados" si todo existe; botón ahora `disabled` también con `createMut.isPending`; página pasa `existingQuestions={faqs.map(f => f.question)}`. admin.py `POST /admin/faqs`: guardia de dedup — busca FAQ existente con misma pregunta normalizada (RLS ya filtra por tenant) y devuelve la existente sin insertar.
+- 2026-06-20: verificado vía Chrome MCP/Playwright. Primer click → 8 FAQs creadas (Todas 8). Segundo click con todos seleccionados → lista sigue en 8, sin duplicados. Gates: build ✓ (sesión anterior), UX ✓ (dedup confirmado en Docker local). Pusheado a main.
