@@ -49,7 +49,7 @@ def _next_filter_question(
             f"(Centro, UNAM, Barrio Schuster, Ruta 14...)"
         )
     if not dormitorios:
-        return f"Encontré {count} opciones en {zona}. ¿Cuántos dormitorios necesitás?"
+        return f"Encontré {count} opciones en {zona}. ¿Cuántos ambientes o dormitorios buscás? (ej: '2 ambientes', 'monoambiente', '1 dormitorio')"
     if not presupuesto_max:
         return f"Encontré {count} opciones en {zona}. ¿Cuál es tu presupuesto máximo por mes?"
     return None
@@ -92,19 +92,28 @@ def _apply_bedrooms_filter(stmt, dormitorios: int, dormitorios_max: int, match_m
     """Apply bedroom filter based on match mode (exact / at_least / range)."""
     if dormitorios <= 0:
         return stmt
-
     match_mode = match_mode.lower()
     if match_mode == "exact":
         return stmt.where(Property.bedrooms == dormitorios)
     elif match_mode == "at_least":
         return stmt.where(Property.bedrooms >= dormitorios)
     elif match_mode == "range" and dormitorios_max > 0:
-        return stmt.where(
-            Property.bedrooms >= dormitorios,
-            Property.bedrooms <= dormitorios_max,
-        )
-    else:
-        return stmt.where(Property.bedrooms == dormitorios)
+        return stmt.where(Property.bedrooms >= dormitorios, Property.bedrooms <= dormitorios_max)
+    return stmt.where(Property.bedrooms == dormitorios)
+
+
+def _apply_ambientes_filter(stmt, ambientes: int, ambientes_max: int, match_mode: str):
+    """Apply ambientes filter (AR: total rooms incl. living; 1=monoambiente)."""
+    if ambientes <= 0:
+        return stmt
+    match_mode = match_mode.lower()
+    if match_mode == "exact":
+        return stmt.where(Property.ambientes == ambientes)
+    elif match_mode == "at_least":
+        return stmt.where(Property.ambientes >= ambientes)
+    elif match_mode == "range" and ambientes_max > 0:
+        return stmt.where(Property.ambientes >= ambientes, Property.ambientes <= ambientes_max)
+    return stmt.where(Property.ambientes == ambientes)
 
 
 def _build_zone_filters(zona: str, city_variants: "list[str] | None" = None) -> list:
@@ -195,6 +204,9 @@ async def search_properties(
     dormitorios: int = 0,
     dormitorios_max: int = 0,
     bedrooms_match: str = "exact",
+    ambientes: int = 0,
+    ambientes_max: int = 0,
+    ambientes_match: str = "exact",
 ) -> str:
     """Search the current tenant's properties matching the given filters.
 
@@ -240,6 +252,7 @@ async def search_properties(
         if presupuesto_max > 0:
             stmt = stmt.where(Property.price <= presupuesto_max)
         stmt = _apply_bedrooms_filter(stmt, dormitorios, dormitorios_max, bedrooms_match)
+        stmt = _apply_ambientes_filter(stmt, ambientes, ambientes_max, ambientes_match)
 
         result = await session.execute(stmt)
         properties = result.scalars().all()
@@ -417,7 +430,12 @@ def _format_properties_list(
         price_str = _format_price_ars(p.price, p.type == "alquiler")
         tipo_str = p.category.capitalize()
         zone = _extract_zone(p.location, skip)
-        beds_str = f"{p.bedrooms} dorm" if p.bedrooms and p.bedrooms > 0 else ""
+        amb = p.ambientes
+        beds = p.bedrooms
+        if amb is not None:
+            beds_str = "monoambiente" if amb == 1 else f"{amb} amb / {beds} dorm" if beds and beds > 0 else f"{amb} amb"
+        else:
+            beds_str = f"{beds} dorm" if beds and beds > 0 else ""
         area_str = f"{p.area_m2:.0f} m²" if p.area_m2 and p.area_m2 > 0 else ""
         baths_str = f"{int(p.bathrooms)} baño{'s' if p.bathrooms != 1 else ''}" if p.bathrooms and p.bathrooms > 0 else ""
         specs = " | ".join(s for s in [beds_str, baths_str, area_str] if s)

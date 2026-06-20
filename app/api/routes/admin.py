@@ -547,6 +547,7 @@ class PropertyCreate(BaseModel):
     city: Optional[str] = None            # City name → Property.extra_data['city']
     zone: Optional[str] = None             # Zone/barrio → Property.extra_data['zone']
     price: Optional[int] = 0              # Property.price (integer cents/USD)
+    ambientes: Optional[int] = None
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     area_m2: Optional[int] = None
@@ -695,6 +696,7 @@ def _prop_to_dict(p, include_images: bool = True):
         "city": display_city,                                 # city for display
         "neigh": neigh,                                       # zone/barrio
         "price": p.price,
+        "ambientes": p.ambientes,
         "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms,
         "area": p.area_m2,                                 # toProperty() reads area/area_m2
@@ -1002,6 +1004,7 @@ def create_property(
         location=location,
         price=data.price or 0,
         currency=data.currency,
+        ambientes=data.ambientes,
         bedrooms=data.bedrooms,
         bathrooms=data.bathrooms,
         area_m2=data.area_m2,

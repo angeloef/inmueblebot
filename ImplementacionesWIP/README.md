@@ -34,8 +34,8 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 24 | [`24_inmobiliarias-sucursales-unificadas.md`](./24_inmobiliarias-sucursales-unificadas.md) | Frontend+Backend | `pending` | — |
 | 25 | [`25_branding-logo-viviendapp.md`](./25_branding-logo-viviendapp.md) | Frontend | `completed` | — |
 | 26 | [`26_perfil-avatar-foto-crop.md`](./26_perfil-avatar-foto-crop.md) | Backend+Frontend | `completed` | 16 |
-| 27 | [`27_borrar-cuenta-2fa-email.md`](./27_borrar-cuenta-2fa-email.md) | Backend+Frontend | `pending` | — |
-| 28 | [`28_ambientes-vs-habitaciones-monoambiente.md`](./28_ambientes-vs-habitaciones-monoambiente.md) | Backend+Frontend+Bot | `pending` | — |
+| 27 | [`27_borrar-cuenta-2fa-email.md`](./27_borrar-cuenta-2fa-email.md) | Backend+Frontend | `completed` | — |
+| 28 | [`28_ambientes-vs-habitaciones-monoambiente.md`](./28_ambientes-vs-habitaciones-monoambiente.md) | Backend+Frontend+Bot | `completed` | — |
 | 29 | [`29_propiedades-agente-asignado-cleanup.md`](./29_propiedades-agente-asignado-cleanup.md) | Frontend+Backend | `pending` | — |
 
 ### Lote de bugs del testing manual (18–29)

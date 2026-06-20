@@ -37,16 +37,32 @@ async def get_property_details(property_id: int = 0) -> str:
 
         area_str = f"{prop.area_m2:.0f}m² cubiertos" if prop.area_m2 else ""
 
+        amb = prop.ambientes
+        beds = prop.bedrooms
+        if amb is not None:
+            amb_str = f"{'Monoambiente (1 amb)' if amb == 1 else f'{amb} ambientes'}"
+            dorm_str = f"{beds} dormitorio{'s' if beds != 1 else ''}" if beds and beds > 0 else None
+        else:
+            # legacy: derive from bedrooms
+            amb_str = None
+            dorm_str = (
+                f"{beds} dormitorio{'s' if beds != 1 else ''}"
+                f"{' (monoambiente)' if beds == 0 else ''}"
+                if beds is not None else None
+            )
+
         lines = [
             f"🏠 {prop.title}",
             "━━━━━━━━━━━━━━━━━━━━",
             f"📋 ID: {prop.id} | {op_label}",
             f"📍 {prop.location}",
             f"💰 {price_str}",
-            f"🛏️  {prop.bedrooms} dormitorio{'s' if prop.bedrooms != 1 else ''}"
-            f"{' (monoambiente)' if prop.bedrooms == 0 else ''}",
-            f"🚿 {int(prop.bathrooms)} baño{'s' if prop.bathrooms != 1 else ''}",
         ]
+        if amb_str:
+            lines.append(f"🏢 {amb_str}")
+        if dorm_str:
+            lines.append(f"🛏️  {dorm_str}")
+        lines.append(f"🚿 {int(prop.bathrooms)} baño{'s' if prop.bathrooms != 1 else ''}")
         if area_str:
             lines.append(f"📐 {area_str}")
         if amenities_str:

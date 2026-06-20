@@ -65,6 +65,7 @@ class PropertyGlobalUpdate(BaseModel):
     currency: str | None = Field(default=None, max_length=8)
     status: str | None = Field(default=None, max_length=40)
     location: str | None = Field(default=None, max_length=500)
+    ambientes: int | None = Field(default=None, ge=0)
     bedrooms: int | None = Field(default=None, ge=0)
     bathrooms: int | None = Field(default=None, ge=0)
     area_m2: float | None = Field(default=None, ge=0)
@@ -81,7 +82,7 @@ class AppointmentGlobalUpdate(BaseModel):
 # Allowlist de columnas escribibles a nivel ORM. ``location`` se maneja aparte (sincroniza
 # extra_data). Nunca incluir id / tenant_id / created_at: la edición jamás reasigna tenant.
 _PROPERTY_WRITABLE = frozenset(
-    {"title", "description", "price", "currency", "status", "bedrooms", "bathrooms", "area_m2"}
+    {"title", "description", "price", "currency", "status", "ambientes", "bedrooms", "bathrooms", "area_m2"}
 )
 _APPOINTMENT_WRITABLE = frozenset({"status", "type", "notes"})
 

@@ -730,7 +730,9 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
         type:      initialData.type      || 'Departamento',
         operation: initialData.operation || 'rent',
         status:    initialData.status    || 'available',
-        rooms:     initialData.rooms     || '2 amb',
+        rooms:      initialData.rooms      || '2 amb',
+        ambientes:  initialData.ambientes  ?? 2,
+        dormitorios: initialData.dormitorios ?? 1,
         m2:        initialData.m2        != null ? String(initialData.m2) : '',
         baths:     initialData.baths     ?? 1,
         parking:   initialData.parking   ?? 0,
@@ -746,7 +748,7 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
     }
     return {
       addr: '', neigh: '', city: '', type: 'Departamento', operation: 'rent', status: 'available',
-      rooms: '2 amb', m2: '', baths: 1, parking: 0,
+      rooms: '2 amb', ambientes: 2, dormitorios: 1, m2: '', baths: 1, parking: 0,
       price: '', currency: 'ARS', agent: 'M. Pereyra',
       desc: '', notes: '', photos: [], refs: [], place_id: '',
     };
@@ -828,6 +830,8 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
         operation: form.operation,
         status:    form.status,
         rooms:     form.rooms,
+        ambientes: form.ambientes,
+        dormitorios: form.dormitorios,
         m2:        Number(form.m2) || 0,
         baths:     Number(form.baths) || 0,
         parking:   Number(form.parking) || 0,
@@ -972,7 +976,13 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
                 <div className="prop-attrs-grid">
                   <div className="field">
                     <label htmlFor="pw-rooms">Ambientes</label>
-                    <select id="pw-rooms" value={form.rooms} onChange={e => set('rooms', e.target.value)}>
+                    <select id="pw-rooms" value={form.rooms} onChange={e => {
+                      const val = e.target.value;
+                      const amb = parseInt(val) || 0;
+                      set('rooms', val);
+                      set('ambientes', amb || null);
+                      set('dormitorios', amb <= 1 ? 0 : amb - 1);
+                    }}>
                       <option value="—">—</option>
                       <option>1 amb</option>
                       <option>2 amb</option>
@@ -981,6 +991,12 @@ function PropertyWizard({ onClose, onSave, mode = 'create', initialData = null }
                       <option>5+ amb</option>
                     </select>
                   </div>
+                  {form.rooms !== '—' && form.ambientes !== 1 && (
+                    <div className="field">
+                      <label htmlFor="pw-dorms">Dormitorios</label>
+                      <input id="pw-dorms" type="number" min="0" value={form.dormitorios} onChange={e => set('dormitorios', Number(e.target.value))} style={{ textAlign: 'center' }} />
+                    </div>
+                  )}
                   <div className="field">
                     <label htmlFor="pw-baths">Baños</label>
                     <input id="pw-baths" type="number" min="0" value={form.baths} onChange={e => set('baths', e.target.value)} style={{ textAlign: 'center' }} />

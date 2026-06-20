@@ -93,18 +93,31 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                             "type": "number",
                             "description": "Presupuesto máximo en pesos argentinos. 0 = sin límite.",
                         },
+                        "ambientes": {
+                            "type": "integer",
+                            "description": "Total de ambientes (AR: espacios habitables). 1 = monoambiente. 0 = sin filtro. Usar cuando el usuario dice '2 ambientes', 'monoambiente', 'ambiente y medio', etc. Preferir sobre dormitorios cuando el usuario usa el término 'ambiente'.",
+                        },
+                        "ambientes_match": {
+                            "type": "string",
+                            "enum": ["exact", "at_least", "range"],
+                            "description": "Modo de match para ambientes: 'exact', 'at_least', 'range'. Default: 'exact'.",
+                        },
+                        "ambientes_max": {
+                            "type": "integer",
+                            "description": "Máximo de ambientes, solo cuando ambientes_match='range'. 0 = sin límite.",
+                        },
                         "dormitorios": {
                             "type": "integer",
-                            "description": "Cantidad de dormitorios. 0 = sin filtro. Usar con bedrooms_match para controlar el modo.",
+                            "description": "Cantidad de dormitorios (sin contar sala/living). 0 = sin filtro. Usar cuando el usuario dice '1 dormitorio', '2 habitaciones', etc. Para 'monoambiente' usar ambientes=1.",
                         },
                         "bedrooms_match": {
                             "type": "string",
                             "enum": ["exact", "at_least", "range"],
-                            "description": "Como matchear dormitorios: 'exact' si el usuario dice '1 habitacion', 'at_least' si dice 'al menos 2', 'range' si dice '2 a 3 habitaciones'. Default: 'exact'.",
+                            "description": "Como matchear dormitorios: 'exact', 'at_least', 'range'. Default: 'exact'.",
                         },
                         "dormitorios_max": {
                             "type": "integer",
-                            "description": "Cantidad maxima de dormitorios, solo cuando bedrooms_match='range'. 0 = sin limite superior.",
+                            "description": "Máximo de dormitorios, solo cuando bedrooms_match='range'. 0 = sin límite.",
                         },
                     },
                 },

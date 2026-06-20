@@ -106,6 +106,13 @@ class Property(Base):
         comment="Longitud"
     )
 
+    # Numero de ambientes (AR: total de espacios habitables; 1=monoambiente)
+    ambientes: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Total de ambientes (1=monoambiente, 2=1dorm, 3=2dorm, etc.)",
+    )
+
     # Numero de habitaciones
     bedrooms: Mapped[Optional[int]] = mapped_column(
         Integer,

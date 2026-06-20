@@ -263,6 +263,10 @@ function normalizeImgUrl(url) {
 
 function toProperty(p) {
   const bedrooms = p.bedrooms ?? 0;
+  // ambientes: prefer the new column; fall back to deriving from bedrooms (legacy)
+  const ambientesVal = p.ambientes != null
+    ? p.ambientes
+    : (p.bedrooms != null ? (p.bedrooms === 0 ? 1 : p.bedrooms + 1) : null);
 
   // Imágenes inline (base64): presentes en respuestas optimistas (crear/editar) y
   // en el GET de una sola propiedad. La lista liviana NO las trae.
@@ -291,7 +295,9 @@ function toProperty(p) {
     city:      p.city ?? p.neigh ?? '',
     // Prefer category (new column), fall back to property_type (extra_data.building_type)
     type:      PROP_TYPE_TO_LABEL[p.category] ?? PROP_TYPE_TO_LABEL[p.property_type] ?? p.property_type ?? '—',
-    rooms:     bedrooms > 0 ? `${bedrooms} amb` : '—',
+    rooms:     ambientesVal != null ? `${ambientesVal} amb` : '—',
+    ambientes: ambientesVal,
+    dormitorios: bedrooms,
     m2:        p.area_m2 ?? p.area ?? 0,
     status:    p.status ?? 'available',
     price:     p.price ?? 0,
@@ -324,14 +330,20 @@ function fromProperty(d) {
   const cityStr = d.city || d.neigh || '';
   const categoryVal = PROP_LABEL_TO_CATEGORY[d.type] ?? null;
   const desc = d.desc || d.notes || '';
-  const beds = d.rooms ? parseInt(d.rooms) || 0 : 0;
+  // ambientes (total rooms AR) and dormitorios (bedrooms) stored separately
+  const ambVal = d.ambientes != null ? Number(d.ambientes) || null
+    : (d.rooms ? parseInt(d.rooms) || null : null);
+  const dormVal = d.dormitorios != null ? Number(d.dormitorios)
+    : (ambVal != null ? Math.max(0, ambVal - 1) : 0);
 
-  // Generate a sensible title from category + beds + zone (not the address)
+  // Generate a sensible title from category + beds + zone
   const typeLabel = d.type || 'Propiedad';
   const shortZone = zoneStr.split(',')[0].trim();
-  const title = beds > 0
-    ? `${typeLabel} ${beds} dormitorios ${shortZone}`
-    : `${typeLabel} en ${shortZone || 'Oberá'}`;
+  const title = ambVal === 1
+    ? `${typeLabel} monoambiente en ${shortZone || 'la zona'}`
+    : dormVal > 0
+      ? `${typeLabel} ${dormVal} dormitorio${dormVal !== 1 ? 's' : ''} en ${shortZone || 'la zona'}`
+      : `${typeLabel} en ${shortZone || 'Oberá'}`;
 
   return {
     title:         title,
@@ -344,7 +356,8 @@ function fromProperty(d) {
     zone:          zoneStr,
     price:         Number(d.price) || 0,
     currency:      d.currency || 'ARS',
-    bedrooms:      beds || null,
+    ambientes:     ambVal,
+    bedrooms:      dormVal || null,
     bathrooms:     d.baths != null ? Number(d.baths) || null : null,
     area_m2:       d.m2 ? Number(d.m2) || null : null,
     status:        d.status === 'rented' ? 'rented' : (d.status ?? 'available'),
