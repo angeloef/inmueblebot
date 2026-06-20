@@ -4,7 +4,6 @@ import { useAuth } from './auth';
 import { useTheme } from './useTheme';
 import {
   useTenants, useCreateTenant, useUpdateTenant, useDeleteTenant,
-  useUpdateTenantSettings,
   useBillingStatus, useBillingPlans, useSubscribe, usePaymentHistory,
   useTeamMembers, useInviteMember, useRemoveMember,
   useUsage, useChangePassword, useUpdateProfile, useMyTenant, useUpdateMyTenant,
@@ -137,7 +136,6 @@ const ICONS = {
   facturacion:  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="7" y1="14.5" x2="11" y2="14.5"/></svg>,
   uso:          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="7" width="3" height="10"/><rect x="16" y="14" width="3" height="3"/></svg>,
   equipo:       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.4a3 3 0 0 1 0 5.7"/><path d="M17.8 19a5.5 5.5 0 0 0-3-4.9"/></svg>,
-  sistema:      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><line x1="9" y1="2.5" x2="9" y2="4"/><line x1="15" y1="2.5" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="21.5"/><line x1="15" y1="20" x2="15" y2="21.5"/><line x1="2.5" y1="9" x2="4" y2="9"/><line x1="2.5" y1="15" x2="4" y2="15"/><line x1="20" y1="9" x2="21.5" y2="9"/><line x1="20" y1="15" x2="21.5" y2="15"/></svg>,
   inmobiliarias:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="7" height="11"/><rect x="13" y="4" width="7" height="15"/><line x1="6.5" y1="12" x2="8.5" y2="12"/><line x1="6.5" y1="15.5" x2="8.5" y2="15.5"/><line x1="15.5" y1="8" x2="17.5" y2="8"/><line x1="15.5" y1="11.5" x2="17.5" y2="11.5"/></svg>,
   plus:         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   check:        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4 4 10-10"/></svg>,
@@ -157,7 +155,6 @@ const NAV_SECTIONS = [
   { key: 'facturacion',   label: 'Facturación',       icon: 'facturacion',   admin: false },
   { key: 'uso',           label: 'Uso',               icon: 'uso',           admin: false },
   { key: 'equipo',        label: 'Equipo',            icon: 'equipo',        admin: false },
-  { key: 'sistema',       label: 'Sistema',           icon: 'sistema',       admin: true },
   { key: 'inmobiliarias', label: 'Inmobiliarias',     icon: 'inmobiliarias', admin: true },
 ];
 
@@ -169,15 +166,7 @@ const SEARCH_INDEX = [
   { key: 'facturacion',   terms: ['facturacion', 'plan', 'pago', 'suscripcion', 'basico', 'profesional', 'enterprise', 'mercadopago'] },
   { key: 'uso',           terms: ['uso', 'propiedades', 'conversaciones', 'miembros', 'limite', 'consumo'] },
   { key: 'equipo',        terms: ['equipo', 'miembro', 'invitar', 'rol', 'admin', 'agente', 'propietario'] },
-  { key: 'sistema',       terms: ['sistema', 'router', 'chatbot', 'v1', 'v2', 'v3'] },
   { key: 'inmobiliarias', terms: ['inmobiliarias', 'tenant', 'sucursal', 'wa', 'slug'] },
-];
-
-// Router options
-const ROUTER_OPTIONS = [
-  { value: 'v1', label: 'V1', desc: 'Clasificador de intent + agente monolítico. Sistema clásico y estable.' },
-  { value: 'v2', label: 'V2', desc: 'S1 (regex rápido) + S2 (coordinador con especialistas). Scheduling conversacional.' },
-  { value: 'v3', label: 'V3', desc: 'Router multi-tenant schema-guided (en construcción). Por ahora hace fallback a V2 sin riesgo.' },
 ];
 
 // ── Skeleton & Error states ────────────────────────────────────────────────────
@@ -959,59 +948,6 @@ function SectionEquipo() {
   );
 }
 
-// ── Section: Sistema ───────────────────────────────────────────────────────────
-
-function SectionSistema() {
-  const { me } = useAuth();
-  const updateSettings = useUpdateTenantSettings();
-  const [router, setRouter] = useState('v2');
-  const [switching, setSwitching] = useState(false);
-
-  // Read from tenant's settings (comes from me response or bot settings)
-  // Use the tenant_id's active router if available
-  useEffect(() => {
-    // The me response doesn't expose active_router directly;
-    // default to v2 unless we get it from somewhere
-  }, [me]);
-
-  const handleSwitch = async (val) => {
-    if (switching || val === router) return;
-    const prev = router;
-    setRouter(val);
-    setSwitching(true);
-    try {
-      await updateSettings.mutateAsync({ id: me?.tenant_id, active_router: val });
-      pushToast({ text: `Router ${val.toUpperCase()} activado.`, kind: 'success' });
-    } catch {
-      setRouter(prev);
-      pushToast({ text: 'Error al cambiar el router.', kind: 'danger' });
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  const activeOpt = ROUTER_OPTIONS.find(o => o.value === router) ?? ROUTER_OPTIONS[1];
-
-  return (
-    <div>
-      <CfgSectionHead title="Sistema" description="Control del motor del chatbot. Los cambios aplican en el próximo mensaje recibido." />
-      <div style={{ font: '600 12px/1 Inter,sans-serif', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cfg-soft)', margin: '30px 0 12px' }}>Router del chatbot</div>
-      <div style={{ display: 'flex', gap: 4, background: 'var(--cfg-card2)', borderRadius: 10, padding: 4, maxWidth: 420 }}>
-        {ROUTER_OPTIONS.map(o => (
-          <button key={o.value} onClick={() => handleSwitch(o.value)} disabled={switching} style={{
-            flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: switching ? 'default' : 'pointer',
-            font: '600 14px/1 Inter,sans-serif',
-            background: router === o.value ? 'var(--cfg-card)' : 'transparent',
-            color: router === o.value ? 'var(--cfg-strong)' : 'var(--cfg-muted)',
-            boxShadow: router === o.value ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-          }}>{o.label}</button>
-        ))}
-      </div>
-      <p style={{ font: '400 13px/1.55 Inter,sans-serif', color: 'var(--cfg-muted)', margin: '14px 0 0', maxWidth: 520 }}>{activeOpt.desc}</p>
-    </div>
-  );
-}
-
 // ── Section: Inmobiliarias (admin) ────────────────────────────────────────────
 
 const EMPTY_TENANT = { slug: '', display_name: '', company_name: '', business_hours: '', timezone: 'America/Argentina/Cordoba', waba_id: '', phone_number_id: '', wa_access_token: '', plan: '', status: 'active' };
@@ -1028,7 +964,6 @@ function TenantRow({ t, onEdit, onDelete, busy }) {
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-        {t.active_router && <span style={{ font: '600 11px/1 Inter,sans-serif', color: 'var(--cfg-muted)', background: 'var(--cfg-card2)', padding: '5px 9px', borderRadius: 6 }}>Router {t.active_router.toUpperCase()}</span>}
         {waConnected ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '600 11px/1 Inter,sans-serif', color: 'var(--cfg-ok)', background: 'var(--cfg-ok-bg)', padding: '5px 10px', borderRadius: 9999 }}><span style={{ width: 6, height: 6, borderRadius: 9999, background: 'var(--cfg-wa)' }} />Conectado</span>
         ) : (
@@ -1195,7 +1130,6 @@ export default function Config() {
       case 'facturacion':   return <SectionFacturacion />;
       case 'uso':           return <SectionUso />;
       case 'equipo':        return <SectionEquipo />;
-      case 'sistema':       return isAdmin ? <SectionSistema /> : null;
       case 'inmobiliarias': return isAdmin ? <SectionInmobiliarias /> : null;
       default:              return null;
     }

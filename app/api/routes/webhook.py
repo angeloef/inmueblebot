@@ -105,23 +105,9 @@ def _resolve_use_v2_router(settings) -> bool:
     return bool(settings.USE_V2_ROUTER)
 
 
-def _resolve_active_router(settings) -> str:
-    """Resolve which router serves this turn: ``"v1" | "v2" | "v3"`` (V3 Phase 1.5).
-
-    Source of truth = bot_settings ``active_router`` (a global key for now; Phase 2 makes
-    it per-tenant). Back-compat: if ``active_router`` is unset, fall back to the legacy
-    ``use_v2_router`` boolean (true→v2, false→v1) so nothing changes until the owner opts in.
-    """
-    try:
-        from app.agents.prompts import _get_cached_bot_settings
-        bot_cfg = _get_cached_bot_settings() or {}
-        active = (bot_cfg.get("active_router") or "").strip().lower()
-        if active in ("v1", "v2", "v3"):
-            return active
-    except Exception:
-        pass
-    # Back-compat with the old boolean flag.
-    return "v2" if _resolve_use_v2_router(settings) else "v1"
+def _resolve_active_router(settings) -> str:  # noqa: ARG001
+    """V3 is the global default router. active_router DB key is no longer exposed in the UI."""
+    return "v3"
 
 
 async def _process_turn_v3_or_fallback(
