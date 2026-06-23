@@ -1,0 +1,53 @@
+<svg width="100%" viewBox="0 0 680 670" role="img" xmlns="http://www.w3.org/2000/svg"><title>Arquitectura del Knowledge Agent v4 para InmuebleBot</title><desc>Bucle de agente vertical: canales y webhook, compuertas de seguridad, percepcion y descomposicion de objetivos, recuperador de evidencia, razonamiento con gpt-5.4-mini, evaluador de evidencia y confianza, bucle de control y respuesta con actualizacion de memoria. A la derecha, almacenamiento persistente multi-tenant: PostgreSQL, pgvector, Redis y memoria de tres niveles.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>
+text{font-family:'Helvetica Neue',Arial,sans-serif;fill:#2C2C2A}
+.t{font-size:14px}.ts{font-size:12px;fill:#5F5E5A}.th{font-size:14px;font-weight:500}
+.gray{fill:#F1EFE8;stroke:#5F5E5A;stroke-width:.5}
+.purple{fill:#EEEDFE;stroke:#534AB7;stroke-width:.5}
+.teal{fill:#E1F5EE;stroke:#0F6E56;stroke-width:.5}
+.coral{fill:#FAECE7;stroke:#993C1D;stroke-width:.5}
+</style>
+
+<rect x="90" y="30" width="12" height="12" rx="3" class="purple"/><text x="108" y="40" class="ts">Razonamiento (LLM)</text>
+<rect x="252" y="30" width="12" height="12" rx="3" class="teal"/><text x="270" y="40" class="ts">Evidencia y memoria</text>
+<rect x="430" y="30" width="12" height="12" rx="3" class="coral"/><text x="448" y="40" class="ts">Decision / control</text>
+<rect x="560" y="30" width="12" height="12" rx="3" class="gray"/><text x="578" y="40" class="ts">Infra / E-S</text>
+
+<rect x="90" y="66" width="310" height="50" rx="8" class="gray"/><text x="245" y="88" text-anchor="middle" class="th">Canales + webhook / adapter</text><text x="245" y="106" text-anchor="middle" class="ts">WhatsApp · web · resuelve tenant</text>
+<line x1="245" y1="116" x2="245" y2="132" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="134" width="310" height="44" rx="8" class="gray"/><text x="245" y="154" text-anchor="middle" class="th">Compuertas de seguridad</text><text x="245" y="170" text-anchor="middle" class="ts">regex · emergencia · handoff (0 LLM)</text>
+<line x1="245" y1="178" x2="245" y2="194" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="196" width="310" height="58" rx="8" class="purple"/><text x="245" y="220" text-anchor="middle" class="th">Percepcion + descomposicion</text><text x="245" y="240" text-anchor="middle" class="ts">NLU multi-intencion → sub-objetivos</text>
+<line x1="245" y1="254" x2="245" y2="270" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="272" width="310" height="52" rx="8" class="teal"/><text x="245" y="294" text-anchor="middle" class="th">Recuperador de evidencia</text><text x="245" y="312" text-anchor="middle" class="ts">DB + pgvector + memoria (hibrido)</text>
+<line x1="245" y1="324" x2="245" y2="340" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="342" width="310" height="58" rx="8" class="purple"/><text x="245" y="366" text-anchor="middle" class="th">Razonamiento + ejecucion de tools</text><text x="245" y="386" text-anchor="middle" class="ts">gpt-5.4-mini · plan → act → observe</text>
+<line x1="245" y1="400" x2="245" y2="416" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="418" width="310" height="58" rx="8" class="teal"/><text x="245" y="442" text-anchor="middle" class="th">Evaluador de evidencia + confianza</text><text x="245" y="462" text-anchor="middle" class="ts">cobertura · grounding · incertidumbre</text>
+<line x1="245" y1="476" x2="245" y2="492" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="494" width="310" height="64" rx="8" class="coral"/><text x="245" y="520" text-anchor="middle" class="th">Bucle de control</text><text x="245" y="540" text-anchor="middle" class="ts">responder · iterar · abstener · handoff</text>
+<line x1="245" y1="558" x2="245" y2="574" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="90" y="576" width="310" height="52" rx="8" class="gray"/><text x="245" y="598" text-anchor="middle" class="th">Respuesta + memoria</text><text x="245" y="616" text-anchor="middle" class="ts">mensaje al usuario · write-back</text>
+
+<path d="M90 520 L62 520 L62 300 L90 300" fill="none" stroke="#993C1D" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="54" y="412" text-anchor="middle" class="ts" transform="rotate(-90 54 412)">iterar</text>
+
+<text x="430" y="260" class="ts">Persistencia multi-tenant</text>
+<line x1="426" y1="270" x2="426" y2="506" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="3 3"/>
+<line x1="400" y1="296" x2="426" y2="296" stroke="#0F6E56" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+
+<rect x="430" y="270" width="210" height="52" rx="8" class="teal"/><text x="535" y="292" text-anchor="middle" class="th">PostgreSQL (Render)</text><text x="535" y="310" text-anchor="middle" class="ts">propiedades · turnos · leads</text>
+<rect x="430" y="334" width="210" height="46" rx="8" class="teal"/><text x="535" y="354" text-anchor="middle" class="th">pgvector</text><text x="535" y="370" text-anchor="middle" class="ts">FAQ + documentos (RAG)</text>
+<rect x="430" y="392" width="210" height="46" rx="8" class="teal"/><text x="535" y="412" text-anchor="middle" class="th">Redis</text><text x="535" y="428" text-anchor="middle" class="ts">estado de trabajo (creencia)</text>
+<rect x="430" y="450" width="210" height="56" rx="8" class="teal"/><text x="535" y="473" text-anchor="middle" class="th">Memoria 3 niveles</text><text x="535" y="491" text-anchor="middle" class="ts">episodica/semantica/evidencia</text>
+
+<path d="M400 600 L414 600 L414 478 L430 478" fill="none" stroke="#0F6E56" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+</svg>
