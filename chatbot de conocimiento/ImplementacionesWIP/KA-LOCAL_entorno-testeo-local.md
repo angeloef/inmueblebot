@@ -1,7 +1,7 @@
 ---
 id: KA-LOCAL-entorno-testeo-local
 title: Entorno de testeo local para el knowledge agent v4
-status: pending
+status: completed
 area: infra/testing
 related_areas: [routers/v4, tests/eval]
 priority: P0
@@ -50,3 +50,4 @@ de CI nueva — solo entorno local.
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. Verificado que `/simulate/multi` y `tests/eval/runner.py` ya existen.
+- 2026-06-23 — Implementado. Creados: `tests/eval/seed_local.py` (crea tenant test-local + propiedades + 5 FAQ, guard anti-prod), `chatbot de conocimiento/ENTORNO_LOCAL.md` (docs: levantar db+redis, migraciones, semilla, correr eval, simulate manual, variables de entorno). docker-compose.eval.yml ya existía. Gates: schema imports OK, load_cases=27 casos, no se rompió infra existente.

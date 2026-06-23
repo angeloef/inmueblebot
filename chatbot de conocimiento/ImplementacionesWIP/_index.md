@@ -9,8 +9,8 @@ KA-EVAL se construye temprano para medir cada fase contra v3 con datos reales.
 
 | id | área | prioridad | estado | depends_on |
 |----|------|-----------|--------|------------|
-| KA-LOCAL | infra/testing | P0 | pending | — |
-| KA-EVAL | tests/eval | P0 | pending | KA-LOCAL |
+| KA-LOCAL | infra/testing | P0 | completed | — |
+| KA-EVAL | tests/eval | P0 | completed | KA-LOCAL |
 | KA0 | routers/v4 | P0 | pending | — |
 | KA1 | routers/v4 (percepción) | P0 | pending | KA0 |
 | KA2 | routers/v4 + memory | P1 | pending | KA1 |

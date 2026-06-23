@@ -42,6 +42,21 @@ def _get_adapter(router: str) -> AdapterFn:
 
         return _v3
 
+    if router == "v4":
+        try:
+            from app.routers.v4.adapter import process_turn_v4  # type: ignore
+
+            async def _v4(phone: str, message: str, bsuid: str | None) -> dict[str, Any]:
+                return await process_turn_v4(  # type: ignore[call-arg]
+                    phone=phone, user_message=message, bsuid=bsuid, tenant=None
+                )
+
+            return _v4
+        except ImportError as exc:
+            raise NotImplementedError(
+                "v4 router not implemented yet — complete KA0 first"
+            ) from exc
+
     raise ValueError(f"unknown router {router!r}")
 
 
@@ -65,6 +80,9 @@ async def run_case(case: Case, router: str, *, run_model: bool = True) -> CaseRu
     human_flags = 0
     case_passed = True
     details: list[dict[str, Any]] = []
+    sub_goals_total = 0
+    evidence_total = 0
+    llm_calls_total = 0
 
     from app.core.identity import set_current_contact
 
@@ -82,6 +100,10 @@ async def run_case(case: Case, router: str, *, run_model: bool = True) -> CaseRu
         tools = result.get("tools_used", []) or []
         rich = result.get("rich_content", {}) or {}
         latency_total += float(result.get("latency_ms") or wall_ms)
+
+        sub_goals_total += len((rich or {}).get("sub_goals", []))
+        evidence_total += len((rich or {}).get("evidence", []))
+        llm_calls_total += int((rich or {}).get("llm_calls", 0))
 
         graders: list[GraderResult] = await grade_turn(
             turn.expect, user=turn.user, response=response,
@@ -111,4 +133,7 @@ async def run_case(case: Case, router: str, *, run_model: bool = True) -> CaseRu
         cost_usd_total=cost_total,
         human_flags=human_flags,
         turn_details=details,
+        sub_goals_total=sub_goals_total,
+        evidence_total=evidence_total,
+        llm_calls_total=llm_calls_total,
     )

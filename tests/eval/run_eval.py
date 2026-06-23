@@ -67,12 +67,12 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="InmuebleBot router eval harness")
-    p.add_argument("--router", default="v2", choices=["v2", "v3"])
+    p.add_argument("--router", default="v2", choices=["v2", "v3", "v4"])
     p.add_argument("--split", default="holdout", choices=["dev", "holdout", "all"])
     p.add_argument("--k", type=int, default=3, help="runs per case (pass@k / pass^k)")
     p.add_argument("--no-model", action="store_true", help="skip the LLM rubric judge")
     p.add_argument("--snapshot", action="store_true",
-                   help="also write this run as baseline-v2.json")
+                   help="write this run as baseline-<router>.json")
     args = p.parse_args()
 
     payload = asyncio.run(_run(args))
@@ -81,7 +81,7 @@ def main() -> None:
     print(f"\n{markdown_diff(payload)}\n")
     print(f"report → {out}")
     if args.snapshot:
-        base = snapshot_baseline(payload)
+        base = snapshot_baseline(payload, router=args.router)
         print(f"baseline snapshot → {base}")
 
 

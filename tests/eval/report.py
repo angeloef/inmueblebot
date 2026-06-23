@@ -1,4 +1,4 @@
-"""Report writers: reports/<git-sha>.json + a markdown diff vs the V2 baseline."""
+"""Report writers: reports/<git-sha>.json + a markdown diff vs the router baseline."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 REPORTS_DIR = Path(__file__).parent / "reports"
-BASELINE_PATH = Path(__file__).parent / "baseline-v2.json"
+_BASELINE_BY_ROUTER: dict[str, Path] = {
+    "v2": Path(__file__).parent / "baseline-v2.json",
+    "v3": Path(__file__).parent / "baseline-v3.json",
+    "v4": Path(__file__).parent / "baseline-v4.json",
+}
+# Backwards-compat alias
+BASELINE_PATH = _BASELINE_BY_ROUTER["v2"]
 
 
 def git_sha() -> str:
@@ -28,16 +34,16 @@ def write_report(payload: dict[str, Any], sha: str | None = None) -> Path:
     return out
 
 
-def snapshot_baseline(payload: dict[str, Any]) -> Path:
-    BASELINE_PATH.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    return BASELINE_PATH
+def snapshot_baseline(payload: dict[str, Any], router: str = "v2") -> Path:
+    path = _BASELINE_BY_ROUTER.get(router, BASELINE_PATH)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
-def load_baseline() -> dict[str, Any] | None:
-    if BASELINE_PATH.exists():
-        return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+def load_baseline(router: str = "v2") -> dict[str, Any] | None:
+    path = _BASELINE_BY_ROUTER.get(router, BASELINE_PATH)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
     return None
 
 
@@ -50,9 +56,10 @@ def _fmt_delta(cur: float, base: float | None) -> str:
 
 
 def markdown_diff(payload: dict[str, Any]) -> str:
-    """Human-readable summary with deltas vs baseline (if present)."""
+    """Human-readable summary with deltas vs baseline for the same router."""
     summary = payload["summary"]
-    base = (load_baseline() or {}).get("summary", {})
+    router = payload.get("meta", {}).get("router", "v2")
+    base = (load_baseline(router) or {}).get("summary", {})
     k = summary.get("k", 3)
     lines = [
         f"# Eval report — router={payload['meta']['router']} "
@@ -72,6 +79,17 @@ def markdown_diff(payload: dict[str, Any]) -> str:
         f"| human_flags | {summary.get('human_flags', 0)} |",
         "",
     ]
+    # v4 knowledge-agent metrics (only when present)
+    if "sub_goals_per_turn_mean" in summary:
+        lines += [
+            "",
+            "### v4 knowledge-agent metrics",
+            f"- sub_goals/turn: {summary.get('sub_goals_per_turn_mean', 'N/A')}",
+            f"- evidence/turn: {summary.get('evidence_per_turn_mean', 'N/A')}",
+            f"- llm_calls/turn (median): {summary.get('llm_calls_per_turn_median', 'N/A')}",
+        ]
+
+    lines.append("")
     failing = summary.get("failing_cases", [])
     if failing:
         lines.append(f"**Failing cases ({len(failing)}):** {', '.join(failing)}")

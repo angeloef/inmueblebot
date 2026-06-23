@@ -24,6 +24,10 @@ class CaseRun:
     cost_usd_total: float
     human_flags: int
     turn_details: list[dict[str, Any]] = field(default_factory=list)
+    # v4 knowledge-agent counters (sum across all turns in the case)
+    sub_goals_total: int = 0
+    evidence_total: int = 0
+    llm_calls_total: int = 0
 
 
 @dataclass
@@ -54,6 +58,31 @@ def _percentile(values: list[float], pct: float) -> float:
     return s[idx]
 
 
+def _v4_aggregate(results: list[CaseResult]) -> dict[str, Any]:
+    """v4 knowledge-agent specific metrics (only reported when present)."""
+    all_runs = [r for c in results for r in c.runs]
+    if not all_runs:
+        return {}
+
+    total_turns = sum(len(r.turn_details) for r in all_runs) or 1
+
+    llm_calls = [r.llm_calls_total for r in all_runs if r.llm_calls_total > 0]
+    per_turn_llm = (
+        [r.llm_calls_total / max(len(r.turn_details), 1) for r in all_runs if r.llm_calls_total > 0]
+        if llm_calls else []
+    )
+
+    return {
+        "sub_goals_per_turn_mean": round(
+            sum(r.sub_goals_total for r in all_runs) / total_turns, 3
+        ),
+        "evidence_per_turn_mean": round(
+            sum(r.evidence_total for r in all_runs) / total_turns, 3
+        ),
+        "llm_calls_per_turn_median": round(_percentile(per_turn_llm, 50), 2) if per_turn_llm else 0.0,
+    }
+
+
 def aggregate(results: list[CaseResult], k: int) -> dict[str, Any]:
     """Roll up case results into the headline metrics + cost/latency."""
     if not results:
@@ -76,4 +105,5 @@ def aggregate(results: list[CaseResult], k: int) -> dict[str, Any]:
         "human_flags": total_flags,
         "failing_cases": sorted(c.case_id for c in results if not c.pass_pow_k),
     }
+    summary.update(_v4_aggregate(results))
     return summary

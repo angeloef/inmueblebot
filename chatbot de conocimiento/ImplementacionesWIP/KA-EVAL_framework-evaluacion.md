@@ -1,7 +1,7 @@
 ---
 id: KA-EVAL-framework-evaluacion
 title: Framework de evaluación del knowledge agent (métricas con datos reales)
-status: pending
+status: completed
 area: tests/eval
 related_areas: [routers/v4]
 priority: P0
@@ -62,3 +62,4 @@ métrica, luego correrla en rojo contra v3 para fijar baseline, luego habilitar 
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. Confirmado que `tests/eval/` ya soporta `--router` y snapshot; esto es extensión.
+- 2026-06-23 — Implementado. Cambios: schema.py (campos Expectation: multi_intent_min/evidence_min/abstain), graders.py (3 graders deterministas nuevos en grade_code), metrics.py (CaseRun +3 campos v4, aggregate +_v4_aggregate), report.py (router-aware baseline-v3/v4, markdown_diff con sección v4), runner.py (v4 stub + captura sub_goals/evidence/llm_calls por turno), run_eval.py (choices +v4, --snapshot router-aware). Casos nuevos: 4 dev + 3 holdout con tags v4 (multi-intent, anaphora, abstain, grounding). baseline-v3.json placeholder. Gates: 27 casos cargados, imports OK, graders OK, baseline v3 cargado.

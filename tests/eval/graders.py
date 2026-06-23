@@ -60,6 +60,31 @@ def grade_code(expect: Expectation, tools: list[str], rich: dict[str, Any]) -> G
         if booked != expect.booking:
             reasons.append(f"booking={booked}, expected {expect.booking}")
 
+    # v4 knowledge-agent assertions
+    if expect.multi_intent_min is not None:
+        n = len((rich or {}).get("sub_goals", []))
+        if n < expect.multi_intent_min:
+            reasons.append(
+                f"multi_intent: {n} sub_goals < required {expect.multi_intent_min}"
+            )
+
+    if expect.evidence_min is not None:
+        n = len((rich or {}).get("evidence", []))
+        if n < expect.evidence_min:
+            reasons.append(
+                f"evidence: {n} items < required {expect.evidence_min}"
+            )
+
+    if expect.abstain is not None:
+        abstained = bool(
+            (rich or {}).get("abstained", False)
+            or float((rich or {}).get("confidence_score", 1.0)) < 0.4
+        )
+        if abstained != expect.abstain:
+            reasons.append(
+                f"abstain={abstained}, expected {expect.abstain}"
+            )
+
     return GraderResult(passed=not reasons, grader="code", reasons=reasons)
 
 

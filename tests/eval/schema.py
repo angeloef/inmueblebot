@@ -24,6 +24,11 @@ Expectation grammar (all optional; absent = not checked):
 
   human grader:
     flag_human:  bool       — mark this turn for manual spot-check
+
+  v4 knowledge-agent graders (deterministic assertions on rich_content):
+    multi_intent_min: int   — expects ≥N sub_goals resolved (rich_content.sub_goals)
+    evidence_min:     int   — expects ≥N evidence items (rich_content.evidence)
+    abstain:          bool  — True=expects abstention (rich_content.abstained or confidence<0.4)
 """
 
 from __future__ import annotations
@@ -50,6 +55,10 @@ class Expectation:
     nonempty: bool | None = None
     rubric: str | None = None
     flag_human: bool = False
+    # v4 knowledge-agent assertions
+    multi_intent_min: int | None = None
+    evidence_min: int | None = None
+    abstain: bool | None = None
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> Expectation:
@@ -65,6 +74,9 @@ class Expectation:
             nonempty=d.get("nonempty"),
             rubric=d.get("rubric"),
             flag_human=bool(d.get("flag_human", False)),
+            multi_intent_min=d.get("multi_intent_min"),
+            evidence_min=d.get("evidence_min"),
+            abstain=d.get("abstain"),
         )
 
 
