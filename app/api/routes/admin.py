@@ -2639,7 +2639,7 @@ async def delete_tenant(tenant_id: str, _: object = Depends(require_superadmin))
 # ── Per-tenant settings (V3 Phase 2: active_router) ──────────────────────────
 
 _ALLOWED_TENANT_SETTINGS: dict[str, str] = {
-    "active_router": "Router activo para esta inmobiliaria: '' | 'v1' | 'v2' | 'v3'. "
+    "active_router": "Router activo para esta inmobiliaria: '' | 'v1' | 'v2' | 'v3' | 'v4'. "
                      "Vacío = usar el valor global de bot_settings.",
     # Notificaciones automáticas (motor de jobs — planes Profesional).
     "owner_phone": "WhatsApp del dueño de la inmobiliaria (E.164 sin +). Destino de las "
@@ -2658,7 +2658,7 @@ _ALLOWED_TENANT_SETTINGS: dict[str, str] = {
 
 
 class TenantSettingsUpdate(BaseModel):
-    active_router: Optional[str] = None  # "v1" | "v2" | "v3" | "" (inherit global)
+    active_router: Optional[str] = None  # "v1" | "v2" | "v3" | "v4" | "" (inherit global)
     owner_phone: Optional[str] = None    # WhatsApp del dueño (alertas operativas + reporte)
     wa_tpl_visit_reminder: Optional[str] = None
     wa_tpl_payment_due: Optional[str] = None

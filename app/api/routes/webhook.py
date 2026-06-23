@@ -105,8 +105,19 @@ def _resolve_use_v2_router(settings) -> bool:
     return bool(settings.USE_V2_ROUTER)
 
 
-def _resolve_active_router(settings) -> str:  # noqa: ARG001
-    """V3 is the global default router. active_router DB key is no longer exposed in the UI."""
+async def _resolve_active_router(settings, tenant_id=None) -> str:  # noqa: ARG001
+    """Return the active router for the given tenant ('v1'|'v2'|'v3'|'v4').
+
+    Checks the per-tenant active_router setting first; falls back to v3.
+    """
+    if tenant_id is not None:
+        try:
+            from app.services.tenant_service import get_tenant_setting
+            val = await get_tenant_setting(tenant_id, "active_router")
+            if val in ("v1", "v2", "v3", "v4"):
+                return val
+        except Exception:
+            pass
     return "v3"
 
 
@@ -128,6 +139,26 @@ async def _process_turn_v3_or_fallback(
         return await process_turn_v2(phone=phone, user_message=user_message,
                                      media_url=media_url, bsuid=bsuid)
     return await process_turn_v3(
+        phone=phone, user_message=user_message,
+        media_url=media_url, bsuid=bsuid,
+        tenant=str(tenant_id) if tenant_id is not None else None,
+    )
+
+
+async def _process_turn_v4_or_fallback(
+    *, phone: str, user_message: str, media_url: Optional[str], bsuid: Optional[str],
+    tenant_id=None,
+) -> dict:
+    """Dispatch to the V4 router; fall back to V3 if V4 is not available."""
+    try:
+        from app.routers.v4.adapter import process_turn_v4
+    except Exception:
+        logger.info("[Router] active_router=v4 but V4 not built — serving V3")
+        return await _process_turn_v3_or_fallback(
+            phone=phone, user_message=user_message,
+            media_url=media_url, bsuid=bsuid, tenant_id=tenant_id,
+        )
+    return await process_turn_v4(
         phone=phone, user_message=user_message,
         media_url=media_url, bsuid=bsuid,
         tenant=str(tenant_id) if tenant_id is not None else None,
@@ -663,10 +694,11 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
                 )
                 continue
 
-            # ── Router resolution (V3 Phase 1.5: 3-way switch) ────────────
-            active_router = _resolve_active_router(settings)
-            # v2 + v3 share the inbox/pause/adapter semantics; only legacy v1 differs.
-            use_v2 = active_router in ("v2", "v3")
+            # ── Router resolution (per-tenant active_router setting) ──────
+            from app.core.tenancy import get_current_tenant as _get_tenant
+            active_router = await _resolve_active_router(settings, _get_tenant())
+            # v2/v3/v4 share inbox/pause/adapter semantics; only legacy v1 differs.
+            use_v2 = active_router in ("v2", "v3", "v4")
 
             # ── Bot-paused check (WhatsApp Inbox) ────────────────────────
             # If the admin has paused the bot for this user, save the message
@@ -692,7 +724,16 @@ async def process_messages(messages: List[Dict[str, Any]], phone_number_id: Opti
             # guards this with get_user_lock; V3/V2 must too.
             from app.core.session import get_user_lock
             async with get_user_lock(phone):
-                if active_router == "v3":
+                if active_router == "v4":
+                    from app.core.tenancy import get_current_tenant
+                    result = await _process_turn_v4_or_fallback(
+                        phone=phone,
+                        user_message=text,
+                        media_url=media_url,
+                        bsuid=msg.get("_bsuid"),
+                        tenant_id=get_current_tenant(),
+                    )
+                elif active_router == "v3":
                     from app.core.tenancy import get_current_tenant
                     result = await _process_turn_v3_or_fallback(
                         phone=phone,
