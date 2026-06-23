@@ -1,7 +1,7 @@
 ---
 id: KA1-percepcion-sub-objetivos
 title: Fase 1 — Percepción + descomponedor de objetivos (multi-intención)
-status: pending
+status: completed
 area: routers/v4
 related_areas: [routers/v4/schema, routers/v4/prompts]
 priority: P0
@@ -51,3 +51,10 @@ casos de multi-intención/anáfora en KA-EVAL, luego implementar hasta ponerlos 
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. Schema v3 mono-intent confirmado en schema.py.
+- 2026-06-23 — KA1 completado. 6 archivos modificados/creados:
+  - app/routers/v4/schema.py — TURN_JSON_SCHEMA_V4 extiende V3 con sub_goals[] + references{}; TurnOutputV4, SubGoal, References Pydantic; parse_turn_output_v4 con raw_decode.
+  - app/routers/v4/prompts.py — build_system_prompt_v4() = V3 + instrucciones sub_goals/references + ejemplos multi-intención/anáfora.
+  - app/routers/v4/belief.py (nuevo) — BeliefStateV6 con last_sub_goals; serialize/deserialize/load/save V6.
+  - app/routers/v4/engine.py — Motor real: 1 LLM call V4 schema, todos los gates de V3, sub_goals en rich_content["sub_goals"] y belief.last_sub_goals; ejecuta V3 pipeline importando internals.
+  - tests/test_v4_perception.py (nuevo) — 9 tests offline: schema, parser, multi-intent, anáfora, robustez trailing text.
+  - tests/test_v4_contract.py — mocks actualizados de v3.engine.run_turn → v4.engine.run_turn.

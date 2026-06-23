@@ -21,12 +21,16 @@ _GUARANTEED = frozenset({
     "latency_ms",
 })
 
-_V3_STUB_RESULT = {
+_V4_STUB_RESULT = {
     "response_text": "Hola, ¿en qué te puedo ayudar?",
     "tools_used": [],
-    "rich_content": {},
+    "rich_content": {
+        "sub_goals": [{"intent": "rapport", "args_hint": "{}"}],
+        "images": [], "caption": "",
+        "selected_property_id": None, "search_criteria": {}, "active_intents": [],
+    },
     "confidence": 0.9,
-    "router_label": "v3::smalltalk",
+    "router_label": "v4::smalltalk",
     "latency_ms": 100.0,
 }
 
@@ -42,7 +46,7 @@ def _no_inbox_side_effects():
 async def test_process_turn_v4_returns_guaranteed_keys() -> None:
     from app.routers.v4.adapter import process_turn_v4
 
-    with patch("app.routers.v3.engine.run_turn", new_callable=AsyncMock, return_value=_V3_STUB_RESULT):
+    with patch("app.routers.v4.engine.run_turn", new_callable=AsyncMock, return_value=_V4_STUB_RESULT):
         result = await process_turn_v4(
             phone="549test1234",
             user_message="Hola, busco un departamento en alquiler.",
@@ -56,7 +60,7 @@ async def test_process_turn_v4_returns_guaranteed_keys() -> None:
 async def test_process_turn_v4_types() -> None:
     from app.routers.v4.adapter import process_turn_v4
 
-    with patch("app.routers.v3.engine.run_turn", new_callable=AsyncMock, return_value=_V3_STUB_RESULT):
+    with patch("app.routers.v4.engine.run_turn", new_callable=AsyncMock, return_value=_V4_STUB_RESULT):
         result = await process_turn_v4(
             phone="549test1234",
             user_message="Quiero ver casas en venta.",
@@ -74,7 +78,7 @@ async def test_process_turn_v4_types() -> None:
 async def test_process_turn_v4_with_tenant_uuid() -> None:
     from app.routers.v4.adapter import process_turn_v4
 
-    with patch("app.routers.v3.engine.run_turn", new_callable=AsyncMock, return_value=_V3_STUB_RESULT):
+    with patch("app.routers.v4.engine.run_turn", new_callable=AsyncMock, return_value=_V4_STUB_RESULT):
         result = await process_turn_v4(
             phone="549test9999",
             user_message="¿Cuál es el precio del departamento?",
