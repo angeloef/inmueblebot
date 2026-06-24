@@ -1,7 +1,7 @@
 ---
 id: KA3-evaluador-evidencia-abstencion
 title: Fase 3 — Evaluador de evidencia + abstención (anti-alucinación)
-status: in_progress
+status: completed
 area: routers/v4
 related_areas: [routers/v4/engine]
 priority: P1
@@ -48,3 +48,4 @@ Escribir primero casos de abstención en KA-EVAL (pregunta sin evidencia → deb
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. `app/agents/evaluator.py` y `test_knowledge_grounding.py` existen como base.
+- 2026-06-24 — Implementado. Gates: lint OK, 37 tests green (16 nuevos KA3 + 21 preexistentes KA2/grounding). SHA: 8712238. Ponytail: abstention_response()→constante; consistency=0.0 (honest baseline). Review: python-reviewer APPROVE, silent-failure-hunter encontró 3 findings (MEDIUM consistency→fixed, LOW malformed pool warning→added, LOW str() casts→added).
