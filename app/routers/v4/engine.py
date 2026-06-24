@@ -23,6 +23,8 @@ from uuid import UUID
 
 from loguru import logger
 
+from app.routers.v4.evidence_eval import evaluate_evidence_pool, ABSTAIN_RESPONSE
+
 # ── Safety-gate constants (verbatim from v3/engine.py) ────────────────────────
 
 _OUT_OF_SCOPE_RESPONSE = (
@@ -503,14 +505,27 @@ async def run_turn(
             )
         except Exception as exc:
             logger.warning("[V4] gather_rag_evidence failed (non-fatal): {}", str(exc))
-    rich_content["evidence_pool"] = v4_evidence.build_evidence_pool(
+    evidence_pool = v4_evidence.build_evidence_pool(
         belief.last_sub_goals, memory_items, rag_items,
     )
+    rich_content["evidence_pool"] = evidence_pool
+
+    # ── KA3: Evidence evaluation + abstention signal ──────────────────────────
+    evidence_eval = evaluate_evidence_pool(evidence_pool, turn.action)
+    rich_content["evidence_coverage"] = evidence_eval.to_dict()
+
+    if evidence_eval.should_abstain:
+        logger.info(
+            "[V4/KA3] Abstaining on action={} reason={} confidence={:.2f}",
+            turn.action, evidence_eval.abstain_reason, evidence_eval.confidence,
+        )
+        response_text = ABSTAIN_RESPONSE
+        response_source = "abstention"
 
     # ── Step 8b: Quality guard ────────────────────────────────────────────────
     judge_score: float | None = None
     _booked_ok = (turn.action == "book_step" and _fsm_booking_succeeded)
-    if not _booked_ok:
+    if not _booked_ok and not evidence_eval.should_abstain:
         try:
             from app.routers.v3 import guard
             guard_result = await guard.run_guard(

@@ -1,7 +1,7 @@
 ---
 id: KA3-evaluador-evidencia-abstencion
 title: Fase 3 — Evaluador de evidencia + abstención (anti-alucinación)
-status: pending
+status: in_progress
 area: routers/v4
 related_areas: [routers/v4/engine]
 priority: P1
