@@ -8,7 +8,7 @@ imported from V3 unchanged.
 from __future__ import annotations
 
 # Re-export V3 tenant_policy and message-builder unchanged
-from app.routers.v3.prompts import build_tenant_policy, build_messages  # noqa: F401
+from app.routers.v3.prompts import build_messages, build_tenant_policy  # noqa: F401
 
 # Pull the V3 static prompt text to extend
 from app.routers.v3.prompts import build_system_prompt as _v3_build
@@ -51,6 +51,11 @@ Saludo (≥1 sub_goal siempre):
 usuario: "hola"
 → sub_goals: [{intent:"rapport", args_hint:'{}'}]
 → references: {selected_property_id:null, anaphora:null}
+
+TOOLS NUEVAS V4 — captura de leads:
+capture_lead(nombre, operation, tipo, zona, presupuesto_max, notas): registra al cliente como interesado (lead) de la inmobiliaria. Llamala cuando el usuario muestra interés real (busca activamente, deja criterios) aunque no agende visita. Idempotente.
+qualify_lead(presupuesto_max, zona, urgencia, tipo): califica el lead con un score (hot/warm/cold). Llamala tras capture_lead cuando hay datos para priorizar.
+ENCADENADO MULTI-TOOL: tool_calls es una lista ORDENADA; podés emitir ≥2 tools en un mismo turno (ej: search_properties + capture_lead, o capture_lead + qualify_lead) cuando el mensaje lo justifica.
 
 DISCIPLINA DE OUTPUT V4:
 Respondé SIEMPRE con el JSON completo del schema:

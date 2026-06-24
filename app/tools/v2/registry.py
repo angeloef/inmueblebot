@@ -1,19 +1,21 @@
 """Tool registry — maps tool names to callables and provides OpenAI tool schemas."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.agents.schemas import CSStructuredToolCall
+from app.tools.v2.cancel_appointment import cancel_appointment
 from app.tools.v2.echo_tool import echo
-from app.tools.v2.time_tool import get_time
-from app.tools.v2.search_properties import search_properties
+from app.tools.v2.get_faq_answer import get_faq_answer
+from app.tools.v2.get_my_appointments import get_my_appointments
 from app.tools.v2.get_property_details import get_property_details
 from app.tools.v2.get_property_images import get_property_images
-from app.tools.v2.get_faq_answer import get_faq_answer
-from app.tools.v2.schedule_visit import schedule_visit
-from app.tools.v2.get_my_appointments import get_my_appointments
-from app.tools.v2.cancel_appointment import cancel_appointment
-from app.tools.v2.reschedule_appointment import reschedule_appointment
+from app.tools.v2.leads import capture_lead, qualify_lead
 from app.tools.v2.request_human_assistance import request_human_assistance
+from app.tools.v2.reschedule_appointment import reschedule_appointment
+from app.tools.v2.schedule_visit import schedule_visit
+from app.tools.v2.search_properties import search_properties
+from app.tools.v2.time_tool import get_time
 
 # Registry: tool name → (function, is_async, schema dict)
 TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
@@ -311,6 +313,57 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                     "properties": {
                         "reason": {"type": "string", "description": "Por qué se necesita un agente humano."},
                         "message": {"type": "string", "description": "Mensaje personalizado opcional para el usuario."},
+                    },
+                },
+            },
+        },
+    ),
+    "capture_lead": (
+        capture_lead,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "capture_lead",
+                "description": (
+                    "Registra al cliente como lead (interesado) de la inmobiliaria. "
+                    "Usar cuando el usuario muestra interés real en comprar/alquilar y deja "
+                    "datos de su búsqueda, aunque no agende una visita. Idempotente: "
+                    "vuelve a llamarla para actualizar el mismo lead. NO pide el teléfono."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {"type": "string", "description": "Nombre del interesado, si lo dio."},
+                        "operation": {"type": "string", "description": "'alquiler' o 'venta'."},
+                        "tipo": {"type": "string", "description": "Tipo de propiedad que busca (casa, departamento, ph, terreno)."},
+                        "zona": {"type": "string", "description": "Zona/barrio/ciudad de interés."},
+                        "presupuesto_max": {"type": "number", "description": "Presupuesto máximo en pesos. 0 = sin dato."},
+                        "notas": {"type": "string", "description": "Cualquier detalle adicional del interés."},
+                    },
+                },
+            },
+        },
+    ),
+    "qualify_lead": (
+        qualify_lead,
+        True,
+        {
+            "type": "function",
+            "function": {
+                "name": "qualify_lead",
+                "description": (
+                    "Califica un lead ya capturado con un score (presupuesto, zona, urgencia, tipo) "
+                    "y lo marca como hot/warm/cold. Usar tras capture_lead cuando hay datos suficientes "
+                    "para priorizar al interesado."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "presupuesto_max": {"type": "number", "description": "Presupuesto máximo en pesos. 0 = sin dato."},
+                        "zona": {"type": "string", "description": "Zona/barrio/ciudad de interés."},
+                        "urgencia": {"type": "string", "description": "Urgencia del interesado: 'alta', 'media', 'baja', o expresión libre ('esta semana')."},
+                        "tipo": {"type": "string", "description": "Tipo de propiedad que busca."},
                     },
                 },
             },

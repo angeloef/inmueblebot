@@ -55,6 +55,9 @@ ignore = ["ANN101", "ANN102"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"app/tools/v2/registry.py" = ["E501"]
+"app/tools/v2/leads.py" = ["E501"]
+"app/routers/v*/prompts.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

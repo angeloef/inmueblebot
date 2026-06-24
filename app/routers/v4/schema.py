@@ -10,7 +10,6 @@ All V3 fields are preserved so the V3 execution pipeline works unchanged.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -91,8 +90,16 @@ _V4_EXTRA_PROPERTIES: dict = {
     },
 }
 
+import copy  # noqa: E402
+
+# KA4: extend the tool_calls enum for V4 ONLY (don't mutate the shared V3 list).
+# capture_lead / qualify_lead let the V4 engine register + score leads in a turn.
+_V4_TOOL_NAMES = list(_TOOL_NAMES) + ["capture_lead", "qualify_lead"]
 _v3_inner = _V3_SCHEMA["schema"]
-_v4_properties = {**_v3_inner["properties"], **_V4_EXTRA_PROPERTIES}
+_v4_tool_calls = copy.deepcopy(_v3_inner["properties"]["tool_calls"])
+_v4_tool_calls["items"]["properties"]["name"]["enum"] = _V4_TOOL_NAMES
+
+_v4_properties = {**_v3_inner["properties"], "tool_calls": _v4_tool_calls, **_V4_EXTRA_PROPERTIES}
 _v4_required = list(_v3_inner["required"]) + ["sub_goals", "references"]
 
 TURN_JSON_SCHEMA_V4: dict = {
@@ -129,8 +136,8 @@ class SubGoal(BaseModel):
 class References(BaseModel):
     """Anaphora and property-reference resolution fields."""
 
-    selected_property_id: Optional[int] = None
-    anaphora: Optional[str] = None
+    selected_property_id: int | None = None
+    anaphora: str | None = None
 
 
 class TurnOutputV4(TurnOutput):
