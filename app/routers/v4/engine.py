@@ -319,6 +319,20 @@ async def run_turn(
         await _record_gate_history(belief, user_message, _redirect)
         return _contract(_redirect, [], _empty_rich, 1.0, _label, start)
 
+    # ── Step 2b: KA2 — recover memory evidence (3 levels) for this turn ───────
+    # The V3 stack writes memory but never reads it back into the loop. Recover
+    # episodic/persona/zone now so the LLM actually sees prior-session context.
+    from app.routers.v4 import evidence as v4_evidence
+
+    try:
+        memory_items = await v4_evidence.gather_memory_evidence(phone, belief, tenant_id)
+    except Exception as exc:
+        # warning, not debug: a misconfigured tenant / broken Redis silently empties
+        # the memory block; must be visible in prod logs without breaking the turn.
+        logger.warning("[V4] gather_memory_evidence failed (non-fatal): {}", str(exc))
+        memory_items = []
+    memory_block = v4_evidence.render_memory_block(memory_items)
+
     # ── Step 3: Build messages ────────────────────────────────────────────────
     from app.routers.v4 import prompts as v4_prompts
     from app.routers.v3.engine import _compact_state, _history_messages
@@ -326,12 +340,13 @@ async def run_turn(
     state_json = json.dumps(_compact_state(belief), ensure_ascii=False)
     history = _history_messages(belief)
     tenant_policy = await v4_prompts.build_tenant_policy(tenant_id)
-    messages = v4_prompts.build_messages(
+    messages = v4_prompts.build_messages_v4(
         v4_prompts.build_system_prompt_v4(),
         tenant_policy,
         history,
         state_json,
         user_message,
+        memory_block=memory_block,
     )
 
     # ── Step 4: V4 engine call (LLM Call 1) ──────────────────────────────────
@@ -469,6 +484,28 @@ async def run_turn(
     # Expose sub_goals in rich_content for the eval runner + KA5
     rich_content["sub_goals"] = belief.last_sub_goals
     rich_content["llm_calls"] = 1  # KA1: always 1 engine call
+
+    # ── KA2: per-sub-goal evidence pool with provenance ───────────────────────
+    # RAG evidence only when the turn is knowledge-flavored (avoids a redundant
+    # embed on pure search/scheduling turns). ponytail: on answer_knowledge this
+    # may embed the query twice (here + the Step 7b safety-net); embeds are
+    # vector-retrieval, not chat — within the KA cost discipline.
+    rag_items: list = []
+    if any(str(sg.get("intent", "")).lower() in {"knowledge", "answer_knowledge", "faq"}
+           for sg in belief.last_sub_goals):
+        try:
+            _s = get_settings()
+            rag_items = await v4_evidence.gather_rag_evidence(
+                tenant_id=tenant_id,
+                query=user_message,
+                limit=_s.KNOWLEDGE_TOP_K,
+                threshold=_s.KNOWLEDGE_SIMILARITY_THRESHOLD,
+            )
+        except Exception as exc:
+            logger.warning("[V4] gather_rag_evidence failed (non-fatal): {}", str(exc))
+    rich_content["evidence_pool"] = v4_evidence.build_evidence_pool(
+        belief.last_sub_goals, memory_items, rag_items,
+    )
 
     # ── Step 8b: Quality guard ────────────────────────────────────────────────
     judge_score: float | None = None

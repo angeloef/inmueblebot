@@ -127,10 +127,16 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
 
     # PostgreSQL fallback — gracefully skip if table missing
     try:
+        from app.core.tenancy import resolve_tenant_id
         async with async_session_factory() as session:
             identity_key = get_identity_key()
+            # tenant_id filter is REQUIRED here: the Redis path is tenant-scoped via
+            # tenant_redis_key(), but this fallback must not match a phone/bsuid across
+            # tenants (RLS may not be applied on the pooled session's GUC). Without it,
+            # two agencies sharing a contact phone would leak episodes between tenants.
             result = await session.execute(
                 select(UserEpisode)
+                .where(UserEpisode.tenant_id == resolve_tenant_id())
                 .where((UserEpisode.bsuid == identity_key) | (UserEpisode.phone == phone))
                 .order_by(UserEpisode.created_at.desc())
                 .limit(limit)

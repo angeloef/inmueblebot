@@ -68,3 +68,29 @@ _SYSTEM_PROMPT_V4_OBJ = _SYSTEM_PROMPT_V4
 def build_system_prompt_v4() -> str:
     """Return the static V4 system prompt (byte-stable)."""
     return _SYSTEM_PROMPT_V4_OBJ
+
+
+def build_messages_v4(
+    system: str,
+    tenant_policy: str,
+    history: list[str],
+    state_json: str,
+    user_message: str,
+    memory_block: str = "",
+) -> list[dict]:
+    """Like V3 build_messages but injects a recovered-memory system block.
+
+    The memory block is dynamic (changes per turn) so it is placed LATE — right
+    before the [ESTADO] block — preserving the cached static prefix
+    (system + tenant_policy + history).
+    """
+    msgs = build_messages(system, tenant_policy, history, state_json, user_message)
+    if not memory_block:
+        return msgs
+    # Insert the memory block just before the trailing [ESTADO] system block
+    # (if present), otherwise append it.
+    insert_at = len(msgs)
+    if msgs and msgs[-1].get("role") == "system" and msgs[-1]["content"].startswith("[ESTADO]"):
+        insert_at = len(msgs) - 1
+    msgs.insert(insert_at, {"role": "system", "content": memory_block})
+    return msgs

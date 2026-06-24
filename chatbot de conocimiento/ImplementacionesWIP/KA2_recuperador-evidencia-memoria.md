@@ -1,7 +1,7 @@
 ---
 id: KA2-recuperador-evidencia-memoria
 title: Fase 2 — Recuperador consciente de evidencia + memoria persistente
-status: pending
+status: completed
 area: routers/v4
 related_areas: [memory, tools/v2, pgvector]
 priority: P1
@@ -49,3 +49,19 @@ Verificar aislamiento por tenant con datos semilla de KA-LOCAL antes de cerrar.
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. Confirmado que los 3 módulos de memoria existen en `app/memory/`.
+- 2026-06-24 — KA2 completado.
+  - **Nuevo** `app/routers/v4/evidence.py`: `EvidenceItem` (frozen), `gather_memory_evidence`
+    (episódica/persona/zona, tenant-scoped, read-only), `gather_rag_evidence` (híbrido denso+keyword
+    re-rank sobre pgvector), `render_memory_block` (inyección al prompt), `build_evidence_pool`
+    (pool por sub-objetivo con procedencia {source,id,timestamp,score}).
+  - `engine.py`: Step 2b recupera memoria e inyecta vía `build_messages_v4`; expone `evidence_pool`
+    y RAG híbrido (solo en turnos knowledge, para no duplicar embed). `prompts.py`: `build_messages_v4`
+    coloca el bloque de memoria tarde (antes de [ESTADO]) para no romper el cache prefix.
+  - **Fix de aislamiento (criterio #5)** surgido del review de seguridad: `episodic.get_episodes`
+    fallback PG ahora filtra por `tenant_id`; `semantic.get_zone_info` usa `tenant_redis_key`
+    (antes clave global → colisión entre inmobiliarias). Logs de fallo elevados a warning.
+  - Gates: ruff limpio en líneas nuevas (black no instalado en la imagen); pytest 26 v4 + 7 zona
+    verdes; app sirve `/version` 200; UX N/A (sin cambio visual); security-reviewer (H1/H2/M1 resueltos).
+  - Pendiente menor (M3): confirmar que el inbox no persista `evidence_pool` con resúmenes de
+    sesión (mismo tenant/contacto, no es leak cross-tenant; revisar en KA5 al escribir el write-back).
+  - `/ponytail full` aplicado: se eliminaron clases/funciones especulativas e imports muertos.

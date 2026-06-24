@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.tenancy import tenant_redis_key
 settings = get_settings()
 from app.db.session import async_session_factory
 from app.db.models.user_episode import ZoneStat
@@ -48,10 +49,13 @@ async def get_zone_info(zone_name: str) -> Optional[dict]:
     """Get zone knowledge, enriched with Redis/PostgreSQL data."""
     zone_name = zone_name.strip()
 
-    # Try Redis cache first
+    # Try Redis cache first — key MUST be tenant-scoped: zone names collide across
+    # agencies (every agency can have a "Centro"); a bare key would serve one
+    # tenant's cached prices/amenities to another.
+    zone_key = tenant_redis_key("kgraph:zone", zone_name)
     redis = await _get_redis()
     if redis:
-        data = await redis.get(f"kgraph:zone:{zone_name}")
+        data = await redis.get(zone_key)
         if data:
             await redis.aclose()
             return json.loads(data if isinstance(data, str) else data.decode())
@@ -77,7 +81,7 @@ async def get_zone_info(zone_name: str) -> Optional[dict]:
         redis = await _get_redis()
     if redis:
         await redis.set(
-            f"kgraph:zone:{zone_name}",
+            zone_key,
             json.dumps(base),
             ex=3600,
         )

@@ -1,7 +1,7 @@
 ---
 id: KA0-scaffolding-router-v4
 title: Fase 0 — Scaffolding del router v4 (plug-and-play)
-status: pending
+status: completed
 area: routers/v4
 related_areas: [api/webhook, api/admin]
 priority: P0
@@ -48,3 +48,5 @@ contrato de KA-EVAL contra v4 (debe empatar a v3 ya que delega).
 
 ## Bitácora (append-only)
 - 2026-06-23 — Plan creado. Contrato y punto de selección verificados en código.
+- 2026-06-23 — KA0 completado. SHA 453946f. 6 archivos creados en app/routers/v4/,
+  webhook async router resolution, admin 'v4' allowed. 14/14 tests verdes.
