@@ -26,10 +26,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from loguru import logger
 
-# Actions that require grounded evidence (knowledge-flavoured)
+# Actions that require grounded evidence (knowledge-flavoured).
+# "clarify" is intentionally excluded: it asks the user for more info, it doesn't
+# make knowledge claims and has no authoritative sources to ground against.
 _KNOWLEDGE_ACTIONS = frozenset({
     "answer_knowledge", "answer_faq", "knowledge",
-    "clarify",  # clarification still draws on evidence
 })
 
 # Sources considered authoritative (have source_id from a real KB row)
