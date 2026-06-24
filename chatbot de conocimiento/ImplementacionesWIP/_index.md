@@ -16,7 +16,7 @@ KA-EVAL se construye temprano para medir cada fase contra v3 con datos reales.
 | KA2 | routers/v4 + memory | P1 | completed | KA1 |
 | KA3 | routers/v4 (evidencia) | P1 | completed | KA2 |
 | KA4 | routers/v4 + tools/v2 | P1 | completed | KA1 |
-| KA5 | routers/v4 (control loop) | P1 | pending | KA3, KA4 |
+| KA5 | routers/v4 (control loop) | P1 | completed | KA3, KA4 |
 
 ## Regla de verificación transversal
 Cada fase KA0–KA5 cierra corriendo `tests/eval/run_eval.py --router v4` (ver KA-EVAL) y

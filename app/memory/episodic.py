@@ -7,16 +7,16 @@ PostgreSQL: user_episodes table — full durable records.
 import json
 import logging
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
-from app.core.identity import get_identity_key
 from app.core.config import get_settings
+from app.core.identity import get_identity_key
 from app.core.tenancy import tenant_redis_key
-settings = get_settings()
-from app.db.session import async_session_factory
 from app.db.models.user_episode import UserEpisode
+from app.db.session import async_session_factory
+
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -68,26 +68,45 @@ async def save_episode(
     last_tool: str | None = None,
     intent_outcome: str | None = None,
 ) -> None:
-    """Save a session episode to PostgreSQL and Redis cache."""
+    """Save a session episode to PostgreSQL and Redis cache.
+
+    Idempotent per session_id: upserts in PostgreSQL and dedups the Redis cache,
+    so KA5's per-turn write-back refreshes the session's episode in place instead
+    of accumulating a duplicate every turn.
+    """
     # PostgreSQL (durable) — gracefully skip if table missing
     try:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from app.core.tenancy import resolve_tenant_id
         async with async_session_factory() as session:
-            episode = UserEpisode(
+            values = {
                 # tenant_id REQUIRED: RLS WITH CHECK rejects NULL, and a NULL-tenant row would
                 # be invisible to every tenant-scoped query. See seed.py / appointment_service.
-                tenant_id=resolve_tenant_id(),
-                phone=phone,
-                bsuid=get_identity_key() or None,
-                session_id=session_id,
-                summary=summary,
-                turn_count=turn_count,
-                search_criteria=search_criteria,
-                properties_viewed=properties_viewed or [],
-                last_tool_called=last_tool,
-                intent_outcome=intent_outcome,
+                "tenant_id": resolve_tenant_id(),
+                "phone": phone,
+                "bsuid": get_identity_key() or None,
+                "session_id": session_id,
+                "summary": summary,
+                "turn_count": turn_count,
+                "search_criteria": search_criteria,
+                "properties_viewed": properties_viewed or [],
+                "last_tool_called": last_tool,
+                "intent_outcome": intent_outcome,
+            }
+            # Upsert on the UNIQUE session_id so per-turn write-back stays in place.
+            stmt = pg_insert(UserEpisode).values(**values).on_conflict_do_update(
+                index_elements=["session_id"],
+                set_={
+                    "summary": summary,
+                    "turn_count": turn_count,
+                    "search_criteria": search_criteria,
+                    "properties_viewed": properties_viewed or [],
+                    "last_tool_called": last_tool,
+                    "intent_outcome": intent_outcome,
+                },
             )
-            session.add(episode)
+            await session.execute(stmt)
             await session.commit()
     except Exception as exc:
         # Non-fatal: Redis cache below is still written. But log it — this previously
@@ -98,6 +117,15 @@ async def save_episode(
     redis = await _get_redis()
     if redis:
         key = tenant_redis_key("episodic", get_identity_key() or phone)
+        # Drop any prior entry for this session so per-turn write-back overwrites
+        # instead of duplicating (would otherwise poison cross-session recall).
+        try:
+            for raw in await redis.lrange(key, 0, -1):
+                prior = json.loads(raw if isinstance(raw, str) else raw.decode())
+                if prior.get("session_id") == session_id:
+                    await redis.lrem(key, 0, raw)
+        except Exception:
+            pass
         entry = json.dumps({
             "session_id": session_id,
             "summary": summary,
@@ -120,7 +148,8 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
     """
     redis = await _get_redis()
     if redis:
-        entries = await redis.lrange(tenant_redis_key("episodic", get_identity_key() or phone), 0, limit - 1)
+        rkey = tenant_redis_key("episodic", get_identity_key() or phone)
+        entries = await redis.lrange(rkey, 0, limit - 1)
         await redis.aclose()
         if entries:
             return [json.loads(e if isinstance(e, str) else e.decode()) for e in entries]
@@ -157,7 +186,7 @@ async def get_episodes(phone: str, limit: int = 5) -> list[dict]:
         return []
 
 
-async def get_last_episode(phone: str) -> Optional[dict]:
+async def get_last_episode(phone: str) -> dict | None:
     """Get the most recent episode for a user."""
     episodes = await get_episodes(phone, limit=1)
     return episodes[0] if episodes else None
@@ -202,7 +231,7 @@ async def build_greeting_from_episodes(phone: str) -> str:
     return " ".join(parts) + "."
 
 
-async def _get_redis():
+async def _get_redis() -> object | None:
     """Get Redis connection or None if unavailable."""
     try:
         import redis.asyncio as aioredis

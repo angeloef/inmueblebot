@@ -23,7 +23,7 @@ from uuid import UUID
 
 from loguru import logger
 
-from app.routers.v4.evidence_eval import evaluate_evidence_pool, ABSTAIN_RESPONSE
+from app.routers.v4.evidence_eval import ABSTAIN_RESPONSE
 
 # ── Safety-gate constants (verbatim from v3/engine.py) ────────────────────────
 
@@ -487,32 +487,31 @@ async def run_turn(
     rich_content["sub_goals"] = belief.last_sub_goals
     rich_content["llm_calls"] = 1  # KA1: always 1 engine call
 
-    # ── KA2: per-sub-goal evidence pool with provenance ───────────────────────
+    # ── KA5: bounded control loop (KA2 retrieval + KA3 evaluation) ────────────
     # RAG evidence only when the turn is knowledge-flavored (avoids a redundant
-    # embed on pure search/scheduling turns). ponytail: on answer_knowledge this
-    # may embed the query twice (here + the Step 7b safety-net); embeds are
-    # vector-retrieval, not chat — within the KA cost discipline.
-    rag_items: list = []
-    if any(str(sg.get("intent", "")).lower() in {"knowledge", "answer_knowledge", "faq"}
-           for sg in belief.last_sub_goals):
-        try:
-            _s = get_settings()
-            rag_items = await v4_evidence.gather_rag_evidence(
-                tenant_id=tenant_id,
-                query=user_message,
-                limit=_s.KNOWLEDGE_TOP_K,
-                threshold=_s.KNOWLEDGE_SIMILARITY_THRESHOLD,
-            )
-        except Exception as exc:
-            logger.warning("[V4] gather_rag_evidence failed (non-fatal): {}", str(exc))
-    evidence_pool = v4_evidence.build_evidence_pool(
-        belief.last_sub_goals, memory_items, rag_items,
+    # embed on pure search/scheduling turns). On a knowledge turn that would
+    # abstain, the loop widens the threshold and retries ONCE before giving up
+    # (vector retrieval only — within the KA cost discipline).
+    from app.routers.v4 import control as v4_control
+
+    _s = get_settings()
+    is_knowledge_turn = any(
+        str(sg.get("intent", "")).lower() in {"knowledge", "answer_knowledge", "faq"}
+        for sg in belief.last_sub_goals
+    )
+    evidence_pool, evidence_eval, retrieve_iters, _ = await v4_control.run_retrieval_loop(
+        sub_goals=belief.last_sub_goals,
+        memory_items=memory_items,
+        action=turn.action,
+        tenant_id=tenant_id,
+        query=user_message,
+        base_threshold=_s.KNOWLEDGE_SIMILARITY_THRESHOLD,
+        rag_limit=_s.KNOWLEDGE_TOP_K,
+        is_knowledge_turn=is_knowledge_turn,
     )
     rich_content["evidence_pool"] = evidence_pool
-
-    # ── KA3: Evidence evaluation + abstention signal ──────────────────────────
-    evidence_eval = evaluate_evidence_pool(evidence_pool, turn.action)
     rich_content["evidence_coverage"] = evidence_eval.to_dict()
+    rich_content["retrieve_iters"] = retrieve_iters
 
     if evidence_eval.should_abstain:
         logger.info(
@@ -552,6 +551,11 @@ async def run_turn(
         await save_belief_v6(belief)
     except Exception as exc:
         logger.warning("[V4] Failed to append assistant response to history: {}", str(exc))
+
+    # ── Step 8d: KA5 write-back — refresh episode + persona for next turn ─────
+    # Closes the cross-session memory loop: KA2 reads exactly what this writes.
+    # Idempotent per session, non-fatal, no LLM call.
+    await v4_control.write_back(belief, phone)
 
     # ── Step 9: Metrics + return ─────────────────────────────────────────────
     router_label = f"v4::{turn.action}"
