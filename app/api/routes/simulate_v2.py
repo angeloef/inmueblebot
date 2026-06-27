@@ -79,6 +79,12 @@ async def _run_adapter(req: SimulateRequest) -> dict[str, Any]:
             phone=req.phone, user_message=req.message, bsuid=req.bsuid, tenant=req.tenant
         )
 
+    if req.router == "v4":
+        from app.routers.v4.adapter import process_turn_v4
+        return await process_turn_v4(
+            phone=req.phone, user_message=req.message, bsuid=req.bsuid, tenant=req.tenant
+        )
+
     raise HTTPException(status_code=400, detail=f"unknown router '{req.router}'")
 
 
