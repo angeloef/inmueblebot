@@ -23,6 +23,33 @@ def _norm_accents(text: str) -> str:
     return (text or "").lower().translate(str.maketrans(_ACCENTED, _PLAIN))
 
 
+# Proximity phrases the LLM sometimes leaves glued to a landmark, e.g. the user
+# says "cerca de la municipalidad" and the whole phrase arrives as ``zona``. The
+# match is substring, so "cerca de la municipalidad" never hits "Municipalidad de
+# Oberá". Strip the leading proximity prefix so only the landmark noun remains.
+import re as _re
+
+_PROXIMITY_PREFIX = _re.compile(
+    r"^\s*(?:"
+    r"cerca\s+(?:de\b\s*)?(?:la|el|los|las|del)?\s*|"
+    r"a\s+\d+\s+cuadras?\s+(?:de\b\s*)?(?:la|el|del)?\s*|"
+    r"(?:por\s+)?la\s+zona\s+de\s+(?:la|el|del)?\s*|"
+    r"frente\s+al?\s+(?:la|el)?\s*|"
+    r"junto\s+al?\s+(?:la|el)?\s*"
+    r")",
+    _re.IGNORECASE,
+)
+
+
+def _strip_proximity(zona: str) -> str:
+    """Remove a leading 'cerca de la / a 2 cuadras del / frente a' prefix from ``zona``."""
+    if not zona:
+        return zona
+    stripped = _PROXIMITY_PREFIX.sub("", zona).strip()
+    # Never return empty (e.g. zona was only "cerca de") — keep the original.
+    return stripped or zona
+
+
 # When a search returns this many or more matches, we ask for the next unknown
 # filter (zona → dormitorios → presupuesto) instead of dumping a long list. The
 # list is only shown once it narrows below this threshold.
@@ -233,6 +260,10 @@ async def search_properties(
     skip_tokens = frozenset(
         t.lower() for t in (_profile.city, _profile.region, _profile.country) if t
     )
+
+    # Strip proximity prefixes ("cerca de la municipalidad" -> "municipalidad") so a
+    # landmark search matches reference_points instead of hitting zero on the raw phrase.
+    zona = _strip_proximity(zona)
 
     # Resolve city spelling variants once (code + LLM) for the zona term.
     city_variants: list[str] = []
