@@ -2,7 +2,7 @@
 id: prompts-engine-fluidez-conversacional
 area: Backend (bot / prompts.py + engine.py — reglas de conversación)
 priority: P1
-status: pending
+status: completed
 depends_on: []
 related_areas: [v3-prompts, v3-engine, v4-prompts-inherit, v4-engine-inherit, tests-v3, framing-plan-44]
 ---
@@ -152,3 +152,14 @@ ejemplos del prompt del engine, más una falta de guard de código:
   quedan acá, agrupados porque tocan `prompts.py`/`engine.py` — la misma
   área que el plan #44 (framing), del que este plan es un refinamiento
   puntual, no un reemplazo.
+- 2026-07-02: implementado. Guard de doble pregunta en código:
+  `_apply_framing` (`engine.py:704-729`) ahora descarta `outro` cuando
+  `verbatim_text` ya termina en `?` — con test (`test_response_framing.py`,
+  2 tests nuevos). Prompt: regla 46/3b acotadas para distinguir criterio
+  nuevo de pregunta de confirmación + nuevo few-shot ("¿solo esa tienen?");
+  nuevo ejemplo de acknowledge-first para atributos no filtrables ("con
+  patio"). `pytest tests/v3/ -q` → 339 passed, 2 skipped, 3 xfailed.
+  V4 confirmado heredando los 3 cambios (`_SYSTEM_PROMPT_V4` contiene las
+  frases nuevas, verificado por inspección directa del prompt final).
+  security-reviewer sobre el diff: sin hallazgos. Gate de Chrome MCP UX no
+  aplica (sin cambios de UI, solo backend/prompt).

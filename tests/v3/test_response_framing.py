@@ -105,6 +105,25 @@ class TestApplyFraming(unittest.TestCase):
             out = _apply_framing(turn, _VERBATIM)
         self.assertEqual(out, _VERBATIM)
 
+    def test_outro_dropped_when_verbatim_already_ends_in_a_question(self):
+        # plan #46: progressive narrowing / no-results blocks already end in "?" —
+        # an outro would stack a second question in the same message, breaking
+        # "una sola pregunta por mensaje" even if the LLM ignores the prompt rule.
+        verbatim = "Encontré 21 propiedades en alquiler. ¿En qué zona buscás?"
+        turn = _StubTurn(intro="¡Buenísimo!", outro="¿Querés que te muestre fotos?")
+        with patch("app.core.config.get_settings", return_value=_settings()):
+            out = _apply_framing(turn, verbatim)
+        self.assertIn(verbatim, out)
+        self.assertIn("¡Buenísimo!", out)
+        self.assertNotIn("¿Querés que te muestre fotos?", out)
+        self.assertEqual(out.count("?"), 1)
+
+    def test_outro_kept_when_verbatim_does_not_end_in_a_question(self):
+        turn = _StubTurn(intro=None, outro="¿Querés ver fotos de alguna?")
+        with patch("app.core.config.get_settings", return_value=_settings()):
+            out = _apply_framing(turn, _VERBATIM)
+        self.assertIn("¿Querés ver fotos", out)
+
 
 class TestApplyFramingIntroOnly(unittest.TestCase):
 

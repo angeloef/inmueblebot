@@ -53,7 +53,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `completed` | **P2** — reversible con flag (off por default) |
 | 44 | [`44_framing-nativo-engine-respuestas.md`](./44_framing-nativo-engine-respuestas.md) | Backend (bot / schema+prompts+engine) | `completed` | **P1** — supersede al 43 (borra el wrap y su flag) |
 | 45 | [`45_search-properties-redaccion-sensible-al-count.md`](./45_search-properties-redaccion-sensible-al-count.md) | Backend (bot / search tool) | `pending` | **P1** — no toca engine.py |
-| 46 | [`46_prompts-engine-fluidez-conversacional.md`](./46_prompts-engine-fluidez-conversacional.md) | Backend (bot / prompts.py+engine.py) | `pending` | **P1** — refina el framing del 44, no lo reemplaza |
+| 46 | [`46_prompts-engine-fluidez-conversacional.md`](./46_prompts-engine-fluidez-conversacional.md) | Backend (bot / prompts.py+engine.py) | `completed` | **P1** — refina el framing del 44, no lo reemplaza |
 
 ### Bot chatbot — bugs de fluidez detectados en test real (45–46)
 Conversación de test real (WhatsApp, tenant `default`) reveló 4 fallas tras el deploy del #44:

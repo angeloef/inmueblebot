@@ -720,6 +720,11 @@ def _apply_framing(turn, verbatim_text: str) -> str:
     framing = getattr(turn, "framing", None)
     intro = _safe_framing_part(getattr(framing, "intro", None))
     outro = _safe_framing_part(getattr(framing, "outro", None))
+    if verbatim_text.rstrip().endswith("?"):
+        # verbatim_text already asks its own question (progressive narrowing,
+        # empty results) — an outro would add a second question in one message,
+        # breaking "una sola pregunta por mensaje" (plan #46 guard).
+        outro = ""
     parts = [p for p in (intro, verbatim_text, outro) if p]
     return "\n\n".join(parts)
 
