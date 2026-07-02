@@ -55,6 +55,42 @@ def _strip_proximity(zona: str) -> str:
 # list is only shown once it narrows below this threshold.
 _MAX_LIST = 8
 
+_TIPO_MAP = {
+    "departamento": "departamento", "depto": "departamento",
+    "departamentos": "departamento", "deptos": "departamento",
+    "casa": "casa", "casas": "casa",
+    "ph": "ph",
+    "terreno": "terreno", "terrenos": "terreno",
+}
+
+
+def _parse_tipos(tipo: str) -> list[str]:
+    """Parse a (possibly CSV) ``tipo`` arg into a deduped list of canonical categories.
+
+    "departamento" -> ["departamento"]; "depto,casa,casa" -> ["departamento", "casa"];
+    unrecognized terms pass through lowercased rather than being dropped, so an
+    exact `Property.category` match still works if the DB has that value; empty
+    terms are discarded.
+    """
+    seen: list[str] = []
+    # ponytail: cap terms so a degenerate CSV can't grow the IN(...) clause unbounded.
+    for term in (tipo or "").split(",")[:10]:
+        term = term.strip().lower()
+        if not term:
+            continue
+        mapped = _TIPO_MAP.get(term, term)
+        if mapped not in seen:
+            seen.append(mapped)
+    return seen
+
+
+def _tipo_plural_label(tipos: list[str]) -> str:
+    """Pluralized display label for 0+ property types, e.g. 'casas' or 'departamentos y casas'."""
+    if not tipos:
+        return "propiedades"
+    words = [t if t == "ph" else t + ("s" if t[-1] != "s" else "") for t in tipos]
+    return " y ".join(words)
+
 
 def _format_price_ars(price: float, is_rental: bool) -> str:
     """Argentine price format: ``$35.976`` (dot = thousands), ``/mes`` only for alquiler."""
@@ -238,20 +274,15 @@ async def search_properties(
     """Search the current tenant's properties matching the given filters.
 
     All filters are optional -- omitted filters match everything.
+    tipo accepts multiple comma-separated values (e.g. "departamento,casa") to
+    match either type in one call.
     bedrooms_match controls dormitorios matching:
       'exact'    -> == dormitorios  (user said "1 habitacion")
       'at_least' -> >= dormitorios  (user said "al menos 2")
       'range'    -> between dormitorios and dormitorios_max (user said "2 a 3")
     Returns a human-readable list of matching properties.
     """
-    tipo_map = {
-        "departamento": "departamento", "depto": "departamento",
-        "departamentos": "departamento", "deptos": "departamento",
-        "casa": "casa", "casas": "casa",
-        "ph": "ph",
-        "terreno": "terreno", "terrenos": "terreno",
-    }
-    mapped_tipo = tipo_map.get(tipo.lower(), tipo.lower()) if tipo else ""
+    mapped_tipos = _parse_tipos(tipo)
 
     # Tenant-aware city/zone labels (no longer hardcoded to Oberá).
     from app.routers.v3.tenant_profile import load_tenant_profile
@@ -275,8 +306,8 @@ async def search_properties(
 
         if operation:
             stmt = stmt.where(Property.type == operation.lower())
-        if mapped_tipo:
-            stmt = stmt.where(Property.category == mapped_tipo)
+        if mapped_tipos:
+            stmt = stmt.where(Property.category.in_(mapped_tipos))
         if zona:
             zone_filters = _build_zone_filters(zona, city_variants)
             stmt = stmt.where(or_(*zone_filters))
@@ -293,8 +324,7 @@ async def search_properties(
         filters_desc = _describe_filters(operation, tipo, zona, presupuesto_max, dormitorios)
 
         if not properties:
-            tipo_word = tipo if tipo else "propiedades"
-            tipo_plural = tipo_word if tipo_word in ("ph",) else tipo_word + ("s" if tipo_word[-1] != "s" else "")
+            tipo_plural = _tipo_plural_label(mapped_tipos)
             zona_part = f" en {zona}" if zona else ""
             op_part = f" de {operation}" if operation else ""
 
@@ -311,15 +341,15 @@ async def search_properties(
 
             if nearby:
                 nearby_has_matching_tipo = (
-                    not mapped_tipo
-                    or any(p.category == mapped_tipo for p in nearby)
+                    not mapped_tipos
+                    or any(p.category in mapped_tipos for p in nearby)
                 )
 
-                if not nearby_has_matching_tipo and mapped_tipo:
-                    # Decision: offer the SAME type in nearby zones FIRST. Never dump
+                if not nearby_has_matching_tipo and mapped_tipos:
+                    # Decision: offer the SAME type(s) in nearby zones FIRST. Never dump
                     # other types (casa/terreno) unprompted — ask before showing them.
                     same_elsewhere = await _count_same_type_elsewhere(
-                        operation, mapped_tipo,
+                        operation, mapped_tipos,
                         dormitorios, dormitorios_max, bedrooms_match,
                     )
                     if same_elsewhere > 0:
@@ -339,11 +369,11 @@ async def search_properties(
                         f"En {zona or 'la zona'} sí hay {alt_plural}. ¿Querés ver esas opciones?"
                     )
 
-                elif mapped_tipo and nearby_has_matching_tipo:
-                    # Zone has the right tipo but different bedrooms/criteria.
+                elif mapped_tipos and nearby_has_matching_tipo:
+                    # Zone has the right tipo(s) but different bedrooms/criteria.
                     # E1 fix: don't duplicate tipo in header (tipo_plural already names it).
-                    # E4 fix: filter to show ONLY matching tipo — no mixed depto/terreno/casa.
-                    tipo_nearby = [p for p in nearby if p.category == mapped_tipo]
+                    # E4 fix: filter to show ONLY matching tipo(s) — no mixed depto/terreno/casa.
+                    tipo_nearby = [p for p in nearby if p.category in mapped_tipos]
                     dorm_part = (
                         f", {dormitorios} dormitorio{'s' if dormitorios != 1 else ''}"
                         if dormitorios > 0 else ""
@@ -365,12 +395,12 @@ async def search_properties(
 
             # Fallback 2: drop zona, keep tipo + operacion (other zones, same tipo)
             # Only reached when the zone has ZERO properties of any type.
-            if zona and (operation or mapped_tipo):
+            if zona and (operation or mapped_tipos):
                 fb2 = _scoped_select()
                 if operation:
                     fb2 = fb2.where(Property.type == operation.lower())
-                if mapped_tipo:
-                    fb2 = fb2.where(Property.category == mapped_tipo)
+                if mapped_tipos:
+                    fb2 = fb2.where(Property.category.in_(mapped_tipos))
                 fb2 = _apply_bedrooms_filter(fb2, dormitorios, dormitorios_max, bedrooms_match)
 
                 fb2_result = await session.execute(fb2)
@@ -388,12 +418,12 @@ async def search_properties(
                     )
 
             # Fallback 3: drop zona, show anything matching operacion + tipo
-            if zona and (operation or mapped_tipo or presupuesto_max > 0 or dormitorios > 0):
+            if zona and (operation or mapped_tipos or presupuesto_max > 0 or dormitorios > 0):
                 fb3 = _scoped_select()
                 if operation:
                     fb3 = fb3.where(Property.type == operation.lower())
-                if mapped_tipo:
-                    fb3 = fb3.where(Property.category == mapped_tipo)
+                if mapped_tipos:
+                    fb3 = fb3.where(Property.category.in_(mapped_tipos))
                 if presupuesto_max > 0:
                     fb3 = fb3.where(Property.price <= presupuesto_max)
                 fb3 = _apply_bedrooms_filter(fb3, dormitorios, dormitorios_max, bedrooms_match)
@@ -430,10 +460,10 @@ async def search_properties(
 
 
 async def _count_same_type_elsewhere(
-    operation: str, mapped_tipo: str,
+    operation: str, mapped_tipos: list[str],
     dormitorios: int, dormitorios_max: int, bedrooms_match: str,
 ) -> int:
-    """Count tenant properties of the requested type/operation in ANY zone.
+    """Count tenant properties of the requested type(s)/operation in ANY zone.
 
     Used to offer "same type in other zones" before ever showing a different type.
     Opens its own session so it never shares/contends with the caller's session.
@@ -443,8 +473,8 @@ async def _count_same_type_elsewhere(
     )
     if operation:
         stmt = stmt.where(Property.type == operation.lower())
-    if mapped_tipo:
-        stmt = stmt.where(Property.category == mapped_tipo)
+    if mapped_tipos:
+        stmt = stmt.where(Property.category.in_(mapped_tipos))
     stmt = _apply_bedrooms_filter(stmt, dormitorios, dormitorios_max, bedrooms_match)
     async with async_session_factory() as session:
         result = await session.execute(stmt)
@@ -532,7 +562,7 @@ def _describe_filters(
 ) -> str:
     parts = []
     if tipo:
-        parts.append(tipo + ("s" if tipo[-1] != "s" else ""))
+        parts.append(_tipo_plural_label(_parse_tipos(tipo)))
     if operation:
         parts.append(f"en {operation}")
     if zona:

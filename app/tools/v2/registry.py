@@ -79,7 +79,9 @@ TOOL_REGISTRY: dict[str, tuple[Callable[..., Any], bool, dict[str, Any]]] = {
                             "type": "string",
                             "description": (
                                 "Tipo de propiedad: 'departamento' (o 'depto'), 'casa', 'ph', 'terreno'. "
-                                "Mapear 'departamentos'/'deptos' a 'departamento', 'casas' a 'casa'."
+                                "Mapear 'departamentos'/'deptos' a 'departamento', 'casas' a 'casa'. "
+                                "Si el usuario menciona MÁS DE UN tipo (ej. 'depto o casa'), pasar ambos "
+                                "separados por coma en un solo string: 'departamento,casa'."
                             ),
                         },
                         "zona": {

@@ -49,6 +49,22 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 39 | [`39_upsell-feature-preview-secciones-bloqueadas.md`](./39_upsell-feature-preview-secciones-bloqueadas.md) | Frontend (gating) | `completed` | relac. 10/22 |
 | 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `completed` | — |
 | 41 | [`41_enforcement-limites-plan-backend.md`](./41_enforcement-limites-plan-backend.md) | Backend | `completed` | **P0** — relac. 08/09 |
+| 42 | [`42_busqueda-multi-tipo-search-properties.md`](./42_busqueda-multi-tipo-search-properties.md) | Backend (bot / search tool) | `completed` | **P1** — no toca engine.py |
+| 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `pendiente` | **P2** — reversible con flag |
+
+### Bot chatbot — UX conversacional sin perder grounding (43)
+**43 (P2)** las respuestas de búsqueda suenan a template (bloque Python verbatim, sin LLM).
+Dirección "envolver, no reescribir": LLM agrega intro/outro alrededor del bloque de datos duros
+(precio/specs/ID), que sigue siendo Python puro e intocable — test no-negociable: bloque
+verbatim byte-idéntico. Reusa `LLMRole.SYNTH` (gpt-5.4-mini) ya existente. Reversible con flag;
+medir costo/latencia en tests/eval/ antes de habilitar en prod (WhatsApp activo).
+
+### Bot chatbot — bug real detectado en WhatsApp (42)
+**42 (P1)** `search_properties` trata `tipo` como string singular — "depto o casa" solo busca uno.
+Fix: `tipo` acepta CSV (`"departamento,casa"`) + `.in_()` en el filtro, combinable con todos los
+demás criterios (zona/reference_points, presupuesto, dormitorios, ambientes). Explícitamente NO
+toca `app/routers/v3/engine.py` (ahí vive un bug relacionado de `_assemble_response` que descarta
+la segunda llamada a un mismo tool en un turno — documentado, fuera de alcance).
 
 ### Lote testing manual #3 (37–41)
 Bugs/gaps detectados en testing manual sobre features ya marcadas `completed`:
