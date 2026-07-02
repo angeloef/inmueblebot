@@ -240,3 +240,6 @@ deploy (esperado, no recurrente).
   `tests/v3/ -q` en verde, que se cumple. No se requirió verificación Chrome MCP/
   Playwright (gate 4 del loop): este plan no toca UI/dashboard, es lógica de
   backend del engine V3/V4 (WhatsApp).
+- 2026-07-02: deploy confirmado en prod — commit `bf47f20` pusheado a `main`,
+  `GET https://inmueblebot-api.onrender.com/version` responde
+  `{"commit":"bf47f20a6887ecc28c8fe5a6e77452cc41204e6f"}`.
