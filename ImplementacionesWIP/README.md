@@ -52,6 +52,18 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 42 | [`42_busqueda-multi-tipo-search-properties.md`](./42_busqueda-multi-tipo-search-properties.md) | Backend (bot / search tool) | `completed` | **P1** — no toca engine.py |
 | 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `completed` | **P2** — reversible con flag (off por default) |
 | 44 | [`44_framing-nativo-engine-respuestas.md`](./44_framing-nativo-engine-respuestas.md) | Backend (bot / schema+prompts+engine) | `completed` | **P1** — supersede al 43 (borra el wrap y su flag) |
+| 45 | [`45_search-properties-redaccion-sensible-al-count.md`](./45_search-properties-redaccion-sensible-al-count.md) | Backend (bot / search tool) | `pending` | **P1** — no toca engine.py |
+| 46 | [`46_prompts-engine-fluidez-conversacional.md`](./46_prompts-engine-fluidez-conversacional.md) | Backend (bot / prompts.py+engine.py) | `pending` | **P1** — refina el framing del 44, no lo reemplaza |
+
+### Bot chatbot — bugs de fluidez detectados en test real (45–46)
+Conversación de test real (WhatsApp, tenant `default`) reveló 4 fallas tras el deploy del #44:
+**45** el tool de búsqueda ignora el count de resultados al redactar (plural incorrecto con 1
+resultado — "1 propiedad casas"; tip de "seguí filtrando" sin sentido con pocos resultados; sin
+aclaración cuando un tipo agregado en multi-tipo no matchea nada). **46** el engine agrega una
+segunda pregunta (`framing.outro`) sobre un bloque que ya termina en pregunta — sin guard de
+código, solo prompt; repite el bloque de resultados idéntico ante preguntas de confirmación
+("¿solo esa tienen?") por falta de few-shot y por la regla agresiva de "buscá ya"; acknowledge-first
+no reconoce atributos no filtrables ("con patio"). Independientes entre sí, sin depends_on.
 
 ### Bot chatbot — framing nativo del engine (44)
 **44 (P1)** reemplaza el wrap del #43: el engine emite `framing {intro, outro}` (nullables) en su
