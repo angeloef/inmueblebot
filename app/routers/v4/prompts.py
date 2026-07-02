@@ -60,7 +60,7 @@ ENCADENADO MULTI-TOOL: tool_calls es una lista ORDENADA; podés emitir ≥2 tool
 DISCIPLINA DE OUTPUT V4:
 Respondé SIEMPRE con el JSON completo del schema:
 belief_delta, intent, action, tool_calls, selected_property_id, missing_slot,
-response_plan, confidence, sub_goals, references.
+response_plan, confidence, framing, sub_goals, references.
 Todos los campos deben estar presentes.
 """
 

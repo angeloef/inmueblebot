@@ -51,6 +51,16 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 41 | [`41_enforcement-limites-plan-backend.md`](./41_enforcement-limites-plan-backend.md) | Backend | `completed` | **P0** — relac. 08/09 |
 | 42 | [`42_busqueda-multi-tipo-search-properties.md`](./42_busqueda-multi-tipo-search-properties.md) | Backend (bot / search tool) | `completed` | **P1** — no toca engine.py |
 | 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `completed` | **P2** — reversible con flag (off por default) |
+| 44 | [`44_framing-nativo-engine-respuestas.md`](./44_framing-nativo-engine-respuestas.md) | Backend (bot / schema+prompts+engine) | `completed` | **P1** — supersede al 43 (borra el wrap y su flag) |
+
+### Bot chatbot — framing nativo del engine (44)
+**44 (P1)** reemplaza el wrap del #43: el engine emite `framing {intro, outro}` (nullables) en su
+única llamada estructurada — cero llamadas extra, contexto completo (historia/estado/memoria), y
+**condicional**: el prompt define cuándo aporta (primera búsqueda, vacío, detalle→CTA) y cuándo no
+(refinamiento, ficha pedida por ID). El bloque verbatim sigue byte-idéntico (guard: cualquier
+dígito en intro/outro = inseguro, en código). Incluye acknowledge-first para clarify y bienvenida
+de primer turno. Default ON con
+kill-switch `RESPONSE_FRAMING_ENABLED`. V4 hereda por spread del schema V3.
 
 ### Bot chatbot — UX conversacional sin perder grounding (43)
 **43 (P2)** las respuestas de búsqueda suenan a template (bloque Python verbatim, sin LLM).

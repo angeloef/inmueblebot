@@ -166,6 +166,27 @@ TURN_JSON_SCHEMA: dict = {
                 "type": "number",
                 "description": "Self-reported confidence 0.0–1.0",
             },
+            "framing": {
+                "type": "object",
+                "description": (
+                    "Conversational intro/outro to wrap a verbatim data block (search "
+                    "results, detail card, appointment list, booking confirmation). Null "
+                    "members when framing doesn't add value this turn — see CAMPO framing "
+                    "in the system prompt for when to use each."
+                ),
+                "properties": {
+                    "intro": {
+                        "type": ["string", "null"],
+                        "description": "Short intro sentence, or null when it doesn't add value.",
+                    },
+                    "outro": {
+                        "type": ["string", "null"],
+                        "description": "Short outro sentence, or null when it doesn't add value.",
+                    },
+                },
+                "required": ["intro", "outro"],
+                "additionalProperties": False,
+            },
         },
         "required": [
             "belief_delta",
@@ -176,6 +197,7 @@ TURN_JSON_SCHEMA: dict = {
             "missing_slot",
             "response_plan",
             "confidence",
+            "framing",
         ],
         "additionalProperties": False,
     },
@@ -220,6 +242,17 @@ class ResponsePlanItem(BaseModel):
     content: str
 
 
+class Framing(BaseModel):
+    """Conversational intro/outro emitted alongside the turn (plan #44).
+
+    Nullable by design: the engine emits null when framing doesn't add value
+    (e.g. a refinement of an already-shown search). The verbatim data block
+    itself is never generated here — see _apply_framing in engine.py.
+    """
+    intro: Optional[str] = None
+    outro: Optional[str] = None
+
+
 class TurnOutput(BaseModel):
     """Parsed output from the V3 engine LLM call."""
     belief_delta: BeliefDelta
@@ -230,6 +263,7 @@ class TurnOutput(BaseModel):
     missing_slot: Optional[str] = None
     response_plan: list[ResponsePlanItem]
     confidence: float
+    framing: Framing = Framing()
 
 
 def _extract_json_object(raw: str) -> dict:

@@ -678,86 +678,66 @@ async def _synthesize_from_results(belief, tool_results: list[str], user_message
     return ""
 
 
-# Fixed fallback intro used only when the LLM wrap call fails (plan #43). Keeps a
-# conversational feel without ever regenerating the hard-data block below it.
-_WRAP_DEFAULT_INTRO = "¡Perfecto! Encontré esto para vos:"
+_FRAMING_MAX_CHARS = 220  # ~1-2 sentences; guards against a runaway/rambling framing field.
 
 
 def _wrap_text_is_safe(text: str) -> bool:
-    """Reject intro/outro text that leaks a price or property ID (plan #43 hard guarantee).
+    """Reject intro/outro text that leaks a price, ID, or quantity (plan #43/#44 guard).
 
-    The system prompt already forbids this; this is defense-in-depth against prompt
-    injection via ``user_message`` — if the LLM ignores the instruction anyway, fall
-    back to the fixed default rather than risk a hallucinated price/filter claim.
+    The system prompt already forbids mentioning prices/IDs/quantities in framing; this
+    is defense-in-depth against prompt injection or hallucination. Framing is pure prose
+    by design and never legitimately needs a digit (prices, IDs, and counts are always
+    numeric) — rejecting ANY digit catches natural-language leaks like "propiedad 7" or
+    "35.976 pesos" that a literal "$"/"id:" substring check would miss.
     """
-    return "$" not in text and "id:" not in text.lower()
+    return not any(ch.isdigit() for ch in text)
 
 
-async def _wrap_verbatim_with_intro_outro(user_message: str, verbatim_block: str) -> str:
-    """Add a short LLM intro/outro AROUND an untouched verbatim data block (plan #43).
+def _safe_framing_part(text: str | None) -> str:
+    """Return `text` stripped, or "" if empty/unsafe/too long (see _wrap_text_is_safe)."""
+    text = (text or "").strip()
+    if not text or len(text) > _FRAMING_MAX_CHARS or not _wrap_text_is_safe(text):
+        return ""
+    return text
 
-    The block (``ID:N — Tipo en Zona — $Precio`` + specs) is NEVER passed to the LLM
-    as editable text and NEVER regenerated — the code concatenates it byte-for-byte
-    between a generated intro and outro. This structurally preserves the guarantee that
-    killed free-form synthesis before: no price-format drift ($35,976 vs $35.976), no
-    list truncation, no phantom filter claims. The LLM only sees the user's query and is
-    told not to mention any prices/IDs/specs (those live in the block it can't see).
 
-    Gated by CONVERSATIONAL_WRAP_ENABLED (default off → returns the block untouched, i.e.
-    exact current prod behavior). On any LLM failure the block is returned with a fixed
-    default intro — it never blocks or surfaces an error.
+def _apply_framing(turn, verbatim_text: str) -> str:
+    """Wrap a verbatim data block with the engine's own conditional intro/outro (plan #44).
+
+    Unlike plan #43, ``turn.framing`` is emitted by the SAME structured call that already
+    produced tool_calls/response_plan — zero extra LLM calls, full conversation context.
+    The engine emits null members when framing doesn't add value (see CAMPO framing in
+    the system prompt); an invalid/unsafe member is treated as null here too. With both
+    members null/invalid, the block returns byte-identical — no fallback template.
+
+    Gated by RESPONSE_FRAMING_ENABLED (kill-switch, default on).
     """
     from app.core.config import get_settings
 
-    if not getattr(get_settings(), "CONVERSATIONAL_WRAP_ENABLED", False):
-        return verbatim_block
+    if not getattr(get_settings(), "RESPONSE_FRAMING_ENABLED", True):
+        return verbatim_text
 
-    from app.agents.cs_llm_client import get_client, get_model, max_tokens_kwarg, LLMRole
+    framing = getattr(turn, "framing", None)
+    intro = _safe_framing_part(getattr(framing, "intro", None))
+    outro = _safe_framing_part(getattr(framing, "outro", None))
+    parts = [p for p in (intro, verbatim_text, outro) if p]
+    return "\n\n".join(parts)
 
-    try:
-        client = get_client(LLMRole.SYNTH)
-        model = get_model(LLMRole.SYNTH)
-        resp = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Sos un asistente inmobiliario argentino, cálido y conciso. "
-                        "Vas a escribir SOLO una frase de introducción y una de cierre para "
-                        "acompañar una lista de propiedades que YA está armada (no la ves y no "
-                        "la escribís vos). NUNCA inventes ni menciones precios, direcciones, IDs, "
-                        "cantidades de propiedades ni características puntuales — esos datos van "
-                        "en la lista, no en tu texto. NUNCA afirmes filtros que el usuario no "
-                        "pidió. Respondé en español rioplatense con un JSON: "
-                        '{"intro": "...", "outro": "..."}. '
-                        "intro: 1 frase breve que presente los resultados. "
-                        "outro: 1 frase breve que invite a seguir (ver fotos, agendar una visita, "
-                        "o ajustar la búsqueda)."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Consulta del usuario:\n{(user_message or '').strip()}",
-                },
-            ],
-            response_format={"type": "json_object"},
-            **max_tokens_kwarg(200, LLMRole.SYNTH),
-        )
-        content = resp.choices[0].message.content if resp.choices else ""
-        data = json.loads(content) if content else {}
-        intro = (data.get("intro") or "").strip()
-        outro = (data.get("outro") or "").strip()
-        if intro and not _wrap_text_is_safe(intro):
-            intro = ""
-        if outro and not _wrap_text_is_safe(outro):
-            outro = ""
-        if intro or outro:
-            parts = [p for p in (intro, verbatim_block, outro) if p]
-            return "\n\n".join(parts)
-    except Exception as exc:
-        logger.warning("[V3] Conversational wrap failed: {}", str(exc))
-    return f"{_WRAP_DEFAULT_INTRO}\n\n{verbatim_block}"
+
+def _apply_framing_intro_only(turn, text: str) -> str:
+    """Like _apply_framing but prepends only turn.framing.intro (booking confirmations).
+
+    The booking confirmation text already closes itself with date/address (LOCKED
+    decision, scheduling-bulletproof) — an outro there would duplicate/contradict it.
+    """
+    from app.core.config import get_settings
+
+    if not getattr(get_settings(), "RESPONSE_FRAMING_ENABLED", True):
+        return text
+
+    framing = getattr(turn, "framing", None)
+    intro = _safe_framing_part(getattr(framing, "intro", None))
+    return f"{intro}\n\n{text}" if intro else text
 
 
 # ── Response assembly ─────────────────────────────────────────────────────────
@@ -832,7 +812,7 @@ async def _assemble_response(
     if tools_used and tool_results:
         for _name, _res in zip(tools_used, tool_results):
             if _name in _APPT_MGMT_TOOLS and _res and not _res.startswith("Error:"):
-                return _strip_markers(_res), rich, "verbatim"
+                return _apply_framing(turn, _strip_markers(_res)), rich, "verbatim"
 
     if action == "book_step" and not booking_succeeded:
         # Discard the engine's (possibly fabricated) confirmation response_plan. BUT
@@ -861,7 +841,7 @@ async def _assemble_response(
     if action == "book_step" and booking_succeeded and tools_used and tool_results:
         for _name, _res in zip(tools_used, tool_results):
             if _name == "schedule_visit" and _res and not _res.startswith("Error:"):
-                return _strip_markers(_res), rich, "verbatim"
+                return _apply_framing_intro_only(turn, _strip_markers(_res)), rich, "verbatim"
 
     # ── Path 0a2: requested-but-none-ran → targeted clarify ───────────
     # The engine asked for tools but EVERY one was skipped by validation (e.g. a
@@ -931,9 +911,10 @@ async def _assemble_response(
                 tail = await _synthesize_from_results(belief, other_results, user_message)
                 if tail:
                     return f"{verbatim_text}\n\n{tail}".strip(), rich, "verbatim"
-            # Simple search/details: wrap the untouched block with a short intro/outro
-            # (no-op when CONVERSATIONAL_WRAP_ENABLED is off — the default).
-            wrapped = await _wrap_verbatim_with_intro_outro(user_message, verbatim_text)
+            # Simple search/details: wrap the untouched block with the engine's own
+            # conditional framing (no-op when RESPONSE_FRAMING_ENABLED is off, or when
+            # the engine emitted null/invalid framing for this turn).
+            wrapped = _apply_framing(turn, verbatim_text)
             return wrapped, rich, "verbatim"
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
