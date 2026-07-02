@@ -50,7 +50,7 @@ Carpeta de planes de implementación (WIP) para `inmueblebot`. Cada `.md` es **a
 | 40 | [`40_propiedades-miniaturas-webp-optimizadas.md`](./40_propiedades-miniaturas-webp-optimizadas.md) | Backend + Frontend | `completed` | — |
 | 41 | [`41_enforcement-limites-plan-backend.md`](./41_enforcement-limites-plan-backend.md) | Backend | `completed` | **P0** — relac. 08/09 |
 | 42 | [`42_busqueda-multi-tipo-search-properties.md`](./42_busqueda-multi-tipo-search-properties.md) | Backend (bot / search tool) | `completed` | **P1** — no toca engine.py |
-| 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `pendiente` | **P2** — reversible con flag |
+| 43 | [`43_respuestas-conversacionales-envoltorio-verbatim.md`](./43_respuestas-conversacionales-envoltorio-verbatim.md) | Backend (bot / engine.py) | `completed` | **P2** — reversible con flag (off por default) |
 
 ### Bot chatbot — UX conversacional sin perder grounding (43)
 **43 (P2)** las respuestas de búsqueda suenan a template (bloque Python verbatim, sin LLM).

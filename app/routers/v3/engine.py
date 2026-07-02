@@ -678,6 +678,88 @@ async def _synthesize_from_results(belief, tool_results: list[str], user_message
     return ""
 
 
+# Fixed fallback intro used only when the LLM wrap call fails (plan #43). Keeps a
+# conversational feel without ever regenerating the hard-data block below it.
+_WRAP_DEFAULT_INTRO = "¡Perfecto! Encontré esto para vos:"
+
+
+def _wrap_text_is_safe(text: str) -> bool:
+    """Reject intro/outro text that leaks a price or property ID (plan #43 hard guarantee).
+
+    The system prompt already forbids this; this is defense-in-depth against prompt
+    injection via ``user_message`` — if the LLM ignores the instruction anyway, fall
+    back to the fixed default rather than risk a hallucinated price/filter claim.
+    """
+    return "$" not in text and "id:" not in text.lower()
+
+
+async def _wrap_verbatim_with_intro_outro(user_message: str, verbatim_block: str) -> str:
+    """Add a short LLM intro/outro AROUND an untouched verbatim data block (plan #43).
+
+    The block (``ID:N — Tipo en Zona — $Precio`` + specs) is NEVER passed to the LLM
+    as editable text and NEVER regenerated — the code concatenates it byte-for-byte
+    between a generated intro and outro. This structurally preserves the guarantee that
+    killed free-form synthesis before: no price-format drift ($35,976 vs $35.976), no
+    list truncation, no phantom filter claims. The LLM only sees the user's query and is
+    told not to mention any prices/IDs/specs (those live in the block it can't see).
+
+    Gated by CONVERSATIONAL_WRAP_ENABLED (default off → returns the block untouched, i.e.
+    exact current prod behavior). On any LLM failure the block is returned with a fixed
+    default intro — it never blocks or surfaces an error.
+    """
+    from app.core.config import get_settings
+
+    if not getattr(get_settings(), "CONVERSATIONAL_WRAP_ENABLED", False):
+        return verbatim_block
+
+    from app.agents.cs_llm_client import get_client, get_model, max_tokens_kwarg, LLMRole
+
+    try:
+        client = get_client(LLMRole.SYNTH)
+        model = get_model(LLMRole.SYNTH)
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Sos un asistente inmobiliario argentino, cálido y conciso. "
+                        "Vas a escribir SOLO una frase de introducción y una de cierre para "
+                        "acompañar una lista de propiedades que YA está armada (no la ves y no "
+                        "la escribís vos). NUNCA inventes ni menciones precios, direcciones, IDs, "
+                        "cantidades de propiedades ni características puntuales — esos datos van "
+                        "en la lista, no en tu texto. NUNCA afirmes filtros que el usuario no "
+                        "pidió. Respondé en español rioplatense con un JSON: "
+                        '{"intro": "...", "outro": "..."}. '
+                        "intro: 1 frase breve que presente los resultados. "
+                        "outro: 1 frase breve que invite a seguir (ver fotos, agendar una visita, "
+                        "o ajustar la búsqueda)."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Consulta del usuario:\n{(user_message or '').strip()}",
+                },
+            ],
+            response_format={"type": "json_object"},
+            **max_tokens_kwarg(200, LLMRole.SYNTH),
+        )
+        content = resp.choices[0].message.content if resp.choices else ""
+        data = json.loads(content) if content else {}
+        intro = (data.get("intro") or "").strip()
+        outro = (data.get("outro") or "").strip()
+        if intro and not _wrap_text_is_safe(intro):
+            intro = ""
+        if outro and not _wrap_text_is_safe(outro):
+            outro = ""
+        if intro or outro:
+            parts = [p for p in (intro, verbatim_block, outro) if p]
+            return "\n\n".join(parts)
+    except Exception as exc:
+        logger.warning("[V3] Conversational wrap failed: {}", str(exc))
+    return f"{_WRAP_DEFAULT_INTRO}\n\n{verbatim_block}"
+
+
 # ── Response assembly ─────────────────────────────────────────────────────────
 
 async def _assemble_response(
@@ -843,10 +925,16 @@ async def _assemble_response(
                 and _r and not _r.startswith("Error:")
             ]
             if other_results:
+                # Multi-intent: the synthesized tail already adds a conversational
+                # remainder, so skip the intro/outro wrap here (avoid a second synth
+                # call + double framing in one turn — plan #43 scope decision).
                 tail = await _synthesize_from_results(belief, other_results, user_message)
                 if tail:
                     return f"{verbatim_text}\n\n{tail}".strip(), rich, "verbatim"
-            return verbatim_text, rich, "verbatim"
+            # Simple search/details: wrap the untouched block with a short intro/outro
+            # (no-op when CONVERSATIONAL_WRAP_ENABLED is off — the default).
+            wrapped = await _wrap_verbatim_with_intro_outro(user_message, verbatim_text)
+            return wrapped, rich, "verbatim"
 
     # ── Path 0c: must-surface real tool data ──────────────────────────
     # When a text-data tool produced results, the user must SEE those results —

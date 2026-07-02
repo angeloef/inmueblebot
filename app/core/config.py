@@ -238,6 +238,12 @@ class Settings(BaseSettings):
     OPENAI_MODEL_REASONING: str = Field(default="gpt-5.5", description="Strong model for reasoning/tool decisions")
     OPENAI_MODEL_FAST: str = Field(default="gpt-5.4-mini", description="Fast model for classification and synthesis")
 
+    # === Conversational wrap (plan #43) ===
+    CONVERSATIONAL_WRAP_ENABLED: bool = Field(
+        default=False,
+        description="Wrap verbatim search results with a short LLM intro/outro. Default off → 100% verbatim (prod-safe). The hard-data block is never regenerated, only concatenated between generated framing.",
+    )
+
     # === Knowledge RAG (Phase 5) ===
     EMBEDDING_MODEL: str = Field(
         default="text-embedding-3-small",
