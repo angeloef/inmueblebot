@@ -219,3 +219,5 @@ es el cambio más chico y menos invasivo; parsear el CSV dentro de
   sugirió cap defensivo de longitud → aplicado.
   Fuera de alcance respetado: no se tocó `engine.py`/`_assemble_response` ni
   `capture_lead`/`qualify_lead`.
+  SHIP: commit `5e61595` pusheado a `main`, deploy en Render confirmado vía
+  `GET /version` (`{"commit":"5e61595...","service":"inmueblebot"}`).
