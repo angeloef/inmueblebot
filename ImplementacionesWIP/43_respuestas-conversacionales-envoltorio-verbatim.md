@@ -213,5 +213,6 @@ simples.
     sesión futura cuando alguien decida evaluar prenderlo.
   - Gate de UX visual (Chrome MCP/Playwright): **N/A** — cambio 100%
     backend/bot, no toca dashboard ni ninguna superficie con UI.
-  - SHIP: commit y push a `main` (dispara deploy en Render); flag off por
-    default → deploy seguro. Verificado `/version` post-deploy.
+  - SHIP: commit `6558e71` pusheado a `main`, deploy en Render confirmado vía
+    `GET /version` (`{"commit":"6558e71...","service":"inmueblebot"}`); flag
+    off por default → deploy seguro.
